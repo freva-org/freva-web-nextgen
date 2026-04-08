@@ -1,0 +1,128 @@
+# Created by https://www.toptal.com/developers/gitignore/api/vuejs,react
+# Edit at https://www.toptal.com/developers/gitignore?templates=vuejs,react
+
+### react ###
+.DS_*
+*.log
+logs
+**/*.backup.*
+**/*.back.*
+
+node_modules
+bower_components
+
+*.sublime*
+
+psd
+thumb
+sketch
+
+### Vuejs ###
+# Recommended template: Node.gitignore
+
+node_modules/
+dist/
+npm-debug.log
+yarn-error.log
+.DS_Store
+
+# End of https://www.toptal.com/developers/gitignore/api/vuejs,react
+
+# ========================
+# OS
+# ========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ========================
+# Node
+# ========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npmrc
+
+# ========================
+# Build output
+# ========================
+dist/
+dist-ssr/
+build/
+out/
+.output/
+.next/
+.nuxt/
+.svelte-kit/
+.astro/
+
+# ========================
+# TypeScript
+# ========================
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# ========================
+# Cache & temp
+# ========================
+.cache/
+.parcel-cache/
+.turbo/
+.vite/
+*.tmp
+*.temp
+
+# ========================
+# Env & secrets
+# ========================
+.env
+.env.*
+!.env.example
+!.env.template
+
+# ========================
+# Editors
+# ========================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+
+# ========================
+# Testing
+# ========================
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+cypress/screenshots/
+cypress/videos/
+
+# ========================
+# Logs
+# ========================
+logs/
+*.log
+
+# ========================
+# Misc
+# ========================
+*.pem
+*.key
+.vercel
+.netlify

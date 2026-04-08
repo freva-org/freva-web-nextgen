@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Freva Web · Next Generation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --teal: #0d9488;
+        --teal-light: #14b8a6;
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --border: #e2e8f0;
+        --text: #1e293b;
+        --muted: #64748b;
+        --code-bg: #f1f5f9;
+        --radius: 10px;
+      }
+
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      header {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      header .logo {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--teal);
+        text-decoration: none;
+      }
+
+      header nav a {
+        margin-left: 1.5rem;
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+
+      header nav a:hover {
+        color: var(--teal);
+      }
+
+      .hero {
+        max-width: 780px;
+        margin: 5rem auto 3rem;
+        padding: 0 2rem;
+        text-align: center;
+      }
+
+      .hero h1 {
+        font-size: clamp(2rem, 5vw, 3rem);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        margin-bottom: 1rem;
+      }
+
+      .hero h1 span {
+        color: var(--teal);
+      }
+
+      .hero p {
+        font-size: 1.1rem;
+        color: var(--muted);
+        max-width: 540px;
+        margin: 0 auto 2rem;
+      }
+
+      .badges {
+        display: flex;
+        justify-content: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 2.5rem;
+      }
+
+      .cta {
+        display: inline-flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .btn {
+        display: inline-block;
+        padding: 0.65rem 1.4rem;
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: opacity 0.15s;
+      }
+
+      .btn:hover {
+        opacity: 0.85;
+      }
+      .btn-primary {
+        background: var(--teal);
+        color: #fff;
+      }
+      .btn-outline {
+        border: 1.5px solid var(--border);
+        color: var(--text);
+        background: var(--surface);
+      }
+
+      .packages {
+        max-width: 860px;
+        margin: 0 auto 5rem;
+        padding: 0 2rem;
+      }
+
+      .packages h2 {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 1.25rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.8rem;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.75rem 2rem;
+        margin-bottom: 1rem;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 1rem;
+        align-items: start;
+      }
+
+      .card h3 {
+        font-size: 1.05rem;
+        font-weight: 700;
+        font-family: monospace;
+        margin-bottom: 0.4rem;
+      }
+
+      .card h3 a {
+        color: var(--teal);
+        text-decoration: none;
+      }
+      .card h3 a:hover {
+        text-decoration: underline;
+      }
+
+      .card p {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .install {
+        background: var(--code-bg);
+        border-radius: 6px;
+        padding: 0.35rem 0.8rem;
+        font-family: monospace;
+        font-size: 0.82rem;
+        white-space: nowrap;
+        color: var(--text);
+        align-self: center;
+      }
+
+      .divider {
+        max-width: 860px;
+        margin: 0 auto 2rem;
+        padding: 0 2rem;
+        border-top: 1px solid var(--border);
+      }
+
+      .quickstart {
+        max-width: 860px;
+        margin: 0 auto 5rem;
+        padding: 0 2rem;
+      }
+
+      .quickstart h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+      }
+
+      pre {
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: var(--radius);
+        padding: 1.25rem 1.5rem;
+        overflow-x: auto;
+        font-size: 0.88rem;
+        line-height: 1.7;
+        font-family: "Fira Code", "Cascadia Code", monospace;
+      }
+
+      footer {
+        text-align: center;
+        padding: 2rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+        border-top: 1px solid var(--border);
+      }
+
+      footer a {
+        color: var(--teal);
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="logo" href="/">freva-web-nextgen</a>
+      <nav>
+        <a href="https://github.com/freva-org/freva-web-nextgen">GitHub</a>
+        <a href="https://www.npmjs.com/org/freva">npm</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h1>Framework-agnostic<br /><span>Web Components</span> for Freva</h1>
+        <p>
+          TypeScript-first building blocks for scientific data portals. Drop into React, Vue,
+          Svelte, or plain HTML — no framework required.
+        </p>
+        <div class="badges">
+          <img
+            src="https://img.shields.io/github/actions/workflow/status/freva-org/freva-web-nextgen/ci.yml?label=CI&style=flat-square"
+            alt="CI"
+          />
+          <img
+            src="https://img.shields.io/npm/l/@freva/data-inspector?style=flat-square"
+            alt="BSD 3-Clause"
+          />
+        </div>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/freva-org/freva-web-nextgen"
+            >View on GitHub</a
+          >
+          <a class="btn btn-outline" href="https://www.npmjs.com/org/freva">npm packages</a>
+        </div>
+      </section>
+
+      <section class="packages">
+        <h2>Packages</h2>
+
+        <div class="card">
+          <div>
+            <h3>
+              <a href="https://www.npmjs.com/package/@freva/data-inspector"
+                >@freva/data-inspector</a
+              >
+            </h3>
+            <p>
+              Climate file inspection dialog with aggregation configuration and embedded 3D viewer
+              support.
+            </p>
+          </div>
+          <code class="install">npm i @freva/data-inspector</code>
+        </div>
+
+        <!-- future packages appear here -->
+      </section>
+
+      <div class="divider"></div>
+
+      <section class="quickstart">
+        <h2>Quick start</h2>
+        <pre><span style="color:#94a3b8">// 1. Install</span>
+npm install @freva/data-inspector
+
+<span style="color:#94a3b8">// 2. Import (registers the custom element)</span>
+import "@freva/data-inspector";
+</pre>
+
+        <br />
+
+        <pre><span style="color:#94a3b8">&lt;!-- 3. Use anywhere --&gt;</span>
+&lt;data-inspector id="inspector" file="/data/my.nc"&gt;&lt;/data-inspector&gt;
+
+&lt;script type="module"&gt;
+  const el = document.getElementById("inspector");
+  el.addEventListener("inspector-submit", ({ detail }) =&gt; {
+    console.log(detail.file, detail.aggregationConfig);
+  });
+  el.setAttribute("open", "");
+&lt;/script&gt;</pre>
+      </section>
+    </main>
+
+    <footer>
+      Built by the <a href="https://github.com/freva-org">Freva team</a> ·
+      <a href="https://github.com/freva-org/freva-web-nextgen/blob/main/LICENSE">MIT License</a>
+    </footer>
+  </body>
+</html>
