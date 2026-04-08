@@ -5,8 +5,6 @@
  *   status-code   number  Backend status code (0-5). Default: 3
  *   is-aggregation        Boolean. Changes the rotating messages shown.
  *
- * Identical visual output to the original ZarrLoadingSteps React component.
- * Styles are injected once into <head> under id="zarr-loading-keyframes".
  */
 
 const KEYFRAMES = `

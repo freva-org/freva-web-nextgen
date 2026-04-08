@@ -1,6 +1,6 @@
-# freva-web-nextgen
+# Freva-web-nextgen
 
-Monorepo for the Freva web frontend — framework-agnostic Web Components and utilities built with TypeScript and Vite.
+Freva-web-nextgen, framework-agnostic Web Components and utilities.
 
 ## Packages
 
@@ -24,18 +24,8 @@ npm test
 npm run typecheck
 
 # Dev server (single package)
-cd packages/data-inspector && npm run dev
+cd packages/<name-of-package> && npm run dev
 ```
-
-## Repository structure
-
-```
-packages/
-  data-inspector/   # @freva/data-inspector
-  # future packages go here
-```
-
-Each package is independently versioned and published to npm.
 
 ## Contributing
 

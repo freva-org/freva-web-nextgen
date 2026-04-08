@@ -8,7 +8,7 @@ export default defineConfig({
         settings: {
           disableJavaScriptFileLoading: true,
           disableCSSFileLoading: true,
-          disableIframePageLoading: true, // ← this stops the noise
+          disableIframePageLoading: true,
         },
       },
     },

@@ -1,8 +1,6 @@
 /**
  * <data-inspector> — NetCDF / Zarr file inspection dialog.
  *
- * Replaces the NcdumpDialog React component with a framework-agnostic
- * custom element. Markup and styles are identical to the original.
  *
  * ── Attributes ─────────────────────────────────────────────────────────────
  *   open              Boolean — controls visibility
@@ -83,7 +81,7 @@ export class DataInspectorElement extends HTMLElement {
     this.setAttribute("status", v);
   }
 
-  /** JS-only property — HTML string from xarray repr. Setting triggers re-render. */
+  /** HTML string from xarray repr. Setting triggers re-render. */
   get output(): string | null {
     return this._output;
   }
@@ -158,7 +156,7 @@ export class DataInspectorElement extends HTMLElement {
       this._pathInput = val;
     }
 
-    // Targeted update: zarr-status-code only needs to propagate to child element
+    // zarr-status-code only needs to propagate to child element
     if (name === "zarr-status-code" && this.isConnected) {
       const steps = this.querySelector("zarr-loading-steps");
       if (steps) {
@@ -213,7 +211,6 @@ export class DataInspectorElement extends HTMLElement {
       return;
     }
 
-    // _pathInput is the source of truth — kept up to date by:
     //   - attributeChangedCallback when `file` attribute changes
     //   - the input's `input` event listener when the user types
     // We only need to track focus so we can restore it after re-render.
@@ -382,7 +379,7 @@ export class DataInspectorElement extends HTMLElement {
       </div>`;
   }
 
-  /** Zarr URL display row — only shown once a zarrUrl is available. */
+  /** Zarr URL display row - only shown once a zarrUrl is available. */
   private _renderZarrUrlRow(zarrUrl: string): string {
     return `
       <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;

@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@freva/data-inspector)](https://www.npmjs.com/package/@freva/data-inspector)
 [![CI](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml/badge.svg)](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
+[![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD-3-Clause-yellow.svg)](../../LICENSE)
 
 NetCDF / Zarr file inspection dialog as a **framework-agnostic Web Component**. Works in React, Vue, Svelte, Angular, plain HTML, and Django templates — anything that can load a JS module.
 
@@ -17,7 +17,7 @@ npm install @freva/data-inspector
 ## Quick start
 
 ```js
-import "@freva/data-inspector"; // registers <data-inspector> and friends
+import "@freva/data-inspector";
 ```
 
 ```html
@@ -153,8 +153,8 @@ poller.stop();
 
 ```bash
 npm install
-npm run dev        # Vite dev server with index.html harness
-npm test           # Vitest
-npm run typecheck  # tsc --noEmit
-npm run build      # Production library build
+npm run dev
+npm test
+npm run typecheck
+npm run build
 ```

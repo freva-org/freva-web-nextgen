@@ -15,7 +15,6 @@ export default tseslint.config(
     },
   },
   {
-    // test files get relaxed rules
     files: ["**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",

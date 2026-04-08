@@ -15,7 +15,5 @@ export default defineConfig({
       formats: ["es", "cjs"],
       fileName: (format) => `index.${format === "es" ? "mjs" : "cjs"}`,
     },
-    // No external deps — the package ships everything it needs.
-    // Bootstrap CSS is still expected from the host (unchanged requirement).
   },
 });

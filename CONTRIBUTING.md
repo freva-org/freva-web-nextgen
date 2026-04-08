@@ -7,16 +7,16 @@ Thanks for your interest in contributing to freva-web-nextgen.
 ```bash
 git clone https://github.com/freva-org/freva-web-nextgen
 cd freva-web-nextgen
-npm install        # installs all workspace deps + sets up husky
+npm install
 ```
 
 ## Development workflow
 
 ```bash
 cd packages/data-inspector
-npm run dev        # Vite dev server
-npm test           # Vitest (watch mode: npm run test:watch)
-npm run typecheck  # tsc --noEmit
+npm run dev
+npm test
+npm run typecheck
 ```
 
 ## Before committing
@@ -24,9 +24,9 @@ npm run typecheck  # tsc --noEmit
 The pre-commit hook runs ESLint + Prettier automatically on staged files. To run manually:
 
 ```bash
-npm run lint        # check
-npm run lint:fix    # auto-fix
-npm run format      # format all files
+npm run lint
+npm run lint:fix
+npm run format
 ```
 
 ## Making a change

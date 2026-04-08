@@ -28,7 +28,7 @@ export interface AggregationConfigValues {
   timeout: number;
 }
 
-/** Options for ZarrPoller (replaces UseZarrStatusOptions). */
+/** Options for ZarrPoller. */
 export interface ZarrPollerOptions {
   /** Polling interval in ms. Default: 2000 */
   intervalMs?: number;

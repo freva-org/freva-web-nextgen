@@ -49,9 +49,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .pnpm-store/
-package-lock.json   # remove this line if you want to commit lockfiles
-yarn.lock           # remove this line if you want to commit lockfiles
-pnpm-lock.yaml      # remove this line if you want to commit lockfiles
 .npmrc
 
 # ========================
