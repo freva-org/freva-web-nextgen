@@ -1,5 +1,5 @@
 /**
- * ZarrPoller — framework-agnostic replacement for the useZarrStatus React hook.
+ * ZarrPoller
  *
  * Backend status codes:
  *   0  finished, ok
