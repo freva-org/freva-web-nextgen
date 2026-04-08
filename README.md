@@ -31,7 +31,7 @@ cd packages/<name-of-package> && npm run dev
 
 1. Fork the repo and create a branch from `main`.
 2. Make your changes inside the relevant `packages/*` directory.
-3. Add or update tests — `npm test` must pass.
+3. Add or update tests (`npm test` must pass.)
 4. Open a pull request.
 
 ## License

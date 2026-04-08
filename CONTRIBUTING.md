@@ -32,7 +32,7 @@ npm run format
 ## Making a change
 
 1. Branch from `main`: `git checkout -b feat/my-change`
-2. Make your changes and add/update tests — `npm test` must pass.
+2. Make your changes and add/update tests (`npm test` must pass).
 3. Add a changeset describing what changed:
    ```bash
    npx changeset
