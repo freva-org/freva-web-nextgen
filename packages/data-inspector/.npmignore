@@ -1,0 +1,11 @@
+# Source & dev files — not needed by consumers
+src/
+*.test.ts
+vitest.config.ts
+vite.dev.config.*
+index.html
+tsconfig.json
+*.tsbuildinfo
+
+# Repo meta
+.github/
