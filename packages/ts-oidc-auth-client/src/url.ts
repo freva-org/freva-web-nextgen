@@ -34,7 +34,7 @@ export function currentOrigin(): string | null {
  * The base a relative fetch input actually resolves against.
  *
  * Fetch resolves relative request URLs against the document's *API base URL*,
- * which a `<base href>` element controls — NOT against `location.href`.
+ * which a `<base href>` element controls - NOT against `location.href`.
  * Validating against `location.href` while the browser sends somewhere else is
  * exactly the confusion an injected `<base>` exploits, so validation must use
  * the same base the browser will.
@@ -51,7 +51,7 @@ function configBase(): string | undefined {
 
 /**
  * Resolve a fetch input to an absolute URL using the page as the base.
- * Returns null when it cannot be resolved or is syntactically hostile —
+ * Returns null when it cannot be resolved or is syntactically hostile -
  * callers treat that as "cannot police this, refuse".
  */
 export function resolveRequestUrl(input: RequestInfo | URL): URL | null {
@@ -301,7 +301,7 @@ export function callbackMatches(configured: URL, actual: URL): boolean {
   }
   // ROUTING ONLY. Once the route and its required static parameters match, the
   // URL is ours. Unknown extra query keys, code-only responses, duplicates,
-  // mixed success/error and bad issuers are all *validation* failures — and
+  // mixed success/error and bad issuers are all *validation* failures - and
   // treating them as "not a callback" makes the app's router skip
   // handleCallback(), leaving `code` and `state` in the address bar forever.
   return true;
@@ -343,7 +343,7 @@ export function canonicalReturnPath(value: unknown): string | null {
  * decodeURIComponent throws URIError on malformed percent-encoding. A fragment
  * of `#access_token=SECRET&%ZZ` must not throw out of isCallbackUrl(): the
  * router would skip the callback and the token would stay in the address bar
- * and in history. Decoding here is TOTAL — undecodable input falls back to the
+ * and in history. Decoding here is TOTAL - undecodable input falls back to the
  * raw text, which still matches protocol parameter names.
  */
 function safeDecode(value: string): string {
@@ -360,7 +360,7 @@ function safeDecode(value: string): string {
  * Implicit and hybrid responses put `access_token` / `id_token` in the
  * fragment. RFC 9700 treats the whole authorization response URL as
  * leakage-sensitive, so these must be recognised, scrubbed and rejected rather
- * than ignored — an ignored fragment stays in the address bar and in history.
+ * than ignored - an ignored fragment stays in the address bar and in history.
  */
 export function fragmentResponseParams(u: URL): Set<string> {
   const found = new Set<string>();

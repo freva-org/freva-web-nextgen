@@ -11,7 +11,7 @@
  * §5.4 the user agent attaches a matching cookie to EVERY request to the host,
  * whatever this library does with `Authorization` headers. With the default
  * `Path=/`, a refresh-capable broker JWT therefore reaches every route on the
- * origin and every proxy, middleware and CDN in front of it — and their access
+ * origin and every proxy, middleware and CDN in front of it - and their access
  * logs. It is additionally readable by any same-origin script, because a
  * cookie written from JavaScript cannot be HttpOnly.
  *

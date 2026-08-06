@@ -293,7 +293,7 @@ describe("a peer lifecycle message reaches the managed cache", () => {
     const restore = installFakeBroadcastChannel();
     const mine = makeJwt({ jti: "a7", exp: NOW + 600 });
     // A custom storage that declares the managed contract. Its `clear()` drops
-    // persisted state only — the in-memory bearer cache is dropped by
+    // persisted state only - the in-memory bearer cache is dropped by
     // `invalidateCache()`, exactly as the ServerManagedStorage contract says.
     let cache: StoredToken | null = stored(mine, NOW + 600);
     let persisted: StoredToken | null = stored(mine, NOW + 600);

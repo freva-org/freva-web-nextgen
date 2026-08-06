@@ -1,14 +1,14 @@
 /**
  * Session lifecycle gate.
  *
- * Two independent things can block credential use at once — a local logout and
- * an inbound peer `session-cleared` — so blockers are independently owned: a
+ * Two independent things can block credential use at once - a local logout and
+ * an inbound peer `session-cleared` - so blockers are independently owned: a
  * token per holder, released only by that holder. One shared flag would let
  * whichever finished first reopen the gate for the other.
  *
  * A monotonic generation covers the rest. Any operation captures the
  * generation when it starts and re-checks it after every awaited boundary; a
- * bumped generation means "the session you belong to is gone — discard your
+ * bumped generation means "the session you belong to is gone - discard your
  * result", so work begun before a logout cannot persist, cache or return a
  * credential the user has already destroyed.
  */
@@ -45,8 +45,8 @@ export class SessionGate {
    *
    * A retained block is owned by whoever took it and survives login; only its
    * owner releases it, and only once the condition that caused it is actually
-   * resolved. Without that, an incomplete logout — a local storage clear that
-   * rejected, a backend logout that failed, a peer clear that threw — would be
+   * resolved. Without that, an incomplete logout - a local storage clear that
+   * rejected, a backend logout that failed, a peer clear that threw - would be
    * reopened by the next `beginLogin()` with the credential still present.
    */
   private readonly retained = new Set<symbol>();
@@ -94,7 +94,7 @@ export class SessionGate {
    * resolved before anything has established that the old credential is gone.
    *
    * A RETAINED block is deliberately not part of this. That state has already
-   * settled — the credential may still exist, and it stays unreadable — but
+   * settled - the credential may still exist, and it stays unreadable - but
    * the user is entitled to start a fresh login as their way out, and the
    * retained block survives that login untouched.
    */

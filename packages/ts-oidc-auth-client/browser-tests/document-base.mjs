@@ -2,7 +2,7 @@
  * Real-browser proof that a `<base>` element cannot move a validated request.
  *
  * Fetch resolves a relative request URL against the document's API base URL,
- * which `<base href>` controls — NOT against `location.href`. A client that
+ * which `<base href>` controls - NOT against `location.href`. A client that
  * validates against `location.href` and then hands fetch the original relative
  * string sends the credential somewhere it never checked.
  *
@@ -20,7 +20,7 @@ function cors(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type");
 }
 
-// Origin B — the base element's target. Nothing credentialed may arrive here.
+// Origin B - the base element's target. Nothing credentialed may arrive here.
 const b = http.createServer((req, res) => {
   cors(req, res);
   if (req.method === "OPTIONS") {

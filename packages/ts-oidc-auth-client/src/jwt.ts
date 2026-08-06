@@ -65,7 +65,7 @@ export function isExpiring(expiresAt: number, now: number, bufferSeconds: number
 
 /**
  * 64-bit fingerprint (two independent FNV-1a passes) for sessionVersion.
- * Not a secret and not a security boundary — it drives the "did another tab
+ * Not a secret and not a security boundary - it drives the "did another tab
  * rotate?" comparison, where a 32-bit space collides often enough to make two
  * different tokens look identical in a long-lived app. Dot-free on purpose so
  * it can never look JWT-shaped to the cross-tab guard.

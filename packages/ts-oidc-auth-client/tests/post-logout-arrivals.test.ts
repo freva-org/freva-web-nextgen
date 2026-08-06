@@ -1,6 +1,6 @@
 /**
- * Work that arrives after a logout — a peer clear, a refresh response, a
- * tokenProvider result — never repopulates or unblocks the session, and the
+ * Work that arrives after a logout - a peer clear, a refresh response, a
+ * tokenProvider result - never repopulates or unblocks the session, and the
  * callback, request and login-option handling around it stays strict.
  *
  * Each name states the behaviour that must not come back.

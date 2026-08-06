@@ -433,7 +433,7 @@ describe("an incomplete logout is persistently fail-closed", () => {
 describe("peer lifecycle recovery", () => {
   // A retained block refuses beginLogin() outright rather than letting it
   // proceed, because the callback such a login produces is guaranteed to be
-  // rejected. The security assertion — the token stays unreadable — holds
+  // rejected. The security assertion - the token stays unreadable - holds
   // either way; failing fast merely spares a round trip to the IDP.
   it("beginLogin() does not expose a token a failed peer clear left behind", async () => {
     const restore = installFakeBroadcastChannel();
@@ -486,7 +486,7 @@ describe("peer lifecycle recovery", () => {
     await settle(); // the peer clear SUCCEEDS
 
     // An unfinished peer operation holds a block, and login is refused while
-    // one is held. `logout()` is the recovery operation — it releases
+    // one is held. `logout()` is the recovery operation - it releases
     // the peer-owned block and RETIRES the operation.
     await c.logout({ localOnly: true });
     c.beginLogin(); // a new session is safely established
@@ -514,7 +514,7 @@ describe("peer lifecycle recovery", () => {
 //
 // R1–R10 above are behavioural regressions and are deliberately defended in
 // depth: several of them are caught by more than one check. The tests below
-// exist so that each INDIVIDUAL call site is independently verifiable — each
+// exist so that each INDIVIDUAL call site is independently verifiable - each
 // one ends the session at exactly one boundary and asserts the specific thing
 // that must not happen if the check at that boundary is deleted. The mutation
 // gate runs these by name, one per mutation.
@@ -523,7 +523,7 @@ describe("peer lifecycle recovery", () => {
 describe("call-site controls", () => {
   it("a refresh whose first storage load resolves after logout fails as session-ended", async () => {
     // Without the post-load check the operation walks on into the refresh
-    // machinery and fails with a *refresh* diagnostic instead — meaning it read
+    // machinery and fails with a *refresh* diagnostic instead - meaning it read
     // and interpreted a dead session's credential rather than stopping.
     const g = gate();
     let loads = 0;
@@ -612,7 +612,7 @@ describe("call-site controls", () => {
       kind: "custom",
       lifecycleIdentity: "shared-credential",
       persistent: true,
-      // The SECOND load — the one under the cross-tab lock — is the boundary.
+      // The SECOND load - the one under the cross-tab lock - is the boundary.
       // Everything before it happens in a live session.
       load: async () => {
         if (++loads === 2) await g.promise;
@@ -646,7 +646,7 @@ describe("call-site controls", () => {
     const newJwt = makeJwt({ jti: "m6-new", exp: NOW + 7200 });
     const mintJwt = makeJwt({ jti: "m6-mint", exp: NOW + 7200 });
     // Comfortably fresh, so the initial getToken() returns it directly and the
-    // 401 below is what starts the refresh — that is the path under test.
+    // 401 below is what starts the refresh - that is the path under test.
     let cur: StoredToken | null = stored(oldJwt, NOW + 3600);
     const saves: string[] = [];
     const storage: TokenStorage = {
@@ -715,7 +715,7 @@ describe("call-site controls", () => {
 
   it("a transient NETWORK refresh failure after a peer clear returns no stale token", async () => {
     // The failure branch in getToken() is the last thing standing when the
-    // refresh never got a response at all — there is no response boundary to
+    // refresh never got a response at all - there is no response boundary to
     // validate, so a transient error would otherwise become "use the old token".
     const restore = installFakeBroadcastChannel();
     const storage = new MemoryStorage();

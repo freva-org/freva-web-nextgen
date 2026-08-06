@@ -6,8 +6,8 @@
  * concurrent minting operation at once, a credential-producing boundary that
  * never enters the lifecycle (server-managed mints) drops a token minted after
  * logout instead of revoking it, and a peer-operation identity that holds
- * exactly one operation — correlated by operation rather than by the session it
- * ends — loses overlapping peers. A retained fail-closed state refuses login.
+ * exactly one operation - correlated by operation rather than by the session it
+ * ends - loses overlapping peers. A retained fail-closed state refuses login.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -308,7 +308,7 @@ describe("peer lifecycle operations are independently correlated", () => {
     await c.handleCallback();
     await settle();
 
-    // Well-formed, fresh, correctly shaped — and naming no session at all, for
+    // Well-formed, fresh, correctly shaped - and naming no session at all, for
     // an operation this tab has never been told anything about. An operation
     // id identifies an operation, not the session it was meant to end.
     channel(c.channelName).postMessage({
@@ -572,7 +572,7 @@ describe("registry accounting controls", () => {
 
     await c.refresh({ force: true }).catch(() => undefined);
     await settle();
-    // Fail-closed, because the credential could not be confirmed dead — but by
+    // Fail-closed, because the credential could not be confirmed dead - but by
     // a RETAINED block, taken and released by an owner, not by a stranded
     // local block and a pending-op counter nothing decrements.
     expect(await blocked(c.getToken({ refresh: "never" }))).toBe(true);
@@ -615,7 +615,7 @@ describe("overlapping peer operations are tracked independently", () => {
     await settle();
     expect(await blocked(c.getToken({ refresh: "never" }))).toBe(true);
 
-    // A finishes. B has NOT — it may still fail, and its block is its own.
+    // A finishes. B has NOT - it may still fail, and its block is its own.
     raw.postMessage({
       type: "logout",
       ...A,

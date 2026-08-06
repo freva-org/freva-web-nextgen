@@ -8,7 +8,7 @@
  *
  * This module owns the answer to one question: "which credentials does this
  * page know about that may still be usable, and has anything actually
- * invalidated them?" Nothing here performs I/O — the client does the revoking
+ * invalidated them?" Nothing here performs I/O - the client does the revoking
  * and reports per-target outcomes back.
  */
 import type { StoredToken } from "./types.js";
@@ -17,8 +17,8 @@ import { AuthError } from "./token.js";
 /**
  * Opaque handle for one credential-producing operation.
  *
- * Callers release the handle they were given — never a value derived from the
- * token — so two operations carrying an identical access token cannot release
+ * Callers release the handle they were given - never a value derived from the
+ * token - so two operations carrying an identical access token cannot release
  * each other's registration.
  */
 export type CredentialHandle = symbol;
@@ -82,7 +82,7 @@ export function revocationTargetsOf(token: StoredToken): RevocationTarget[] {
  * - **candidates**: minted, in flight, not yet confirmed as stored. A logout
  *   that does not know about them cannot invalidate them.
  * - **pending**: revocation was attempted and did not succeed. These are the
- *   dangerous ones — the credential is live, the server did not confirm
+ *   dangerous ones - the credential is live, the server did not confirm
  *   otherwise, and this registry is the last thing that remembers it exists.
  *
  * A third population, **reservations**, holds the slot for an operation that
@@ -90,7 +90,7 @@ export function revocationTargetsOf(token: StoredToken): RevocationTarget[] {
  *
  * No population is ever evicted to satisfy a size limit. When the registry is
  * full, the next credential-producing operation is refused *before* it asks
- * the server for another credential — refusing to create one more is safe;
+ * the server for another credential - refusing to create one more is safe;
  * forgetting one that already exists is not.
  */
 export class CredentialRegistry {
@@ -100,7 +100,7 @@ export class CredentialRegistry {
    *
    * A reservation occupies its slot immediately, so the capacity check answers
    * "is there still room once I take mine?" rather than "is there room right
-   * now?" — otherwise concurrent operations all pass the same check and the
+   * now?" - otherwise concurrent operations all pass the same check and the
    * limit is one no caller can actually consume.
    */
   private readonly reserved = new Set<CredentialHandle>();
@@ -149,7 +149,7 @@ export class CredentialRegistry {
   }
 
   /**
-   * Free a reservation that never produced a credential — a network failure, a
+   * Free a reservation that never produced a credential - a network failure, a
    * parse failure, a storage-contract rejection, a non-success response.
    * No-op once the handle has been registered: that slot holds a real
    * credential now and is released only by `release()`.
@@ -161,7 +161,7 @@ export class CredentialRegistry {
 
   /**
    * The operation finished inside its own session and storage now owns the
-   * credential. Releases exactly the handle given — not "whatever has this
+   * credential. Releases exactly the handle given - not "whatever has this
    * access token".
    */
   release(handle: CredentialHandle): void {
@@ -207,7 +207,7 @@ export class CredentialRegistry {
    * flight plus every credential an earlier attempt failed to revoke.
    *
    * Candidates are drained (their operations are being cut off); pending
-   * entries are NOT — they stay until a revocation actually succeeds.
+   * entries are NOT - they stay until a revocation actually succeeds.
    * Outstanding RESERVATIONS are cancelled: their slot is freed so the client
    * is usable again, and the handle is remembered so a response that arrives
    * afterwards is classified as an orphan rather than as a normal completion.

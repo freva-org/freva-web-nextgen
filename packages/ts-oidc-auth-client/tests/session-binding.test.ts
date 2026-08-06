@@ -107,7 +107,7 @@ describe("logout messages are bound to the session they end", () => {
     for (const m of lifecycle) {
       // Unbound, either message is unusable to a peer that knows the session:
       // it cannot tell whether the message is about its own session or a
-      // different one, so it must refuse — and stays authenticated.
+      // different one, so it must refuse - and stays authenticated.
       expect(m.sessionVersion).toBe(fingerprint(jwt));
     }
     c.destroy();

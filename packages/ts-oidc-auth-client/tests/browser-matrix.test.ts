@@ -1,7 +1,7 @@
 /**
  * Which browser engines the tooling installs and runs.
  *
- * Tooling only — nothing here touches authentication, storage, lifecycle or
+ * Tooling only - nothing here touches authentication, storage, lifecycle or
  * protocol behaviour. The selector is a pure function over an explicit
  * `platform`, so every branch is testable from any host: these assertions run
  * identically on the Linux CI box and on the macOS laptop they describe.

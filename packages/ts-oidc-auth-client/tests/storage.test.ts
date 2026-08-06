@@ -81,7 +81,7 @@ describe("CookieStorage", () => {
   it("probe() round-trips with the ACTUAL configured attributes", () => {
     expect(new CookieStorage({ name: "p1", ...INSECURE_OK }).probe()).toBe(true);
     // The test origin is plain http (non-localhost), where Secure cookies
-    // are rejected — probe() must report that honestly, not probe a fiction.
+    // are rejected - probe() must report that honestly, not probe a fiction.
     expect(new CookieStorage({ name: "p2", secure: true, ...INSECURE_OK }).probe()).toBe(false);
     // Second real-attribute failure mode: a Path that does not cover this page.
     expect(new CookieStorage({ name: "p3", path: "/elsewhere", ...INSECURE_OK }).probe()).toBe(

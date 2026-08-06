@@ -1,4 +1,4 @@
-// Custom elements — importing registers them via customElements.define()
+// Custom elements - importing registers them via customElements.define()
 export { DataInspectorElement } from "./elements/data-inspector";
 export { AggregationConfigElement } from "./elements/aggregation-config";
 export { ZarrLoadingStepsElement } from "./elements/zarr-loading-steps";

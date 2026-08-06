@@ -277,7 +277,7 @@ describe("peer recovery is a resolvable state", () => {
     clearGate.fail(); // it turns out the clear failed
     await settle();
     // The verdict has now settled: the credential is still there, the block is
-    // RETAINED, and a login is refused while it is held — a login started
+    // RETAINED, and a login is refused while it is held - a login started
     // here produces a callback that `assertNotLoggingOut()` is guaranteed to
     // reject. `logout()` is the recovery operation.
     expect(await blocked(c.getToken({ refresh: "never" }))).toBe(true);

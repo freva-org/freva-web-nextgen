@@ -477,7 +477,7 @@ describe("6. every security opt-out is reported, in isolation", () => {
   ];
 
   for (const c of cases) {
-    it(`${c.label} → exact code "${c.code}" and failed check "${c.check}"`, async () => {
+    it(`${c.label} -> exact code "${c.code}" and failed check "${c.check}"`, async () => {
       const { client, events } = c.build();
       const codes = events
         .filter((e) => e.type === "security-warning")

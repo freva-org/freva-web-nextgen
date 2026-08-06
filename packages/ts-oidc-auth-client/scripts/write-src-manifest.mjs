@@ -1,5 +1,5 @@
 /**
- * Regenerate tests/src-manifest.json — the pin that makes any change under src/
+ * Regenerate tests/src-manifest.json - the pin that makes any change under src/
  * fail a test.
  *
  * The manifest is not a security control; it is a review control. src/ carries

@@ -2,7 +2,7 @@
  * Mutation gate.
  *
  * Removing a security control must make its test fail. A regression test that
- * still passes with the control deleted is proving nothing — this catches the
+ * still passes with the control deleted is proving nothing - this catches the
  * "274 tests green while 14 adversarial probes reproduce" failure mode.
  *
  * Each mutation edits a source file in place, runs ONE named test, and requires
@@ -337,7 +337,7 @@ const MUTATIONS = [
   },
   {
     // This IS the ordering: moving the scrub back after the blocked-state
-    // assertion is the leak — a callback refused because the session is blocked
+    // assertion is the leak - a callback refused because the session is blocked
     // keeps `code` and `state` in the address bar and browser history.
     name: "recovery 6/9: callback scrub moved after the blocked-state assertion",
     file: "src/client.ts",
@@ -396,7 +396,7 @@ const MUTATIONS = [
   },
   {
     // Two edits: both mechanisms that made a new generation wait on an old
-    // one — the `settled` chain and the page-local lock chain key.
+    // one - the `settled` chain and the page-local lock chain key.
     name: "recovery 9/9: cross-generation refresh waiting restored",
     file: "src/client.ts",
     edits: [
@@ -694,7 +694,7 @@ const MUTATIONS = [
   {
     // Reinstates the shortcut the declaration requirement removes: recognise a
     // `kind` string and return an identity before the requirement is reached.
-    // Pinned to the impersonation test, so the kill is the bypass reappearing —
+    // Pinned to the impersonation test, so the kill is the bypass reappearing -
     // not some unrelated constructor failure.
     name: "declaration: a `kind` claim waives the requirement again",
     file: "src/client.ts",
@@ -744,11 +744,11 @@ for (const m of MUTATIONS) {
   for (const edit of edits) {
     const occurrences = mutated.split(edit.find).length - 1;
     if (occurrences === 0) {
-      anchorProblem = `ANCHOR NOT FOUND in ${m.file} — gate is stale`;
+      anchorProblem = `ANCHOR NOT FOUND in ${m.file} - gate is stale`;
       break;
     }
     if (occurrences !== 1) {
-      anchorProblem = `anchor matches ${occurrences}x in ${m.file} — not targeted`;
+      anchorProblem = `anchor matches ${occurrences}x in ${m.file} - not targeted`;
       break;
     }
     mutated = mutated.replace(edit.find, edit.replace);
@@ -769,10 +769,10 @@ for (const m of MUTATIONS) {
     fs.writeFileSync(m.file, original);
   }
   if (outcome.verdict === "infrastructure") {
-    console.error(`  ${m.name}: GATE ERROR — ${outcome.detail}`);
+    console.error(`  ${m.name}: GATE ERROR - ${outcome.detail}`);
     failures++;
   } else if (outcome.verdict === "survived") {
-    console.error(`  ${m.name}: SURVIVED — ${outcome.detail}`);
+    console.error(`  ${m.name}: SURVIVED - ${outcome.detail}`);
     failures++;
   } else {
     console.log(`  ${m.name}: killed (${outcome.detail})`);

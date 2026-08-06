@@ -75,7 +75,7 @@ export class RevocationError extends AuthError {
     super(
       `Token revocation failed (${reasonCode}${status ? ` ${status}` : ""}). ` +
         "Local credentials were cleared, but the server-side session may " +
-        "still be usable — do not report this as a complete logout.",
+        "still be usable - do not report this as a complete logout.",
     );
     this.name = "RevocationError";
     this.reasonCode = reasonCode;
@@ -157,7 +157,7 @@ export class CallbackError extends AuthError {
 
 /**
  * THE trust boundary for a credential. Everything that produces a StoredToken
- * — the token endpoint, a tokenProvider callback, a storage read — passes
+ * - the token endpoint, a tokenProvider callback, a storage read - passes
  * through here before the value is used, so a provider or storage plugin
  * cannot inject an unsupported authorization scheme or a nonsense expiry.
  */

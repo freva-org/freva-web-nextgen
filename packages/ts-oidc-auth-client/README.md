@@ -1,9 +1,9 @@
 # @freva-org/ts-oidc-auth-client
 
 Standalone, zero-dependency TypeScript browser client for
-[py-oidc-auth](https://github.com/freva-org/py-oidc-auth) `auth/v2` servers —
-the auth stack behind **freva-rest**. One broker token lifecycle (login →
-callback exchange → proactive refresh with rotation → logout), with **where
+[py-oidc-auth](https://github.com/freva-org/py-oidc-auth) `auth/v2` servers -
+the auth stack behind **freva-rest**. One broker token lifecycle (login ->
+callback exchange -> proactive refresh with rotation -> logout), with **where
 the credential rests** left as a pluggable, explicit choice.
 
 ```
@@ -11,7 +11,7 @@ npm install @freva-org/ts-oidc-auth-client   # once published
 ```
 
 From the packaged source tarball instead, see "Trying it from a local
-checkout" below — you build it and import from a relative path.
+checkout" below - you build it and import from a relative path.
 
 Works with any framework or none: plain `fetch` + `URL` + DOM, ES2020 output,
 no runtime dependencies.
@@ -28,7 +28,7 @@ JWT therefore holds a long-lived credential, not a one-hour pass. That is why:
 - The library is **topology-blind**: every storage mode is always exported and
   constructible everywhere. Picking a mode whose environmental counterpart is
   missing is a _configuration_ error, surfaced by `diagnose()` and structured
-  events — never a pruned menu.
+  events - never a pruned menu.
 - Tokens never touch `localStorage`. Cross-tab sync carries metadata only.
 
 ## Trying it from a local checkout
@@ -39,7 +39,7 @@ first and import from a relative path:
 
 ```bash
 npm install        # dev toolchain (zero runtime deps)
-npm run build      # creates dist/ — required before any dist/ import
+npm run build      # creates dist/ - required before any dist/ import
 npm test -- --run  # 389 tests; the real verification that it works here
 ```
 
@@ -47,7 +47,7 @@ Two things to know before you run any example:
 
 - **The quickstart below is browser code.** It uses `location`, `history`,
   and `auth.isCallbackUrl()`, so it does nothing useful under bare `node` or
-  `tsx` — there is no page URL to read and no DOM. To exercise it you need a
+  `tsx` - there is no page URL to read and no DOM. To exercise it you need a
   browser (see "End-to-end against a server" further down), not a Node script.
 - **`dist/index.js` is a library, not a runnable file.** `node dist/index.js`
   has nothing to execute; it only exports classes for your app to import.
@@ -58,7 +58,7 @@ specifier to the `.ts` file, so no build step is needed) or from `dist/` after
 building:
 
 ```ts
-// scratch.ts  — run with:  npx tsx scratch.ts
+// scratch.ts  - run with:  npx tsx scratch.ts
 import { PyOidcAuthClient, MemoryStorage } from "./src/index.js";
 
 const auth = new PyOidcAuthClient({
@@ -66,7 +66,7 @@ const auth = new PyOidcAuthClient({
   redirectUri: "https://app.example/auth/callback",
   storage: new MemoryStorage(),
   crossTab: false, // no BroadcastChannel under Node
-  navigate: (url) => console.log("would navigate →", url),
+  navigate: (url) => console.log("would navigate ->", url),
   onEvent: (e) => console.log("event:", e.type),
 });
 
@@ -102,7 +102,7 @@ if (auth.isCallbackUrl()) {
   // next is validated to a same-origin relative path (open-redirect guard)
 }
 
-// Authenticated calls — refresh, Bearer header and a single gated
+// Authenticated calls - refresh, Bearer header and a single gated
 // 401 retry are handled for you:
 const res = await auth.fetch("/api/freva-nextgen/databrowser/data-search?...");
 ```
@@ -123,15 +123,15 @@ redirect (visible flash, no re-login while the IDP session lives).
 out is a user intent about the _user_, not about one tab's copy of a
 credential, and a logout that silently left other tabs signed in would be the
 worse surprise. Because each tab's token differs, the decision cannot be made
-by comparing fingerprints — see "Cross-tab lifecycle by topology" below.
+by comparing fingerprints - see "Cross-tab lifecycle by topology" below.
 
-### `CookieStorage` — compatibility only, separate entry point
+### `CookieStorage` - compatibility only, separate entry point
 
 ```ts
 import { CookieStorage } from "@freva-org/ts-oidc-auth-client/unsafe-compat";
 
 new CookieStorage({
-  compatibilityMode: "freva-web-single-token", // → freva_auth_token
+  compatibilityMode: "freva-web-single-token", // -> freva_auth_token
   acknowledgeBrokerSingleTokenContract: true, // REQUIRED at construction
 });
 ```
@@ -139,7 +139,7 @@ new CookieStorage({
 It stores one raw JWT, so `load()` necessarily reports that value as _both_
 the access token and the refresh credential. That is only true under the
 py-oidc-auth broker contract, where the server deliberately issues one JWT in
-both roles — so the acknowledgement is mandatory, and `save()` rejects
+both roles - so the acknowledgement is mandatory, and `save()` rejects
 access-only, split, or `refreshable: false` tokens rather than inventing a
 refresh credential the server never granted.
 
@@ -151,14 +151,14 @@ never reaches the API because requests carry an explicit `Authorization` header.
 That is wrong on a same-site deployment: per RFC 6265 §5.4 the browser attaches a
 matching cookie to _every_ request to the host whatever this library does, so with
 the default `Path=/` the refresh-capable JWT reaches every route on the origin and
-every proxy, middleware and CDN in front of it — and their access logs. It is also
+every proxy, middleware and CDN in front of it - and their access logs. It is also
 readable by any same-origin script, because a cookie written from JavaScript
 cannot be HttpOnly. That is why it now lives behind `/unsafe-compat`: it exists to
 interoperate with freva-web's `getTokenFromCookie` during migration phases 0–2,
 not as a peer of the other modes.
 
 The client says so once at construction via a `security-warning` event (code
-`browser-readable-refresh-credential`) — emitted during construction, so pass
+`browser-readable-refresh-credential`) - emitted during construction, so pass
 `onEvent` in the config to observe it; an `auth.on(...)` listener attached
 afterwards misses it. CookieStorage round-trips only the raw JWT: it is
 broker/auth-code oriented and cannot preserve token-response metadata such as a
@@ -166,13 +166,13 @@ future `refreshable: false`. It refuses tokens that would exceed the 4096-byte
 cookie limit (browsers drop those silently) and refuses to run on a non-loopback
 plaintext origin.
 
-### `ServerManagedStorage` — transport `"bearer-from-endpoint"`
+### `ServerManagedStorage` - transport `"bearer-from-endpoint"`
 
 A backend (Django today; freva-rest itself once the split-token PR lands; any
 edge function) keeps the refresh capability in an httpOnly context and exposes
 an endpoint minting **short-lived** access tokens. The client pulls one with
 `credentials: "include"`, caches it in memory (~4 endpoint hits/hour), and
-your data path stays `browser → API` with a Bearer header.
+your data path stays `browser -> API` with a Bearer header.
 
 ```ts
 new ServerManagedStorage({
@@ -185,10 +185,10 @@ new ServerManagedStorage({
 });
 ```
 
-### `ServerManagedStorage` — transport `"bff"`
+### `ServerManagedStorage` - transport `"bff"`
 
 Every API call is proxied by your backend, which attaches the token
-server-side. **A CSRF strategy is mandatory here** — every proxied call goes out
+server-side. **A CSRF strategy is mandatory here** - every proxied call goes out
 with `credentials: "include"`, which is exactly the shape CSRF exploits, and
 SameSite alone does not cover same-site subdomains. Pass
 `csrf: { headerName, token }`, or `acknowledgeNoCsrf: true` if your backend
@@ -196,14 +196,14 @@ already enforces CSRF by another mechanism. `auth.fetch` sends `credentials: "in
 Authorization header; `getToken()` resolves `null`; `refresh()` throws; `userinfo()` requires
 `config.userinfoEndpoint` (the server's own `/userinfo` expects a Bearer the bff
 transport never attaches). Note
-the proxy doubles every request — usually the wrong trade for freva's
+the proxy doubles every request - usually the wrong trade for freva's
 data-heavy paths.
 
 ### Custom
 
 Implement the four-method `TokenStorage` interface (`load/save/clear`,
 optional `subscribe`, `kind`, `persistent`) for environments we did not
-imagine — Electron, browser extensions, a JupyterLab plugin.
+imagine - Electron, browser extensions, a JupyterLab plugin.
 
 ## Readiness matrix
 
@@ -226,7 +226,7 @@ an explicit acknowledgement to construct, and it deliberately makes
   first, so a peer tab's rotation short-circuits without a network call.
 - **Cross-tab serialization comes from `navigator.locks` alone.**
   `BroadcastChannel` and the metadata-only `localStorage` fallback _publish_
-  that a rotation happened — they cannot prevent two tabs rotating at once.
+  that a rotation happened - they cannot prevent two tabs rotating at once.
   Where Web Locks is unavailable, only a server-side idempotency/grace window
   closes that race; until then the losing tab takes a terminal 401.
 - **Rotation-aware**: py-oidc-auth deletes the old session _before_ minting
@@ -234,13 +234,13 @@ an explicit acknowledgement to construct, and it deliberately makes
 - **Only 401 is terminal.** It is the server's sole signal for a dead/rotated
   session: storage is cleared, `session-expired` fires, persistent-storage
   peers get a logout broadcast. 429/5xx (`transient_server`) and network
-  errors (`transient_network`) never clear storage — a still-valid token keeps
+  errors (`transient_network`) never clear storage - a still-valid token keeps
   being served while the server misbehaves. 400 reports `cors_or_config`.
 - **`auth.fetch` retries a 401 at most once**, and only when the token is
   locally expired/near-expiry or the response carries
   `WWW-Authenticate: … error="invalid_token"`. Permission/audience 401s pass
   through untouched. As with any fetch retry wrapper, a request whose body is
-  a one-shot stream cannot be replayed — pass replayable bodies (string,
+  a one-shot stream cannot be replayed - pass replayable bodies (string,
   `URLSearchParams`, `Blob`, `FormData`) or set `retryOn401: false` for
   streaming uploads.
 
@@ -253,7 +253,7 @@ const report = await auth.diagnose();
 
 One structured console line at startup instead of mysterious 401s an hour
 later: is the broker JWKS reachable, does the cookie round-trip, does the
-server-managed endpoint answer (a 401 there counts as _reachable_ — the
+server-managed endpoint answer (a 401 there counts as _reachable_ - the
 backend session is merely absent).
 
 ## Events
@@ -261,7 +261,7 @@ backend session is merely absent).
 `login-started`, `login-completed`, `token-refreshed` (`source: "self" | "tab"`),
 `session-expired`, `logout`, `refresh-failed` (with a `RefreshFailureKind`),
 `storage-write-failed`, `security-warning` (with a machine-readable `code`),
-`diagnose` — subscribe with `auth.on(handler)` or the `onEvent` config field.
+`diagnose` - subscribe with `auth.on(handler)` or the `onEvent` config field.
 
 **Events carry no credential.** `login-completed` and `token-refreshed` hand you a
 redacted `TokenSummary` (`sessionVersion`, `expiresAt`, `scope`, `tokenType`, …),
@@ -296,7 +296,7 @@ Then drop the quickstart into a component, set `authBaseUrl` to a reachable
 server and `redirectUri` to your dev URL (e.g. `http://localhost:5173/auth/callback`),
 and **register that exact redirect URI with the server's OIDC client config**
 or the login round-trip will be rejected. Call `await auth.diagnose()` on
-startup — it reports JWKS reachability and CORS/base-URL mistakes in one object,
+startup - it reports JWKS reachability and CORS/base-URL mistakes in one object,
 which is the class of failure that otherwise surfaces as a mysterious 401 later.
 
 ## Development
@@ -313,7 +313,7 @@ BSD-3-Clause.
 
 Every setting below either tightens the default or explicitly accepts a known
 gap. **Every acknowledgement emits a `security-warning` and makes
-`diagnose().ok === false`** — it records that someone accepted a risk, it never
+`diagnose().ok === false`** - it records that someone accepted a risk, it never
 marks the deployment healthy.
 
 | `security.*`                       | Effect                                                                                                                                                  |
@@ -322,7 +322,7 @@ marks the deployment healthy.
 | `allowedRedirectUris`              | Exact-match allowlist for `login`/`loginUrl`/`handleCallback`. Defaults to the configured `redirectUri`.                                                |
 | `allowedPostLogoutRedirectUris`    | Exact-match allowlist for `logout`/`logoutUrl`.                                                                                                         |
 | `expectedIssuer`                   | RFC 9207 `iss` validation, exact string comparison. Without it, a response carrying `iss` is rejected.                                                  |
-| `requireLoginTransaction`          | Default true. Proves _this tab_ began a login — **not** server-side state binding. Turning it off requires `acknowledgeNoLoginTransaction`.             |
+| `requireLoginTransaction`          | Default true. Proves _this tab_ began a login - **not** server-side state binding. Turning it off requires `acknowledgeNoLoginTransaction`.             |
 | `loginTransactionTtlSeconds`       | Default 600.                                                                                                                                            |
 | `warnOnBrowserReadableRefresh`     | Mutes the storage-kind warning only. Cannot mute an acknowledgement.                                                                                    |
 | **acknowledgements**               |                                                                                                                                                         |
@@ -366,12 +366,12 @@ on your backend and let it establish its session.
 `storage-write-failed`, `session-clear-failed`, `revocation-failed`,
 `security-warning`, `diagnose`.
 
-`login-completed` carries `hasReturnPath`, not the path itself — call
+`login-completed` carries `hasReturnPath`, not the path itself - call
 `consumeReturnPath()` for the value. `TokenSummary` carries no provider-supplied
 strings at all.
 
 `session-cleared` means a peer tab dropped the credential while a logout is
-still in flight — re-render as signed out, but do not report a completed
+still in flight - re-render as signed out, but do not report a completed
 logout. `logout` arrives only once backend logout and revocation have
 succeeded.
 
@@ -385,7 +385,7 @@ storage's own exception text.
 `diagnose()` performs **no credential-storage and no token-minting I/O**: it
 never calls a token endpoint, a token provider, `healthUrl`, or
 `storage.load()`, and never mints, rotates, clears or revokes anything. It is
-not I/O-free — it makes one **unauthenticated** `GET /.well-known/jwks.json` to
+not I/O-free - it makes one **unauthenticated** `GET /.well-known/jwks.json` to
 report broker reachability, which carries no credential and changes no state.
 For an explicit _credentialed_ check use `probeConnectivity()`, which carries
 the configured CSRF header, a timeout, `no-store` and `redirect: "error"`.
@@ -399,8 +399,8 @@ with a `recovery-state` check, and a `security-warning` names the state
 `terminal-clear-failed-blocked`, `pending-revocation-blocked`).
 
 **`logout()` is the only recovery mechanism.** It retries every outstanding
-invalidation — including credentials whose revocation failed earlier and
-credentials minted for a session that had already ended — and releases the
+invalidation - including credentials whose revocation failed earlier and
+credentials minted for a session that had already ended - and releases the
 state when they succeed. `login()` and `beginLogin()` are **refused** while any
 of these states is held: a login started there produces a callback that is
 guaranteed to be rejected, so it fails immediately instead of after a round
@@ -414,7 +414,7 @@ end, so it is not by itself enough to make a delayed message harmless. Both
 `session-cleared` and `logout` are subject to the same targeting decision when
 they belong to an operation this tab is not already tracking.
 
-`startedAt` — like `at` — is **milliseconds** since the Unix epoch
+`startedAt` - like `at` - is **milliseconds** since the Unix epoch
 (`Date.now()`). `AuthConfig.now` is a separate, injectable **seconds** clock and
 is used only for token expiry.
 
@@ -434,7 +434,7 @@ from the storage's declared shape and drives every cross-tab decision:
 **Declaring the topology.** Every `TokenStorage` must carry `lifecycleIdentity`
 whenever cross-tab coordination is enabled; construction fails otherwise. The
 built-in classes declare it for you, so `MemoryStorage`, `CookieStorage` and
-`ServerManagedStorage` need no caller configuration — but the requirement is
+`ServerManagedStorage` need no caller configuration - but the requirement is
 **universal**, and a `kind` string never waives it. `TokenStorage` is a
 structural interface: any object can write `kind: "cookie"`, so treating that
 claim as proof of a class made the requirement optional for anyone who typed
@@ -472,13 +472,13 @@ new PyOidcAuthClient({
 **"This tab's session was established"** means exactly one thing: a
 `handleCallback()` that completed here. It is NOT set by `load()`, `peek()`, a
 subscription delivery, a token pull, a refresh, or the first time a credential
-is observed — none of those is evidence that a session began. A tab that starts
+is observed - none of those is evidence that a session began. A tab that starts
 listening late, misses `session-cleared`, and then obtains a bearer from a
 backend session that is already being torn down would otherwise declare itself
 "newer" than the logout and ignore the terminal message.
 
-Where no trusted establishment epoch exists — every `managed-bearer` and
-`ambient` tab, and any tab whose credential simply existed when it started —
+Where no trusted establishment epoch exists - every `managed-bearer` and
+`ambient` tab, and any tab whose credential simply existed when it started -
 lifecycle messages are honoured conservatively. In particular the terminal
 `logout` remains an effective fallback for a tab that missed the first
 message.
@@ -487,7 +487,7 @@ message.
 signal for when an ambient backend session _began_, so it cannot distinguish a
 delayed logout for an old session from one for a session established since.
 Treating an ordinary successful proxied request as "a new session started"
-would be wrong — that response may belong to the very session a logout is
+would be wrong - that response may belong to the very session a logout is
 already ending. The behaviour is therefore fail-closed: a stale message can
 leave a BFF tab refusing credentialed work until the backend session is
 re-established. Correlating this precisely needs a backend-supplied session
@@ -498,13 +498,13 @@ fingerprint as a new identity (it is unverified), any unsigned JWT claim such
 as `sid` (this client never trusts token contents it has not had verified
 server-side), or request activity as evidence of session establishment.
 
-Credential-producing operations — `POST /token`, the callback exchange, and
-server-managed token providers/endpoints — reserve a tracking slot **before**
+Credential-producing operations - `POST /token`, the callback exchange, and
+server-managed token providers/endpoints - reserve a tracking slot **before**
 the minting request is sent. When the tracker is full the next such operation
 is refused rather than a live credential being forgotten to make room.
 
 `loginUrl()` is a pure builder and does **not** establish the login
-transaction `handleCallback()` requires — use `login()` for the full flow, or
+transaction `handleCallback()` requires - use `login()` for the full flow, or
 `beginLogin()` if you navigate yourself.
 
 Every security-relevant option is **runtime-validated**: a real boolean is
@@ -514,7 +514,7 @@ it names.
 ## Browser tests
 
 The engine matrix depends on the platform, because this project omits WebKit
-from local macOS runs — it has observed Playwright/macOS compatibility failures
+from local macOS runs - it has observed Playwright/macOS compatibility failures
 launching it there, and an engine that will not start produces no signal. That
 is a choice about this project's local workflow, not a general claim about
 Playwright on macOS.
@@ -534,7 +534,7 @@ npm run check:mutations      # removing a control must fail its test
 npm run test:browser:strict  # release gate: all three engines, no skips
 ```
 
-`test:browser:strict` is release evidence and is never narrowed — not by
+`test:browser:strict` is release evidence and is never narrowed - not by
 platform, not by `BROWSERS`. On macOS it fails immediately rather than report a
 two-engine pass. Run the full gate on Linux CI, or locally with the Playwright
 Docker image:
@@ -555,5 +555,5 @@ output out of your checkout.
 
 **Node 22 or 24.** Node 23 is not supported by the pinned Vitest version, so
 `npm test` will not run there. `.nvmrc` pins 24 for contributors. This is a
-constraint on developing the package — the published library itself has no
+constraint on developing the package - the published library itself has no
 Node requirement and targets browsers.

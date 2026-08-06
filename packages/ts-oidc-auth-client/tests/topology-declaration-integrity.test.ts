@@ -3,8 +3,8 @@
  *
  * `TokenStorage` is a structural interface, so any object can set
  * `kind: "cookie"`. Waiving the `lifecycleIdentity` declaration for anything
- * that LOOKS built-in — reading the public `kind` (and `transport`) string and
- * returning an identity before the requirement is ever reached — makes the
+ * that LOOKS built-in - reading the public `kind` (and `transport`) string and
+ * returning an identity before the requirement is ever reached - makes the
  * requirement waivable by writing one extra property, and a tab-partitioned
  * storage that says `"cookie"` is then silently classified as
  * `shared-credential`, where a fingerprint mismatch REJECTS a peer's logout and
@@ -95,7 +95,7 @@ describe("the bypass is an executable logout failure", () => {
     const mine = makeJwt({ jti: "c2-mine", exp: NOW + 3600 });
     const theirs = makeJwt({ jti: "c2-theirs", exp: NOW + 3600 });
 
-    // Two INDEPENDENT cells — tab-partitioned in fact, "cookie" by assertion.
+    // Two INDEPENDENT cells - tab-partitioned in fact, "cookie" by assertion.
     const cellA: { token: StoredToken | null } = { token: stored(theirs, NOW + 3600) };
     const cellB: { token: StoredToken | null } = { token: stored(mine, NOW + 3600) };
     const shape = (cell: { token: StoredToken | null }) => ({

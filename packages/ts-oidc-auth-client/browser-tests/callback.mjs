@@ -62,7 +62,7 @@ const results = await eachBrowser(async (browser) => {
       const auth = mk();
 
       // ROUTING: a structurally registered callback is still routed to the
-      // handler even when the response itself is invalid — otherwise the app's
+      // handler even when the response itself is invalid - otherwise the app's
       // router skips it and the code stays in the URL.
       r.routesValid = auth.isCallbackUrl();
       r.routesDuplicateCode = auth.isCallbackUrl(`${A}/cb?tenant=a&code=x&code=z&state=y`);

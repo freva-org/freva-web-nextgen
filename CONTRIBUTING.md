@@ -45,12 +45,12 @@ npm run format
 
 Packages use CalVer: `YYMM.MINOR.PATCH`.
 
-- `YYMM` — the year and month of the release epoch, e.g. `2608` for August 2026.
-- `MINOR` — additive, backwards-compatible changes within that epoch.
-- `PATCH` — fixes within that epoch.
+- `YYMM` - the year and month of the release epoch, e.g. `2608` for August 2026.
+- `MINOR` - additive, backwards-compatible changes within that epoch.
+- `PATCH` - fixes within that epoch.
 
 Changesets drives the bumps, so pick the level by the same rule you would for SemVer:
-`patch` → `PATCH`, `minor` → `MINOR`, `major` → a new `YYMM`. Rolling to a new epoch is a
+`patch` -> `PATCH`, `minor` -> `MINOR`, `major` -> a new `YYMM`. Rolling to a new epoch is a
 deliberate maintainer step: set the new `YYMM.0.0` in the package's `package.json` rather
 than letting a `major` changeset invent a number.
 
@@ -88,5 +88,5 @@ npm run test:browser:strict  # release gate: Chromium + Firefox + WebKit, all th
 `test:browser:strict` refuses to run on macOS rather than report a two-engine pass. Run it
 on Linux CI, or locally via the Playwright Docker image printed by the refusal message.
 
-If you edit a security control in `src/`, keep its `// MUTATION ANCHOR:` comment intact —
+If you edit a security control in `src/`, keep its `// MUTATION ANCHOR:` comment intact -
 `scripts/mutation-check.mjs` matches those lines literally to locate what it mutates.

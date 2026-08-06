@@ -17,7 +17,7 @@ export interface BrowserSelection {
 export interface SelectOptions {
   /** `process.platform` of the machine the commands will run on. */
   platform: string;
-  /** True for `test:browser:strict` — the release gate. */
+  /** True for `test:browser:strict` - the release gate. */
   strict?: boolean;
   /** Raw `BROWSERS` value, if set. */
   override?: string;

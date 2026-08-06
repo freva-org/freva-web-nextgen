@@ -9,7 +9,7 @@ const COOKIE_SAFE = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/;
 /**
  * RFC 6265 §6.1 obliges user agents to support at least 4096 bytes per cookie
  * (name + value + attributes). Browsers enforce it by SILENTLY DROPPING the
- * write — the exact failure this class exists to make loud.
+ * write - the exact failure this class exists to make loud.
  */
 const COOKIE_MAX_BYTES = 4096;
 
@@ -35,7 +35,7 @@ export interface CookieStorageOptions {
   maxAgeSeconds?: number;
   /**
    * "freva-web-single-token": interoperate with the existing freva-web
-   * cookie — raw JWT value under "freva_auth_token", readable by the legacy
+   * cookie - raw JWT value under "freva_auth_token", readable by the legacy
    * getTokenFromCookie().
    */
   compatibilityMode?: "freva-web-single-token";
@@ -77,7 +77,7 @@ export interface CookieStorageOptions {
  * host and path match, regardless of what this library does. With the default
  * `Path=/` on a same-site deployment, the refresh-capable JWT therefore
  * reaches every route on the origin, plus any middleware, proxy, or CDN in
- * front of it — and lands in their access logs. It is also readable by any
+ * front of it - and lands in their access logs. It is also readable by any
  * same-origin script, since a cookie created from JavaScript cannot be
  * HttpOnly. Being sent ambiently, it is also the shape CSRF exploits.
  *
@@ -92,7 +92,7 @@ export class CookieStorage implements TokenStorage {
   readonly lifecycleIdentity = "shared-credential" as const;
 
   readonly name: string;
-  /** Passive metadata for diagnose() — reading these performs no I/O. */
+  /** Passive metadata for diagnose() - reading these performs no I/O. */
   readonly acknowledgedBrokerSingleToken: boolean;
   readonly acknowledgedInsecureTransport: boolean;
   readonly acknowledgedInsecureCookie: boolean;
@@ -188,7 +188,7 @@ export class CookieStorage implements TokenStorage {
     ) {
       throw new AuthError(
         `CookieStorage: path must start with "/" and contain no control ` +
-          `characters, whitespace, ";", ",", "\\" or quotes — those would ` +
+          `characters, whitespace, ";", ",", "\\" or quotes - those would ` +
           `inject additional cookie attributes. Got ${JSON.stringify(this.path)}.`,
       );
     }
@@ -241,7 +241,7 @@ export class CookieStorage implements TokenStorage {
   /**
    * Note: only the raw JWT survives a cookie round-trip. Token-response
    * metadata that is not a JWT claim (e.g. a future `refreshable: false`)
-   * is NOT preserved across load() — CookieStorage is broker/auth-code
+   * is NOT preserved across load() - CookieStorage is broker/auth-code
    * oriented by design.
    */
   load(): StoredToken | null {
@@ -284,7 +284,7 @@ export class CookieStorage implements TokenStorage {
     // Only the raw access token survives a cookie round-trip. If the server
     // has moved to split tokens, silently persisting the access token and
     // re-loading it as `refreshToken` would claim refresh capability this
-    // cookie does not hold — and would drop the real refresh token entirely.
+    // cookie does not hold - and would drop the real refresh token entirely.
     if (token.refreshToken !== undefined && token.refreshToken !== token.accessToken) {
       throw new StorageContractError(
         "CookieStorage cannot store a split access/refresh token pair: it " +
@@ -318,7 +318,7 @@ export class CookieStorage implements TokenStorage {
 
   /**
    * Write/read/delete round-trip using the SAME effective attributes as
-   * save()/clear() (path, SameSite, Secure) — so diagnose() catches the real
+   * save()/clear() (path, SameSite, Secure) - so diagnose() catches the real
    * misconfigurations, e.g. `Secure` on an http origin or a path that does
    * not cover the current page.
    */
@@ -372,7 +372,7 @@ export class CookieStorage implements TokenStorage {
           `${byteLength(serialized)} bytes including attributes, limit ` +
           `${COOKIE_MAX_BYTES}). Browsers drop an oversized cookie SILENTLY, ` +
           `which would strand the session on the next rotation. Broker JWTs ` +
-          `grow with the number of roles — use MemoryStorage or ` +
+          `grow with the number of roles - use MemoryStorage or ` +
           `ServerManagedStorage for this deployment.`,
       );
     }

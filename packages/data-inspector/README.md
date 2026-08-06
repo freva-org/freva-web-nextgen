@@ -4,7 +4,7 @@
 [![CI](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml/badge.svg)](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD-3-Clause-yellow.svg)](../../LICENSE)
 
-NetCDF / Zarr file inspection dialog as a **framework-agnostic Web Component**. Works in React, Vue, Svelte, Angular, plain HTML, and Django templates — anything that can load a JS module.
+NetCDF / Zarr file inspection dialog as a **framework-agnostic Web Component**. Works in React, Vue, Svelte, Angular, plain HTML, and Django templates - anything that can load a JS module.
 
 > Bootstrap CSS v5 must be provided by the host application.
 
@@ -144,8 +144,8 @@ poller.stop();
 | `intervalMs`     | `number`                       | `2000`                              |
 | `getAuthHeaders` | `() => Record<string, string>` | reads `freva_auth_token` cookie     |
 | `getStatusUrl`   | `(encoded: string) => string`  | Freva `/zarr-utils/status` endpoint |
-| `onStatus`       | `(statusCode: number) => void` | —                                   |
-| `onError`        | `(error: string) => void`      | —                                   |
+| `onStatus`       | `(statusCode: number) => void` | -                                   |
+| `onError`        | `(error: string) => void`      | -                                   |
 
 **Backend status codes:** `0` ok · `1` failed · `2` not found · `3` waiting · `4` processing · `5` gone
 

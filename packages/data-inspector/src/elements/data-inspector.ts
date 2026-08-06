@@ -1,9 +1,9 @@
 /**
- * <data-inspector> — NetCDF / Zarr file inspection dialog.
+ * <data-inspector> - NetCDF / Zarr file inspection dialog.
  *
  *
  * ── Attributes ─────────────────────────────────────────────────────────────
- *   open              Boolean — controls visibility
+ *   open              Boolean - controls visibility
  *   file              String, or JSON-encoded string[] for aggregation mode
  *   status            "ready" | "loading" | "error"
  *   error             Error message string
@@ -15,8 +15,8 @@
  *   output            string | null  (HTML string from xarray repr; too large for an attribute)
  *
  * ── Events fired ───────────────────────────────────────────────────────────
- *   inspector-close   —  replaces onClose prop
- *   inspector-submit  CustomEvent<{ file, aggregationConfig }>  — replaces submitNcdump prop
+ *   inspector-close   -  replaces onClose prop
+ *   inspector-submit  CustomEvent<{ file, aggregationConfig }>  - replaces submitNcdump prop
  */
 
 import type { AggregationConfigValues } from "../types";
@@ -343,7 +343,7 @@ export class DataInspectorElement extends HTMLElement {
 
   // ── Render helpers ────────────────────────────────────────────────────────
 
-  /** Path input + Load / bypass-cache dropdown — always visible in single-file mode. */
+  /** Path input + Load / bypass-cache dropdown - always visible in single-file mode. */
   private _renderPathBar(): string {
     const disabled = this.status === NcDumpDialogState.LOADING;
     return `
@@ -539,7 +539,7 @@ export class DataInspectorElement extends HTMLElement {
       this._handleInspect();
     });
 
-    // Path input — keep _pathInput in sync as user types, submit on Enter
+    // Path input - keep _pathInput in sync as user types, submit on Enter
     const pathInput = this.querySelector<HTMLInputElement>("#nc-path-input");
     pathInput?.addEventListener("input", (e) => {
       this._pathInput = (e.target as HTMLInputElement).value;

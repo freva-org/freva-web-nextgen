@@ -114,7 +114,7 @@ interface ServerManagedLike {
  * `AuthConfig.now` is a separate injectable SECONDS clock, used only to make
  * token expiry testable. Lifecycle messages carry `at` and `startedAt`, which
  * are compared against each other, so both must come from this millisecond
- * clock — mixing the two units puts any such comparison three orders of
+ * clock - mixing the two units puts any such comparison three orders of
  * magnitude out.
  */
 function wallClockMs(): number {
@@ -134,7 +134,7 @@ const LIFECYCLE_IDENTITIES: readonly LifecycleIdentity[] = [
  *
  * A claim, not a proof. `TokenStorage` is a structural interface: any object
  * can set `kind: "cookie"`. This is used ONLY to check that a declaration is
- * consistent with the claim — never to decide the identity, and never to waive
+ * consistent with the claim - never to decide the identity, and never to waive
  * the requirement to declare one.
  */
 function claimedLifecycleIdentity(storage: TokenStorage): LifecycleIdentity | null {
@@ -201,7 +201,7 @@ function classifyLifecycleIdentity(
         "coordination is enabled: it decides whether another tab's logout is " +
         "about this tab, and there is no safe way to guess it. The built-in " +
         "storages declare it for you; a custom storage must declare one of " +
-        `${LIFECYCLE_IDENTITIES.join(" | ")} — "shared-credential" only if ` +
+        `${LIFECYCLE_IDENTITIES.join(" | ")} - "shared-credential" only if ` +
         "every tab genuinely reads the same stored credential (neither " +
         "persistence nor a `kind` string means that). Or set crossTab: false.",
     );
@@ -253,7 +253,7 @@ class IncompleteLogoutError extends AuthError {}
  *
  * Topology-blind about deployment shape: it never guesses whether a backend
  * exists, and every storage mode stays constructible. It is NOT permissive
- * about credential handling — `storage` and the resource-origin allowlist are
+ * about credential handling - `storage` and the resource-origin allowlist are
  * both decisions the integrator has to state, because in broker mode the
  * Bearer this client attaches IS the refresh credential.
  */
@@ -347,7 +347,7 @@ export class PyOidcAuthClient {
   private pendingRevocationBlock: symbol | null = null;
   /**
    * Every credential this page knows about that may still be usable: minted
-   * but unconfirmed, and — crucially — every one whose revocation failed. The
+   * but unconfirmed, and - crucially - every one whose revocation failed. The
    * latter must be retained or a retry has nothing left to revoke with.
    */
   private readonly credentials = new CredentialRegistry();
@@ -369,7 +369,7 @@ export class PyOidcAuthClient {
   constructor(config: AuthConfig) {
     if (!config || !config.storage) {
       throw new AuthError(
-        "AuthConfig.storage is required — choosing where the credential " +
+        "AuthConfig.storage is required - choosing where the credential " +
           "rests is a deployment decision (MemoryStorage | CookieStorage | " +
           "ServerManagedStorage | custom TokenStorage). See docs/SPEC.md §3.",
       );
@@ -482,7 +482,7 @@ export class PyOidcAuthClient {
     // change policy.
     this.lifecycleIdentity = classifyLifecycleIdentity(config.storage, config.crossTab !== false);
     // A server-managed pull can mint a credential and then find the session
-    // gone. The storage discards it (correctly — it must not be cached), but
+    // gone. The storage discards it (correctly - it must not be cached), but
     // something has to remember that it EXISTS and is live server-side.
     (this.storage as ServerManagedLike).onDiscardedMint?.((token) => {
       this.adoptDiscardedMint(token);
@@ -565,7 +565,7 @@ export class PyOidcAuthClient {
     );
 
     // Endpoints the storage will call with ambient credentials are policed
-    // too — a logout endpoint on another origin would otherwise receive the
+    // too - a logout endpoint on another origin would otherwise receive the
     // CSRF secret and the session cookie.
     const smEndpoints = this.serverManaged();
     for (const [label, value] of [
@@ -609,7 +609,7 @@ export class PyOidcAuthClient {
           message:
             "CookieStorage holds a refresh-capable broker JWT readable by " +
             "any same-origin script (httpOnly=false), and RFC 6265 attaches " +
-            "it to every matching same-origin request — including its " +
+            "it to every matching same-origin request - including its " +
             "proxies, middleware and access logs. Compatibility mode only: " +
             "pair with a strict CSP, or prefer ServerManagedStorage / " +
             "MemoryStorage.",
@@ -641,7 +641,7 @@ export class PyOidcAuthClient {
    *
    * Reading this performs NO I/O and changes no state, so `diagnose()` can use
    * it. Each entry becomes both a construction-time warning and a failed
-   * diagnostic check — an acknowledgement records accepted risk, it never
+   * diagnostic check - an acknowledgement records accepted risk, it never
    * marks the deployment healthy.
    */
   private compatibilityAcknowledgements(): Array<{
@@ -788,7 +788,7 @@ export class PyOidcAuthClient {
 
   private emit(event: AuthEvent): void {
     // A lost credential with nobody listening must not be silent. The message
-    // is FIXED — never the storage's own exception text, which can embed the
+    // is FIXED - never the storage's own exception text, which can embed the
     // credential it just failed to write.
     if (event.type === "storage-write-failed" && this.listeners.size === 0) {
       console.warn(
@@ -839,14 +839,14 @@ export class PyOidcAuthClient {
   // ------------------------------------------------------------------
 
   /**
-   * Build the login URL. NOTE: this is a pure builder — it does NOT establish
+   * Build the login URL. NOTE: this is a pure builder - it does NOT establish
    * the login transaction that `handleCallback()` requires. Use `login()` for
    * the full flow; if you must navigate yourself, call `beginLogin()` to get a
    * URL *and* record the transaction.
    */
   loginUrl(options: LoginOptions = {}): string {
     this.assertBrowserCodeFlowAllowed("loginUrl()");
-    // Runtime validation FIRST — before a transaction or return path is
+    // Runtime validation FIRST - before a transaction or return path is
     // written, and before anything is sent.
     validateCallOptions(options, "loginUrl(options)", {
       booleans: ["offlineAccess"],
@@ -884,7 +884,7 @@ export class PyOidcAuthClient {
 
   /**
    * URL for a login you will navigate to yourself, WITH the transaction
-   * recorded — the pairing `loginUrl()` deliberately does not provide.
+   * recorded - the pairing `loginUrl()` deliberately does not provide.
    */
   beginLogin(options: LoginOptions = {}): string {
     this.assertLoginAllowed("beginLogin()");
@@ -948,7 +948,7 @@ export class PyOidcAuthClient {
     // is never mistaken for an OIDC response.
     if (!this.isConfiguredCallback(u)) return false;
     // ROUTING: anything response-SHAPED on an owned route belongs to the
-    // handler — code-only, state-only, error-only, an unsupported front-channel
+    // handler - code-only, state-only, error-only, an unsupported front-channel
     // token, duplicates. Not routing them means the app's router skips
     // handleCallback() and the credentials stay in the address bar.
     for (const key of OIDC_RESPONSE_PARAMS) {
@@ -960,7 +960,7 @@ export class PyOidcAuthClient {
   }
 
   /**
-   * Exchange code+state via GET {base}/callback (an XHR — no app backend
+   * Exchange code+state via GET {base}/callback (an XHR - no app backend
    * needed; py-oidc-auth completes PKCE and the confidential exchange
    * server-side), save the token, and scrub ONLY the OIDC params from the
    * address bar, preserving the app route, other params and hash.
@@ -969,7 +969,7 @@ export class PyOidcAuthClient {
     const lease = this.gate.lease();
     const u = this.parseUrl(url);
     if (!u) throw new AuthError("handleCallback: no URL available.");
-    // Scrub whenever the URL being handled IS the current location — whether
+    // Scrub whenever the URL being handled IS the current location - whether
     // passed implicitly or explicitly. Routers commonly hand over
     // `location.href` (or an equivalent constructed URL), and that style must
     // not silently skip the history cleanup. Genuinely foreign URLs (tests,
@@ -1006,7 +1006,7 @@ export class PyOidcAuthClient {
       ["id_token", "access_token", "response"].some((k) => u.searchParams.has(k)) ||
       fragmentParams.size > 0;
 
-    // Scrubbing happens BEFORE every remaining check — topology, blocked
+    // Scrubbing happens BEFORE every remaining check - topology, blocked
     // session, issuer, transaction, response shape. A callback refused because
     // it arrived during a logout (or while a retained failure block is held)
     // must not keep `code` and `state` in the address bar and browser history:
@@ -1090,7 +1090,7 @@ export class PyOidcAuthClient {
     // Network failure, a non-success status, a parse/contract rejection: the
     // slot must come back, or a page that hits three transient errors is
     // permanently unable to log in. It is a no-op once the handle holds a real
-    // credential — that slot is released by `release()` and nothing else.
+    // credential - that slot is released by `release()` and nothing else.
     try {
       const res = await this.fetchImpl(callbackDest.href, {
         headers: { Accept: "application/json" },
@@ -1256,7 +1256,7 @@ export class PyOidcAuthClient {
         // If the attempt we queued behind actually rotated, its token is
         // brand new. Rotating again would immediately invalidate the result
         // the first caller is still holding, and burn a server rotation for
-        // nothing — strict rotation means the loser then takes a 401.
+        // nothing - strict rotation means the loser then takes a 401.
         // Only adopt it when it belongs to OUR session.
         if (force && prior?.rotated) {
           return prior;
@@ -1302,13 +1302,13 @@ export class PyOidcAuthClient {
       `${this.channelName}:refresh`,
       this.useNavLocks,
       async () => {
-        // Waiting for the lock is unbounded — another tab holds it — so the
+        // Waiting for the lock is unbounded - another tab holds it - so the
         // session can end entirely between requesting and acquiring it.
         // MUTATION ANCHOR: cross-tab-lock validation.
         this.assertLease(lease);
         // Re-load under the lock: another tab may have rotated already.
         // Each continuation below revalidates for itself, immediately before it
-        // returns, sends or persists a credential — one check per call site, so
+        // returns, sends or persists a credential - one check per call site, so
         // deleting any single one is individually detectable.
         const latest = await this.loadToken();
         if (!latest) {
@@ -1327,7 +1327,7 @@ export class PyOidcAuthClient {
           !isExpiring(latest.expiresAt, this.now(), this.buffer);
         if (rotatedByPeer) {
           // This branch RETURNS A TOKEN it read from storage, without any
-          // network call — the shortest path there is from "an operation from a
+          // network call - the shortest path there is from "an operation from a
           // dead session" to "the new session's credential in the caller's
           // hands". It is also the first thing that happens after the awaited
           // re-load, so it validates for that boundary too.
@@ -1336,8 +1336,8 @@ export class PyOidcAuthClient {
           return { token: latest, rotated: false };
         }
         // Re-check on the re-loaded token too: a peer may have swapped in a
-        // non-refreshable one. (CookieStorage cannot preserve this flag —
-        // it stores the raw JWT only — so the check is best-effort there.)
+        // non-refreshable one. (CookieStorage cannot preserve this flag -
+        // it stores the raw JWT only - so the check is best-effort there.)
         if (latest.refreshable === false) {
           throw new AuthError(
             "Token is marked non-refreshable (refreshable=false); re-login " +
@@ -1385,8 +1385,8 @@ export class PyOidcAuthClient {
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     let res: Response;
     try {
-      // Immediately before the credential leaves the page. Everything above —
-      // binding the destination, deriving the credential — is synchronous, but
+      // Immediately before the credential leaves the page. Everything above -
+      // binding the destination, deriving the credential - is synchronous, but
       // this method was reached through several awaits.
       this.assertLease(lease);
       res = await this.fetchImpl(tokenDest.href, {
@@ -1412,7 +1412,7 @@ export class PyOidcAuthClient {
       const kind = classifyRefreshStatus(res.status);
       if (kind === "terminal_invalid_session") {
         // Strict rotation means the LOSER of a concurrent refresh also gets a
-        // 401 — while the winner's freshly minted token is alive in shared
+        // 401 - while the winner's freshly minted token is alive in shared
         // storage. Clearing unconditionally would destroy that winner's
         // session. Only clear when storage still holds the very credential
         // the server just rejected.
@@ -1487,7 +1487,7 @@ export class PyOidcAuthClient {
     });
     // Application listeners run synchronously here and are free to call
     // logout(). Returning after that hands back a credential the user has
-    // already destroyed — and `persist()` above put it in storage, which is
+    // already destroyed - and `persist()` above put it in storage, which is
     // why the logout that the listener started is what has to win.
     // MUTATION ANCHOR: post-event lease validation.
     this.assertLease(lease);
@@ -1606,7 +1606,7 @@ export class PyOidcAuthClient {
    * session fingerprint (tokenless BFF state): an operation that STARTED before
    * our session did cannot be about our session.
    *
-   * Set ONLY by a completed `handleCallback()` — the one session transition
+   * Set ONLY by a completed `handleCallback()` - the one session transition
    * this client can verify locally. `load()`, `peek()`, subscription delivery,
    * a token pull, a refresh and first observation all leave it alone, so it
    * stays `0` in every mode with no browser-side login (`managed-bearer`,
@@ -1630,7 +1630,7 @@ export class PyOidcAuthClient {
    * Adopt the session state implied by a credential this tab has ACTUALLY
    * OBSERVED, or `null` for "this tab holds no session".
    *
-   * The caller must pass a canonicalized token — `canonicalizeStoredToken()`
+   * The caller must pass a canonicalized token - `canonicalizeStoredToken()`
    * recomputes `sessionVersion` from the access token, so a storage plugin or
    * a peer cannot choose what this tab believes its session to be.
    */
@@ -1647,7 +1647,7 @@ export class PyOidcAuthClient {
     // Observing a credential does not prove "this session is newer than your
     // logout". A tab that starts listening late, misses `session-cleared`, and
     // pulls a bearer from a backend session already being torn down would stamp
-    // an epoch AFTER the logout began — and then ignore the terminal message,
+    // an epoch AFTER the logout began - and then ignore the terminal message,
     // keeping the token. The pull succeeded BECAUSE the session it belongs to
     // is the one being ended. Same for a preloaded per-tab credential: loading
     // it is not the moment it came into existence.
@@ -1668,7 +1668,7 @@ export class PyOidcAuthClient {
   /**
    * A credential the backend minted for a session that had already ended.
    *
-   * Nothing in this page ever held it — the storage discarded it as stale — so
+   * Nothing in this page ever held it - the storage discarded it as stale - so
    * without this it would be live server-side with no record of its existence.
    * It goes into the registry to be revoked now if possible, and retried by a
    * later logout if not.
@@ -1740,7 +1740,7 @@ export class PyOidcAuthClient {
           signal: controller.signal,
         });
       } catch {
-        /* health ping is best-effort — but a CSRF/origin fault threw above */
+        /* health ping is best-effort - but a CSRF/origin fault threw above */
       } finally {
         clearTimeout(timer);
       }
@@ -1833,8 +1833,8 @@ export class PyOidcAuthClient {
   }
 
   /**
-   * fetch with the lifecycle attached: load → refresh-if-expiring → Bearer →
-   * send → at most ONE 401 retry, and only when the token is locally
+   * fetch with the lifecycle attached: load -> refresh-if-expiring -> Bearer ->
+   * send -> at most ONE 401 retry, and only when the token is locally
    * expired/near-expiry or the server says `error="invalid_token"`.
    * Permission/audience 401s pass through untouched.
    *
@@ -1879,7 +1879,7 @@ export class PyOidcAuthClient {
     let res = await this.fetchImpl(new Request(first, this.authOverlay(first, token)));
     // The response to a credentialed request is itself protected data. If the
     // session ended while it was in flight, returning it completes an operation
-    // the user cancelled — and, on a 401, starts the retry machinery below in a
+    // the user cancelled - and, on a 401, starts the retry machinery below in a
     // session this operation never belonged to.
     // MUTATION ANCHOR: fetch response validation.
     this.assertLease(lease);
@@ -1894,7 +1894,7 @@ export class PyOidcAuthClient {
         // that matters and make it unverifiable by mutation.
         try {
           // MUTATION ANCHOR: fetch retry lease propagation.
-          // The retry stays inside the operation — and the session — that
+          // The retry stays inside the operation - and the session - that
           // started it. The PUBLIC refresh() captures a fresh lease, which
           // would let a request that began before a logout be retried with the
           // credentials of a login that happened afterwards.
@@ -1971,7 +1971,7 @@ export class PyOidcAuthClient {
     // Anything else lets a concurrent getToken()/fetch() slip a credential out
     // while the logout is still resolving its first await.
     if (this.logoutInflight) return this.logoutInflight;
-    // Take an OWN block synchronously — before the first storage read, and
+    // Take an OWN block synchronously - before the first storage read, and
     // released by nobody else.
     const held = this.gate.blockLocal();
     this.logoutInflight = this.runLogout(options)
@@ -1980,8 +1980,8 @@ export class PyOidcAuthClient {
           this.gate.terminate();
           // MUTATION ANCHOR: successful local recovery releases peer blocks.
           // A local logout that COMPLETES has resolved the exact condition
-          // every fail-closed block here protects against — the credential is
-          // gone and the server has confirmed it — so it releases them all.
+          // every fail-closed block here protects against - the credential is
+          // gone and the server has confirmed it - so it releases them all.
           // Releasing only its own would leave a client that a peer had blocked
           // permanently unusable however many successful logouts it performs.
           this.resolveAllRecoveryBlocks();
@@ -1993,9 +1993,9 @@ export class PyOidcAuthClient {
           // The block must outlive this handler: releasing it regardless of
           // outcome turns "logout incomplete: the credential may still be
           // present" into a fully usable session one microtask later.
-          // Every outcome that leaves a credential possibly alive — a local
+          // Every outcome that leaves a credential possibly alive - a local
           // clear that rejected, an unconfirmed backend logout, an unconfirmed
-          // revocation — enters the retained state. A pre-flight validation
+          // revocation - enters the retained state. A pre-flight validation
           // error (a disallowed postLogoutRedirectUri, a missing
           // logoutEndpoint) invalidated nothing and does not.
           if (e instanceof IncompleteLogoutError || e instanceof RevocationError) {
@@ -2093,13 +2093,13 @@ export class PyOidcAuthClient {
     this.degraded = null;
     let clearFailed = false;
     // Collected inside the queued step so a clear that REJECTS still leaves us
-    // holding everything we found — the credential is then demonstrably still
+    // holding everything we found - the credential is then demonstrably still
     // present, which is exactly when revocation matters most.
     const invalidate: StoredToken[] = [];
     if (degradedSnapshot) invalidate.push(degradedSnapshot);
     // MUTATION ANCHOR: logout binds to the credential it actually destroyed.
-    // Derived from the ACTIVE token — the degraded mirror if one is live,
-    // otherwise whatever the canonical snapshot below reads — and never from a
+    // Derived from the ACTIVE token - the degraded mirror if one is live,
+    // otherwise whatever the canonical snapshot below reads - and never from a
     // retained or candidate credential, which belong to operations that are
     // over. Reading `currentSessionVersion` instead would leave a tab that has
     // never called getToken() sending both lifecycle messages unbound, and
@@ -2110,8 +2110,8 @@ export class PyOidcAuthClient {
       // Reading and clearing happen in ONE queued step, after every earlier
       // mutation, so nothing can be written in between and every credential
       // this page caused to exist is in the invalidation set. Reading before
-      // entering the queue would miss a save still in flight — a token this
-      // page just caused the server to mint — and a rotation landing between
+      // entering the queue would miss a save still in flight - a token this
+      // page just caused the server to mint - and a rotation landing between
       // the read and the clear would be destroyed locally while staying alive
       // server-side.
       await this.runStorageMutation(async () => {
@@ -2144,7 +2144,7 @@ export class PyOidcAuthClient {
       });
     } catch {
       // A local clear that fails means the credential is STILL THERE. We must
-      // not report success — but we still try to invalidate it server-side.
+      // not report success - but we still try to invalidate it server-side.
       clearFailed = true;
     }
     const endingSessionVersion =
@@ -2205,7 +2205,7 @@ export class PyOidcAuthClient {
 
     // Independent of whether the local clear or the backend logout succeeded:
     // every safe invalidation step is attempted, for EVERY credential this
-    // page caused to exist — not only the one storage happened to return.
+    // page caused to exist - not only the one storage happened to return.
     // Credentials whose revocation does not succeed stay in the registry, so
     // the NEXT logout retries them.
     let revocationError: RevocationError | null = null;
@@ -2320,7 +2320,7 @@ export class PyOidcAuthClient {
 
   /**
    * Fail closed exactly as long as a credential is known to be live and
-   * unrevoked — and stop as soon as one finally is.
+   * unrevoked - and stop as soon as one finally is.
    */
   private syncPendingRevocationBlock(): void {
     if (this.credentials.hasPending()) {
@@ -2469,7 +2469,7 @@ export class PyOidcAuthClient {
   /**
    * One structured startup report instead of mysterious 401s an hour later.
    * Non-fatal by design: topology-blind means report, don't refuse. Only
-   * checks with severity "error" (the default) can fail the report — a
+   * checks with severity "error" (the default) can fail the report - a
    * passthrough-mode server missing broker JWKS is information, not a fault.
    */
   async diagnose(): Promise<DiagnoseReport> {
@@ -2497,7 +2497,7 @@ export class PyOidcAuthClient {
         ok: res.ok,
         // Absence means passthrough mode, which is a legitimate deployment.
         severity: "warn",
-        detail: `GET /.well-known/jwks.json → ${res.status}`,
+        detail: `GET /.well-known/jwks.json -> ${res.status}`,
         hint: res.ok
           ? undefined
           : "Server may run passthrough mode (no broker JWKS) or authBaseUrl is wrong.",
@@ -2530,7 +2530,7 @@ export class PyOidcAuthClient {
     // do anything at all. A diagnostic must not change authentication state.
     //
     // Precisely: diagnose() performs no CREDENTIAL-STORAGE and no
-    // TOKEN-MINTING I/O. It is not I/O-free — it makes one unauthenticated
+    // TOKEN-MINTING I/O. It is not I/O-free - it makes one unauthenticated
     // GET to /.well-known/jwks.json (see the broker-jwks check above), which
     // carries no credential and changes no state. Use probeConnectivity() for
     // the explicit credentialed check.
@@ -2643,13 +2643,13 @@ export class PyOidcAuthClient {
       return {
         name: "connectivity",
         ok: reachable,
-        detail: `healthUrl → ${res.status}${res.status === 401 ? " (reachable; backend session absent)" : ""}`,
+        detail: `healthUrl -> ${res.status}${res.status === 401 ? " (reachable; backend session absent)" : ""}`,
       };
     } catch {
       return {
         name: "connectivity",
         ok: false,
-        detail: "healthUrl → network error",
+        detail: "healthUrl -> network error",
         hint: "No backend answered this credentialed probe.",
       };
     } finally {
@@ -2719,7 +2719,7 @@ export class PyOidcAuthClient {
       }
       if (s.tokenEndpoint) {
         // Deliberately NOT probed: a request to the token endpoint mints a
-        // credential, and diagnose() would then throw it away — burning a
+        // credential, and diagnose() would then throw it away - burning a
         // rotation and writing a live token into logs for nothing.
         return {
           name: "storage",
@@ -2744,7 +2744,7 @@ export class PyOidcAuthClient {
     return {
       name: "storage",
       ok: true,
-      detail: "custom storage — protections cannot be verified by the library",
+      detail: "custom storage - protections cannot be verified by the library",
     };
   }
 
@@ -2754,7 +2754,7 @@ export class PyOidcAuthClient {
 
   /**
    * Storage read that honours the degraded memory mirror. When a rotation
-   * could not be persisted, the mirror holds the ONLY live credential — the
+   * could not be persisted, the mirror holds the ONLY live credential - the
    * value still sitting in storage was invalidated server-side.
    */
   private async loadToken(): Promise<StoredToken | null> {
@@ -2873,7 +2873,7 @@ export class PyOidcAuthClient {
         `${what} is not available while this client is fail-closed: a ` +
           "session-ending operation is still running, or one did not confirm " +
           "that the credential was invalidated. A login started now would be " +
-          "refused at the callback. Call logout() — it retries the outstanding " +
+          "refused at the callback. Call logout() - it retries the outstanding " +
           "invalidations and releases the state when they succeed.",
       );
     }
@@ -3135,7 +3135,7 @@ export class PyOidcAuthClient {
    * A new session has been established here, so every peer operation this tab
    * has finished tracking belongs to a session that is over. Their terminal
    * messages must no longer clear storage, terminate the gate or release a
-   * block — all three would tear down the session that replaced them.
+   * block - all three would tear down the session that replaced them.
    *
    * Every tracked operation is retired individually: with a single slot, two
    * overlapping `session-cleared` messages overwrite each other, only the last
@@ -3160,7 +3160,7 @@ export class PyOidcAuthClient {
    * Bounded by MESSAGE LIFETIME, not by count.
    *
    * A fixed-size FIFO drops the oldest entry as soon as a seventeenth arrives
-   * — and a hostile same-origin script can post seventeen `session-cleared`
+   * - and a hostile same-origin script can post seventeen `session-cleared`
    * messages in a millisecond, evicting the one id that still matters. The
    * cross-tab layer already refuses messages older than its freshness bound,
    * so an id older than that bound can never be quoted at us again and is the
@@ -3178,7 +3178,7 @@ export class PyOidcAuthClient {
   /**
    * Identity of a peer lifecycle operation.
    *
-   * `(tabId, operationId)` — not the id alone. Ids are 64 bits of randomness
+   * `(tabId, operationId)` - not the id alone. Ids are 64 bits of randomness
    * from another context; nothing stops two tabs (or one hostile script) from
    * presenting the same one, and collapsing them would let one operation
    * release another's block.
@@ -3198,23 +3198,23 @@ export class PyOidcAuthClient {
    * `sessionVersion` fingerprints an ACCESS TOKEN. Whether that identifies a
    * SESSION depends entirely on the storage topology:
    *
-   *  - **shared-credential** — cookie or a persistent custom storage every tab
+   *  - **shared-credential** - cookie or a persistent custom storage every tab
    *    reads. One credential, one session: an exact recomputed fingerprint IS
    *    the identity, and a mismatch really does mean "not about us".
-   *  - **managed-bearer** — one backend session mints a different short-lived
+   *  - **managed-bearer** - one backend session mints a different short-lived
    *    bearer per tab. Two tabs of the same session hold different
    *    fingerprints by design, so a mismatch is not evidence of anything and
    *    must never reject a same-channel logout.
-   *  - **per-tab** — MemoryStorage: every tab owns its token outright. Same
+   *  - **per-tab** - MemoryStorage: every tab owns its token outright. Same
    *    conclusion, more obviously.
-   *  - **ambient** — BFF: there is no browser credential at all, so there is
+   *  - **ambient** - BFF: there is no browser credential at all, so there is
    *    nothing to fingerprint.
    *
    * Where the fingerprint is not an identity, the only fact this client can
    * still trust is TIME: an operation that began before this tab's session was
    * established cannot be about it. That preserves the one protection that
-   * matters — a demonstrably newer callback session is not destroyed by a
-   * stale message — while letting a legitimate peer logout through.
+   * matters - a demonstrably newer callback session is not destroyed by a
+   * stale message - while letting a legitimate peer logout through.
    *
    * Deliberately NOT used to decide this: a peer-supplied fingerprint as a new
    * identity (it is unverified), any unsigned JWT claim such as `sid` (this
@@ -3254,7 +3254,7 @@ export class PyOidcAuthClient {
    * MUTATION ANCHOR: protection for a demonstrably newer session.
    *
    * `sessionEstablishedAt === 0` means this tab has no TRUSTED establishment
-   * epoch — it never completed a callback here. That is the normal state for
+   * epoch - it never completed a callback here. That is the normal state for
    * managed-bearer and BFF tabs, which have no browser-side login at all, and
    * for any tab whose credential simply existed when it started. Nothing can
    * be claimed to be "newer" then, so the message is honoured: conservatively
@@ -3275,7 +3275,7 @@ export class PyOidcAuthClient {
    * MUTATION ANCHOR: managed-cache invalidation on a peer lifecycle message.
    * `clear()` is a storage-contract method; a server-managed storage ALSO
    * holds an in-memory cache and an in-flight pull, and a peer's logout has to
-   * reach both — otherwise `peek()` keeps serving the bearer this tab minted
+   * reach both - otherwise `peek()` keeps serving the bearer this tab minted
    * for a session that is over, and a pull already in flight repopulates it.
    * `ServerManagedStorage.clear()` does this itself; calling `invalidateCache()`
    * explicitly means a custom server-managed-like storage cannot satisfy the
@@ -3304,7 +3304,7 @@ export class PyOidcAuthClient {
     // A DEDICATED event, never `storage-write-failed`: that one means "a
     // freshly rotated token could not be persisted and the session is running
     // from a memory mirror", which would tell operators the opposite of the
-    // real state here — a clear failed and the client is fail-closed.
+    // real state here - a clear failed and the client is fail-closed.
     this.emit({
       type: "session-clear-failed",
       scope,
@@ -3323,7 +3323,7 @@ export class PyOidcAuthClient {
       if (this.peerOperations.has(key)) return;
       // The SAME targeting decision as the terminal message. Checking only for
       // an explicit mismatch would let a versionless clear through on the
-      // grounds that clearing is fail-closed — but a message from an operation
+      // grounds that clearing is fail-closed - but a message from an operation
       // that demonstrably began before this session existed is not about this
       // session, and honouring it destroys a credential the user just obtained.
       // "Fail closed" is not a licence to do that.
@@ -3356,7 +3356,7 @@ export class PyOidcAuthClient {
           op.settled = true;
           if (epoch !== this.peerEpoch) return; // retired; not ours to block
           // Storage would not clear: the old token may still be readable, so
-          // STAY blocked — and stay blocked THROUGH a later login.
+          // STAY blocked - and stay blocked THROUGH a later login.
           this.gate.retain(owned);
           this.recoveryBlocks.add(owned);
           this.emitPeerClearFailure("peer");
@@ -3372,7 +3372,7 @@ export class PyOidcAuthClient {
       if (this.isRetiredPeerOperation(key)) return;
       const tracked = this.peerOperations.get(key);
       // A terminal logout may arrive without the earlier session-cleared
-      // (message loss, a tab that started late) — but then it has to prove it
+      // (message loss, a tab that started late) - but then it has to prove it
       // is about the session we are actually in.
       if (!tracked && !this.messageTargetsThisSession(message)) return;
       const held = tracked?.block ?? this.gate.block();
@@ -3423,18 +3423,18 @@ export class PyOidcAuthClient {
         return;
       }
       if (!this.storage.persistent) return;
-      // The lease is captured HERE, before the read — this is a continuation
+      // The lease is captured HERE, before the read - this is a continuation
       // of the session that was current when the message arrived, and
       // `storage.load()` is third-party code that can take arbitrarily long.
       const lease = this.gate.lease();
       // Read locally and emit ONLY when the fingerprint we compute matches the
-      // one announced — a peer cannot make us report a token we did not see.
+      // one announced - a peer cannot make us report a token we did not see.
       void Promise.resolve()
         .then(() => this.storage.load())
         .then((raw) => {
           // Without a lease check here, a read that resolves after a logout and
           // a replacement login would announce the OLD session's token into the
-          // new one — and, because the adoption below rebinds this tab, would
+          // new one - and, because the adoption below rebinds this tab, would
           // corrupt the new session's binding with it.
           // MUTATION ANCHOR: post-await lifecycle validation in token-updated.
           if (!lease.valid()) return;
@@ -3449,7 +3449,7 @@ export class PyOidcAuthClient {
           // Verified and still current: this IS the session now. Emitting the
           // event while keeping the old fingerprint would make the peer's next
           // legitimate lifecycle message for this session look like a mismatch
-          // and be refused — leaving this tab authenticated.
+          // and be refused - leaving this tab authenticated.
           // MUTATION ANCHOR: adoption of a verified token update.
           this.adoptObservedSession(token);
           this.emit({ type: "token-refreshed", token: summary, source: "tab" });
@@ -3478,7 +3478,7 @@ export class PyOidcAuthClient {
    * Pin the redirect policy of a credentialed request.
    *
    * Per the Fetch standard a cross-origin redirect strips `Authorization`, but
-   * NOT custom headers such as an app's CSRF header — and it strips nothing on
+   * NOT custom headers such as an app's CSRF header - and it strips nothing on
    * a same-origin redirect chain that ends elsewhere. Following a redirect this
    * library has not validated risks replaying credentials at a destination that
    * was never allow-listed.

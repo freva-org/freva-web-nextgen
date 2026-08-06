@@ -10,7 +10,7 @@ npm run browsers:install
 npm run build
 npm run test:browser
 
-# Full release evidence — Linux CI/Docker only
+# Full release evidence - Linux CI/Docker only
 npm run test:browser:strict
 ```
 
@@ -26,7 +26,7 @@ They import `../dist`, so `npm run build` has to come first.
 | Linux / other | all three          | all three         | all three, no skips         |
 
 **WebKit is omitted from local macOS runs** because this project has observed
-Playwright/macOS compatibility failures launching it — an engine that will not
+Playwright/macOS compatibility failures launching it - an engine that will not
 start produces no signal. That is this project's choice for its own local
 workflow, not a general claim about Playwright on macOS. The run prints one
 line saying so. The full three-engine matrix is release evidence and runs on
@@ -39,7 +39,7 @@ docker run --rm -it --init --ipc=host \
     bash -lc 'npm ci && npm run build && npm run test:browser:strict'
 ```
 
-`npm run build` is not optional — the suites import `../dist`, so a clean
+`npm run build` is not optional - the suites import `../dist`, so a clean
 checkout without it fails with "dist/ not found" before any browser opens.
 `--init` reaps the processes browsers leave behind, `--ipc=host` gives Chromium
 a large enough `/dev/shm`, and the anonymous volumes on `node_modules` and
@@ -51,7 +51,7 @@ supported by the pinned Vitest version.
 
 On macOS the strict gate **fails immediately** with a message pointing at Linux
 CI and the Docker one-liner. It does not launch the broken WebKit binary, and
-it never reports a two-engine pass — "the strict gate passed" has to mean the
+it never reports a two-engine pass - "the strict gate passed" has to mean the
 same thing on every machine.
 
 `npm run browsers:install` only ever ADDS to Playwright's shared cache in
@@ -62,7 +62,7 @@ not a reason to delete someone else's copy.
 ### `BROWSERS` override
 
 `BROWSERS=chromium,firefox` narrows both the install list and the test run, on
-any platform, for debugging — including `BROWSERS=webkit` on macOS if you want
+any platform, for debugging - including `BROWSERS=webkit` on macOS if you want
 to try it. An unknown engine name is an error rather than a silently empty run.
 
 In **strict** mode the override is ignored, with a printed note: the release
@@ -83,7 +83,7 @@ survives.
 
 Some CI sandboxes ship a Playwright browser at a fixed path and block the
 Playwright CDN, so `npm run browsers:install` cannot run. Point the harness at
-the existing binary instead — this is an escape hatch for the _location_ of a
+the existing binary instead - this is an escape hatch for the _location_ of a
 browser, never a way to skip one:
 
 ```bash

@@ -1,8 +1,8 @@
 /**
  * Runtime validation for everything security-relevant.
  *
- * TypeScript types are erased at runtime. A plain-JavaScript caller — or a
- * config assembled from JSON, env vars or a template — can hand us
+ * TypeScript types are erased at runtime. A plain-JavaScript caller - or a
+ * config assembled from JSON, env vars or a template - can hand us
  * `allowInsecureTransport: "false"`, and a truthy string then *enables* the
  * exposure the flag names. Every security-relevant value is therefore checked
  * for its real runtime type, not its declared one.

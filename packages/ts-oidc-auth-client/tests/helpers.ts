@@ -67,8 +67,8 @@ export function stored(jwt: string, expiresAt: number): StoredToken {
 /**
  * Normalize a fetch call into a url + init-like view.
  *
- * The client passes an owned `Request` to fetchImpl — that is what preserves
- * method, headers, body and signal — so test doubles must read from the
+ * The client passes an owned `Request` to fetchImpl - that is what preserves
+ * method, headers, body and signal - so test doubles must read from the
  * Request rather than from a separate `init` argument.
  */
 export function fetchView(

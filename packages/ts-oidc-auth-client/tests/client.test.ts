@@ -215,7 +215,7 @@ describe("constructor", () => {
     expect(() => base({ redirectUri: "not-a-url" })).toThrow(/redirectUri/);
     expect(() => base({ refreshTimeoutMs: 0 })).toThrow(/refreshTimeoutMs/);
     expect(() => base({ refreshBufferSeconds: Number.NaN })).toThrow(/refreshBufferSeconds/);
-    // A4: syntactic "relative" checks are not enough — the browser normalizes
+    // A4: syntactic "relative" checks are not enough - the browser normalizes
     // the backslash and this resolves to another origin entirely.
     expect(() => base({ authBaseUrl: "/\\attacker.example/auth" })).toThrow(/backslash/i);
     expect(() => base({ authBaseUrl: "//attacker.example/auth" })).toThrow(/protocol-relative/i);
@@ -1158,7 +1158,7 @@ describe("cross-tab", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Security tranche — one describe per invariant
+// Security tranche - one describe per invariant
 // ---------------------------------------------------------------------------
 
 describe("resource-origin policy (credential escape)", () => {

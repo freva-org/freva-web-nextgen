@@ -5,11 +5,11 @@ import type { CrossTabMessage, SessionEndReason } from "./types.js";
 /**
  * Cross-tab coordination. Two independent layers:
  *
- * 1. withCrossTabLock — serializes refresh across tabs via the Web Locks API
+ * 1. withCrossTabLock - serializes refresh across tabs via the Web Locks API
  *    when present; otherwise an in-page mutex (still gives per-tab
  *    single-flight; the message layer covers the rest).
  *
- * 2. CrossTab — BroadcastChannel with a localStorage fallback. The fallback
+ * 2. CrossTab - BroadcastChannel with a localStorage fallback. The fallback
  *    key carries METADATA ONLY ({type, sessionVersion, exp, ...}); a JWT in
  *    localStorage is a bug by definition, in every storage mode.
  *
@@ -47,8 +47,8 @@ export async function withCrossTabLock<T>(
    *
    * Callers scope this by session generation. Serializing a rotation for a
    * session that no longer exists against one for the current session protects
-   * nothing — the dead operation cannot store or return anything, its lease
-   * having been invalidated — while making the live session wait on a request
+   * nothing - the dead operation cannot store or return anything, its lease
+   * having been invalidated - while making the live session wait on a request
    * that may never return. The cross-tab lock NAME is deliberately not scoped:
    * that lock exists so two tabs do not rotate at once, and generations are
    * per-tab counters that would silently stop tabs from coordinating.
@@ -131,7 +131,7 @@ export function parseCrossTabMessage(input: unknown, now: number): CrossTabMessa
 
   if (m.type === "logout" || m.type === "session-cleared") {
     // Closed union only. Free-form text from another context must never reach
-    // an AuthEvent — it lands in console output and telemetry verbatim, and a
+    // an AuthEvent - it lands in console output and telemetry verbatim, and a
     // hostile same-origin script controls every byte of it.
     if (!isSessionEndReason(m.reason)) return null;
     // Bounded opaque id: hex only, short, and MANDATORY. A lifecycle message
@@ -217,7 +217,7 @@ export function createCrossTab(
         // TRUE fallback, not a second active path: in browsers with both
         // mechanisms a dual send would deliver every logout/token-updated
         // twice. Mixed-capability tabs cannot exist within one browser, so
-        // exclusive-sender is safe. Storage events fire in OTHER tabs only —
+        // exclusive-sender is safe. Storage events fire in OTHER tabs only -
         // exactly what we want; the nonce makes identical payloads distinct.
         try {
           localStorage.setItem(storageKey, JSON.stringify({ ...full, nonce: Math.random() }));

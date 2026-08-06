@@ -1,4 +1,4 @@
-# py-oidc-auth TypeScript client — consolidated specification (v1)
+# py-oidc-auth TypeScript client - consolidated specification (v1)
 
 Status: final after four external review rounds (rounds 3–4 reviewed the v0.1/v0.2
 implementations; v1.0.0-rc.2 incorporates all outcomes incl. the final-pass scrub fix). This document supersedes the earlier
@@ -12,7 +12,7 @@ login redirect, callback exchange, local expiry tracking, single-flight refresh 
 awareness, request decoration, logout, userinfo, and startup diagnostics. Where the credential
 _rests_ between requests is delegated to a pluggable `TokenStorage`.
 
-Out of scope for v1 (decided, ranked): device flow (v1.x, never CookieStorage — 30-day JWTs),
+Out of scope for v1 (decided, ranked): device flow (v1.x, never CookieStorage - 30-day JWTs),
 RFC 8693 token-exchange API (after server `refreshable` semantics), SPA-held PKCE (needs
 server `code_challenge` passthrough), DPoP, memory-mode cross-tab token sharing,
 `SameSite=None` cross-origin httpOnly refresh, cookie `Domain` escape hatches.
@@ -38,19 +38,19 @@ Token response (`py_oidc_auth.schema.Token`): `access_token`, `token_type`, `exp
 `refresh_expires_in` seconds, and a future `refreshable: false` field.
 
 **Security consequence (load-bearing):** because refresh accepts expired JWTs, the stored JWT
-is a refresh credential for as long as the server session + IDP refresh token live — not a
+is a refresh credential for as long as the server session + IDP refresh token live - not a
 1-hour access token. Every storage decision below follows from this.
 
 ## 3. Architecture principle: topology-blind library
 
 The library never knows or guesses the deployment topology. All storage modes are always
 constructible and active, and `storage` is a **required** constructor parameter with no
-default (an explicit deployment decision). Since rc.3 one mode — `CookieStorage` — is
+default (an explicit deployment decision). Since rc.3 one mode - `CookieStorage` - is
 exported from a separate `/unsafe-compat` entry point rather than the main barrel; it is
 not pruned, feature-detected or disabled anywhere, it simply cannot be reached by an
 import that does not say what it is (§11). Picking a mode whose environmental counterpart is
-absent is a configuration error the library must surface legibly — via `diagnose()` and
-structured `refresh-failed` / `security-warning` events — never a pruned menu.
+absent is a configuration error the library must surface legibly - via `diagnose()` and
+structured `refresh-failed` / `security-warning` events - never a pruned menu.
 
 ### Readiness matrix (docs, not code)
 
@@ -61,7 +61,7 @@ structured `refresh-failed` / `security-warning` events — never a pruned menu.
 | freva-web (Django)           | ready (compat) | ready  | ready today (Django endpoint / `healthUrl`)                         | possible; wrong for data-heavy paths |
 
 Recommended ranking in docs: ServerManaged/BFF > Memory > Cookie (compatibility, elevated XSS
-risk). MemoryStorage relocates persistence to the IDP's own httpOnly SSO cookie — reopen is a
+risk). MemoryStorage relocates persistence to the IDP's own httpOnly SSO cookie - reopen is a
 top-level redirect bounce (visible flash, no password while IDP session lives), per tab.
 
 ## 4. TokenStorage interface (final, post-review-2)
@@ -84,11 +84,11 @@ storage gets a generic warning.
 
 Built-ins:
 
-- **MemoryStorage** — per-tab closure variable; `persistent: false`. No token broadcasting.
-- **CookieStorage** — value is the **raw JWT** (interoperable with freva-web's
+- **MemoryStorage** - per-tab closure variable; `persistent: false`. No token broadcasting.
+- **CookieStorage** - value is the **raw JWT** (interoperable with freva-web's
   `getTokenFromCookie`). Host-only (no `Domain`, by construction), `Path=/`,
   `SameSite=Strict` default, `Secure` iff https, `Max-Age` aligned to JWT `exp`
-  (`maxAgeFromTokenExp`, default true — bounds the persisted credential to the access
+  (`maxAgeFromTokenExp`, default true - bounds the persisted credential to the access
   lifetime; a closed browser past `exp` re-enters via SSO). `compatibilityMode:
 "freva-web-single-token"` defaults the name to `freva_auth_token`. Broker-mode oriented;
   passthrough deployments get a size/semantics warning. Only the raw JWT survives a
@@ -97,16 +97,16 @@ false`) is not preserved. `save()` validates the value against the RFC 6265
   cookie-octet set and throws rather than silently corrupting an opaque token.
   `probe()` performs a write/read/delete round-trip with the ACTUAL configured
   attributes, and is what `diagnose()` calls.
-- **ServerManagedStorage** — two explicit transports (fixes the round-2 inconsistency):
+- **ServerManagedStorage** - two explicit transports (fixes the round-2 inconsistency):
   `{ transport: "bearer-from-endpoint", tokenEndpoint? | tokenProvider?, healthUrl? }` caches
   a short-lived access token in memory, fetched with `credentials: "include"`; the data path
-  stays browser→API with Bearer. `{ transport: "bff", healthUrl? }` — `auth.fetch` attaches
+  stays browser->API with Bearer. `{ transport: "bff", healthUrl? }` - `auth.fetch` attaches
   **no** Bearer, adds `credentials: "include"`, performs no client-side refresh.
 
 The API call always carries an explicit `Authorization` header (except `bff`),
 which keeps a CSRF-resistant explicit-Bearer surface. CORS nuance: `Authorization`
 triggers preflight on cross-origin data calls (which the API must allow); only the
-_auth_ endpoints — form-encoded `POST /token`, `GET /callback` — stay
+_auth_ endpoints - form-encoded `POST /token`, `GET /callback` - stay
 preflight-free as simple requests.
 
 **Correction (rc.3).** Earlier revisions of this section claimed "storage is
@@ -116,34 +116,34 @@ placement. Per RFC 6265 §5.4 the user agent attaches a matching cookie to every
 request to the host regardless of what this library does with headers. With the
 default `Path=/`, a same-origin API call carries the refresh-capable JWT in a
 `Cookie` header as well as the `Authorization` header, and so does every other
-route on the origin, plus any proxy, middleware or CDN in front of it — into
+route on the origin, plus any proxy, middleware or CDN in front of it - into
 their access logs. The claim only ever held when the API was cross-origin.
 Consequence: CookieStorage moved to the `/unsafe-compat` entry point (see §11).
 
 ## 5. Lifecycle algorithms
 
-**Login**: `loginUrl()` → `{base}/login?redirect_uri=...` (+ `prompt`, `scope`,
+**Login**: `loginUrl()` -> `{base}/login?redirect_uri=...` (+ `prompt`, `scope`,
 `offline_access` when given; unknown params are ignored by FastAPI). `login({ next })` stashes
 the return path in `sessionStorage` (non-secret) before `location.assign`.
 Return paths are validated to same-origin relative form (no absolute URLs,
-`//host`, or `/\` values) at write AND at read — a tampered slot yields null,
+`//host`, or `/\` values) at write AND at read - a tampered slot yields null,
 never a redirect target.
 
-**Callback**: `isCallbackUrl()` ⇔ (`code` & `state`) **or** `error` present — error
+**Callback**: `isCallbackUrl()` ⇔ (`code` & `state`) **or** `error` present - error
 redirects are callback URLs too, so the canonical `if (isCallbackUrl())
 handleCallback()` pattern routes them into a structured `AuthError` carrying
 `error_description`. `handleCallback()` extracts the params and **scrubs the address
-bar immediately** — before any network or storage step can fail — removing only
+bar immediately** - before any network or storage step can fail - removing only
 `code`, `state`, `session_state`, `iss`, `error`, `error_description` via
 `history.replaceState` while preserving route, other params and hash. Scrubbing
-applies whenever the handled URL IS the current location — implicit or explicitly
+applies whenever the handled URL IS the current location - implicit or explicitly
 passed (router integrations commonly hand over `location.href`); foreign URLs stay
 non-scrubbing. Rationale:
 `state` carries the PKCE verifier on current servers, so a callback URL left in
 history after a failed exchange is the worse outcome (the authorization code is
-single-use at the IDP anyway — refresh-to-retry was largely illusory). Only then
+single-use at the IDP anyway - refresh-to-retry was largely illusory). Only then
 does it perform `GET {base}/callback?code&state` as an XHR (no app backend
-required — this is the pure-SPA path), normalize and save. Never log callback URLs.
+required - this is the pure-SPA path), normalize and save. Never log callback URLs.
 
 **userinfo()**: defaults to `{base}/userinfo` with Bearer; in bff transport this
 default is guaranteed-broken (bff attaches no Bearer), so `config.userinfoEndpoint`
@@ -155,16 +155,16 @@ is required there and points at the backend's session-userinfo route.
 2. Cross-tab lock: `navigator.locks` when available, else an in-page mutex (the
    BroadcastChannel/version-key layer covers the rest).
 3. Under the lock, **re-load from storage first**: if another tab already rotated and the
-   stored token differs and is not expiring → return it, no network. `refreshable:
+   stored token differs and is not expiring -> return it, no network. `refreshable:
 false` is honored on the re-loaded token as well (best-effort under CookieStorage,
    which round-trips only the raw JWT and cannot preserve token-response metadata).
 4. `POST {base}/token` with `refresh-token=<stored JWT>` (timeout via AbortController,
    `refreshTimeoutMs`).
 5. Classification (only the first kind clears storage):
-   `401 → terminal_invalid_session` (clear, emit `session-expired`, broadcast `logout` iff
-   storage is persistent/shared — memory-mode tabs own independent sessions);
-   `429/5xx → transient_server`; network/abort → `transient_network`;
-   `400 → cors_or_config`; else `unknown`. Never retry a terminal failure — the old `jti` is
+   `401 -> terminal_invalid_session` (clear, emit `session-expired`, broadcast `logout` iff
+   storage is persistent/shared - memory-mode tabs own independent sessions);
+   `429/5xx -> transient_server`; network/abort -> `transient_network`;
+   `400 -> cors_or_config`; else `unknown`. Never retry a terminal failure - the old `jti` is
    gone forever.
 6. Success: normalize, `storage.save`, broadcast `token-updated` (sessionVersion + exp,
    **never the token**), emit `token-refreshed`.
@@ -173,8 +173,8 @@ Proactive trigger: `exp − now ≤ refreshBufferSeconds` (default 120) with
 `clockSkewSeconds` (default 30) folded into expiry checks. On _transient_ failure with a
 not-yet-expired token, proceed with the current token instead of failing the request.
 
-**fetch wrapper**: load → (refresh if expiring) → attach Bearer (respect caller-set
-`Authorization`) → send. Retry on 401 **at most once** and only if the token is
+**fetch wrapper**: load -> (refresh if expiring) -> attach Bearer (respect caller-set
+`Authorization`) -> send. Retry on 401 **at most once** and only if the token is
 expired/near-expiry locally **or** `WWW-Authenticate` contains `error="invalid_token"`;
 permission/audience 401s pass through untouched. Server `WWW-Authenticate` emission is a
 ship-when-convenient server PR; the expiry-gated heuristic is the accepted v1 behavior. Do
@@ -186,14 +186,14 @@ not depend on `detail` strings.
 ## 6. Cross-tab protocol
 
 Channel name: `poa:<fnv1a(origin | authBaseUrl | channelNamespace | storage.kind/cookieName)>`
-— namespacing prevents cross-talk between two apps (or admin vs public UI,
-`channelNamespace`) on one origin. Layers: BroadcastChannel → `localStorage` **version key**
-fallback (`{type, sessionVersion, exp, at, nonce}` — metadata only). The fallback is
+- namespacing prevents cross-talk between two apps (or admin vs public UI,
+`channelNamespace`) on one origin. Layers: BroadcastChannel -> `localStorage` **version key**
+fallback (`{type, sessionVersion, exp, at, nonce}` - metadata only). The fallback is
 exclusive, not additive: localStorage is written only when BroadcastChannel is
 unavailable, so peers never receive the same logout/token-updated twice
 (mixed-capability tabs cannot exist within one browser). **A JWT in localStorage
 is a bug by definition, in every mode.** Messages v1: `token-updated`, `logout`. `sessionVersion` is a 64-bit, dot-free
-fingerprint (two FNV-1a passes) — not a secret, but wide enough that the "did
+fingerprint (two FNV-1a passes) - not a secret, but wide enough that the "did
 another tab rotate?" comparison does not produce false-same-token cases. Receivers:
 persistent storage reloads and emits `token-refreshed {source: "tab"}`; memory ignores
 `token-updated`; everyone honors `logout` locally without re-broadcasting.
@@ -203,17 +203,17 @@ persistent storage reloads and emits `token-refreshed {source: "tab"}`; memory i
 One structured report at startup instead of mysterious 401s an hour in:
 `{ storageKind, checks: [{name, ok, detail, hint?}], ok }`, also emitted as a
 `diagnose` event. Checks: config sanity; broker JWKS reachability
-(`GET {base}/.well-known/jwks.json` — also detects CORS/base-URL mistakes; non-OK ≠
+(`GET {base}/.well-known/jwks.json` - also detects CORS/base-URL mistakes; non-OK ≠
 fatal, hint "passthrough mode?"); storage probe (cookie: write/read/delete
 round-trip **with the actual configured attributes** via `CookieStorage.probe()`,
 so `Secure` on an http origin or a non-covering `Path` fails loudly; memory:
 trivial; server-managed: ping `tokenEndpoint`/`healthUrl`, where a 401 counts as
 _reachable_; a `tokenProvider`-backed setup is reported ok with a not-probeable
-note). Non-fatal by design — topology-blind means report, don't refuse.
+note). Non-fatal by design - topology-blind means report, don't refuse.
 
 ## 8. Server-side roadmap (py-oidc-auth PRs; client must not require 2–4)
 
-1. **Refresh grace window** — mandatory before direct browser refresh whenever more
+1. **Refresh grace window** - mandatory before direct browser refresh whenever more
    than one context can hold the same refresh credential **and** the deployment
    cannot rely on `navigator.locks` to serialize them. That covers freva-web
    Phase 1 (two refresh authorities: Django middleware + the library) and pure-SPA
@@ -222,18 +222,18 @@ note). Non-fatal by design — topology-blind means report, don't refuse.
    prevent a concurrent rotation, so the losing tab takes a terminal 401).
    MemoryStorage deployments are per-tab single-authority and do not gate on it.
    Semantics: keyed by old `jti`; return the **identical** cached outcome (including
-   failures — never mint twice); TTL 5–10 s; small read limit; log repeated hits; no
+   failures - never mint twice); TTL 5–10 s; small read limit; log repeated hits; no
    IP/UA binding.
-2. **`refreshable: false` claim**, checked **before** session deletion — also fixes the
+2. **`refreshable: false` claim**, checked **before** session deletion - also fixes the
    latent destructive path where refreshing an exchange-minted JWT (empty stored refresh
    token) deletes the session then fails. Ship alongside #1 (same code area); not a client
    gate while v1 has no exchange API.
-3. **`POST /revoke`** — signature-verified, `exp`-ignored, delete by `jti`; optional IDP
+3. **`POST /revoke`** - signature-verified, `exp`-ignored, delete by `jti`; optional IDP
    revocation. Logout completeness, not correctness.
-4. **`code_challenge` passthrough on `/login`** — enables SPA-held PKCE (v2); today the
+4. **`code_challenge` passthrough on `/login`** - enables SPA-held PKCE (v2); today the
    verifier rides inside `state` through the IDP redirect, mitigated by the confidential
    client secret.
-5. Split access/refresh httpOnly mode — the same-site endgame; larger than this library.
+5. Split access/refresh httpOnly mode - the same-site endgame; larger than this library.
 
 ## 9. freva-web migration gates (unchanged from round 2)
 
@@ -256,8 +256,8 @@ runtime deps; SSR-safe imports (feature-detect `window`/`document`/`BroadcastCha
 ## 11. rc.3 security tranche (post external review)
 
 Two independent reviews (one recorded in this repo's history, one external) were
-consolidated into a single pass. This section records what changed, and — more
-importantly — which earlier "locked decisions" were overridden and why.
+consolidated into a single pass. This section records what changed, and - more
+importantly - which earlier "locked decisions" were overridden and why.
 
 ### Decisions overridden
 
@@ -266,7 +266,7 @@ importantly — which earlier "locked decisions" were overridden and why.
    The original decision rested on the §4 claim corrected above; once it is
    accepted that the cookie rides every same-origin request, CookieStorage is a
    compatibility escape hatch rather than a peer of the other modes. It remains
-   fully supported and fully tested — only the import path signals what it is.
+   fully supported and fully tested - only the import path signals what it is.
 2. **"`auth.fetch` decorates whatever URL it is given."** Overridden. There is now
    a resource-origin allowlist (default: page origin + `authBaseUrl` origin) and
    `auth.fetch` throws `OriginNotAllowedError` for anything else. In broker mode
@@ -274,13 +274,13 @@ importantly — which earlier "locked decisions" were overridden and why.
    URL-injection bug into full session compromise.
 3. **Events carried the full `StoredToken` (plus `raw`).** Overridden. Events now
    carry a redacted `TokenSummary`; `StoredToken.raw` is gone. Anything that logs
-   events verbatim — Sentry breadcrumbs, redux devtools — used to log the
+   events verbatim - Sentry breadcrumbs, redux devtools - used to log the
    credential.
 
 ### What is NOT fixed here, and cannot be
 
-The external review's lead finding — "the access token is also the refresh
-credential" — is **correct and is not a client bug**. It is py-oidc-auth's broker
+The external review's lead finding - "the access token is also the refresh
+credential" - is **correct and is not a client bug**. It is py-oidc-auth's broker
 design, recorded in §2 as this document's load-bearing fact, and the fix is server
 roadmap item 5 (split access/refresh). Removing the `refreshToken ?? accessToken`
 fallback, as that review suggested, would simply break refresh, because the server
@@ -302,14 +302,14 @@ a login_, which is what the new transaction nonce does. Server roadmap item 4
 | Area               | Change                                                                                                                                                                                                                                                                             |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Resource origins   | `security.allowedResourceOrigins`; `auth.fetch`/`decorateRequest` throw `OriginNotAllowedError` off-allowlist. Plaintext http targets refused unless `security.allowInsecureTransport`.                                                                                            |
-| `decorateRequest`  | Signature is now `(input, init?, options?)` — the policy cannot be applied to a request whose destination the library never sees.                                                                                                                                                  |
+| `decorateRequest`  | Signature is now `(input, init?, options?)` - the policy cannot be applied to a request whose destination the library never sees.                                                                                                                                                  |
 | Rotation race      | A terminal 401 re-reads storage and clears **only** if `sessionVersion` still matches the rejected credential; otherwise it adopts the peer's live token. Previously the loser of a concurrent rotation erased the winner's session.                                               |
 | Failed persistence | `storage.save()` throwing after a successful rotation no longer discards the new credential silently. It is held in a per-page memory mirror, a `storage-write-failed` event fires (and `console.warn` if nothing is listening), `isStorageDegraded()` and `diagnose()` report it. |
 | Single-flight      | A forced refresh never joins a non-forced one in flight; it chains. The 401-retry path forces precisely because the server rejected a token that looks locally fine.                                                                                                               |
 | CookieStorage      | Moved to `/unsafe-compat`. 4096-byte size guard (browsers drop oversized cookies silently). `__Host-`/`__Secure-` prefix contracts enforced. Refuses non-loopback plaintext origins unless `allowInsecureTransport`. Cookie name/path validated.                                   |
 | bff                | A CSRF strategy is mandatory (`csrf: { headerName, token }`) or must be explicitly waived with `acknowledgeNoCsrf`. The header rides every credentialed call.                                                                                                                      |
 | Logout             | Optional `logoutEndpoint` (credentialed `POST`, CSRF header) runs **before** the IDP bounce; a failure is reported instead of redirecting as if it worked. `revoke` now defaults to true.                                                                                          |
-| Token retrieval    | `ServerManagedStorage` uses `cache: "no-store"`, `redirect: "error"`, an abort timeout, and optional `POST`. `diagnose()` never calls a token-minting endpoint — configure `healthUrl` for a side-effect-free probe.                                                               |
+| Token retrieval    | `ServerManagedStorage` uses `cache: "no-store"`, `redirect: "error"`, an abort timeout, and optional `POST`. `diagnose()` never calls a token-minting endpoint - configure `healthUrl` for a side-effect-free probe.                                                               |
 | Login CSRF         | `login()` records a one-time transaction nonce; `handleCallback()` requires and consumes it (`security.requireLoginTransaction`, default true, TTL 600 s).                                                                                                                         |
 | Events             | Redacted `TokenSummary`; `security-warning` replaced by `security-warning` with a machine-readable `code`; `StoredToken.raw` removed.                                                                                                                                              |
 | Cross-tab          | Inbound messages are schema-validated and freshness-bounded (±5 min); malformed or replayed messages are ignored.                                                                                                                                                                  |
@@ -325,7 +325,7 @@ message-strings rather than a structured error with `error`/`error_description`
 (which `prompt=none` needs); there is no `autoRefresh: false` switch to enforce the
 freva-web Phase 0 gate of "Django is the sole refresh authority"; `TokenStorage.subscribe`
 is still dead surface; `logout()` broadcasts to per-tab MemoryStorage sessions while the
-terminal-401 path deliberately does not (the two are inconsistent — pick one); and the
+terminal-401 path deliberately does not (the two are inconsistent - pick one); and the
 `Max-Age = exp` choice still logs a sleeping laptop out even though the JWT remains a
 valid refresh credential.
 
@@ -349,12 +349,12 @@ independently reproduced before being changed, and each has a regression test in
 
 **Correction to an rc.3 claim.** The login transaction marker was described as a
 login-CSRF defense. It proves only that _some_ login began in this browsing
-context — it is NOT state binding, because the server owns `state`. The wording
+context - it is NOT state binding, because the server owns `state`. The wording
 is corrected in `SecurityOptions.requireLoginTransaction`.
 
 **Cross-tab serialization.** `BroadcastChannel` and the `localStorage` fallback
-publish, they do not serialize. Only `navigator.locks` — or server-side
-idempotency — actually prevents two tabs rotating at once.
+publish, they do not serialize. Only `navigator.locks` - or server-side
+idempotency - actually prevents two tabs rotating at once.
 
 ## 13. rc.5 security-correctness pass
 
@@ -406,7 +406,7 @@ acknowledgement records that someone accepted a risk; it never marks the
 deployment healthy.
 
 **Corrected claims.** Cross-tab refresh is _published_ by BroadcastChannel /
-localStorage, not serialized — only `navigator.locks` or server-side
+localStorage, not serialized - only `navigator.locks` or server-side
 idempotency serializes. CookieStorage is legacy compatibility storage, never
 "ready". The login transaction marker proves this browser tab initiated a
 login; it is not server-side state binding.
@@ -421,7 +421,7 @@ fixed fail-closed, then inverted into a permanent regression test in
    endpoint, but `diagnose()` then called `loadToken()`, which contacted it
    anyway. Diagnosis is now strictly passive: it reads only the degraded
    mirror, `ServerManagedStorage.peek()` (cache only, no I/O), and passive
-   acknowledgement metadata. It never calls `storage.load()` — which for a
+   acknowledgement metadata. It never calls `storage.load()` - which for a
    custom storage could do anything at all.
 2. **Cross-tab logout completion was premature.** The initiator broadcast
    `logout` before revocation finished, so a peer announced success even when
@@ -439,7 +439,7 @@ fixed fail-closed, then inverted into a permanent regression test in
    `acknowledgeUnsupportedRevocation`, `acknowledgeNoRevocation`,
    `acknowledgeBrokerSingleTokenContract`, `acknowledgeNoCsrf`,
    `allowRefreshCapableToken`. `warnOnBrowserReadableRefresh: false` mutes the
-   storage-kind warning only — it cannot mute an acknowledgement.
+   storage-kind warning only - it cannot mute an acknowledgement.
 5. **Access-only tokens were treated as refresh credentials.** The
    `refreshToken ?? accessToken` fallback is gone. Refresh requires a real
    `refreshToken`, or a token carrying `legacySingleTokenContract`, which only
@@ -467,13 +467,13 @@ Ten residual findings from independent rc.6 review, each reproduced, fixed
 fail-closed, and inverted into `tests/issuer-policy-and-opt-out-isolation.test.ts`.
 
 1. **Cross-tab reasons became event content.** rc.6 introduced a free-form
-   `session-cleared.reason` that was copied straight into an `AuthEvent` — a
+   `session-cleared.reason` that was copied straight into an `AuthEvent` - a
    redaction regression against §12. Reasons are now a closed union
    (`SessionEndReason`), validated on arrival; unknown, oversized, non-string
    or absent values are dropped, and the event carries `reasonCode`.
 2. **Routing and validation are now separate.** `isCallbackUrl()` returns true
    for any structurally registered callback carrying OIDC response parameters,
-   _including_ duplicates, mixed success/error and a bad issuer — classifying
+   _including_ duplicates, mixed success/error and a bad issuer - classifying
    those as "not a callback" made the router skip `handleCallback()`, leaving
    `code` and `state` in the URL. `handleCallback()` snapshots the response,
    scrubs every OIDC parameter, and only then validates. Unregistered routes
@@ -493,7 +493,7 @@ fail-closed, and inverted into `tests/issuer-policy-and-opt-out-isolation.test.t
    `acknowledgeNoLoginTransaction`; CookieStorage exposes its insecure-transport
    acknowledgement as passive metadata; and `secure: false` on a refresh cookie
    outside loopback requires `acknowledgeInsecureCookie`. Acknowledgement tests
-   are isolated — each asserts an exact warning code and exact failed check
+   are isolated - each asserts an exact warning code and exact failed check
    against a client with no other acknowledgement.
 7. **Release gate repaired.** Playwright is a locked devDependency,
    `npm run browsers:install` installs all three engines, and
@@ -514,7 +514,7 @@ directly and all corrections are held by regressions in
 
 1. **Destination binding (critical).** Validation ran against one URL while the
    ORIGINAL input was sent later. A caller-owned `URL` mutated during token
-   loading redirected the credential — reproduced: validated `api.test`, sent
+   loading redirected the credential - reproduced: validated `api.test`, sent
    to `evil.example`. Separately, relative inputs were validated against
    `location.href` while Fetch resolves them against the document's API base
    URL, so a `<base>` element could move a validated request, login, callback
@@ -525,7 +525,7 @@ directly and all corrections are held by regressions in
    endpoints canonicalize to absolute at construction against the ORIGIN, never
    a mutable document base. `allowedResourceOrigins` is frozen.
    `decorateRequest()` is replaced by `buildRequest()`, which returns a
-   destination-bound `Request` — the old form handed back a credentialed
+   destination-bound `Request` - the old form handed back a credentialed
    `RequestInit` reusable against any URL.
 2. **Return paths are canonicalized.** `"/<TAB>/evil.example/x"` passed the old
    string check and resolved cross-origin. Now: no controls, whitespace or
@@ -551,14 +551,14 @@ directly and all corrections are held by regressions in
    from storage; callback failures are a structured `CallbackError` with fixed
    codes and a fixed message, never the provider's `error_description`.
 5. **Configuration is snapshotted and runtime-validated.** `ServerManagedOptions`
-   is deep-copied and frozen — mutating the caller's object no longer changes
+   is deep-copied and frozen - mutating the caller's object no longer changes
    the endpoint, method, CSRF or fetch implementation. Booleans must literally
    be booleans (`"false"` is rejected), transports and methods are closed
    enums, numbers are finite and bounded, CSRF header names are validated, and
    every interpolated cookie attribute is checked.
 6. **Callback routing is complete.** Any response-shaped URL on an owned route
-   is routed to the handler — code-only, state-only, duplicated, mixed, or
-   carrying unknown extra keys — then snapshotted, scrubbed and validated.
+   is routed to the handler - code-only, state-only, duplicated, mixed, or
+   carrying unknown extra keys - then snapshotted, scrubbed and validated.
    Unsupported front-channel response modes (`id_token`, `access_token`,
    `response`) are recognised, scrubbed and rejected. An unrelated path or a
    swapped required static parameter is still not ours and is never rewritten.
@@ -594,15 +594,15 @@ Eight of nine rc.8 residuals reproduced directly; all corrections are held by
    `refresh` and `handleCallback` are all blocked while it runs; peers block
    synchronously on `session-cleared` before their asynchronous clear; and a
    failed local `storage.clear()` now yields a fixed redacted failure with no
-   `logout` event and no navigation — server-side invalidation is still
+   `logout` event and no navigation - server-side invalidation is still
    attempted.
 4. **`diagnose()` is genuinely non-mutating.** The health probe is gone from
    passive diagnosis (it was credentialed, carried no CSRF header and had no
    timeout). `probeConnectivity()` is the explicit opt-in, with destination
    validation, CSRF, timeout, `no-store` and `redirect: "error"`.
 5. **Fetch `RequestInfo` semantics are preserved.** An owned `Request` is built
-   synchronously from `(input, init)` — method, headers, body, signal,
-   credentials, cache, mode and integrity all survive — then re-anchored to the
+   synchronously from `(input, init)` - method, headers, body, signal,
+   credentials, cache, mode and integrity all survive - then re-anchored to the
    validated absolute URL. Replayable bodies are pre-cloned for the single 401
    retry; a one-shot stream is never replayed, and the 401 is surfaced instead.
 6. **Fragment responses are handled.** Implicit/hybrid responses carrying
@@ -640,7 +640,7 @@ Eleven of thirteen rc.9 residuals reproduced directly; all held by
    generation and re-checks it before persisting, caching, returning or
    sending. `ServerManagedStorage.clear()` bumps an epoch so an in-flight pull
    cannot repopulate the cache afterwards. `token-updated` is ignored while
-   blocked. `login()` resets the gate — the deliberate recovery path, safe
+   blocked. `login()` resets the gate - the deliberate recovery path, safe
    because starting a login uses no credential.
 2. **Security metadata survives canonicalization.** An explicit
    `accessTokenIsRefreshCredential: true` was converted to `undefined` when no
@@ -664,7 +664,7 @@ Eleven of thirteen rc.9 residuals reproduced directly; all held by
    `loginUrl()` and `login()` validate every `LoginOptions` field before any
    transaction, return path, navigation or request; the canonical absolute
    redirect that was validated is what gets sent. `loginUrl()` is documented as
-   a pure builder that does NOT establish the login transaction —
+   a pure builder that does NOT establish the login transaction -
    `beginLogin()` is the new operation for manual navigation.
 7. **Gates.** `check:mutations` joins `prepublishOnly`; the byte scan covers
    `scripts/` and every reviewed config file; the retained
@@ -680,7 +680,7 @@ the ad-hoc checks with one model.
    public entry (`fetch`, `buildRequest`, `getToken`, `refresh`,
    `handleCallback`, `probeConnectivity`) and threaded through refresh,
    callback, persistence, BFF requests and token pulls. Nested methods never
-   capture a fresh generation — that only ever proved a value against itself.
+   capture a fresh generation - that only ever proved a value against itself.
    Every await, on success, failure, fallback and cleanup branches alike,
    revalidates the ORIGINAL lease before returning, storing, caching, emitting
    or sending.
@@ -693,14 +693,14 @@ the ad-hoc checks with one model.
    lease and never reaches storage. The lease is revalidated before AND after
    the awaited `save()`, and a storage error cannot restore a degraded token
    after logout.
-4. **Delayed dependencies revalidate** — CSRF providers, token providers,
+4. **Delayed dependencies revalidate** - CSRF providers, token providers,
    storage methods, health requests and response parsers all have the lease
    rechecked before the next request or credential operation.
 5. **Refresh completion rules.** The stale-token fallback applies only while
    the original lease is valid; a session-invalidated error is never converted
    into it; a refresh from an older session cannot return a token to a newer
    one.
-6. **Single-flight ownership is identity-checked** — a completed old pull only
+6. **Single-flight ownership is identity-checked** - a completed old pull only
    clears `inflight` when it still points at that same promise.
 7. **Cross-tab correlation.** `session-cleared` and its terminal `logout`
    carry a bounded opaque `operationId`; a stale terminal message from an
@@ -709,8 +709,8 @@ the ad-hoc checks with one model.
 8. **Independent invalidations.** A CSRF, origin or backend-logout failure is
    recorded rather than thrown, so revocation is still attempted for every
    applicable credential; failures aggregate without exposing response data.
-9. **One token validator.** Every token response — endpoint, provider, storage
-   read — goes through `canonicalizeStoredToken`; malformed capability
+9. **One token validator.** Every token response - endpoint, provider, storage
+   read - goes through `canonicalizeStoredToken`; malformed capability
    metadata is rejected rather than coerced, and `sessionVersion` is always
    recomputed.
 10. **Login option contract.** `next` is refused by the pure builder
@@ -725,13 +725,13 @@ the ad-hoc checks with one model.
 rc.11 introduced the lease but did not thread it through every nested
 continuation. An independent review reproduced ten paths where the ORIGINAL
 lease was lost: an operation belonging to a dead session could still return,
-send or persist a credential — sometimes the _next_ session's credential.
+send or persist a credential - sometimes the _next_ session's credential.
 rc.12 closes them at the level of the model rather than by adding checks.
 
 1. **The original lease survives every nested path.** `serverManagedRefresh()`
    now receives it (it previously had none at all). `refreshInflight` entries
    record the generation they belong to, and a caller from another generation
-   never joins one — request coalescing is only legitimate inside one session.
+   never joins one - request coalescing is only legitimate inside one session.
    The refresh path revalidates after the initial storage load, on entering the
    cross-tab lock, before each credential-returning early exit (peer rotation,
    already-fresh token), immediately before the `/token` request, after every
@@ -742,9 +742,9 @@ rc.12 closes them at the level of the model rather than by adding checks.
    pre-logout request be retried with the credentials of a later login. An
    internal `forcedRefresh(lease)` carries the original. The lease is
    revalidated after the first response, before the retry and after the retry
-   response, and an authenticated response that arrives after logout — bearer
-   or cookie — is rejected rather than handed to the application.
-3. **Server-managed refresh is covered end to end** — after the CSRF provider
+   response, and an authenticated response that arrives after logout - bearer
+   or cookie - is rejected rather than handed to the application.
+3. **Server-managed refresh is covered end to end** - after the CSRF provider
    and before the health request, after the health response, after storage
    clearing, after the token provider/endpoint, and immediately before caching,
    emitting and returning.
@@ -754,8 +754,8 @@ rc.12 closes them at the level of the model rather than by adding checks.
    now takes a separately owned RETAINED block (`logout-failed-blocked`):
    authenticated requests and token reads stay refused, `login()` does not
    clear it, another `logout()` may be attempted, and only a logout that
-   completes releases it. Pre-flight validation errors — a disallowed
-   `postLogoutRedirectUri`, a missing `logoutEndpoint` — invalidate nothing and
+   completes releases it. Pre-flight validation errors - a disallowed
+   `postLogoutRedirectUri`, a missing `logoutEndpoint` - invalidate nothing and
    do not enter the state.
 5. **Storage and revocation ordering.** Credential-producing operations
    register their candidate token the moment the server mints it, before any
@@ -800,7 +800,7 @@ bar. rc.13 makes recovery a single coordinated system.
    and pending ones (revocation attempted, not confirmed). Both are included in
    every subsequent logout. An entry leaves only when its revocation succeeds
    or an explicit acknowledgement applies. Credentials are keyed by the
-   access/refresh PAIR, never by access token alone — in split-token
+   access/refresh PAIR, never by access token alone - in split-token
    deployments two operations can share an access token while carrying
    different refresh credentials. Registration returns an opaque handle and the
    caller releases that exact handle. Nothing is ever evicted to satisfy a size
@@ -817,20 +817,20 @@ bar. rc.13 makes recovery a single coordinated system.
    retained fail-closed state, a fixed redacted warning is emitted, and a later
    logout retries it.
 4. **One terminal transition** (`endSessionLocally`). A `/token` response that
-   declares the session terminally invalid — and a refresh that finds the
-   credential gone while holding the lock — now block synchronously, invalidate
+   declares the session terminally invalid - and a refresh that finds the
+   credential gone while holding the lock - now block synchronously, invalidate
    the generation (so every earlier lease is void), clear through the mutation
    queue, announce with correlated cross-tab messages, emit only after the
    local state is safe, and release the block only if the clear succeeded. A
    clear that fails promotes to a retained fail-closed state.
 5. **Resolvable recovery.** A local logout that COMPLETES has resolved the
-   condition every fail-closed block exists for, so it releases them all —
-   logout-failure, peer-clear-failure, terminal-clear-failure — retires the
+   condition every fail-closed block exists for, so it releases them all -
+   logout-failure, peer-clear-failure, terminal-clear-failure - retires the
    peer operation it resolved, and retries every outstanding invalidation.
    rc.12 released only its own block, leaving a client that a peer had blocked
    permanently unusable however many successful logouts it performed.
-6. **Login admission.** Any _pending_ lifecycle operation — a local logout, a
-   peer clear, a terminal transition — refuses `login()`/`beginLogin()`: until
+6. **Login admission.** Any _pending_ lifecycle operation - a local logout, a
+   peer clear, a terminal transition - refuses `login()`/`beginLogin()`: until
    it settles, nothing has established whether the old credential is gone. A
    _retained_ block is a settled verdict and does not refuse the login, but
    also is not cleared by it, so the credential stays unreadable across it.
@@ -874,8 +874,8 @@ fixes the accounting and the evidence.
    `maxTracked = 1` two reservations both succeeded and N concurrent minting
    operations all passed the check together. A reservation now takes a slot
    before the minting request is sent. The slot returns on every path that
-   does not produce a credential — network failure, non-success status,
-   parse/contract rejection — and is held by the credential itself once one
+   does not produce a credential - network failure, non-success status,
+   parse/contract rejection - and is held by the credential itself once one
    arrives. A logout that drains an outstanding reservation cancels it: the
    slot is freed and the handle is remembered, so a response arriving
    afterwards is classified as an orphan and revoked rather than completed.
@@ -883,13 +883,13 @@ fixes the accounting and the evidence.
 2. **Server-managed mints are inside the lifecycle.** A `tokenProvider` or
    token endpoint mints a credential exactly as `POST /token` does.
    `ServerManagedStorage` correctly refuses to cache a pull that resolved after
-   its epoch changed — but rc.13 then dropped it, so the only reference to a
+   its epoch changed - but rc.13 then dropped it, so the only reference to a
    live credential vanished and the logout that raced it completed with zero
    revocation attempts. The storage now reports discarded mints to the client,
    which registers, revokes, and (on failure) retains them for the next logout.
    The late token is never cached, emitted, returned or sent.
 3. **A terminal transition invalidates the whole known credential.** `/token`
-   rejecting the refresh credential does not prove the access token is dead —
+   rejecting the refresh credential does not prove the access token is dead -
    in split-token deployments they are separate values with separate
    lifetimes. Both terminal paths now pass the credential they know about into
    `endSessionLocally()`: the `current` token for a terminal 401, the `start`
@@ -898,27 +898,27 @@ fixes the accounting and the evidence.
    The transition's cleanup is in a `try/finally`, so an unexpected fault
    cannot strand an unowned local block or the pending-operation counter.
 4. **Peer operations are tracked independently**, keyed by
-   `(tabId, operationId)` — not by id alone, since ids come from another
+   `(tabId, operationId)` - not by id alone, since ids come from another
    context. Each has its own block; duplicates are idempotent; a new session
    retires every settled operation rather than only the last one observed.
    rc.13 held one id and one block, so two overlapping `session-cleared`
    messages overwrote each other and the first one's terminal message cleared
    the session that replaced them.
 5. **Lifecycle messages are bound to the session they end.** `operationId` is
-   now MANDATORY on both `session-cleared` and `logout` — an uncorrelated
+   now MANDATORY on both `session-cleared` and `logout` - an uncorrelated
    message names no operation, so nothing can decide whether it is stale, a
    duplicate, or about this tab at all. Messages also carry metadata-only
    session binding: the `sessionVersion` fingerprint of the credential being
    ended (never the credential) plus a `startedAt` operation epoch for
    tokenless BFF state. A terminal message for an operation this tab has no
    record of is honoured only when it demonstrably targets the session this tab
-   is in. A `session-cleared` — which only blocks and clears — is still
+   is in. A `session-cleared` - which only blocks and clears - is still
    honoured when it carries no fingerprint, because refusing a fail-closed
    instruction for lack of metadata is the unsafe default.
 6. **Login is refused in every fail-closed state.** `login()` and
    `beginLogin()` throw while `gate.blocked()`, retained blocks included. The
    rc.13 behaviour started an authorization flow whose callback
-   `assertNotLoggingOut()` was guaranteed to reject — the user went to the IDP
+   `assertNotLoggingOut()` was guaranteed to reject - the user went to the IDP
    and back to be told no. Nothing is written and no navigation happens. A
    successful `logout()` is the recovery mechanism: it retries every
    outstanding invalidation and releases the state when they succeed.
@@ -935,7 +935,7 @@ fixes the accounting and the evidence.
    that fails now emits `session-clear-failed {scope, reasonCode, blocked}`.
    rc.13 reused `storage-write-failed` with `phase: "refresh"`, whose meaning
    is "a freshly rotated token could not be persisted and the session runs from
-   a memory mirror" — the opposite of what had happened. The storage's own
+   a memory mirror" - the opposite of what had happened. The storage's own
    exception text is still never forwarded.
 9. **Documentation corrected.** See §9 notes in this file and the README: the
    reservation limit is enforced before minting (it now genuinely is); server-
@@ -954,15 +954,15 @@ independent review reproduced four consequences. rc.15 makes the binding follow
 the session.
 
 1. **One adoption point.** `adoptObservedSession()` is the ONLY writer of
-   `currentSessionVersion`, and it takes a CANONICALIZED token —
+   `currentSessionVersion`, and it takes a CANONICALIZED token -
    `canonicalizeStoredToken()` recomputes the fingerprint from the access
    token, so neither a storage plugin nor a peer can choose what this tab
    believes its session to be.
 2. **Logout binds to the credential it destroyed.** The binding is derived
    inside the queued storage step, from the ACTIVE token: the degraded
    in-memory mirror when one is live, otherwise the canonical snapshot the
-   queued step reads. Never from a retained or candidate credential — those
-   belong to operations that are over — and never from `currentSessionVersion`
+   queued step reads. Never from a retained or candidate credential - those
+   belong to operations that are over - and never from `currentSessionVersion`
    before storage has been read. rc.14 captured it beforehand, so a tab that
    had never called `getToken()` sent BOTH lifecycle messages unbound; a peer
    that knew the session had to refuse them and stayed authenticated.
@@ -976,7 +976,7 @@ the session.
    the asynchronous `storage.load()` and revalidated after it, and again before
    adopting or emitting. rc.14 had no lease on this path at all: a read
    resolving after a logout and a replacement login announced the old session's
-   token into the new one — and, with adoption added, would have corrupted the
+   token into the new one - and, with adoption added, would have corrupted the
    new session's binding.
 5. **One session-targeting predicate**, `messageTargetsThisSession()`, applied
    to untracked `session-cleared` and untracked `logout` alike: matching
@@ -984,7 +984,7 @@ the session.
    fingerprint is known rejects; tokenless state accepts only when
    `startedAt >= sessionEstablishedAt`. Tracked and retired operation semantics
    are unchanged. rc.14 let a versionless `session-cleared` through on the
-   grounds that clearing is fail-closed — but a message from an operation that
+   grounds that clearing is fail-closed - but a message from an operation that
    demonstrably began before the current session existed is not about it, and
    honouring it destroys a credential the user has just obtained.
 6. **One time unit.** `startedAt` and `sessionEstablishedAt` are MILLISECONDS
@@ -1000,8 +1000,8 @@ the session.
 
 Two shipped tests (`storage-serialization-and-single-flight` "a transient refresh failure after a PEER
 clear…", `lease-propagation` "a peer clear during a refresh") posted a VERSIONLESS `session-cleared` to a
-client that had already observed its token. Their assertions — about the
-refresh failure branch, not about binding — are unchanged; the fixtures now
+client that had already observed its token. Their assertions - about the
+refresh failure branch, not about binding - are unchanged; the fixtures now
 send what a real rc.15 peer sends, a message bound to the session being ended.
 Under §23.5 an unbound message is no longer evidence about an observed session,
 so leaving the fixtures as they were would have tested the rejected behaviour.
@@ -1014,7 +1014,7 @@ before honouring any untracked lifecycle message, which silently assumed that
 every deployment shares one credential across tabs. Two independent probes
 showed what that costs: two `ServerManagedStorage` bearer tabs of the SAME
 backend session rejected each other's logout, and two `MemoryStorage` tabs
-rejected the documented global logout — in both cases leaving a tab
+rejected the documented global logout - in both cases leaving a tab
 authenticated after the user had signed out.
 
 1. **`lifecycleIdentity`**, decided once from the storage's declared shape
@@ -1022,7 +1022,7 @@ authenticated after the user had signed out.
    `shared-credential`, `managed-bearer`, `per-tab`, `ambient`. Never inferred
    from runtime behaviour.
 2. **Targeting per topology.** `shared-credential` keeps rc.15's exact
-   fingerprint rule unchanged — that is the one topology where a fingerprint
+   fingerprint rule unchanged - that is the one topology where a fingerprint
    really is the session identity. `managed-bearer` and `per-tab` cannot use it
    at all (two tabs of one session hold different tokens by design), so the
    only remaining trustworthy fact is time: a message is honoured unless its
@@ -1034,7 +1034,7 @@ authenticated after the user had signed out.
    verified identity; any unsigned JWT claim (`sid` or otherwise); "accept
    every mismatch" as a blanket rule, which would have cost the
    newer-callback-session protection; and request activity as evidence that a
-   BFF session was established — an ordinary successful response may belong to
+   BFF session was established - an ordinary successful response may belong to
    the very session a logout is already ending.
 4. **The peer clear reaches the managed cache.** A peer lifecycle message now
    calls `invalidateCache()` before `clear()`. `ServerManagedStorage.clear()`
@@ -1049,7 +1049,7 @@ authenticated after the user had signed out.
    and a ROTATION inside a session deliberately does not move it.
 6. **`sessionEstablishedAt` has a real establishment path in every mode that
    has a credential.** rc.15 set it only from browser callback handling, which
-   `assertBrowserCodeFlowAllowed()` forbids in every server-managed mode — so
+   `assertBrowserCodeFlowAllowed()` forbids in every server-managed mode - so
    the fallback documented as protecting tokenless sessions was, there,
    comparing against a value nothing ever wrote. For `ambient` there is still
    no such path, and §24.2 says so instead of claiming one.
@@ -1059,7 +1059,7 @@ authenticated after the user had signed out.
 Explicitly retained and now documented in the README: `logout()` is global
 across tabs on the same channel. Signing out is a user intent about the user,
 not about one tab's copy of a credential. The per-tab token model is unchanged
-in every other respect — `token-updated` is still ignored, and a terminal
+in every other respect - `token-updated` is still ignored, and a terminal
 refresh rejection is still local to the tab that saw it.
 
 ## 25. rc.17 establishment and declaration
@@ -1070,20 +1070,20 @@ rc.16's topology model was right; the two facts it rested on were not.
    the first time a tab observed a credential, then used that epoch to decide
    "my session is newer than your logout". A tab that starts listening late,
    misses `session-cleared`, and pulls a bearer from a backend session that is
-   already being torn down thereby stamps an epoch AFTER the logout began — and
+   already being torn down thereby stamps an epoch AFTER the logout began - and
    ignores the terminal message, keeping the token cached. The pull succeeded
    _because_ the session it belongs to is the one being ended. The same applies
    to a preloaded per-tab credential: loading it is not the moment it came into
    existence.
 
    The epoch now advances only from an explicit, locally verifiable
-   transition — a `handleCallback()` that completes here, which is the only one
+   transition - a `handleCallback()` that completes here, which is the only one
    this client has. `load()`, `peek()`, subscription delivery, a token pull, a
    refresh and first observation all leave it alone. Where no trusted epoch
    exists (`0`), lifecycle messages are honoured conservatively, so the
    terminal `logout` remains an effective fallback for a tab that missed
    `session-cleared`. Where the epoch IS trusted, an operation that began
-   before it still cannot destroy the session established since — the rc.16
+   before it still cannot destroy the session established since - the rc.16
    protection is unchanged.
 
 2. **Persistence is not sharing.** `TokenStorage.persistent` documents whether
@@ -1096,12 +1096,12 @@ rc.16's topology model was right; the two facts it rested on were not.
    `TokenStorage.lifecycleIdentity` is now an explicit, runtime-validated
    declaration over the closed `LifecycleIdentity` union:
    - built-in storages declare their exact identity (`MemoryStorage`
-     → `per-tab`, `CookieStorage` → `shared-credential`, `ServerManagedStorage`
-     → `managed-bearer` or `ambient` from its transport);
+     -> `per-tab`, `CookieStorage` -> `shared-credential`, `ServerManagedStorage`
+     -> `managed-bearer` or `ambient` from its transport);
    - a custom storage MUST declare one when cross-tab coordination is enabled;
      construction fails rather than guessing;
    - a value outside the union is a construction error;
-   - a value that contradicts a built-in storage is a construction error — a
+   - a value that contradicts a built-in storage is a construction error - a
      declaration cannot change how a storage actually shares credentials;
    - the declaration is snapshotted at construction, so mutating it afterwards
      cannot change policy;
@@ -1113,7 +1113,7 @@ rc.16's topology model was right; the two facts it rested on were not.
 Sixty-three custom-storage fixtures across thirteen test files gained an
 explicit `lifecycleIdentity` declaration. Every one models a single shared cell
 that the client and the test both read, so each declares `shared-credential`
-(`per-tab` where the fixture sets `persistent: false`) — the classification
+(`per-tab` where the fixture sets `persistent: false`) - the classification
 rc.16 gave them by inference. No assertion was changed.
 
 ## 26. rc.18 the declaration is universal
@@ -1125,8 +1125,8 @@ before the requirement was reached.
 
 `TokenStorage` is a STRUCTURAL interface. Any object can set `kind: "cookie"`.
 So the requirement was waivable by writing one extra property, and all four
-built-in-looking shapes — `memory`, `cookie`, `server-managed`/bearer,
-`server-managed`/bff — constructed with no declaration at all. The exploitable
+built-in-looking shapes - `memory`, `cookie`, `server-managed`/bearer,
+`server-managed`/bff - constructed with no declaration at all. The exploitable
 case: two tab-partitioned storages claiming `kind: "cookie"` were classified
 `shared-credential`, where a fingerprint mismatch REJECTS a peer's logout, so
 one tab's credential survived the other tab's sign-out.
@@ -1134,7 +1134,7 @@ one tab's credential survived the other tab's sign-out.
 1. **Every storage declares.** When cross-tab coordination is enabled, a valid
    `lifecycleIdentity` is required from every `TokenStorage` object without
    exception. The built-in CLASSES carry the field themselves, so they continue
-   to work with no caller configuration — that is what makes the requirement
+   to work with no caller configuration - that is what makes the requirement
    cost nothing, not a shortcut in the classifier.
 2. **`kind`/`transport` validate, they do not waive.** They are a claim, not a
    proof, and are consulted only AFTER a declaration exists, to reject one that
@@ -1149,8 +1149,8 @@ one tab's credential survived the other tab's sign-out.
 4. **Stale comment corrected.** The `sessionEstablishedAt` doc comment still
    described first observation as establishing the epoch; the implementation
    stopped doing that in rc.17. Only a completed `handleCallback()` sets it,
-   and `0` — the normal state for `managed-bearer`, `ambient` and any tab whose
-   credential simply existed when it started — means "no trusted epoch", which
+   and `0` - the normal state for `managed-bearer`, `ambient` and any tab whose
+   credential simply existed when it started - means "no trusted epoch", which
    is why lifecycle messages are then honoured conservatively.
 
 ### Test change
@@ -1158,5 +1158,5 @@ one tab's credential survived the other tab's sign-out.
 One fixture in `lifecycle-topology` impersonates `kind: "server-managed"` with
 cross-tab enabled and now declares `lifecycleIdentity: "managed-bearer"`, which
 is what it always was. Its assertions are unchanged. No other shipped test
-needed touching — the 63 custom-storage fixtures declared in rc.17 already
+needed touching - the 63 custom-storage fixtures declared in rc.17 already
 satisfy the universal rule.

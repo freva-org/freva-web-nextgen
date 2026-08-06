@@ -1,5 +1,5 @@
 /**
- * Which browser engines to install and run — decided once, in one place.
+ * Which browser engines to install and run - decided once, in one place.
  *
  * Two audiences with different needs:
  *
@@ -9,7 +9,7 @@
  *    project's choice for its own local workflow, not a general claim about
  *    Playwright on macOS. Chromium and Firefox there, with one line saying so.
  *  - **The release gate.** `test:browser:strict` is release EVIDENCE and always
- *    means all three engines actually executed. It is never narrowed — not by
+ *    means all three engines actually executed. It is never narrowed - not by
  *    platform, not by an environment variable. On macOS it refuses to run at
  *    all rather than report a two-engine pass, because "the gate passed" has to
  *    keep meaning the same thing everywhere.
@@ -68,7 +68,7 @@ export class StrictUnavailableError extends Error {
 
 /**
  * Parse a `BROWSERS=a,b` override. Returns null when unset, and throws on an
- * engine name Playwright does not have — a typo silently running nothing is
+ * engine name Playwright does not have - a typo silently running nothing is
  * how a green board comes to mean nothing.
  */
 export function parseBrowserOverride(raw) {
@@ -135,7 +135,7 @@ export function selectBrowsers({ platform, strict = false, override } = {}) {
  * developer cannot act on.
  *
  * Note this only ever ADDS to Playwright's shared cache. Nothing here removes
- * a browser — that cache belongs to every project on the machine, not to this
+ * a browser - that cache belongs to every project on the machine, not to this
  * package.
  */
 export function selectInstallBrowsers({ platform, override } = {}) {

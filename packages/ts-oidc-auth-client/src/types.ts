@@ -3,10 +3,10 @@
  *
  * Design invariants (see docs/SPEC.md):
  * - Topology-blind about deployment: the library never guesses whether a
- *   backend exists. Credential handling is not permissive, though — `storage`
+ *   backend exists. Credential handling is not permissive, though - `storage`
  *   and the resource-origin allowlist are explicit integrator decisions.
  * - In broker mode the stored JWT doubles as the refresh credential (refresh
- *   accepts expired JWTs — only `jti` matters), so storage choices are
+ *   accepts expired JWTs - only `jti` matters), so storage choices are
  *   security choices.
  * - Tokens never enter localStorage. Cross-tab sync carries metadata only.
  * - Events carry METADATA ONLY, so anything that logs an event verbatim
@@ -19,15 +19,15 @@ export type MaybePromise<T> = T | Promise<T>;
  * How this deployment's storage relates a CREDENTIAL to a SESSION, which
  * decides whether a cross-tab lifecycle message is about this tab.
  *
- * - `shared-credential` — every tab reads the same stored credential (cookie,
+ * - `shared-credential` - every tab reads the same stored credential (cookie,
  *   or a persistent custom storage). One credential, one session: the
  *   recomputed access-token fingerprint IS the session identity.
- * - `managed-bearer` — `ServerManagedStorage({transport:"bearer-from-endpoint"})`.
+ * - `managed-bearer` - `ServerManagedStorage({transport:"bearer-from-endpoint"})`.
  *   One backend session mints a different short-lived bearer per tab, so two
  *   tabs of the SAME session hold different fingerprints by design.
- * - `per-tab` — `MemoryStorage`, and any storage each tab holds its own copy
+ * - `per-tab` - `MemoryStorage`, and any storage each tab holds its own copy
  *   of, persistent or not (sessionStorage, a tab-keyed IndexedDB record).
- * - `ambient` — `ServerManagedStorage({transport:"bff"})`. No browser
+ * - `ambient` - `ServerManagedStorage({transport:"bff"})`. No browser
  *   credential exists, so there is nothing to fingerprint.
  */
 export type LifecycleIdentity = "shared-credential" | "managed-bearer" | "per-tab" | "ambient";
@@ -52,7 +52,7 @@ export interface StoredToken {
   /** In broker mode this equals `accessToken` (one JWT, two roles). */
   refreshToken?: string;
   tokenType: string;
-  /** Epoch seconds. `0` means "unknown/expired — usable only as refresh credential". */
+  /** Epoch seconds. `0` means "unknown/expired - usable only as refresh credential". */
   expiresAt: number;
   /** Epoch seconds. */
   refreshExpiresAt?: number;
@@ -61,7 +61,7 @@ export interface StoredToken {
   refreshable?: boolean;
   /**
    * True when the server returns the SAME string as both access and refresh
-   * token — the Bearer attached to API calls is itself a refresh credential.
+   * token - the Bearer attached to API calls is itself a refresh credential.
    * The client can only detect and report this; only split tokens from the
    * server fix it.
    */
@@ -170,7 +170,7 @@ export type AuthEvent =
       type: "login-completed";
       token: TokenSummary;
       /**
-       * Whether a return path was stashed — NOT the path itself, which is
+       * Whether a return path was stashed - NOT the path itself, which is
        * application data that has carried query strings into telemetry.
        * Call `consumeReturnPath()` to read it.
        */
@@ -215,7 +215,7 @@ export type AuthEvent =
    */
   | {
       type: "session-clear-failed";
-      /** "peer" — another tab ended it; "terminal" — the server did. */
+      /** "peer" - another tab ended it; "terminal" - the server did. */
       scope: "peer" | "terminal";
       /** FIXED code, never the storage's exception text. */
       reasonCode: "storage-threw";
@@ -320,7 +320,7 @@ export interface SecurityOptions {
    * accept a code+state pair.
    *
    * SCOPE: this proves only that *some* login began in this browsing context.
-   * It is NOT state binding — the server owns `state` (it carries the PKCE
+   * It is NOT state binding - the server owns `state` (it carries the PKCE
    * verifier), so the client cannot bind a response to a specific request;
    * that needs server-side support. Default true.
    */
@@ -343,12 +343,12 @@ export interface AuthConfig {
   /**
    * Endpoint for userinfo(). Defaults to `{authBaseUrl}/userinfo` (Bearer).
    * REQUIRED in bff transport, where requests carry no Bearer token and the
-   * server's own /userinfo would reject the credentialed bare call — point
+   * server's own /userinfo would reject the credentialed bare call - point
    * it at the backend's session-userinfo route instead.
    */
   userinfoEndpoint?: string;
 
-  /** REQUIRED — no default. Choosing where the credential rests is a deployment decision. */
+  /** REQUIRED - no default. Choosing where the credential rests is a deployment decision. */
   storage: TokenStorage;
 
   refreshBufferSeconds?: number; // default 120
@@ -411,7 +411,7 @@ export type CrossTabMessage =
       operationId: string;
       /**
        * Session binding, metadata only. The fingerprint of the credential the
-       * operation is ending — never the credential itself. Absent when the
+       * operation is ending - never the credential itself. Absent when the
        * sender holds no token (BFF), in which case `startedAt` is the binding.
        */
       sessionVersion?: string;

@@ -85,7 +85,7 @@ describe("the packaged README describes the real matrix", () => {
 
 describe("src/ has not drifted from the recorded manifest", () => {
   // src/ holds the security-critical code, and an edit there that no test
-  // notices is precisely what the mutation gate cannot catch — it only proves
+  // notices is precisely what the mutation gate cannot catch - it only proves
   // the controls it already knows about are load-bearing. Refreshing the
   // manifest (`npm run manifest:refresh`) is deliberate, and belongs in the
   // same commit as the change it records.

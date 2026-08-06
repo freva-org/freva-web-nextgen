@@ -11,7 +11,7 @@ import { installFakeBroadcastChannel, makeJwt } from "./helpers.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("withCrossTabLock (in-page mutex fallback — no navigator.locks)", () => {
+describe("withCrossTabLock (in-page mutex fallback - no navigator.locks)", () => {
   it("serializes concurrent critical sections", async () => {
     const order: string[] = [];
     const a = withCrossTabLock("t:lock", true, async () => {
@@ -80,7 +80,7 @@ describe("createCrossTab", () => {
     handle.close();
   });
 
-  it("the localStorage fallback key carries metadata only — never a JWT", () => {
+  it("the localStorage fallback key carries metadata only - never a JWT", () => {
     const g = globalThis as Record<string, unknown>;
     const prev = g.BroadcastChannel;
     g.BroadcastChannel = undefined; // exercise the TRUE fallback path

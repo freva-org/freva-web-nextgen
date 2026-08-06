@@ -151,7 +151,7 @@ describe("first token observation is not session establishment", () => {
 
     // 6. The terminal message is the fallback for a tab that missed the first
     //    one. Pulling a token is not evidence that B's session is newer than
-    //    the logout — the pull succeeded BECAUSE the backend session was still
+    //    the logout - the pull succeeded BECAUSE the backend session was still
     //    alive, which is precisely what the logout is ending.
     expect(storageB.peek()).toBeNull();
     expect(eventsB.some((e) => e.type === "logout")).toBe(true);
@@ -328,7 +328,7 @@ describe("lifecycle topology is declared, not inferred from persistence", () => 
 
 describe("the declaration requirement is unconditional", () => {
   it("a non-persistent custom storage must declare its topology too", () => {
-    // Persistence is not the trigger — the requirement is about SHARING, and a
+    // Persistence is not the trigger - the requirement is about SHARING, and a
     // custom storage of any kind has to say which it is.
     const bare: TokenStorage = {
       kind: "custom",

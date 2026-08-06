@@ -15,7 +15,7 @@ export const DIST = path.resolve(HERE, "..", "dist");
 
 export function requireDist() {
   if (!fs.existsSync(path.join(DIST, "index.js"))) {
-    console.error("dist/ not found — run `npm run build` first.");
+    console.error("dist/ not found - run `npm run build` first.");
     process.exit(2);
   }
 }
@@ -41,7 +41,7 @@ export function isStrict() {
  * The engines this run will drive, from the shared platform-aware selector.
  *
  * Exits non-zero with an explanation when the strict gate cannot honestly run
- * here — it never falls back to a smaller matrix, because the whole point of
+ * here - it never falls back to a smaller matrix, because the whole point of
  * the strict gate is that "it passed" means the same thing on every machine.
  */
 function resolveBrowsers() {
@@ -84,7 +84,7 @@ export async function eachBrowser(run) {
       results.push({
         name,
         status: isStrict() ? "fail" : "skipped",
-        detail: `not installed — run \`npm run browsers:install\``,
+        detail: `not installed - run \`npm run browsers:install\``,
       });
       continue;
     }
@@ -109,11 +109,11 @@ export function report(title, results) {
   const failed = results.filter((r) => r.status === "fail");
   const skipped = results.filter((r) => r.status === "skipped");
   if (isStrict() && skipped.length > 0) {
-    console.log(`  STRICT: ${skipped.length} required browser(s) missing — this is a failure.`);
+    console.log(`  STRICT: ${skipped.length} required browser(s) missing - this is a failure.`);
     return 1;
   }
   if (ran.length === 0) {
-    console.log("  no browsers available — run `npm run browsers:install`");
+    console.log("  no browsers available - run `npm run browsers:install`");
     return 2;
   }
   if (skipped.length) {

@@ -16,7 +16,7 @@ import type { ClearReason, MaybePromise, StoredToken, TokenStorage } from "../ty
  * - "bearer-from-endpoint": a backend holds the refresh capability in an
  *   httpOnly context and exposes an endpoint that mints SHORT-LIVED access
  *   tokens. This storage fetches one with `credentials: "include"`, caches it
- *   in memory, and the data path stays browser → API with Bearer.
+ *   in memory, and the data path stays browser -> API with Bearer.
  *
  * - "bff": every API call is proxied by the backend, which attaches the token
  *   server-side. auth.fetch adds `credentials: "include"` and NO Authorization
@@ -251,7 +251,7 @@ export class ServerManagedStorage implements TokenStorage {
       if (options.tokenEndpointMethod === "GET" && !options.acknowledgeUnsafeTokenEndpointMethod) {
         throw new AuthError(
           "ServerManagedStorage: minting a credential with GET is neither " +
-            "safe nor idempotent — the URL is cached, prefetched and logged. " +
+            "safe nor idempotent - the URL is cached, prefetched and logged. " +
             "Use POST (the default), or set " +
             "acknowledgeUnsafeTokenEndpointMethod: true.",
         );
@@ -282,8 +282,8 @@ export class ServerManagedStorage implements TokenStorage {
    *
    * THROWS rather than returning `{}` when a CSRF strategy is configured but
    * cannot produce a token. Empty headers would let the request go out with
-   * `credentials: "include"` and no CSRF header — the exact configuration the
-   * caller asked to prevent — whenever the cookie is missing or the getter
+   * `credentials: "include"` and no CSRF header - the exact configuration the
+   * caller asked to prevent - whenever the cookie is missing or the getter
    * throws.
    */
   async csrfHeaders(): Promise<Record<string, string>> {

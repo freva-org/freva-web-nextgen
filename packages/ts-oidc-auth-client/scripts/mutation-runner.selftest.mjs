@@ -5,14 +5,14 @@
  * evidence of its own. Every case here is a way the toolchain can fail while
  * looking, to a naive gate, exactly like a successfully killed mutation.
  */
-import { classifyRun, runTest } from "./mutation-runner.mjs";
+import { classifyRun, runTest, vitestBinPath } from "./mutation-runner.mjs";
 
 let failures = 0;
 const check = (name, actual, expected) => {
   if (actual === expected) {
-    console.log(`  runner self-test: ${name} → ${actual}`);
+    console.log(`  runner self-test: ${name} -> ${actual}`);
   } else {
-    console.error(`  runner self-test FAILED: ${name} → ${actual}, want ${expected}`);
+    console.error(`  runner self-test FAILED: ${name} -> ${actual}, want ${expected}`);
     failures++;
   }
 };
@@ -25,6 +25,22 @@ const missing = runTest({
   command: "definitely-not-a-real-command-9d3f",
 });
 check("command not found", missing.verdict, "infrastructure");
+
+// --- the launch path itself, end to end ------------------------------------
+// Every other real spawn here proves the runner notices a BROKEN toolchain.
+// This one proves the WORKING path works: it resolves the Vitest CLI the way
+// the gate does and runs one real, unmutated test, which must be reported as a
+// survivor. Without it, a checkout where Vitest cannot be launched reports
+// every mutation as an unexplained failure and never says why.
+const live = runTest({
+  file: "tests/token.test.ts",
+  only: "fnv1a is stable and short",
+});
+check("vitest is launchable", live.verdict, "survived");
+if (live.verdict !== "survived") {
+  console.error(`  runner self-test: ${live.detail}`);
+  console.error(`  runner self-test: resolved CLI -> ${vitestBinPath()}`);
+}
 
 // --- synthetic child-process results ---------------------------------------
 const cases = [
@@ -77,6 +93,27 @@ const cases = [
   {
     name: "zero exit with a filter that matched nothing",
     result: { status: 0, stdout: "Test Files  no tests\n Tests  no tests", stderr: "" },
+    targeted: true,
+    want: "infrastructure",
+  },
+  {
+    name: "package manager could not resolve the runner",
+    result: {
+      status: 1,
+      stdout: "",
+      stderr: "npm error could not determine executable to run",
+    },
+    targeted: true,
+    want: "infrastructure",
+  },
+  {
+    name: "registry unreachable while resolving the runner",
+    result: {
+      status: 1,
+      stdout: "",
+      stderr:
+        "npm error code ENOTCACHED\nnpm error request to https://registry.npmjs.org/vitest failed",
+    },
     targeted: true,
     want: "infrastructure",
   },

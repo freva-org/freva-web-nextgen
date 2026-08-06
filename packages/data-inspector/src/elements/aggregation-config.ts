@@ -1,5 +1,5 @@
 /**
- * <aggregation-config> — configuration form for multi-file aggregation.
+ * <aggregation-config> - configuration form for multi-file aggregation.
  *
  * Attributes:
  *   initial-config   JSON string of Partial<AggregationConfigValues>
@@ -7,7 +7,7 @@
  * Events fired:
  *   config-change    CustomEvent<AggregationConfigValues>
  *
- * Styled with Bootstrap utility classes — host app must provide Bootstrap CSS.
+ * Styled with Bootstrap utility classes - host app must provide Bootstrap CSS.
  * Renders once; uses event delegation + targeted DOM updates (no re-renders on input change).
  */
 
