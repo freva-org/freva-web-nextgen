@@ -10,7 +10,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
@@ -40,3 +40,53 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Release gates specific to @freva-org/ts-oidc-auth-client. Kept out of the
+  # matrix above: the browser gate installs three engines, and the mutation gate
+  # rewrites src/ in place while it runs.
+  auth-gates:
+    runs-on: ubuntu-latest
+
+    env:
+      PKG: "@freva-org/ts-oidc-auth-client"
+
+    # Every step runs from the repository root and targets the package with
+    # `-w`. A job-level `defaults.run.working-directory` reads more nicely but
+    # makes the install step's own directory ambiguous, and installing from
+    # inside a workspace package rather than the root is exactly the kind of
+    # layout difference that leaves binaries where the tooling cannot find them.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/ts-oidc-auth-client/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fails fast and legibly if the workspace install did not produce a usable
+      # test runner, rather than letting every mutation report the same
+      # unexplained toolchain failure 53 times.
+      - name: Check the toolchain the gates depend on
+        run: npm exec -w $PKG -- vitest --version
+
+      - name: Control-byte gate
+        run: npm run check:bytes -w $PKG
+
+      - name: Mutation gate
+        run: npm run check:mutations -w $PKG
+
+      # The browser suites import ../dist, so a clean checkout has to build first.
+      - name: Build
+        run: npm run build -w $PKG
+
+      - name: Install Playwright engines
+        run: npm exec -w $PKG -- playwright install --with-deps chromium firefox webkit
+
+      # Strict: all three engines must actually execute. A missing browser is a
+      # failure here, not a skip.
+      - name: Browser gate
+        run: npm run test:browser:strict -w $PKG

@@ -1,5 +1,5 @@
 /**
- * <zarr-loading-steps> — animated stepper shown while Zarr conversion is in progress.
+ * <zarr-loading-steps> - animated stepper shown while Zarr conversion is in progress.
  *
  * Attributes:
  *   status-code   number  Backend status code (0-5). Default: 3

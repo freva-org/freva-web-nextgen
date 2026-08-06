@@ -1,4 +1,4 @@
-# Source & dev files — not needed by consumers
+# Source & dev files - not needed by consumers
 src/
 *.test.ts
 vitest.config.ts
