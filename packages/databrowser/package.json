@@ -1,0 +1,43 @@
+{
+  "name": "@freva-org/databrowser",
+  "version": "2608.0.0",
+  "description": "Freva Data-Browser - framework-free, typed, zero runtime dependencies.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/databrowser"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen:styles": "node scripts/gen-styles.mjs",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"",
+    "lint": "eslint src tests scripts"
+  },
+  "license": "BSD-3-Clause",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^25.9.3",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.5.4"
+  }
+}

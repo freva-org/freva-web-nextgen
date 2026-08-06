@@ -37,6 +37,6 @@ export default tseslint.config(
     rules: { "no-console": "off" },
   },
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "docs/"],
+    ignores: ["**/dist/**", "**/dist-test/**", "**/node_modules/**", "docs/"],
   },
 );

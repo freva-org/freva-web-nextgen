@@ -248,7 +248,7 @@ describe("tabs", () => {
   });
 });
 
-// ── Security (High) ────────────────────────────────────────────────────────--
+// ── Security ───────────────────────────────────────────────────────────────--
 
 describe("security", () => {
   it("renders error as text, never as HTML (XSS)", () => {
@@ -319,7 +319,7 @@ describe("security", () => {
   });
 });
 
-// ── State invalidation (High) ──────────────────────────────────────────────--
+// ── State invalidation ─────────────────────────────────────────────────────--
 
 describe("state invalidation", () => {
   it("resets stale output / zarr-url / error when the file changes", () => {
@@ -348,7 +348,7 @@ describe("state invalidation", () => {
   });
 });
 
-// ── Structural refactor: persistence across re-render (High / Med) ──────────--
+// ── Persistence across re-render ───────────────────────────────────────────--
 
 describe("render persistence", () => {
   it("never remounts the GridLook iframe on unrelated re-renders", () => {
@@ -415,14 +415,14 @@ describe("lifecycle cleanup", () => {
   });
 });
 
-// ── Zarr row de-duplication (G) ────────────────────────────────────────────--
+// ── Zarr row de-duplication ────────────────────────────────────────────────--
 
 describe("zarr row de-duplication", () => {
   it("suppresses the Zarr row when the store URL equals the inspected file", () => {
     const url = "https://store.example.com/data.zarr";
     const el = mount({ open: "", file: url, "zarr-url": url, status: "ready" });
     el.output = "<table>x</table>";
-    // Input is already a Zarr store → single path row, no duplicate Zarr row.
+    // Input is already a Zarr store -> single path row, no duplicate Zarr row.
     expect(el.querySelector("#nc-zarr-row")!.hasAttribute("hidden")).toBe(true);
     // The 3D viewer tab is still available.
     expect(el.querySelector('[data-tab="gridlook"]')).not.toBeNull();
@@ -441,7 +441,7 @@ describe("zarr row de-duplication", () => {
   });
 });
 
-// ── Error shows alone (H3) ─────────────────────────────────────────────────--
+// ── Error shows alone ──────────────────────────────────────────────────────--
 
 describe("error state", () => {
   it("shows the error alone, hiding stale metadata", () => {
@@ -470,7 +470,7 @@ describe("error state", () => {
   });
 });
 
-// ── Accessibility (H6) ─────────────────────────────────────────────────────--
+// ── Accessibility ──────────────────────────────────────────────────────────--
 
 describe("accessibility", () => {
   it("exposes dialog semantics on the modal", () => {

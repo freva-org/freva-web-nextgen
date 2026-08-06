@@ -73,7 +73,7 @@ function listen(name: string): Posted[] {
 }
 
 // ---------------------------------------------------------------------------
-// P1: a logout binds to the credential it actually destroyed
+// A logout binds to the credential it actually destroyed.
 // ---------------------------------------------------------------------------
 
 describe("logout messages are bound to the session they end", () => {
@@ -116,7 +116,7 @@ describe("logout messages are bound to the session they end", () => {
 });
 
 // ---------------------------------------------------------------------------
-// P2: a verified peer rotation updates the binding
+// A verified peer rotation updates the binding.
 // ---------------------------------------------------------------------------
 
 describe("an observed peer rotation is adopted", () => {
@@ -176,7 +176,7 @@ describe("an observed peer rotation is adopted", () => {
 });
 
 // ---------------------------------------------------------------------------
-// P3: a stale versionless clear cannot destroy a newer session
+// A stale versionless clear cannot destroy a newer session.
 // ---------------------------------------------------------------------------
 
 describe("session-cleared uses the same targeting decision as logout", () => {
@@ -237,7 +237,7 @@ describe("session-cleared uses the same targeting decision as logout", () => {
 });
 
 // ---------------------------------------------------------------------------
-// P5: the asynchronous token-updated read belongs to its own generation
+// The asynchronous token-updated read belongs to its own generation.
 // ---------------------------------------------------------------------------
 
 describe("token-updated handling is bound to its lifecycle generation", () => {

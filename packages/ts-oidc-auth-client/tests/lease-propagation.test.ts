@@ -70,7 +70,7 @@ const outcome = (p: Promise<StoredToken | null>) =>
   );
 
 // ---------------------------------------------------------------------------
-// 1–2: an old refresh operation must never hand back a newer session's token
+// An old refresh operation must never hand back a newer session's token.
 // ---------------------------------------------------------------------------
 
 describe("refresh keeps its originating lease across every boundary", () => {
@@ -157,7 +157,7 @@ describe("refresh keeps its originating lease across every boundary", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3 + 10: a request must stay inside the operation (and session) that began it
+// A request must stay inside the operation (and session) that began it.
 // ---------------------------------------------------------------------------
 
 describe("fetch retries stay in the originating operation", () => {
@@ -263,7 +263,7 @@ describe("fetch retries stay in the originating operation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4: server-managed refresh never received a lease at all
+// Server-managed refresh is a continuation that must carry the lease too.
 // ---------------------------------------------------------------------------
 
 describe("server-managed refresh carries the lease", () => {
@@ -313,7 +313,7 @@ describe("server-managed refresh carries the lease", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5: logout must invalidate the credential that was minted moments ago
+// Logout must invalidate the credential that was minted moments ago.
 // ---------------------------------------------------------------------------
 
 describe("logout invalidates in-flight candidate credentials", () => {
@@ -378,7 +378,7 @@ describe("logout invalidates in-flight candidate credentials", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6–7: an incomplete logout must stay closed, not reopen in `finally`
+// An incomplete logout must stay closed, not reopen in `finally`.
 // ---------------------------------------------------------------------------
 
 describe("an incomplete logout is persistently fail-closed", () => {
@@ -427,7 +427,7 @@ describe("an incomplete logout is persistently fail-closed", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 8–9: peer lifecycle recovery
+// Peer lifecycle recovery.
 // ---------------------------------------------------------------------------
 
 describe("peer lifecycle recovery", () => {
@@ -512,9 +512,9 @@ describe("peer lifecycle recovery", () => {
 // ---------------------------------------------------------------------------
 // Call-site controls.
 //
-// R1–R10 above are behavioural regressions and are deliberately defended in
-// depth: several of them are caught by more than one check. The tests below
-// exist so that each INDIVIDUAL call site is independently verifiable - each
+// The scenarios above are defended in depth: several of them are caught by
+// more than one check. The tests below exist so that each INDIVIDUAL call
+// site is independently verifiable - each
 // one ends the session at exactly one boundary and asserts the specific thing
 // that must not happen if the check at that boundary is deleted. The mutation
 // gate runs these by name, one per mutation.

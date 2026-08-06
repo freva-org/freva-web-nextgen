@@ -3,7 +3,7 @@
  *
  * Removing a security control must make its test fail. A regression test that
  * still passes with the control deleted is proving nothing - this catches the
- * "274 tests green while 14 adversarial probes reproduce" failure mode.
+ * "every test green while adversarial probes still reproduce" failure mode.
  *
  * Each mutation edits a source file in place, runs ONE named test, and requires
  * a FAILURE. The file is always restored.
@@ -69,7 +69,7 @@ const MUTATIONS = [
     // Paired edit: the `login-started` re-entrancy recheck also refuses to
     // navigate while a lifecycle operation is running, so it covers `login()`
     // even with the admission check gone. Both are removed, which is the only
-    // way the admission check itself becomes observable to U1.
+    // way the admission check itself becomes observable to the pinned test.
     name: "local-logout ownership removed",
     file: "src/client.ts",
     edits: [
@@ -216,7 +216,8 @@ const MUTATIONS = [
     // Two edits, deliberately: reverting the retry to the PUBLIC refresh() is
     // only observable once the post-response check is also gone, because that
     // check would otherwise stop the operation before the retry begins.
-    // Together they reconstruct the shape R3 reproduces against.
+    // Together they reconstruct the code shape this control guards against: a
+    // retry that abandons the original lease and adopts a fresh one.
     name: "lease call site 6/10: fetch retry lease propagation",
     file: "src/client.ts",
     edits: [
@@ -708,7 +709,7 @@ const MUTATIONS = [
     only: 'an undeclared storage claiming kind="cookie" is refused (cookie)',
   },
 
-  // ---- beyond the requested ten: the peer-side counterpart of call site 8.
+  // ---- beyond the ten lease call sites: the peer-side counterpart of site 8.
   {
     name: "peer clear-failure block retention removed",
     file: "src/client.ts",

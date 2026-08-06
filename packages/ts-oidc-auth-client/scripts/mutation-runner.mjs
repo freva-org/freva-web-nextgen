@@ -126,7 +126,7 @@ export function classifyRun(result, { targeted }) {
 
   // 2. A package manager refused before Vitest was ever reached. Checked ahead
   //    of the Vitest-specific patterns because this output contains none of
-  //    them, which is precisely how it used to reach the generic branch below.
+  //    them, and would otherwise fall through to the generic branch below.
   for (const pattern of LAUNCH_FAILURES) {
     if (pattern.test(out)) {
       return {

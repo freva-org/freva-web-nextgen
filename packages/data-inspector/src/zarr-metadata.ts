@@ -215,7 +215,7 @@ function parseV2(json: { metadata?: Record<string, unknown> }): ZarrMetadataResu
     if (key.endsWith("/.zgroup")) groupNames.add(key.slice(0, -8));
   }
 
-  // No subgroups → a single flat dataset.
+  // No subgroups -> a single flat dataset.
   if (groupNames.size === 0) {
     const ds = buildDatasetV2(meta, "");
     if (!datasetHasArrays(ds)) {

@@ -76,7 +76,7 @@ const blocked = (p: Promise<unknown>) =>
   );
 
 // ---------------------------------------------------------------------------
-// 1 + 8: a failed invalidation must survive for retry
+// A failed invalidation must survive for retry.
 // ---------------------------------------------------------------------------
 
 describe("failed invalidations are preserved for retry", () => {
@@ -183,7 +183,7 @@ describe("failed invalidations are preserved for retry", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2 + 3: peer recovery is resolvable, and login is not an escape hatch
+// Peer recovery is resolvable, and login is not an escape hatch.
 // ---------------------------------------------------------------------------
 
 describe("peer recovery is a resolvable state", () => {
@@ -289,7 +289,7 @@ describe("peer recovery is a resolvable state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4 + 5: a terminal /token rejection is a session transition
+// A terminal /token rejection is a session transition.
 // ---------------------------------------------------------------------------
 
 describe("a terminal refresh ends the session", () => {
@@ -365,7 +365,7 @@ describe("a terminal refresh ends the session", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6: a callback refused for lifecycle reasons is still scrubbed
+// A callback refused for lifecycle reasons is still scrubbed.
 // ---------------------------------------------------------------------------
 
 describe("callback scrubbing precedes lifecycle rejection", () => {
@@ -411,7 +411,7 @@ describe("callback scrubbing precedes lifecycle rejection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7: application event listeners are re-entrant boundaries
+// Application event listeners are re-entrant boundaries.
 // ---------------------------------------------------------------------------
 
 describe("event listeners are re-entrant boundaries", () => {
@@ -459,7 +459,7 @@ describe("event listeners are re-entrant boundaries", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9: refreshes are not serialized across generations
+// Refreshes are not serialized across generations.
 // ---------------------------------------------------------------------------
 
 describe("refresh single-flight does not span generations", () => {
@@ -526,9 +526,9 @@ describe("refresh single-flight does not span generations", () => {
 // ---------------------------------------------------------------------------
 // Call-site controls.
 //
-// T1–T9 are behavioural regressions. The tests below pin the individual
-// controls the mutation gate removes, each asserting the one thing that must
-// not happen when that specific control is gone.
+// The scenarios above drive whole lifecycle states. The tests below pin the
+// individual controls the mutation gate removes, each asserting the one thing
+// that must not happen when that specific control is gone.
 // ---------------------------------------------------------------------------
 
 describe("recovery-state controls", () => {
