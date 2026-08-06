@@ -186,17 +186,18 @@ not depend on `detail` strings.
 ## 6. Cross-tab protocol
 
 Channel name: `poa:<fnv1a(origin | authBaseUrl | channelNamespace | storage.kind/cookieName)>`
+
 - namespacing prevents cross-talk between two apps (or admin vs public UI,
-`channelNamespace`) on one origin. Layers: BroadcastChannel -> `localStorage` **version key**
-fallback (`{type, sessionVersion, exp, at, nonce}` - metadata only). The fallback is
-exclusive, not additive: localStorage is written only when BroadcastChannel is
-unavailable, so peers never receive the same logout/token-updated twice
-(mixed-capability tabs cannot exist within one browser). **A JWT in localStorage
-is a bug by definition, in every mode.** Messages v1: `token-updated`, `logout`. `sessionVersion` is a 64-bit, dot-free
-fingerprint (two FNV-1a passes) - not a secret, but wide enough that the "did
-another tab rotate?" comparison does not produce false-same-token cases. Receivers:
-persistent storage reloads and emits `token-refreshed {source: "tab"}`; memory ignores
-`token-updated`; everyone honors `logout` locally without re-broadcasting.
+  `channelNamespace`) on one origin. Layers: BroadcastChannel -> `localStorage` **version key**
+  fallback (`{type, sessionVersion, exp, at, nonce}` - metadata only). The fallback is
+  exclusive, not additive: localStorage is written only when BroadcastChannel is
+  unavailable, so peers never receive the same logout/token-updated twice
+  (mixed-capability tabs cannot exist within one browser). **A JWT in localStorage
+  is a bug by definition, in every mode.** Messages v1: `token-updated`, `logout`. `sessionVersion` is a 64-bit, dot-free
+  fingerprint (two FNV-1a passes) - not a secret, but wide enough that the "did
+  another tab rotate?" comparison does not produce false-same-token cases. Receivers:
+  persistent storage reloads and emits `token-refreshed {source: "tab"}`; memory ignores
+  `token-updated`; everyone honors `logout` locally without re-broadcasting.
 
 ## 7. diagnose()
 
