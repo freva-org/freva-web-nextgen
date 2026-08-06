@@ -45,8 +45,11 @@ export interface ZarrPollerOptions {
    * Default: Freva's `/api/freva-nextgen/data-portal/zarr-utils/status`.
    */
   getStatusUrl?: (encodedZarrUrl: string) => string;
-  /** Called whenever a new status code arrives. */
-  onStatus?: (statusCode: number) => void;
+  /**
+   * Called whenever a new status code arrives. `reason` carries the optional
+   * server-provided explanation (`data.reason`), or `null` when absent.
+   */
+  onStatus?: (statusCode: number, reason: string | null) => void;
   /** Called on network or parse error. */
   onError?: (error: string) => void;
 }
