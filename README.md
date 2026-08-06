@@ -7,6 +7,7 @@ Freva-web-nextgen, framework-agnostic Web Components and utilities.
 | Package                                                            | Version                                                                                                                             | Description                                                    |
 | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | [`@freva-org/data-inspector`](./packages/data-inspector)           | [![npm](https://img.shields.io/npm/v/@freva-org/data-inspector)](https://www.npmjs.com/package/@freva-org/data-inspector)           | NetCDF / Zarr inspection dialog Web Component                  |
+| [`@freva-org/databrowser`](./packages/databrowser)                 | [![npm](https://img.shields.io/npm/v/@freva-org/databrowser)](https://www.npmjs.com/package/@freva-org/databrowser)                 | Climate-data browser for the freva-nextgen REST API            |
 | [`@freva-org/ts-oidc-auth-client`](./packages/ts-oidc-auth-client) | [![npm](https://img.shields.io/npm/v/@freva-org/ts-oidc-auth-client)](https://www.npmjs.com/package/@freva-org/ts-oidc-auth-client) | OIDC browser auth client for py-oidc-auth / freva-rest servers |
 
 ## Getting started

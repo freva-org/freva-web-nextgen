@@ -1,5 +1,5 @@
 /**
- * The core security invariants, from the first adversarial review.
+ * The core security invariants.
  *
  * Redaction, CSRF, destination policy, URL resolution, allowlists, revocation
  * reporting, the bearer-from-endpoint contract, cookie injection and refresh

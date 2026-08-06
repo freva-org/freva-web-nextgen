@@ -87,7 +87,7 @@ function split(access: string, refresh: string, expiresAt: number): StoredToken 
 }
 
 // ---------------------------------------------------------------------------
-// 1: reservations must consume capacity, not merely inspect it
+// Reservations must consume capacity, not merely inspect it.
 // ---------------------------------------------------------------------------
 
 describe("credential reservations are atomic", () => {
@@ -101,7 +101,7 @@ describe("credential reservations are atomic", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2: server-managed mints are credential-producing boundaries too
+// Server-managed mints are credential-producing boundaries too.
 // ---------------------------------------------------------------------------
 
 describe("server-managed mints enter the recovery lifecycle", () => {
@@ -150,7 +150,7 @@ describe("server-managed mints enter the recovery lifecycle", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3: a rejected refresh credential does not prove the access token is dead
+// A rejected refresh credential does not prove the access token is dead.
 // ---------------------------------------------------------------------------
 
 describe("terminal refresh invalidates the whole known credential", () => {
@@ -193,7 +193,7 @@ describe("terminal refresh invalidates the whole known credential", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4 + 5: peer lifecycle messages are bound to the session they end
+// Peer lifecycle messages are bound to the session they end.
 // ---------------------------------------------------------------------------
 
 describe("peer lifecycle operations are independently correlated", () => {
@@ -366,7 +366,7 @@ describe("peer lifecycle operations are independently correlated", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6: a retained fail-closed state refuses login
+// A retained fail-closed state refuses login.
 // ---------------------------------------------------------------------------
 
 describe("login is refused in every fail-closed state", () => {

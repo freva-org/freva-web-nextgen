@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-// CookieStorage now lives behind the deliberately-unsafe entry point.
+// CookieStorage lives behind the deliberately-unsafe entry point.
 import { CookieStorage } from "../src/unsafe-compat.js";
 import { MemoryStorage } from "../src/storage/memory.js";
 import { ServerManagedStorage } from "../src/storage/serverManaged.js";
@@ -10,7 +10,7 @@ const NOW = Math.floor(Date.now() / 1000);
 /**
  * The suite deliberately runs on http://app.test (a non-loopback plaintext
  * origin) so the Secure-on-http probe has something real to fail against.
- * CookieStorage now refuses that origin unless the caller says it means it.
+ * CookieStorage refuses that origin unless the caller says it means it.
  */
 const INSECURE_OK = {
   allowInsecureTransport: true,

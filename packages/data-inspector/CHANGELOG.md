@@ -18,7 +18,7 @@ _Adopts CalVer (`YYMM.MINOR.PATCH`). Supersedes 3.2.0; no functional difference.
 - `error` and aggregation `file` paths render as text; the iframe `src` is set via the DOM property; the iframe is sandboxed with `referrerpolicy="no-referrer"`.
 - changing `file` resets stale `output` / `zarr-url` / `error` / active tab.
 - chrome, metadata container and iframe are built once and patched by delta instead of rewriting `innerHTML`; scroll position, expand/collapse state and caret survive updates.
-- ships its own modal CSS and inline SVG icons, so the chrome needs no Bootstrap or Font Awesome. Internal class names `token-*` → `di-*`.
+- ships its own modal CSS and inline SVG icons, so the chrome needs no Bootstrap or Font Awesome. Internal class names `token-*` -> `di-*`.
 - Support nested / multi-group Zarr stores in the client-side metadata parser.
 
 ## 3.1.0

@@ -1,9 +1,9 @@
 /**
  * Release gate: no NUL or disallowed control bytes anywhere we ship or review.
  *
- * A literal control character inside a regex character class made src/url.ts a
- * "binary" file to git and to review tooling - the diff was unreadable and the
- * security-critical code was effectively unreviewable.
+ * A literal control character inside a regex character class makes a source
+ * file "binary" to git and to review tooling - the diff is unreadable and the
+ * security-critical code is effectively unreviewable.
  */
 import fs from "node:fs";
 import path from "node:path";

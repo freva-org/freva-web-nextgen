@@ -50,7 +50,7 @@ function makeFetch(handler: (url: string, init?: RequestInit) => Response | Prom
 const created: PyOidcAuthClient[] = [];
 
 /**
- * handleCallback() now requires evidence that a login started in this tab
+ * handleCallback() requires evidence that a login started in this tab
  * (login-CSRF defense), so most tests seed that transaction the way login()
  * would. Pass `seedLoginTxn: false` to exercise the defense itself.
  */
@@ -215,11 +215,11 @@ describe("constructor", () => {
     expect(() => base({ redirectUri: "not-a-url" })).toThrow(/redirectUri/);
     expect(() => base({ refreshTimeoutMs: 0 })).toThrow(/refreshTimeoutMs/);
     expect(() => base({ refreshBufferSeconds: Number.NaN })).toThrow(/refreshBufferSeconds/);
-    // A4: syntactic "relative" checks are not enough - the browser normalizes
+    // Syntactic "relative" checks are not enough - the browser normalizes
     // the backslash and this resolves to another origin entirely.
     expect(() => base({ authBaseUrl: "/\\attacker.example/auth" })).toThrow(/backslash/i);
     expect(() => base({ authBaseUrl: "//attacker.example/auth" })).toThrow(/protocol-relative/i);
-    // A4: OAuth redirect URIs must not carry a fragment.
+    // OAuth redirect URIs must not carry a fragment.
     expect(() => base({ redirectUri: "http://app.test/cb#frag" })).toThrow(/fragment/i);
   });
 });
@@ -259,8 +259,9 @@ describe("login", () => {
   it("isCallbackUrl routes anything response-shaped on an owned route", () => {
     const { client } = mkClient({ storage: new MemoryStorage() });
     expect(client.isCallbackUrl("http://app.test/cb?code=a&state=b")).toBe(true);
-    // Code-only used to be "not a callback", so the router skipped it and the
-    // authorization code stayed in the address bar.
+    // A code-only response must count as a callback: treating it as "not a
+    // callback" makes the router skip it and leaves the authorization code
+    // sitting in the address bar.
     expect(client.isCallbackUrl("http://app.test/cb?code=a")).toBe(true);
     expect(client.isCallbackUrl("http://app.test/cb?state=b")).toBe(true);
     expect(client.isCallbackUrl("http://app.test/cb")).toBe(false);
@@ -322,7 +323,7 @@ describe("handleCallback", () => {
     const done = events.find((e) => e.type === "login-completed") as {
       hasReturnPath: boolean;
     };
-    // The path itself is application data and no longer rides into telemetry.
+    // The path itself is application data and never rides into telemetry.
     expect(done.hasReturnPath).toBe(true);
     expect(JSON.stringify(events)).not.toContain("/back/here");
     expect(client.consumeReturnPath()).toBe("/back/here");
@@ -1393,8 +1394,8 @@ describe("forced refresh never joins a non-forced one", () => {
   });
 
   it("does its own round trip when the prior refresh did NOT rotate", async () => {
-    // The original bug: a force joining a non-force that short-circuits gets
-    // handed back the very token the server just rejected.
+    // A force joining a non-force that short-circuits must not be handed back
+    // the very token the server just rejected.
     const fresh = makeJwt({ jti: "f9", exp: NOW + 7200 });
     const storage = new MemoryStorage();
     const current = stored(makeJwt({ jti: "f8", exp: NOW + 9999 }), NOW + 9999);

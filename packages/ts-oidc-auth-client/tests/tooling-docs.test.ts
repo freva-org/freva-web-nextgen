@@ -2,9 +2,9 @@
  * Guards on the browser TOOLING and the docs that describe it.
  *
  * Nothing here exercises authentication. Three things are worth a test because
- * each has already been wrong once: a Docker command that cannot work as
- * printed, a README that describes a matrix the code no longer uses, and the
- * claim that this round changed no runtime source.
+ * each is a claim a reader will act on: that the printed Docker command works
+ * as printed, that the README describes the matrix the code actually uses, and
+ * that src/ still matches the recorded manifest.
  */
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";

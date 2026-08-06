@@ -283,7 +283,7 @@ describe("topology widening does not lose the fingerprint protections", () => {
   });
 });
 
-/** Readability helper: A4's client must remain usable. */
+/** Readability helper: the client under test must remain usable. */
 function expectUnblocked(isBlocked: boolean): void {
   expect(isBlocked).toBe(false);
 }

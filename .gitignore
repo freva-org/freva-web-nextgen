@@ -126,3 +126,5 @@ logs/
 *.key
 .vercel
 .netlify
+# Compiled test output (databrowser)
+dist-test/

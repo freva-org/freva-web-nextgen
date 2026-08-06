@@ -63,6 +63,7 @@ Releases are handled by Changesets via CI. Merge the auto-created "Version Packa
 ```
 packages/
   data-inspector/        # @freva-org/data-inspector
+  databrowser/           # @freva-org/databrowser
   ts-oidc-auth-client/   # @freva-org/ts-oidc-auth-client
   your-new-package/      # add future packages here
 ```

@@ -10,9 +10,9 @@ import { classifyRun, runTest, vitestBinPath } from "./mutation-runner.mjs";
 let failures = 0;
 const check = (name, actual, expected) => {
   if (actual === expected) {
-    console.log(`  runner self-test: ${name} → ${actual}`);
+    console.log(`  runner self-test: ${name} -> ${actual}`);
   } else {
-    console.error(`  runner self-test FAILED: ${name} → ${actual}, want ${expected}`);
+    console.error(`  runner self-test FAILED: ${name} -> ${actual}, want ${expected}`);
     failures++;
   }
 };
