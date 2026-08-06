@@ -1,0 +1,56 @@
+{
+  "name": "@freva-org/ts-oidc-auth-client",
+  "version": "2608.0.0",
+  "description": "Standalone TypeScript browser client for py-oidc-auth servers (freva-rest): broker token lifecycle with pluggable storage.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/ts-oidc-auth-client"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs/SPEC.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run check:bytes && npm run check:mutations && npm run test:browser:strict",
+    "test:browser": "node browser-tests/redirect.mjs && node browser-tests/callback.mjs && node browser-tests/document-base.mjs",
+    "browsers:install": "node scripts/install-browsers.mjs",
+    "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
+    "check:bytes": "node scripts/check-bytes.mjs",
+    "check:mutations": "node scripts/mutation-runner.selftest.mjs && node scripts/mutation-check.mjs",
+    "manifest:refresh": "node scripts/write-src-manifest.mjs"
+  },
+  "license": "BSD-3-Clause",
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.8",
+    "happy-dom": "^20.10.2",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.8",
+    "playwright": "^1.56.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./unsafe-compat": {
+      "types": "./dist/unsafe-compat.d.ts",
+      "import": "./dist/unsafe-compat.js"
+    }
+  },
+  "sideEffects": false
+}

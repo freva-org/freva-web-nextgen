@@ -1,4 +1,4 @@
-# @freva/data-inspector
+# @freva-org/data-inspector
 
 ## 3.0.0
 

@@ -10,7 +10,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
@@ -40,3 +40,44 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Release gates specific to @freva-org/ts-oidc-auth-client. Kept out of the
+  # matrix above: the browser gate installs three engines, and the mutation gate
+  # rewrites src/ in place while it runs.
+  auth-gates:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: packages/ts-oidc-auth-client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/ts-oidc-auth-client/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: .
+
+      - name: Control-byte gate
+        run: npm run check:bytes
+
+      - name: Mutation gate
+        run: npm run check:mutations
+
+      # The browser suites import ../dist, so a clean checkout has to build first.
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright engines
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      # Strict: all three engines must actually execute. A missing browser is a
+      # failure here, not a skip.
+      - name: Browser gate
+        run: npm run test:browser:strict

@@ -1,0 +1,22 @@
+{
+  "note": "sha256 of every file under src/. Refresh with `npm run manifest:refresh` in the same commit as any intentional src/ change.",
+  "generatedFrom": "@freva-org/ts-oidc-auth-client@2608.0.0",
+  "fileCount": 14,
+  "treeSha256": "07fe298a680fd50ac4cc72d6b5882ab6ee5278aa1960b4bf0166c2072bd42b24",
+  "files": {
+    "src/client.ts": "8ab9ce8bbf475c7082f00b8daaaeb31088eb58b1001d7601794be6e6a40c7548",
+    "src/crosstab.ts": "4d176ce291a451c0ecfc3cf39691dda7224d42827ef04024eca06978cc1b9847",
+    "src/index.ts": "7ead47dd9b33efd88d21b44cec2c02a4b52a23dea2c278c488929cc207e3d482",
+    "src/jwt.ts": "8ffa4976ce9fe5c6cdc58f9cd6920f29d2c9efb41a217723824855994f616617",
+    "src/recovery.ts": "58a6ace47876a60a0f6906bd58a3533e2136ff86c154451ca360798ac325e275",
+    "src/session.ts": "a78880bae21df7b17b495ef1dbefe1acf4685359d39623c9baa885873e791351",
+    "src/storage/cookie.ts": "e899a029e4efaf161bdd0b5367269a6622e813f93d6e7188ac5108c25a90ce30",
+    "src/storage/memory.ts": "ed2d0f0d8598bfc31aa24e635dbb11824b752fb0556856c6eb65c792bc3fa992",
+    "src/storage/serverManaged.ts": "149be64ce8f2120de8e5e25eda0a54204402049ffb652a91dc4e07b49aa3769c",
+    "src/token.ts": "dca4cc5a549e131a62d751629672f276569fe869159c0791634db6597bc5887b",
+    "src/types.ts": "50620d43cbe3d632999d81188918a935c29ab590af07dc4dd3f168615e502b09",
+    "src/unsafe-compat.ts": "ba0d9832e29cff1f76aa63f9051e07e1ac72f43b4a9fc9a736292e0e70a03848",
+    "src/url.ts": "2b5d8975860a74f68f515ef90881f47e412f1578c0c652cb9c51ae66b4b80b98",
+    "src/validate.ts": "36deaf645232b563cc0d3f2df3737d5d20cd9379573726f1aabca32f71e7861c"
+  }
+}

@@ -1,6 +1,6 @@
-# @freva/data-inspector
+# @freva-org/data-inspector
 
-[![npm](https://img.shields.io/npm/v/@freva/data-inspector)](https://www.npmjs.com/package/@freva/data-inspector)
+[![npm](https://img.shields.io/npm/v/@freva-org/data-inspector)](https://www.npmjs.com/package/@freva-org/data-inspector)
 [![CI](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml/badge.svg)](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD-3-Clause-yellow.svg)](../../LICENSE)
 
@@ -11,13 +11,13 @@ NetCDF / Zarr file inspection dialog as a **framework-agnostic Web Component**. 
 ## Install
 
 ```bash
-npm install @freva/data-inspector
+npm install @freva-org/data-inspector
 ```
 
 ## Quick start
 
 ```js
-import "@freva/data-inspector";
+import "@freva-org/data-inspector";
 ```
 
 ```html
@@ -39,7 +39,7 @@ el.setAttribute("open", ""); // open it
 ## Usage with ZarrPoller
 
 ```js
-import { ZarrPoller, NcDumpDialogState } from "@freva/data-inspector";
+import { ZarrPoller, NcDumpDialogState } from "@freva-org/data-inspector";
 
 el.addEventListener("inspector-submit", async ({ detail: { file, aggregationConfig } }) => {
   el.setAttribute("status", NcDumpDialogState.LOADING);
@@ -69,7 +69,7 @@ el.addEventListener("inspector-submit", async ({ detail: { file, aggregationConf
 <summary>React</summary>
 
 ```tsx
-import "@freva/data-inspector";
+import "@freva-org/data-inspector";
 import { useRef } from "react";
 
 export function Inspector({ file }: { file: string }) {
