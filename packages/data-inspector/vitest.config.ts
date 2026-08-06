@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "happy-dom",
+    setupFiles: ["./vitest.setup.ts"],
     environmentOptions: {
       happyDOM: {
         settings: {
@@ -12,12 +13,12 @@ export default defineConfig({
         },
       },
     },
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts", "src/index.ts"],
+      exclude: ["src/index.ts"],
       thresholds: {
         statements: 75,
         branches: 65,

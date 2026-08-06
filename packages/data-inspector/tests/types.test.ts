@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { NcDumpDialogState } from "../types";
+import { NcDumpDialogState } from "../src/types";
 
 describe("NcDumpDialogState", () => {
   it("has the expected string values", () => {

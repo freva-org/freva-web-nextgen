@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, vi, afterEach } from "vitest";
-import { ZarrLoadingStepsElement } from "../elements/zarr-loading-steps";
+import { ZarrLoadingStepsElement } from "../src/elements/zarr-loading-steps";
 
 beforeAll(() => {
   if (!customElements.get("zarr-loading-steps")) {

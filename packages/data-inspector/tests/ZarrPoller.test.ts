@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ZarrPoller } from "../ZarrPoller";
+import { ZarrPoller } from "../src/ZarrPoller";
 
 const ZARR_URL = "https://example.com/store.zarr";
 
@@ -28,7 +28,19 @@ describe("ZarrPoller", () => {
     poller.start();
     await vi.advanceTimersByTimeAsync(0); // flush initial poll
 
-    expect(onStatus).toHaveBeenCalledWith(4);
+    expect(onStatus).toHaveBeenCalledWith(4, null);
+    poller.stop();
+  });
+
+  it("forwards the server reason as the second onStatus argument", async () => {
+    globalThis.fetch = mockFetch(200, { status: 1, reason: "conversion failed" });
+    const onStatus = vi.fn();
+
+    const poller = new ZarrPoller(ZARR_URL, { onStatus, intervalMs: 1000 });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onStatus).toHaveBeenCalledWith(1, "conversion failed");
     poller.stop();
   });
 
@@ -65,7 +77,7 @@ describe("ZarrPoller", () => {
     poller.start();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(onStatus).toHaveBeenCalledWith(5);
+    expect(onStatus).toHaveBeenCalledWith(5, null);
     poller.stop();
   });
 

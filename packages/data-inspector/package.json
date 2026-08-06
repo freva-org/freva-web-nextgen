@@ -1,8 +1,16 @@
 {
   "name": "@freva-org/data-inspector",
-  "version": "3.0.0",
+  "version": "2608.0.0",
   "description": "NetCDF / Zarr file inspection dialog - framework-agnostic Web Component",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/data-inspector"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -14,16 +22,19 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "vite build",
     "dev": "vite --config vite.dev.config.ts",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "lint": "eslint src tests",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
+  "license": "BSD-3-Clause",
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.3",
     "happy-dom": "^20.8.9",

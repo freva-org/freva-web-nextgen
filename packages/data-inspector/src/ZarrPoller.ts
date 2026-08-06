@@ -8,7 +8,13 @@
  *   3  waiting
  *   4  processing
  *   5  gone / unknown
+ *
+ * The status endpoint may also return a `reason` string (e.g. why a
+ * conversion failed or a file was not found). It is forwarded as the second
+ * argument to `onStatus` so hosts can show a precise error message.
  */
+
+import { defaultGetAuthHeaders } from "./internal/http";
 
 export interface ZarrPollerOptions {
   /** Polling interval in ms. Default: 2000 */
@@ -17,25 +23,13 @@ export interface ZarrPollerOptions {
   getAuthHeaders?: () => Record<string, string>;
   /** Override the status endpoint URL. Receives the already-encoded zarr URL. */
   getStatusUrl?: (encodedZarrUrl: string) => string;
-  /** Called whenever a new status code arrives. */
-  onStatus?: (statusCode: number) => void;
+  /**
+   * Called whenever a new status code arrives. `reason` carries the optional
+   * server-provided explanation (`data.reason`), or `null` when absent.
+   */
+  onStatus?: (statusCode: number, reason: string | null) => void;
   /** Called on network / parse error. */
   onError?: (error: string) => void;
-}
-
-const DEFAULT_COOKIE_NAME = "freva_auth_token=";
-
-function defaultGetAuthHeaders(): Record<string, string> {
-  const cookies = document.cookie.split(";");
-  const authCookie = cookies.find((c) => c.trim().startsWith(DEFAULT_COOKIE_NAME));
-  if (!authCookie) return {};
-  try {
-    let value = authCookie.substring(authCookie.indexOf("=") + 1).trim();
-    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-    return value ? { Authorization: `Bearer ${value}` } : {};
-  } catch {
-    return {};
-  }
 }
 
 function defaultGetStatusUrl(encodedZarrUrl: string): string {
@@ -50,7 +44,7 @@ export class ZarrPoller {
   private readonly intervalMs: number;
   private readonly getAuthHeaders: () => Record<string, string>;
   private readonly getStatusUrl: (encoded: string) => string;
-  private readonly onStatus: (code: number) => void;
+  private readonly onStatus: (code: number, reason: string | null) => void;
   private readonly onError: (err: string) => void;
 
   constructor(zarrUrl: string, options: ZarrPollerOptions = {}) {
@@ -87,15 +81,16 @@ export class ZarrPoller {
       });
 
       if (!res.ok) {
-        if (!this.cancelled) this.onStatus(5);
+        if (!this.cancelled) this.onStatus(5, null);
         return;
       }
 
-      const data = (await res.json()) as { status?: number };
+      const data = (await res.json()) as { status?: number; reason?: string | null };
       const code = data.status ?? 5;
+      const reason = data.reason ?? null;
 
       if (!this.cancelled) {
-        this.onStatus(code);
+        this.onStatus(code, reason);
         // Stop polling on terminal states (0 = ok, 1 = failed, 2 = not found)
         if (code <= 2) this.stop();
       }

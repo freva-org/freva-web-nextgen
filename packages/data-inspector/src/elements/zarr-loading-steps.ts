@@ -4,7 +4,6 @@
  * Attributes:
  *   status-code   number  Backend status code (0-5). Default: 3
  *   is-aggregation        Boolean. Changes the rotating messages shown.
- *
  */
 
 const KEYFRAMES = `

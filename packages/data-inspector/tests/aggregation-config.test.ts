@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { AggregationConfigElement } from "../elements/aggregation-config";
+import { AggregationConfigElement } from "../src/elements/aggregation-config";
 
 beforeAll(() => {
   if (!customElements.get("aggregation-config")) {
