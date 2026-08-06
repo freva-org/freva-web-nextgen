@@ -32,6 +32,18 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 
+/**
+ * ANSI SGR sequences, stripped before anything is matched.
+ *
+ * Vitest colours its summary when a TTY is detected or FORCE_COLOR is set, and
+ * the escapes land between "Tests" and the count - so `/Tests\s+(\d+)/` stops
+ * matching and a real "1 failed" reads as "no failing test reported". That
+ * turns a correctly killed mutation into an infrastructure failure, uniformly,
+ * for every mutation at once. Parse plain text or the verdicts are a lie.
+ */
+// eslint-disable-next-line no-control-regex -- matching the escape IS the point
+const ANSI = /\u001B\[[0-9;]*m/g;
+
 /** Vitest summary lines: "Tests  1 failed | 14 skipped (15)". */
 const TESTS_FAILED = /Tests\s+(\d+) failed/;
 const TESTS_PASSED = /Tests\s+(\d+) passed/;
@@ -82,7 +94,7 @@ function tail(out, lines = 4) {
  * @returns {{verdict: "killed"|"survived"|"infrastructure", detail: string}}
  */
 export function classifyRun(result, { targeted }) {
-  const out = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  const out = `${result.stdout ?? ""}${result.stderr ?? ""}`.replace(ANSI, "");
 
   // 1. The process never ran, or died abnormally.
   if (result.error) {
@@ -160,9 +172,10 @@ export function classifyRun(result, { targeted }) {
   if (!passed || Number(passed[1]) === 0) {
     return {
       verdict: "infrastructure",
-      detail: targeted
-        ? "the run succeeded but executed no tests; check the -t pattern"
-        : "the run succeeded but executed no tests",
+      detail:
+        (targeted
+          ? "the run succeeded but executed no tests; check the -t pattern"
+          : "the run succeeded but executed no tests") + tail(out, 6),
     };
   }
   return {
@@ -214,5 +227,8 @@ export function runTest({ file, only, command }) {
     ? [command, ["vitest", "run", file, ...filter]]
     : [process.execPath, [vitestBinPath(), "run", file, ...filter]];
   const result = spawnSync(bin, args, { encoding: "utf8" });
-  return classifyRun(result, { targeted: !!only });
+  const verdict = classifyRun(result, { targeted: !!only });
+  // The exact argv, so a failing gate can be reproduced by hand from the log
+  // instead of guessed at.
+  return { ...verdict, argv: [bin, ...args] };
 }

@@ -10,9 +10,9 @@ import { classifyRun, runTest, vitestBinPath } from "./mutation-runner.mjs";
 let failures = 0;
 const check = (name, actual, expected) => {
   if (actual === expected) {
-    console.log(`  runner self-test: ${name} -> ${actual}`);
+    console.log(`  runner self-test: ${name} → ${actual}`);
   } else {
-    console.error(`  runner self-test FAILED: ${name} -> ${actual}, want ${expected}`);
+    console.error(`  runner self-test FAILED: ${name} → ${actual}, want ${expected}`);
     failures++;
   }
 };
@@ -40,6 +40,8 @@ check("vitest is launchable", live.verdict, "survived");
 if (live.verdict !== "survived") {
   console.error(`  runner self-test: ${live.detail}`);
   console.error(`  runner self-test: resolved CLI -> ${vitestBinPath()}`);
+  console.error(`  runner self-test: cwd -> ${process.cwd()}`);
+  console.error(`  runner self-test: argv -> ${JSON.stringify(live.argv)}`);
 }
 
 // --- synthetic child-process results ---------------------------------------
@@ -116,6 +118,33 @@ const cases = [
     },
     targeted: true,
     want: "infrastructure",
+  },
+  {
+    // Vitest colours the summary whenever it thinks a TTY is present. The
+    // escapes sit between "Tests" and the count, so a gate that matches raw
+    // output reads a real kill as "no failing test reported" - for every
+    // mutation at once.
+    name: "a colour-styled kill is still a kill",
+    result: {
+      status: 1,
+      stdout:
+        " \u001B[1mTest Files\u001B[22m  \u001B[1m\u001B[31m1 failed\u001B[39m\u001B[22m (1)\n" +
+        "      \u001B[1mTests\u001B[22m  \u001B[1m\u001B[31m1 failed\u001B[39m\u001B[22m | 14 skipped (15)",
+      stderr: "",
+    },
+    targeted: true,
+    want: "killed",
+  },
+  {
+    name: "a colour-styled survivor is still a survivor",
+    result: {
+      status: 0,
+      stdout:
+        "      \u001B[1mTests\u001B[22m  \u001B[1m\u001B[32m1 passed\u001B[39m\u001B[22m | 14 skipped (15)",
+      stderr: "",
+    },
+    targeted: true,
+    want: "survived",
   },
   {
     name: "genuine kill",
