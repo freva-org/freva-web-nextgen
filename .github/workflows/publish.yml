@@ -11,6 +11,7 @@ concurrency:
 
 jobs:
   release:
+    name: version or publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -20,12 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No `registry-url`: trusted publishing has no NODE_AUTH_TOKEN, so
-      # setup-node would write an .npmrc pinning an empty one.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # registry-url is required
+      - name: Clear the empty auth token setup-node writes
+        run: sed -i '/_authToken/d' "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
 
       # Trusted publishing needs npm >= 11.5.1. NOT `npm@latest`: npm 12 returns
       # `npm info --json` as an array, which changesets misreads as "unpublished".
