@@ -61,7 +61,7 @@ is required to make it look right.
 ### Keeping the buffer in step with your own UI
 
 When _your_ UI changes the query (a chip removed, a "clear all"), bump a counter from `revision()`.
-The terminal then rebuilds the buffer from `text()` even while the editor is focused - otherwise a
+The terminal then rebuilds the buffer from `text()` even while the editor is focused — otherwise a
 half-typed draft survives the clear and re-commits the filters the user just removed. Anything that
 should survive that rebuild is returned by `retain()`:
 
@@ -74,7 +74,7 @@ retain: (buffer) => uncommittedTokensIn(buffer),
 
 The window is positioned and clamped inside the mount (or an explicit `bounds()` element), never
 against `window.innerWidth/innerHeight`. That is what lets it work inside a host that relocates the
-mount into a clipped, transformed container - the case where `position: fixed` silently resolves
+mount into a clipped, transformed container — the case where `position: fixed` silently resolves
 against the wrong box.
 
 ### Tooltips
@@ -96,26 +96,23 @@ That matters because an indent shifts only the _first_ line. The previous geomet
 soon as the prefix itself wrapped, the painted prompt and the typed text disagreed: the command
 either overlapped the prompt or was pushed onto the following line. In one shared flow the command
 starts immediately after the last prefix token at every width, and every continuation begins at the
-container's left edge - exactly like a shell.
+container's left edge — exactly like a shell.
 
-Two things hold this in place:
-
-- `src/wrap.ts` states the contract as a pure function; `tests/wrap.test.ts` asserts it for prefixes
-  occupying one, two, three and four visual lines.
-- `fixtures/wrapping.html` measures the same four cases in a **real browser**, because jsdom performs
-  no layout and a width mock cannot answer a layout question. Open the file directly, or drive it
-  from a harness via `window.__fixtureResult`.
+`src/wrap.ts` states the contract as a pure function; `tests/wrap.test.ts` asserts it for prefixes
+occupying one, two, three and four visual lines. The mounted terminal is measured in a real browser
+by `terminal-wrapping.mjs` in the databrowser package, because jsdom performs no layout and a width
+mock cannot answer a layout question.
 
 ## Editing modes
 
-- **rich** - a controlled `contenteditable="plaintext-only"` span. The highlight _is_ the editable
+- **rich** — a controlled `contenteditable="plaintext-only"` span. The highlight _is_ the editable
   surface, so there is no overlay to keep in sync. Used for single-line buffers where the engine
   supports `plaintext-only`.
-- **plain** - the explicit fallback: a real `<textarea>` with a `<pre>` overlay and the prefix as a
+- **plain** — the explicit fallback: a real `<textarea>` with a `<pre>` overlay and the prefix as a
   block above. Used for multi-line buffers, narrow viewports, a forced `fallback()`, and any engine
   without `plaintext-only` (which includes jsdom, so this is the mode the node tests exercise).
 
-Pasted content is taken as plain text in both modes, and values reach the DOM through `textContent` -
+Pasted content is taken as plain text in both modes, and values reach the DOM through `textContent` —
 never `innerHTML`. The one exception is `TerminalTab.icon`, which is assigned as markup and must
 therefore always be a compile-time constant, never data.
 
@@ -124,7 +121,7 @@ therefore always be a compile-time constant, never data.
 Every rule is scoped to `.freva-term`. Tokens (`--term-bg`, `--term-fg`, `--term-alpha`, and the
 syntax colours) are set on the root, so a host can retheme without forking the stylesheet. Edit
 `src/styles.css` and run `npm run gen:styles -w @freva-org/freva-client-terminal`; never edit the
-generated `src/styles.ts` by hand - a test pins the two together.
+generated `src/styles.ts` by hand — a test pins the two together.
 
 ## License
 

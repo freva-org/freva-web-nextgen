@@ -8,12 +8,10 @@
 // It exists so the wrapping requirement can be asserted DETERMINISTICALLY - "with a prefix that
 // occupies one, two, three or four visual lines, the command still begins immediately after the
 // last prefix token, and every wrapped continuation starts at column 0". A jsdom width mock cannot
-// check that (jsdom does no layout at all). The browser fixture in `fixtures/wrapping.html` checks
-// that a real engine actually realises this contract; these two together are what replaced the old
-// `--te-indent` measurement.
+// check that, because jsdom does no layout at all.
 //
 // NOTE what is deliberately absent: there is no indent, no threshold, and no "prefix on its own
-// line" mode. Those were the defect.
+// line" mode. Each of those breaks the contract above.
 
 export interface WrapPlan {
   /** Every visual line, in order. */

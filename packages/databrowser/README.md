@@ -1,9 +1,5 @@
 # @freva-org/databrowser
 
-[![npm](https://img.shields.io/npm/v/@freva-org/databrowser)](https://www.npmjs.com/package/@freva-org/databrowser)
-[![CI](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml/badge.svg)](https://github.com/freva-org/freva-web-nextgen/actions/workflows/ci.yml)
-[![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-yellow.svg)](../../LICENSE)
-
 Framework-free, strictly-typed climate-data browser for the `freva-nextgen` REST API. Its only
 runtime dependency is the first-party [`@freva-org/freva-client-terminal`](../freva-client-terminal),
 which owns the terminal window; there are **no third-party runtime dependencies**. Single mount point, self-contained styles, near-total teardown (one
