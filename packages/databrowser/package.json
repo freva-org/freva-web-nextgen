@@ -1,7 +1,7 @@
 {
   "name": "@freva-org/databrowser",
   "version": "2608.0.0",
-  "description": "Freva Data-Browser - framework-free, typed, zero runtime dependencies.",
+  "description": "Freva Data-Browser - framework-free, typed, one first-party runtime dependency (@freva-org/freva-client-terminal).",
   "type": "module",
   "repository": {
     "type": "git",
@@ -16,9 +16,14 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./picker": {
+      "types": "./dist/picker.d.ts",
+      "import": "./dist/picker.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
@@ -26,18 +31,30 @@
     "LICENSE"
   ],
   "scripts": {
+    "build:deps": "npm --prefix ../freva-client-terminal run build",
+    "prebuild": "npm run build:deps",
+    "pretypecheck": "npm run build:deps",
+    "pretest": "npm run build",
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "gen:styles": "node scripts/gen-styles.mjs",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"",
+    "pretest:browser": "npm run build",
+    "test:browser": "node browser-tests/run.mjs",
+    "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
     "lint": "eslint src tests scripts"
   },
   "license": "BSD-3-Clause",
-  "dependencies": {},
+  "dependencies": {
+    "@freva-org/freva-client-terminal": "2608.0.0"
+  },
   "devDependencies": {
     "@types/jsdom": "^28.0.3",
     "@types/node": "^25.9.3",
+    "ajv": "^8.20.0",
     "jsdom": "^29.1.1",
+    "playwright": "^1.56.0",
     "typescript": "^5.5.4"
   }
 }

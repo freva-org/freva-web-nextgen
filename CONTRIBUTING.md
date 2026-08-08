@@ -56,7 +56,19 @@ than letting a `major` changeset invent a number.
 
 ## Releasing (maintainers only)
 
-Releases are handled by Changesets via CI. Merge the auto-created "Version Packages" PR to publish to npm.
+Merging a PR never publishes. Publishing is the act of merging the release PR:
+
+1. A PR lands carrying a changeset. CI opens or refreshes **"chore: version packages"**.
+2. Merging that PR consumes the changesets and applies the new versions.
+3. Only then does CI publish, package by package, in dependency order.
+
+`scripts/publish-packages.mjs` decides the order. A package waits until every workspace package it
+needs is resolvable on npm at the version it pins - including versions pinned in an `esm.sh` URL in
+the source, which package.json never sees. Versions already on the registry are skipped, so a
+re-run finishes a partial release instead of failing.
+
+Bumping a version by hand is refused by CI: it would publish on the next push to main without ever
+going through the release PR.
 
 ## Package structure
 

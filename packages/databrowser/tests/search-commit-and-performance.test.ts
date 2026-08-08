@@ -393,9 +393,10 @@ test("(pure): facetQueryString encodes keys as well as values", () => {
       lensSwitcher: true,
       inspect: true,
       brand: true,
+      footer: true,
     },
     theme: {},
-    brand: { title: "Freva", mark: "≈", description: "" },
+    brand: { title: "Freva", mark: "≈", description: "", showMark: true, showTitle: true },
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,
@@ -564,7 +565,7 @@ test("a no-auth 413 is caught by the HEAD preflight - error surfaced, nothing do
   const { handle, root } = await mount(router);
   q<HTMLButtonElement>(root, '[aria-label^="Export catalogue"]')!.click();
   await tick();
-  byText<HTMLButtonElement>(root, ".pop-item", "Intake catalogue")!.click();
+  byText<HTMLButtonElement>(root, ".xm-item", "Intake catalogue")!.click();
   await wait(50);
   assert.deepEqual(downloadClicks, [], "the 413 error body was NOT saved as a file");
   assert.match(
@@ -585,7 +586,7 @@ test("catalogue download is handed to the BROWSER (streams to disk, no buffering
   const { handle, root } = await mount(router);
   q<HTMLButtonElement>(root, '[aria-label="Export catalogue"]')!.click();
   await tick();
-  byText<HTMLButtonElement>(root, ".pop-item", "Intake catalogue")!.click();
+  byText<HTMLButtonElement>(root, ".xm-item", "Intake catalogue")!.click();
   await wait(50);
 
   // the browser is given the URL directly - no JS fetch, so nothing is buffered in memory and the
@@ -628,7 +629,7 @@ test("URI manifest export: data-search .txt handed to the browser with the same 
 
   q<HTMLButtonElement>(root, '[aria-label="Export catalogue"]')!.click();
   await tick();
-  const item = byText<HTMLButtonElement>(root, ".pop-item", "URI manifest");
+  const item = byText<HTMLButtonElement>(root, ".xm-item", "URI manifest");
   assert.ok(item, "the export menu offers a URI manifest, alongside Intake and STAC");
   item!.click();
   await wait(50);
@@ -659,9 +660,9 @@ test("two catalogue downloads can run at the same time", async () => {
     await tick();
   };
   await openMenu();
-  byText<HTMLButtonElement>(root, ".pop-item", "Intake catalogue")!.click();
+  byText<HTMLButtonElement>(root, ".xm-item", "Intake catalogue")!.click();
   await openMenu();
-  byText<HTMLButtonElement>(root, ".pop-item", "STAC catalogue")!.click();
+  byText<HTMLButtonElement>(root, ".xm-item", "STAC catalogue")!.click();
   await wait(50);
   // starting the second must NOT cancel the first - the downloads need independent abort channels
   assert.deepEqual(downloadClicks, ["freva-intake.json", "freva-stac.zip"], "both downloads fired");
@@ -698,9 +699,10 @@ test("filterCommittable / selectionsEqual behave as the single commit guard", ()
       lensSwitcher: true,
       inspect: true,
       brand: true,
+      footer: true,
     },
     theme: {},
-    brand: { title: "Freva", mark: "≈", description: "" },
+    brand: { title: "Freva", mark: "≈", description: "", showMark: true, showTitle: true },
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,

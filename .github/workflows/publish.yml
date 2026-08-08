@@ -4,32 +4,38 @@ on:
   push:
     branches: [main]
 
+# Two pushes must not race each other into the registry.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-      # Mints the OIDC token npm exchanges for publish rights.
-      id-token: write
+      id-token: write # OIDC token for npm trusted publishing
 
     steps:
       - uses: actions/checkout@v4
 
+      # No `registry-url`: trusted publishing has no NODE_AUTH_TOKEN, so
+      # setup-node would write an .npmrc pinning an empty one.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
-      # Trusted publishing needs npm >= 11.5.1
-      - name: Use an npm that supports trusted publishing
+      # Trusted publishing needs npm >= 11.5.1. NOT `npm@latest`: npm 12 returns
+      # `npm info --json` as an array, which changesets misreads as "unpublished".
+      - name: Pin npm
         run: npm install -g npm@11.19.0
 
       - name: Install dependencies
         run: npm ci
 
-      # @freva-org/ts-oidc-auth-client's prepublishOnly runs its strict browser
-      # gate, which requires all three engines to be present before publish.
+      # ts-oidc-auth-client's prepublishOnly runs its strict three-engine gate.
       - name: Install Playwright engines
         run: npm exec -- playwright install --with-deps chromium firefox webkit
 
@@ -39,13 +45,31 @@ jobs:
       - name: Test
         run: npm test
 
-      # Creates a "Version Packages" PR when changesets are present.
-      # Merging that PR triggers the actual npm publish below.
-      - name: Create version PR or publish
+      # Changesets present -> open/refresh the "Version Packages" PR, publish
+      # nothing. Changesets consumed -> that PR was just merged, so the publish
+      # step below runs. An ordinary feature merge can only move the release PR
+      # forward; CI's `changeset-required` job refuses a hand-bumped version.
+      - name: Version
+        id: changesets
         uses: changesets/action@v1
         with:
-          publish: npx changeset publish --provenance
+          version: npx changeset version
           title: "chore: version packages"
           commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish
+        id: publish
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: node scripts/publish-packages.mjs
+
+      - name: Tag published versions
+        if: steps.publish.outputs.published != '' && steps.publish.outputs.published != '[]'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for tag in $(echo '${{ steps.publish.outputs.published }}' | jq -r '.[]'); do
+            git tag -f "$tag"
+            git push -f origin "$tag"
+          done

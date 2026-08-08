@@ -14,7 +14,7 @@ import type { AppContext } from "../context.js";
 
 /** Pinned CDN ESM for the inspector. esm.sh serves the package's self-contained module (the package
  *  has no runtime dependencies), so a bare dynamic import resolves with nothing else to fetch. */
-export const DEFAULT_INSPECTOR_URL = "https://esm.sh/@freva-org/data-inspector@3.2.0";
+export const DEFAULT_INSPECTOR_URL = "https://esm.sh/@freva-org/data-inspector@2608.0.0";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type InspectorModule = any;

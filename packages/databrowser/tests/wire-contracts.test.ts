@@ -10,7 +10,6 @@ import {
   buildFacets,
   buildFlavourMaps,
   buildUrlQuery,
-  cliCommand,
   createInitialState,
   facetQueryString,
   filterCommittable,
@@ -25,6 +24,7 @@ import {
   translateKey,
   translateSelection,
 } from "../src/state.js";
+import { cliCommand } from "../src/commands.js";
 import { escapeHtml } from "../src/dom.js";
 import type { AppState, ResolvedConfig, SearchResult } from "../src/types.js";
 
@@ -53,9 +53,10 @@ function cfg(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
       lensSwitcher: true,
       inspect: true,
       brand: true,
+      footer: true,
     },
     theme: {},
-    brand: { title: "Freva", mark: "≈", description: "" },
+    brand: { title: "Freva", mark: "≈", description: "", showMark: true, showTitle: true },
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,
@@ -185,16 +186,32 @@ test("shellQuote round-trip: a chosen value with whitespace parses back to one e
   assert.equal(shellQuote("cmip6"), "cmip6");
 });
 
-test("facetQueryString: the real value 'not set' is sent verbatim, never as a negation", () => {
-  const s = state();
-  toggleSelected(s, "ensemble", "not set");
-  const q = facetQueryString(s);
-  assert.match(q, /(^|&)ensemble=not%20set(&|$)/, "value encoded verbatim");
-  assert.doesNotMatch(q, /ensemble_not_/, "must not be misread as a negated key");
+test("the browser NEVER infers negation from a value's text", () => {
+  // freva-rest also accepts negation written into the VALUE (`not x`, `!x`, `-x`). We refuse to
+  // read or write that form, because a REAL value can begin the same way - `ensemble` genuinely has
+  // the value "not set". Inferring would send `ensemble_not_=set`, matching a different ~943k files.
+  // This test proves only that no inference happens; it is NOT a claim that the wire form is
+  // unambiguous. It is not: see LEGACY_VALUE_NEGATION_PREFIXES in state.ts for the backend
+  // limitation this leaves open.
+  for (const value of ["not set", "!set", "-set"]) {
+    const s = state();
+    toggleSelected(s, "ensemble", value);
+    const q = facetQueryString(s);
+    assert.match(
+      q,
+      new RegExp(
+        `(^|&)ensemble=${encodeURIComponent(value).replace(/[.*+?^$()|[\]\\]/g, "\\$&")}(&|$)`,
+      ),
+      `"${value}" is sent verbatim under the POSITIVE key`,
+    );
+    assert.doesNotMatch(q, /ensemble_not_/, `"${value}" must not become a negated key`);
+    assert.deepEqual(s.selected, { ensemble: [value] }, "state keeps the raw value");
+  }
 });
 
 test("copied commands carry the base scope (fail-closed) - cli + python", async () => {
-  const { cliCommand, pythonCommand } = await import("../src/state.js");
+  const { pythonCommand } = await import("../src/state.js");
+  const { cliCommand } = await import("../src/commands.js");
   const s = state({ baseFilters: { project: ["waterpark"] }, selected: { variable: ["tas"] } });
   const cli = cliCommand(s);
   assert.match(
@@ -224,7 +241,6 @@ test("timeRangeFromFilename: derives from filename, never fabricates", () => {
     "2024-02-29 → 2024-03-01",
     "leap Feb 29 accepted",
   );
-  // reversed ranges are rejected
   assert.equal(timeRangeFromFilename("x_21000101-20000101.nc"), null, "reversed range rejected");
 });
 
@@ -250,8 +266,8 @@ test("parsePyConfig round-trips through the tokenizer without corrupting values"
 });
 
 test("bbox is rounded at the source, so the query and the copied command agree", async () => {
-  const { roundBbox, cliFixedTokens, pyFixedLines, createInitialState } =
-    await import("../src/state.js");
+  const { cliFixedTokens } = await import("../src/commands.js");
+  const { roundBbox, pyFixedLines, createInitialState } = await import("../src/state.js");
   // what a map drag produces before rounding
   const raw = {
     minLon: -12.3456789,

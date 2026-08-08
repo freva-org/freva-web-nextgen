@@ -41,20 +41,45 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Release gates specific to @freva-org/ts-oidc-auth-client. Kept out of the
-  # matrix above: the browser gate installs three engines, and the mutation gate
-  # rewrites src/ in place while it runs.
+  # A hand-bumped version would be released by the next push to main without ever
+  # going through the version PR. Skipped for the changesets bot's own branch.
+  changeset-required:
+    if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: A version bump must come with a changeset
+        run: |
+          base="origin/${{ github.base_ref }}"
+          bumped=$(git diff "$base"...HEAD -- 'packages/*/package.json' \
+                   | grep -E '^\+  "version":' || true)
+          [ -n "$bumped" ] || { echo "No package version changed."; exit 0; }
+
+          added=$(git diff --name-only --diff-filter=A "$base"...HEAD -- '.changeset/*.md' \
+                  | grep -v 'README.md' || true)
+          if [ -n "$added" ]; then
+            echo "Version change accompanied by a changeset:"; echo "$added"; exit 0
+          fi
+
+          echo "::error::This PR changes a package version but adds no changeset."
+          echo "Versions are bumped by \`changeset version\` in the release PR, not by hand."
+          echo "Run \`npx changeset\` and commit the generated file instead."
+          exit 1
+
+  # Auth gates that need no browser. Out of the matrix: the mutation gate rewrites
+  # src/ in place, so two runs must not share a checkout.
   auth-gates:
     runs-on: ubuntu-latest
 
     env:
       PKG: "@freva-org/ts-oidc-auth-client"
 
-    # Every step runs from the repository root and targets the package with
-    # `-w`. A job-level `defaults.run.working-directory` reads more nicely but
-    # makes the install step's own directory ambiguous, and installing from
-    # inside a workspace package rather than the root is exactly the kind of
-    # layout difference that leaves binaries where the tooling cannot find them.
+    # Run from the repo root and target the package with `-w`: a job-level
+    # working-directory makes the install step's own directory ambiguous.
     steps:
       - uses: actions/checkout@v4
 
@@ -67,9 +92,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Fails fast and legibly if the workspace install did not produce a usable
-      # test runner, rather than letting every mutation report the same
-      # unexplained toolchain failure 53 times.
+      # Fail fast if the install produced no usable runner, rather than 53
+      # identical unexplained mutation failures.
       - name: Check the toolchain the gates depend on
         run: npm exec -w $PKG -- vitest --version
 
@@ -79,14 +103,46 @@ jobs:
       - name: Mutation gate
         run: npm run check:mutations -w $PKG
 
-      # The browser suites import ../dist, so a clean checkout has to build first.
+  # Real-browser gates. One matrix rather than near-identical jobs; adding a
+  # package is one list entry. `fail-fast: false` - a WebKit failure in the auth
+  # client says nothing about databrowser layout.
+  browser-gates:
+    name: browser (${{ matrix.name }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: auth
+            dir: ts-oidc-auth-client
+            pkg: "@freva-org/ts-oidc-auth-client"
+            engines: chromium firefox webkit
+          - name: databrowser
+            dir: databrowser
+            pkg: "@freva-org/databrowser"
+            engines: chromium
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/${{ matrix.dir }}/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Build every workspace: the databrowser fixtures load a workspace
+      # dependency's dist, and `npm run build -w` does not build dependencies.
       - name: Build
-        run: npm run build -w $PKG
+        run: npm run build
 
       - name: Install Playwright engines
-        run: npm exec -w $PKG -- playwright install --with-deps chromium firefox webkit
+        run: npm exec -w ${{ matrix.pkg }} -- playwright install --with-deps ${{ matrix.engines }}
 
-      # Strict: all three engines must actually execute. A missing browser is a
-      # failure here, not a skip.
+      # Strict: a browser that will not launch is a failure, never a skip.
       - name: Browser gate
-        run: npm run test:browser:strict -w $PKG
+        run: npm run test:browser:strict -w ${{ matrix.pkg }}

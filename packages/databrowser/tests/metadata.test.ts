@@ -42,9 +42,10 @@ function cfg(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
       lensSwitcher: true,
       inspect: true,
       brand: true,
+      footer: true,
     },
     theme: {},
-    brand: { title: "Freva", mark: "≈", description: "" },
+    brand: { title: "Freva", mark: "≈", description: "", showMark: true, showTitle: true },
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,
@@ -166,9 +167,10 @@ test("config metadata surfaces as a hover title on sidebar facet values (config 
       lensSwitcher: true,
       inspect: true,
       brand: true,
+      footer: true,
     },
     theme: {},
-    brand: { title: "Freva", mark: "≈", description: "" }, // config-only, deterministic in jsdom
+    brand: { title: "Freva", mark: "≈", description: "", showMark: true, showTitle: true }, // config-only, deterministic in jsdom
     metadata: { project: { cmip6: "Coupled Model Intercomparison Project 6" } },
   });
   await wait(40);

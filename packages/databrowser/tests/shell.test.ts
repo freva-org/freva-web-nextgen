@@ -13,7 +13,8 @@ import {
   cmdQuote,
   SHELLS,
 } from "../src/shell.js";
-import { cliCommand, pythonCommand, createInitialState } from "../src/state.js";
+import { pythonCommand, createInitialState } from "../src/state.js";
+import { cliCommand } from "../src/commands.js";
 import type { ResolvedConfig } from "../src/types.js";
 
 function cfg(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -39,9 +40,10 @@ function cfg(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
       lensSwitcher: true,
       inspect: true,
       brand: true,
+      footer: true,
     },
     theme: {},
-    brand: { title: "Freva", mark: "≈", description: "" },
+    brand: { title: "Freva", mark: "≈", description: "", showMark: true, showTitle: true },
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,

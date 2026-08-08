@@ -63,7 +63,6 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** Replace all children of `host` with `nodes`. */
 export function replaceChildren(host: Element, ...nodes: Child[]): void {
   host.textContent = "";
   for (const n of nodes) {

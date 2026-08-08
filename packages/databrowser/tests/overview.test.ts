@@ -150,15 +150,32 @@ test("overview: a resized card can be reset to its default size", async () => {
     "no Reset offered while the card is at its default size",
   );
 
-  const w = root.ownerDocument.defaultView as unknown as { MouseEvent: typeof MouseEvent };
+  const w = root.ownerDocument.defaultView as unknown as {
+    MouseEvent: typeof MouseEvent;
+    PointerEvent?: typeof MouseEvent;
+  };
   const handle = q<HTMLElement>(card, ".fcard-resize") as HTMLElement;
   handle.dispatchEvent(
-    new w.MouseEvent("mousedown", { bubbles: true, clientX: 100, clientY: 100 }),
+    new (w.PointerEvent ?? w.MouseEvent)("pointerdown", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 100,
+    }),
   );
   window.dispatchEvent(
-    new w.MouseEvent("mousemove", { bubbles: true, clientX: 340, clientY: 260 }),
+    new (w.PointerEvent ?? w.MouseEvent)("pointermove", {
+      bubbles: true,
+      clientX: 340,
+      clientY: 260,
+    }),
   ); // wider AND taller
-  window.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: 340, clientY: 260 }));
+  window.dispatchEvent(
+    new (w.PointerEvent ?? w.MouseEvent)("pointerup", {
+      bubbles: true,
+      clientX: 340,
+      clientY: 260,
+    }),
+  );
   await wait(10);
 
   const grown = q<HTMLElement>(root, '.fcard[data-key="project"]') as HTMLElement;
@@ -177,7 +194,10 @@ test("overview: a resized card can be reset to its default size", async () => {
 test("overview drag: no native HTML5 draggable; grip starts reorder, corner starts resize", async () => {
   const { root, destroy } = await mountOverview();
   const card = q<HTMLElement>(root, '.fcard[data-key="project"]') as HTMLElement;
-  const w = root.ownerDocument.defaultView as unknown as { MouseEvent: typeof MouseEvent };
+  const w = root.ownerDocument.defaultView as unknown as {
+    MouseEvent: typeof MouseEvent;
+    PointerEvent?: typeof MouseEvent;
+  };
   // the card must NOT be natively draggable (native drag hijacks resize and blocks inputs)
   assert.notEqual(card.getAttribute("draggable"), "true", "card is not native-draggable");
   assert.ok(q(card, ".drag-grip"), "has a reorder grip");
@@ -185,13 +205,21 @@ test("overview drag: no native HTML5 draggable; grip starts reorder, corner star
 
   // grip -> reorder gesture toggles the dragging affordance and clears it on mouseup
   const grip = q<HTMLElement>(card, ".drag-grip") as HTMLElement;
-  grip.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: 50, clientY: 50 }));
+  grip.dispatchEvent(
+    new (w.PointerEvent ?? w.MouseEvent)("pointerdown", {
+      bubbles: true,
+      clientX: 50,
+      clientY: 50,
+    }),
+  );
   assert.ok(card.classList.contains("dragging"), "reorder started from the grip");
   assert.ok(
     root.ownerDocument.body.classList.contains("fdb-dragging"),
     "drag mode set (suppresses selection)",
   );
-  window.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: 50, clientY: 50 }));
+  window.dispatchEvent(
+    new (w.PointerEvent ?? w.MouseEvent)("pointerup", { bubbles: true, clientX: 50, clientY: 50 }),
+  );
   await wait(5);
   assert.ok(
     !root.ownerDocument.body.classList.contains("fdb-dragging"),
@@ -202,12 +230,26 @@ test("overview drag: no native HTML5 draggable; grip starts reorder, corner star
   const card2 = q<HTMLElement>(root, '.fcard[data-key="project"]') as HTMLElement;
   const handle = q<HTMLElement>(card2, ".fcard-resize") as HTMLElement;
   handle.dispatchEvent(
-    new w.MouseEvent("mousedown", { bubbles: true, clientX: 100, clientY: 100 }),
+    new (w.PointerEvent ?? w.MouseEvent)("pointerdown", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 100,
+    }),
   );
   window.dispatchEvent(
-    new w.MouseEvent("mousemove", { bubbles: true, clientX: 400, clientY: 100 }),
+    new (w.PointerEvent ?? w.MouseEvent)("pointermove", {
+      bubbles: true,
+      clientX: 400,
+      clientY: 100,
+    }),
   );
-  window.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: 400, clientY: 100 }));
+  window.dispatchEvent(
+    new (w.PointerEvent ?? w.MouseEvent)("pointerup", {
+      bubbles: true,
+      clientX: 400,
+      clientY: 100,
+    }),
+  );
   await wait(5);
   const card3 = q<HTMLElement>(root, '.fcard[data-key="project"]') as HTMLElement;
   // Assert the gesture GREW the span, not an exact width. The cap comes from
@@ -226,18 +268,33 @@ test("overview: resizing snaps to BLOCKS - whole columns, and at most one extra 
     /* ignore */
   }
   const { root, destroy } = await mountOverview();
-  const w = root.ownerDocument.defaultView as unknown as { MouseEvent: typeof MouseEvent };
+  const w = root.ownerDocument.defaultView as unknown as {
+    MouseEvent: typeof MouseEvent;
+    PointerEvent?: typeof MouseEvent;
+  };
   const drag = (dx: number, dy: number): void => {
     const card = q<HTMLElement>(root, '.fcard[data-key="project"]') as HTMLElement;
     const handle = q<HTMLElement>(card, ".fcard-resize") as HTMLElement;
     handle.dispatchEvent(
-      new w.MouseEvent("mousedown", { bubbles: true, clientX: 100, clientY: 100 }),
+      new (w.PointerEvent ?? w.MouseEvent)("pointerdown", {
+        bubbles: true,
+        clientX: 100,
+        clientY: 100,
+      }),
     );
     window.dispatchEvent(
-      new w.MouseEvent("mousemove", { bubbles: true, clientX: 100 + dx, clientY: 100 + dy }),
+      new (w.PointerEvent ?? w.MouseEvent)("pointermove", {
+        bubbles: true,
+        clientX: 100 + dx,
+        clientY: 100 + dy,
+      }),
     );
     window.dispatchEvent(
-      new w.MouseEvent("mouseup", { bubbles: true, clientX: 100 + dx, clientY: 100 + dy }),
+      new (w.PointerEvent ?? w.MouseEvent)("pointerup", {
+        bubbles: true,
+        clientX: 100 + dx,
+        clientY: 100 + dy,
+      }),
     );
   };
 
@@ -279,7 +336,10 @@ test("overview: the inline time/bbox editors show everything (no clipped Apply r
       "no Apply/Cancel row - it never fitted in a card, so edits apply live instead",
     );
   }
-  assert.ok(q(time, ".editor .daterow input"), "the time fields are visible without resizing");
+  assert.ok(
+    q(time, ".editor .daterow input.date-text"),
+    "the time fields are visible without resizing",
+  );
   assert.equal(qa(time, ".editor .modes button").length, 3, "and so are the three mode chips");
   assert.ok(q(bbox, ".editor .bbox-fields"), "the bbox bounds are visible without resizing");
   destroy();
@@ -288,8 +348,8 @@ test("overview: the inline time/bbox editors show everything (no clipped Apply r
 test("overview: an inline time edit applies live (there is no Apply button to press)", async () => {
   const { root, destroy, handle } = await mountOverview();
   const time = q<HTMLElement>(root, '.fcard[data-key="__time"]') as HTMLElement;
-  const from = qa<HTMLInputElement>(time, ".editor .daterow input")[0];
-  const to = qa<HTMLInputElement>(time, ".editor .daterow input")[1];
+  const from = qa<HTMLInputElement>(time, ".editor .daterow input.date-text")[0];
+  const to = qa<HTMLInputElement>(time, ".editor .daterow input.date-text")[1];
   from.value = "2000";
   to.value = "2010";
   from.dispatchEvent(

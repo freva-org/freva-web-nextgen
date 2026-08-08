@@ -114,8 +114,7 @@ test("XSS: hostile facet value, flavour label, and path render inert (incl. term
 
   // a hostile path renders as text in the results
   assert.ok(
-    byText(root, ".row .dir, .row .name", "evil_200601-210012.nc") ||
-      byText(root, "#fdb-results", "evil"),
+    byText(root, ".row .path", "evil_200601-210012.nc") || byText(root, "#fdb-results", "evil"),
   );
   assert.equal(qa(root, "#fdb-results img").length, 0, "no <img> from a path");
 
@@ -415,7 +414,12 @@ test("overview: keyboard reorder - ArrowRight on a grip moves the card later and
   await tick();
   const after = keysOf();
   assert.equal(after[1], first, "the card moved one position later");
-  assert.deepEqual(handle.getState().overviewOrder, after, "the new order is persisted to state");
+  // The persisted order covers EVERY card, Time and BBox included - they reorder like any other.
+  const allKeys = qa<HTMLElement>(q<HTMLElement>(root, ".facet-grid")!, ".fcard[data-key]").map(
+    (c) => c.dataset.key ?? "",
+  );
+  assert.deepEqual(handle.getState().overviewOrder, allKeys, "the new order is persisted to state");
+  assert.ok(allKeys.includes("__time") && allKeys.includes("__bbox"));
   assert.equal(
     win.document.activeElement,
     q<HTMLElement>(root, `.fcard[data-key="${first}"] .drag-grip`),
@@ -492,7 +496,8 @@ test("destroy() during an overview drag releases the page-wide drag lock", async
   await tick();
   const grip = q<HTMLElement>(root, ".fcard .drag-grip");
   assert.ok(grip, "an overview block has a drag grip");
-  grip!.dispatchEvent(new win.MouseEvent("mousedown", { bubbles: true }));
+  // Pointer Events: mouse, pen and touch share ONE code path, so the test drives that path.
+  grip!.dispatchEvent(pointerEvent("pointerdown", { bubbles: true }));
   assert.ok(win.document.body.classList.contains("fdb-dragging"), "the drag lock engaged");
   handle.destroy();
   assert.ok(
@@ -679,7 +684,6 @@ test("tooltips: `title` becomes an immediate styled tooltip (data-tip), never th
   const exportBtn = q<HTMLElement>(root, '[aria-label^="Export catalogue"]')!;
   assert.equal(exportBtn.getAttribute("data-tip"), "Export catalogue", "title routed to data-tip");
   assert.equal(exportBtn.getAttribute("title"), null, "no native title (so no slow browser popup)");
-  // nothing anywhere in the component keeps a native title
   assert.equal(qa(root, "[title]").length, 0, "no element uses the native title attribute");
   handle.destroy();
 });
@@ -747,7 +751,7 @@ test('Export surfaces the exact 413 "Result stream too big."', async () => {
   const { handle, root } = await mount(router, { authEnabled: true, getAuthToken: () => "tok" });
   q<HTMLButtonElement>(root, '[aria-label^="Export catalogue"]')!.click();
   await tick();
-  const intake = byText<HTMLButtonElement>(root, ".pop-item", "Intake catalogue");
+  const intake = byText<HTMLButtonElement>(root, ".xm-item", "Intake catalogue");
   assert.ok(intake, "intake option present");
   intake!.click();
   await wait(20);
@@ -758,7 +762,6 @@ test('Export surfaces the exact 413 "Result stream too big."', async () => {
 test("Terminal fallback: plain textarea still parses and copies", async () => {
   const { handle, root } = await mount(defaultRouter());
   root.dataset.terminalFallback = "true";
-  // open the terminal
   q<HTMLButtonElement>(root, '[aria-label="Command terminal"]')!.click();
   await tick();
   assert.ok(q(root, ".cmd.fallback"), "fallback class applied");
@@ -842,7 +845,6 @@ test("bbox editor: stays open (re-anchored) after applying a box re-renders the 
     return { body: {} };
   };
   const { handle, root } = await mount(router);
-  // open the bbox editor from the sidebar special row
   q<HTMLButtonElement>(root, '.special[aria-label="Edit bounding box"]')!.click();
   await tick();
   assert.ok(q(root, ".pop.editor-pop"), "bbox editor popover opened");
@@ -945,11 +947,22 @@ test("grid view: cards show the full path (directory), matching the list view", 
   await tick();
   const card = q<HTMLElement>(root, ".gcard");
   assert.ok(card, "grid card present");
-  const dir = q<HTMLElement>(card!, ".dir");
-  assert.ok(
-    dir && /reanalysis\/healpix\/oras5/.test(dir.textContent ?? ""),
-    "grid card shows the directory path",
+  // ONE complete path per card - not a basename plus a separate directory line.
+  assert.equal(
+    qa(card!, ".name, .dir").length,
+    0,
+    "the split basename/directory presentation is gone",
   );
+  const path = q<HTMLElement>(card!, ".path");
+  assert.ok(path, "grid card shows a path node");
+  const card0 = q<HTMLElement>(root, ".gcard")!;
+  const whole = card0.dataset.file ?? "";
+  assert.ok(whole, "the card records the file it is for");
+  assert.equal(path!.textContent, whole, "the card shows the COMPLETE path as one value");
+  assert.match(whole, /reanalysis\/healpix\/oras5/, "…directory and all");
+  // `title` is routed to the styled tooltip, and the accessible name carries the clipped value.
+  assert.equal(path!.getAttribute("data-tip"), whole);
+  assert.equal(path!.getAttribute("aria-label"), whole);
   handle.destroy();
 });
 
@@ -1827,43 +1840,75 @@ test("destroy(): removes the root and aborts the in-flight request", async () =>
   assert.doesNotThrow(() => handle.destroy());
 });
 
-test("Selection is unlimited; only Aggregate locks past the 10-file cap", async () => {
-  const rows = Array.from({ length: 14 }, (_, i) => ({ file: `/f_${i}.nc` }));
-  const { handle, root } = await mount(defaultRouter({ total: 14, rows }), {
+test("selection is capped at 25; the 26th is refused without changing state", async () => {
+  const rows = Array.from({ length: 30 }, (_, i) => ({ file: `/f_${i}.nc` }));
+  const { handle, root } = await mount(defaultRouter({ total: 30, rows }), {
     authEnabled: true,
     enableHeavyOps: true,
   });
-  // pick 11 - the 11th is accepted; selection itself is uncapped
-  for (let i = 0; i < 11; i++) {
-    const cbs = qa<HTMLElement>(root, "#fdb-results .cb");
-    cbs[i].click();
+  const cbs = (): HTMLElement[] => qa<HTMLElement>(root, "#fdb-results .cb");
+  // 24 -> under the cap, nothing is disabled yet
+  for (let i = 0; i < 24; i++) {
+    cbs()[i].click();
     await tick();
   }
-  assert.equal(handle.getState().pickedKeys.size, 11, "selection climbs past 10 - unlimited");
-  // no leftover "stop" cursor - past 10 files, unpicked checkboxes must NOT be aria-disabled
+  assert.equal(handle.getState().pickedKeys.size, 24, "24 selected");
   assert.equal(
     qa<HTMLElement>(root, '#fdb-results .cb[aria-disabled="true"]').length,
     0,
-    "no checkbox is marked disabled while selecting past 10",
+    "under the cap nothing is marked disabled",
   );
+  // 25 -> exactly at the cap
+  cbs()[24].click();
+  await tick();
+  assert.equal(handle.getState().pickedKeys.size, 25, "25 selected - exactly the cap");
+  // 26 -> refused. The state does not change at all, and the reason is announced.
+  cbs()[25].click();
+  await tick();
+  assert.equal(handle.getState().pickedKeys.size, 25, "the 26th selection changes nothing");
+  assert.ok(
+    !handle.getState().pickedKeys.has("/f_25.nc"),
+    "the refused file was not selected, and nothing was swapped out for it",
+  );
+  const disabled = qa<HTMLElement>(root, '#fdb-results .cb[aria-disabled="true"]');
+  assert.ok(disabled.length > 0, "at the cap, UNSELECTED checkboxes expose aria-disabled");
+  assert.match(
+    disabled[0].getAttribute("aria-label") ?? "",
+    /selection limit/i,
+    "…with a reason, not a bare disabled state",
+  );
+  // A SELECTED file stays fully enabled - a selection you cannot undo would be a trap.
+  const picked = qa<HTMLElement>(root, "#fdb-results .row.picked .cb")[0];
+  assert.equal(picked.getAttribute("aria-disabled"), "false", "selected rows stay deselectable");
+  picked.click();
+  await tick();
+  assert.equal(handle.getState().pickedKeys.size, 24, "deselecting still works at the cap");
+  handle.destroy();
+});
 
+test("the pickbar shows N / 25 and Aggregate keeps its own lower 10-file cap", async () => {
+  const rows = Array.from({ length: 30 }, (_, i) => ({ file: `/f_${i}.nc` }));
+  const { handle, root } = await mount(defaultRouter({ total: 30, rows }), {
+    authEnabled: true,
+    enableHeavyOps: true,
+  });
+  for (let i = 0; i < 11; i++) {
+    qa<HTMLElement>(root, "#fdb-results .cb")[i].click();
+    await tick();
+  }
   const bar = q<HTMLElement>(root, ".pickbar") as HTMLElement;
   const find = (t: string): HTMLButtonElement | undefined =>
     qa<HTMLButtonElement>(bar, ".btn").find((b) => (b.textContent ?? "").includes(t));
-  const agg = find("Aggregate")!;
-  assert.equal(agg.getAttribute("disabled"), "true", "Aggregate locks over the cap");
-  assert.ok(!find("Details")!.getAttribute("disabled"), "Details stays available past the cap");
-  assert.ok(!find("Download")!.getAttribute("disabled"), "Download stays available past the cap");
+  assert.match(q<HTMLElement>(bar, ".cnt")?.textContent ?? "", /11 \/ 25 selected/);
+  assert.equal(find("Aggregate")!.getAttribute("disabled"), "true", "Aggregate locks over ITS cap");
+  assert.ok(!find("Details")!.getAttribute("disabled"), "Details stays available past that cap");
+  assert.ok(!find("Download")!.getAttribute("disabled"), "Download stays available past that cap");
   assert.match(q<HTMLElement>(bar, ".scope-note")?.textContent ?? "", /max 10/i);
-  // count is unlimited (no "/ 10")
-  assert.match(q<HTMLElement>(bar, ".cnt")?.textContent ?? "", /11 files selected/);
-  assert.doesNotMatch(q<HTMLElement>(bar, ".cnt")?.textContent ?? "", /\/\s*10/);
-
   // deselect one -> back to 10 -> Aggregate unlocks
   qa<HTMLElement>(root, "#fdb-results .cb")[0].click();
   await tick();
   assert.equal(handle.getState().pickedKeys.size, 10);
-  assert.ok(!find("Aggregate")!.getAttribute("disabled"), "Aggregate unlocks at exactly the cap");
+  assert.ok(!find("Aggregate")!.getAttribute("disabled"), "Aggregate unlocks at exactly its cap");
   handle.destroy();
 });
 
@@ -2100,11 +2145,11 @@ test('sidebar: one Filter header with an active count and Clear all (no "Facets"
 
   pickValue(root, "cmip6");
   await wait(320);
-  assert.equal(
-    q<HTMLElement>(root, ".side-filterhead .sf-badge")?.textContent,
-    "1",
-    "active filter count",
-  );
+  // ONE number. The include/exclude split belongs to the per-facet controls, where it is
+  // actionable; here the badge only ever clears everything.
+  assert.equal(q<HTMLElement>(root, ".side-filterhead .sf-n")?.textContent, "1", "active count");
+  assert.equal(q<HTMLElement>(root, ".side-filterhead .fb-inc"), null, "no breakdown here");
+  assert.equal(q<HTMLElement>(root, ".side-filterhead .fb-exc"), null, "no breakdown here");
   // the selected value reads as a subtitle under the section name - no expanding needed
   assert.equal(q<HTMLElement>(root, '.facet[data-key="project"] .fh-sel')?.textContent, "cmip6");
   // the count badge IS the clear-all control - there is no separate sidebar "Clear all" link
@@ -2657,7 +2702,8 @@ test("list view: a lean search still carries a uri | fs type column header + fs_
   // Rows keep checkbox + URI (name/dir) + a plain fs_type cell + kebab - no rich metadata cells.
   const rows = qa<HTMLElement>(root, "#fdb-results .row");
   assert.equal(qa(rows[0], ".cb").length, 1, "checkbox kept");
-  assert.ok(q(rows[0], ".uricell .name"), "the URI/name is shown");
+  assert.ok(q(rows[0], ".uricell .path"), "the complete URI is shown as one value");
+  assert.equal(qa(rows[0], ".name, .dir").length, 0, "no split basename/directory nodes");
   assert.ok(q(rows[0], ".kebab"), "kebab kept");
   assert.equal(qa(rows[0], ".cell").length, 0, "no Project/Experiment/Format cells");
   assert.equal(
@@ -2696,9 +2742,11 @@ test("facet header badge clears the whole facet (sidebar and overview)", async (
   // the selected-count badge shows 2 and is an actionable "clear this facet" control
   const badge = q<HTMLElement>(root, '.facet[data-key="project"] .fh-count') as HTMLElement;
   assert.ok(badge, "sidebar selected-count badge present");
-  assert.equal(badge.textContent, "2");
-  assert.equal(badge.getAttribute("role"), "button", "badge is a control, not just a label");
-  assert.match(badge.getAttribute("aria-label") ?? "", /clear project filter/i);
+  assert.equal(badge.tagName, "BUTTON", "it is a real button, and a SIBLING of the disclosure one");
+  assert.equal(badge.closest("button"), badge, "…never nested inside another button");
+  assert.equal(badge.querySelector(".fb-n")?.textContent, "+2", "two INCLUDED, marked with +");
+  assert.equal(root.querySelector('.facet[data-key="project"] .fb-exc'), null, "none excluded");
+  assert.match(badge.getAttribute("aria-label") ?? "", /clear 2 included project values/i);
 
   // clicking it clears the WHOLE facet - not the accordion, not one value
   badge.click();
@@ -2722,7 +2770,8 @@ test("facet header badge clears the whole facet (sidebar and overview)", async (
   await wait(30);
   const ovBadge = q<HTMLElement>(root, '.fcard[data-key="project"] .fh-count') as HTMLElement;
   assert.ok(ovBadge, "overview card header shows the selected-count badge");
-  assert.equal(ovBadge.getAttribute("role"), "button", "overview badge is a control too");
+  assert.equal(ovBadge.tagName, "BUTTON", "overview badge is a real button too");
+  assert.match(ovBadge.getAttribute("aria-label") ?? "", /clear 1 included/i);
   ovBadge.click();
   await wait(20);
   assert.equal(handle.getState().selected.project, undefined, "overview badge cleared the facet");
@@ -2820,7 +2869,6 @@ test("Details comparison covers the whole selection, even past 10 files", async 
   }
   assert.equal(handle.getState().pickedKeys.size, 12, "12 files picked");
 
-  // open Details from the pickbar
   qa<HTMLButtonElement>(root, ".pickbar .btn")
     .find((b) => (b.textContent ?? "").includes("Details"))!
     .click();
@@ -2936,6 +2984,27 @@ test("Select all picks every loaded row and toggles off", async () => {
   handle.destroy();
 });
 
+test("Select all is truthful past the cap: it selects the first 25 and says how many it left", async () => {
+  const rows = Array.from({ length: 40 }, (_, i) => ({ file: `/f_${i}.nc` }));
+  const { handle, root } = await mount(defaultRouter({ total: 40, rows }));
+  const selall = q<HTMLButtonElement>(root, ".selall") as HTMLButtonElement;
+  selall.click();
+  await tick();
+  const picked = handle.getState().pickedKeys;
+  assert.equal(picked.size, 25, "the cap is honoured by the BULK path too");
+  // …and it is the first 25 IN RESULT ORDER, not an arbitrary 25.
+  for (let i = 0; i < 25; i++) assert.ok(picked.has(`/f_${i}.nc`), `row ${i} selected`);
+  assert.ok(!picked.has("/f_25.nc"), "row 25 was left out");
+  const status = q<HTMLElement>(root, ".status .mono")?.textContent ?? "";
+  assert.match(status, /first 25/i, "the cap is announced");
+  assert.match(status, /15/, "…along with how many listed rows were NOT selected");
+  // A second bulk action at the capped state clears the selection rather than doing nothing.
+  selall.click();
+  await tick();
+  assert.equal(handle.getState().pickedKeys.size, 0, "a bulk action at the cap clears it");
+  handle.destroy();
+});
+
 test("comparison modal: a details re-render (not close) still restores focus, not <body>", async () => {
   const rows = Array.from({ length: 4 }, (_, i) => ({ file: `/d/g_${i}.nc` }));
   const router = (call: { url: string }) => {
@@ -3027,7 +3096,7 @@ test("comparison: fetches are capped past DIFF_MAX and Enlarge opens a full-scre
   handle.destroy();
 });
 
-// ── Inspector: the lazy @freva-org/data-inspector, driven through the import seam ──
+// Inspector: the lazy @freva-org/data-inspector, driven through the import seam
 // A fake module WITHOUT DataInspectorElement (so the loader skips customElements.define); the dialog
 // is then a plain <data-inspector> element whose attributes/properties we can read. loadZarrMetadataHtml
 // probes the store itself, so it throws for a non-zarr URL.
@@ -3043,6 +3112,17 @@ function fakeInspectorModule(isZarr: boolean, seen?: { auth: Record<string, stri
     },
   };
 }
+/**
+ * A pointerdown/move/up event, using PointerEvent where the environment has it and falling back to
+ * MouseEvent (jsdom exposes the constructor but not always with pointer fields). The component
+ * listens for pointer events so one gesture path serves mouse, pen and touch.
+ */
+function pointerEvent(type: string, init: Record<string, unknown> = {}): Event {
+  const w = win as unknown as { PointerEvent?: typeof MouseEvent; MouseEvent: typeof MouseEvent };
+  const Ctor = w.PointerEvent ?? w.MouseEvent;
+  return new Ctor(type, { bubbles: true, ...init } as MouseEventInit);
+}
+
 async function clickInspect(root: HTMLElement): Promise<void> {
   q<HTMLElement>(root, "#fdb-results .row")?.click(); // focus a file
   q<HTMLButtonElement>(root, '[aria-label="Details panel"]')!.click(); // open the details panel

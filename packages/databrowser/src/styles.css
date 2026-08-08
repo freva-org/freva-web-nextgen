@@ -1,6 +1,10 @@
-/* styles.css - tokens + component styles for both themes (+ the terminal's own dark tokens).
+/* styles.css - tokens + component styles for both themes.
    Ported from the prototype (the binding pixel source). The generic `.overview` class is
-   renamed to `.overview-mode` to avoid a class collision that blanks the page. */
+   renamed to `.overview-mode` to avoid a class collision that blanks the page.
+
+   The TERMINAL's styles are NOT here: they moved to @freva-org/freva-client-terminal, which injects
+   its own scoped stylesheet into the terminal window's root. Rules matching `.freva-term` do not
+   belong in this file. */
 
 .freva-db {
   --r: 10px;
@@ -23,7 +27,11 @@
   --surface-3: #e9edf4;
   --text: #0e1726;
   --dim: #475569;
-  --faint: #8a97ac;
+  /* Raised from #8a97ac (~2.96:1 on white). --faint is used for MEANINGFUL small text - counts,
+     file paths, table headers, flavour captions - so it has to clear 4.5:1 on every day surface,
+     not just look quiet. #5f6b7c measures 5.41:1 on --surface and 4.61:1 on --surface-3, the
+     lightest and darkest day backgrounds it lands on. */
+  --faint: #5f6b7c;
   --border: #dce2ec;
   --border-2: #c7d0dd;
   --accent: #2a63e8;
@@ -46,7 +54,10 @@
   --surface-3: #1a2c46;
   --text: #e7edf7;
   --dim: #9dabc4;
-  --faint: #5e6e88;
+  /* Night equivalent: #5e6e88 measured 3.06-3.36:1 across the night surfaces. #8595b0 measures
+     4.64:1 against --surface-3 (#1a2c46), the LIGHTEST night surface and therefore the worst case.
+     The --text / --dim / --faint hierarchy and the dark-blue identity are unchanged. */
+  --faint: #8595b0;
   --border: #213352;
   --border-2: #2c4267;
   --accent: #4f8df7;
@@ -77,6 +88,10 @@
   min-height: 680px;
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* An implicit grid column sizes to the WIDEST row's min-content, so at phone widths the top bar
+     stretched the whole app past the viewport and took the body - top row included - with it.
+     An explicit 0 minimum lets the column shrink; the rows clip or wrap their own content. */
+  grid-template-columns: minmax(0, 1fr);
   background: var(--bg);
   color: var(--text);
   transition:
@@ -90,6 +105,7 @@
   gap: 14px;
   height: 56px;
   flex-shrink: 0;
+  min-width: 0; /* …and the bar itself must be allowed to shrink rather than set the app's width */
   padding: 0 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -152,6 +168,7 @@
 }
 .search {
   flex: 1;
+  min-width: 0; /* a flex item's default `min-width: auto` would floor the bar at the input's width */
   position: relative;
 }
 .search input {
@@ -245,7 +262,11 @@
 
 .body {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* minmax(0, …) rather than a bare 1fr: a `1fr` track floors at its content's min-content width,
+     so at phone widths the centre column grew past the viewport and took the top row - Clear all
+     and the Browse/Overview cluster included - off screen with it. The explicit 0 minimum lets the
+     column actually shrink; `.center` already sets `min-width: 0` and clips its own overflow. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: 0;
   position: relative;
 }
@@ -279,7 +300,7 @@
 .fdb-app.metaview .side {
   display: none;
 }
-/* P1 collapsible: the sidebar collapses to a slim rail with a reopen affordance; persisted. */
+/* Collapsible: the sidebar collapses to a slim rail with a reopen affordance; persisted. */
 .fdb-app.side-collapsed .side {
   width: 44px;
 }
@@ -394,18 +415,10 @@
   font-family: var(--mono);
   font-weight: 500;
 }
+/* The `+N` / `-N` clear buttons are styled with the rest of the inclusion/exclusion language at
+   the end of this sheet - one filled, one dashed, and neither of them a bare accent pill. */
 .facet-head .fh-count {
-  margin-left: auto;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 700;
-  display: inline-grid;
-  place-items: center;
+  margin-left: 0;
   font-family: var(--mono);
 }
 .facet-head.active .fh-label {
@@ -563,7 +576,6 @@
   color: var(--text);
 }
 
-/* CENTER */
 /* CENTER - toprow + res-bar are fixed chrome; only the results column scrolls. */
 .center {
   display: flex;
@@ -581,7 +593,18 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 18px 92px;
+  /* NO top padding. `.list-head` sticks at `top: 0` of the PADDING box, so any top padding leaves a
+     band between the scrollport edge and the pinned header - and once the header is pinned, the
+     content occupying that band is the rows. That is the strip of file text that painted above the
+     column header. The spacing belongs on the content that wants it, below - not here. */
+  padding: 0 18px 92px;
+}
+
+/* Breathing room applied to the content rather than to the scrollport, so it scrolls away with
+   that content instead of holding a gap open above the pinned header. */
+.results-scroll > .overview-mode,
+.results-scroll > .list-head[hidden] + .rows {
+  margin-top: 8px;
 }
 .toprow {
   display: flex;
@@ -641,6 +664,11 @@
 }
 .ctrl-cluster {
   flex-shrink: 0;
+  /* The mode switch belongs on the RIGHT. Relying on `.chips` to fill the row only worked while
+     there were chips: with none (or the row hidden) the cluster fell back to the left and the
+     control jumped as soon as the first filter was applied. `margin-left: auto` states the
+     intention instead of depending on a sibling's content. */
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -715,7 +743,7 @@
   grid-auto-rows: min-content;
   align-items: start;
 }
-/* #1 - "stacked": every block a full-width row. A single column forces full width regardless of each
+/* "stacked": every block a full-width row. A single column forces full width regardless of each
    card's saved span, and `1 / -1` overrides the inline `span N` so no implicit tracks (= no page
    overflow) can ever be created. */
 .facet-grid.stacked {
@@ -751,7 +779,7 @@
   color: var(--faint);
   font-style: italic;
 }
-/* #1 - value lists lay out as a GRID that fits as many ~200px columns as the width allows and then
+/* Value lists lay out as a GRID that fits as many ~200px columns as the width allows and then
    grows DOWNWARD (vertical scroll), row-major. This replaces CSS multi-column, whose fixed-height
    column packing forced a horizontal scroll when a card was stretched. Applies uniformly: a narrow
    card gets one column, a wide/stacked/full-width card gets several - always scrolling vertically. */
@@ -764,7 +792,7 @@
   font-weight: 700;
   font-size: 13px;
 }
-/* #2 - the header toggles collapse/expand; make that obvious (its own controls keep their cursors). */
+/* The header toggles collapse/expand; make that obvious (its own controls keep their cursors). */
 .fcard-h.clickable {
   cursor: pointer;
 }
@@ -779,44 +807,12 @@
 }
 .fcard-h .fh-count {
   margin-left: 6px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 700;
-  display: inline-grid;
-  place-items: center;
   font-family: var(--mono);
 }
-/* the selected-count badge is a "clear this facet" control. On hover/focus the count
-   is replaced by a red × (a ::after overlay - the number just goes transparent), and clicking it
-   clears every selected value for that facet. Shared by the sidebar and the overview card header. */
-.fh-count {
-  position: relative;
-  cursor: pointer;
-  transition: background-color 0.12s;
-}
-.fh-count:hover,
-.fh-count:focus-visible {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
-  color: transparent;
-  outline: none;
-}
-.fh-count:hover::after,
-.fh-count:focus-visible::after {
-  content: "\00d7";
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: var(--danger);
-  font-weight: 800;
-  font-size: 13px;
-  font-family: var(--font);
-}
+/* NOTE: the hover treatment is a real element swap in a neutral colour; see the end of this sheet.
+   A red `::after` cross drawn OVER the badge with the number merely turned transparent puts both
+   on screen at once, and takes the host's danger colour - which in a red-branded deployment is
+   the accent. */
 .fcard-h.active {
   color: var(--accent);
 }
@@ -904,7 +900,7 @@
   background: var(--border);
   margin: 0 2px;
 }
-/* #3 - Select-all (in the results bar, both list + grid). Reuses the .cb checkbox box. */
+/* Select-all (in the results bar, both list + grid). Reuses the .cb checkbox box. */
 .selall {
   display: inline-flex;
   align-items: center;
@@ -978,6 +974,7 @@
     transition: none;
   }
 }
+
 .iconbtn {
   position: relative;
   width: 36px;
@@ -1092,605 +1089,6 @@
 }
 .btn.primary:hover {
   background: var(--accent-2);
-}
-
-/* terminal - keeps its own dark tokens so it stays dark in day theme */
-/* Terminal colours are user-chosen and PERSISTED; each preset ships its own
-   foreground so text can never end up unreadable. Defaults to black. */
-.cmd {
-  --term-bg: #0b0f16;
-  --term-fg: #d8e2f2;
-  --term-alpha: 0.94;
-  /* token colours; the light presets override these (see [data-term-light]) */
-  --term-prompt: #28c840;
-  --term-key: #8fb6ff;
-  --term-val: #f0b86b;
-  --term-dim: #6f7f9c;
-  --term-ghost: #4d5d78;
-  --term-hint: #7fd7c4;
-  --term-ph: #5b6a86;
-  display: none;
-  border-radius: 10px;
-  overflow: visible;
-  /* a hint of the page behind the window - tunable in the ⋮ menu, persisted */
-  background: color-mix(in srgb, var(--term-bg) calc(var(--term-alpha) * 100%), transparent);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: var(--shadow);
-  color: var(--term-fg);
-}
-/* corners still clip their own content, but the window doesn't clip its popovers (the ⋮ menu) */
-.cmd .term-bar {
-  border-radius: 10px 10px 0 0;
-}
-/* light presets (e.g. Paper): the token palette has to flip too, or the text is unreadable */
-.cmd[data-term-light="true"] {
-  --term-prompt: #1f7a33;
-  --term-key: #2d5fb8;
-  --term-val: #a05a12;
-  --term-dim: #6a7383;
-  --term-ghost: #a3acbb;
-  --term-hint: #1d7d6c;
-  --term-ph: #99a2b0;
-  border-color: rgba(0, 0, 0, 0.18);
-}
-.cmd[data-term-light="true"] .term-bar {
-  background: color-mix(in srgb, var(--term-bg) 88%, #000 6%);
-  border-bottom-color: rgba(0, 0, 0, 0.12);
-}
-.cmd[data-term-light="true"] .term-menu {
-  background: color-mix(in srgb, var(--term-bg) 94%, #000 5%);
-  border-color: rgba(0, 0, 0, 0.18);
-}
-.cmd[data-term-light="true"] .tm-item {
-  color: #22262b;
-}
-.cmd[data-term-light="true"] .te-menu,
-.cmd[data-term-light="true"] .py-menu {
-  border-color: rgba(0, 0, 0, 0.16);
-  background: rgba(0, 0, 0, 0.03);
-}
-.cmd[data-term-light="true"] .cmd-tab {
-  color: #5b6472;
-}
-.cmd[data-term-light="true"] .cmd-tab:not(.on):hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-.cmd[data-term-light="true"] .term-kebab,
-.cmd[data-term-light="true"] .copy-btn {
-  color: #5b6472;
-}
-.cmd[data-term-light="true"] .term-kebab:hover,
-.cmd[data-term-light="true"] .copy-btn:hover {
-  background: rgba(0, 0, 0, 0.06);
-  color: #22262b;
-}
-.cmd .term-body {
-  border-radius: 0 0 10px 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-/* floating window: opens in the BOTTOM-RIGHT corner, drags by the bar, resizes by the
-   corner. The visible border + ring keep the edge readable on a black-on-black night theme. */
-.cmd.show {
-  display: flex;
-  flex-direction: column;
-  position: fixed;
-  z-index: 80;
-  right: 20px;
-  bottom: 20px;
-  width: min(760px, calc(100vw - 40px));
-  height: min(58vh, 440px);
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
-}
-.cmd.zoomed {
-  left: 20px !important;
-  top: 20px !important;
-  right: 20px !important;
-  bottom: 20px !important;
-  width: auto !important;
-  height: auto !important;
-  transform: none !important;
-}
-/* Gmail-style dock: minimized collapses to just the title bar, pinned to the bottom. The
-   horizontal position is a variable so the dock can be dragged left/right (never up/down). */
-.cmd.minimized {
-  height: auto !important;
-  width: 300px !important;
-  right: var(--dock-right, 20px) !important;
-  bottom: 0 !important;
-  left: auto !important;
-  top: auto !important;
-  transform: none !important;
-  border-radius: 10px 10px 0 0;
-  cursor: pointer;
-}
-.cmd.minimized .term-body {
-  display: none;
-}
-.cmd .term-bar {
-  cursor: move;
-  user-select: none;
-}
-.cmd.minimized .term-bar {
-  cursor: pointer;
-}
-/* maximized windows don't move (Gmail) - say so with the cursor */
-.cmd.zoomed .term-bar {
-  cursor: default;
-}
-.cmd .tl,
-.cmd .cmd-tab,
-.cmd .copy-btn,
-.cmd .term-add,
-.cmd .term-info-btn,
-.cmd .term-bg-btn {
-  cursor: pointer;
-}
-.term-resize {
-  position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 14px;
-  height: 14px;
-  cursor: nwse-resize;
-  z-index: 2;
-  background: linear-gradient(
-    135deg,
-    transparent 50%,
-    var(--border-2) 50%,
-    var(--border-2) 60%,
-    transparent 60%,
-    transparent 72%,
-    var(--border-2) 72%,
-    var(--border-2) 82%,
-    transparent 82%
-  );
-}
-.cmd.minimized .term-resize,
-.cmd.zoomed .term-resize {
-  display: none;
-}
-.term-add {
-  font-size: 13px;
-  font-weight: 700;
-  color: #7b8aa6;
-  background: none;
-  border: none;
-  padding: 2px 7px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.term-add:hover {
-  color: #8fb6ff;
-  background: rgba(79, 141, 247, 0.15);
-}
-.cmd-tab .tab-x {
-  margin-left: 6px;
-  opacity: 0.6;
-  cursor: pointer;
-}
-.cmd-tab .tab-x:hover {
-  opacity: 1;
-}
-.term-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  background: #0e1626;
-  border-bottom: 1px solid #1b2942;
-}
-.traffic {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  margin-right: 4px;
-}
-.tl {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  display: inline-grid;
-  place-items: center;
-}
-.tl.close {
-  background: #ff5f56;
-}
-.tl.min {
-  background: #febc2e;
-}
-.tl.zoom {
-  background: #28c840;
-}
-.tl span {
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.55);
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-.traffic:hover .tl span {
-  opacity: 1;
-}
-
-/* OS-specific window controls */
-/* Windows: labelled buttons on the RIGHT, order min · max · close, red close hover. */
-.cmd[data-os="windows"] .traffic {
-  order: 99;
-  gap: 0;
-  margin: 0 0 0 4px;
-}
-.cmd[data-os="windows"] .tl {
-  width: 34px;
-  height: 26px;
-  border-radius: 0;
-  background: transparent !important;
-  color: #aab8d4;
-}
-.cmd[data-os="windows"] .tl span {
-  opacity: 1;
-  color: currentColor;
-  font-size: 12px;
-}
-.cmd[data-os="windows"] .tl.min {
-  order: 1;
-}
-.cmd[data-os="windows"] .tl.zoom {
-  order: 2;
-}
-.cmd[data-os="windows"] .tl.close {
-  order: 3;
-}
-.cmd[data-os="windows"] .tl:hover {
-  background: #1b2942 !important;
-  color: #fff;
-}
-.cmd[data-os="windows"] .tl.close:hover {
-  background: #e81123 !important;
-  color: #fff;
-}
-.cmd[data-os="windows"] .tl.min span::before {
-  content: "\2013";
-} /* – */
-.cmd[data-os="windows"] .tl.zoom span::before {
-  content: "\25A1";
-} /* □ */
-.cmd[data-os="windows"] .tl.close span::before {
-  content: "\2715";
-} /* ✕ */
-.cmd[data-os="windows"] .tl span {
-  font-size: 0;
-}
-.cmd[data-os="windows"] .tl span::before {
-  font-size: 12px;
-}
-
-/* Linux (GNOME-ish): rounded symbolic buttons on the RIGHT. */
-.cmd[data-os="linux"] .traffic {
-  order: 99;
-  gap: 7px;
-  margin: 0 0 0 4px;
-}
-.cmd[data-os="linux"] .tl {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: #26364f !important;
-  color: #d3ddf0;
-}
-.cmd[data-os="linux"] .tl.min {
-  order: 1;
-}
-.cmd[data-os="linux"] .tl.zoom {
-  order: 2;
-}
-.cmd[data-os="linux"] .tl.close {
-  order: 3;
-}
-.cmd[data-os="linux"] .tl:hover {
-  background: #33496b !important;
-}
-.cmd[data-os="linux"] .tl.close {
-  background: #3a2730 !important;
-  color: #ffb4a8;
-}
-.cmd[data-os="linux"] .tl.close:hover {
-  background: #c0392b !important;
-  color: #fff;
-}
-.cmd[data-os="linux"] .tl span {
-  opacity: 1;
-  color: currentColor;
-  font-size: 0;
-}
-.cmd[data-os="linux"] .tl.min span::before {
-  content: "\2013";
-}
-.cmd[data-os="linux"] .tl.zoom span::before {
-  content: "\25A1";
-}
-.cmd[data-os="linux"] .tl.close span::before {
-  content: "\2715";
-}
-.cmd[data-os="linux"] .tl span::before {
-  font-size: 11px;
-}
-.cmd-tab {
-  font-size: 12px;
-  font-weight: 600;
-  color: #7b8aa6;
-  padding: 4px 9px;
-  border-radius: 6px;
-  cursor: pointer;
-  border: none;
-  background: none;
-  font-family: inherit;
-}
-.cmd-tab.on {
-  background: rgba(79, 141, 247, 0.18);
-  color: #8fb6ff;
-}
-.copy-ic {
-  width: 30px;
-  height: 28px;
-  border-radius: 7px;
-  border: 1px solid #243349;
-  background: #121d31;
-  color: #aebbd4;
-  cursor: pointer;
-  display: inline-grid;
-  place-items: center;
-}
-.copy-ic:hover {
-  color: #fff;
-  border-color: #34507c;
-}
-.copy-ic.done {
-  color: #28c840;
-  border-color: #28c840;
-}
-.term-body {
-  padding: 14px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.85;
-  color: var(--term-fg);
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  /* fills the window height (flex) and scrolls inside - so enlarging the window grows the body and
-     keeps the footer pinned to the bottom, instead of leaving dead space below a capped body. */
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-.cmd.zoomed .term-body {
-  max-height: none;
-}
-.term-body::-webkit-scrollbar {
-  width: 10px;
-}
-.term-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
-  border-radius: 6px;
-}
-.cmd.minimized .term-body {
-  display: none;
-}
-.cmd.zoomed .term-body {
-  min-height: 220px;
-}
-.cmd .prompt {
-  color: var(--term-prompt);
-  font-weight: 700;
-}
-.cmd .fixed {
-  color: var(--term-fg);
-  font-weight: 600;
-  opacity: 0.92;
-}
-.cmd .fixed.cont {
-  color: #44566f;
-  font-weight: 400;
-}
-.cmd .k {
-  color: var(--term-key);
-}
-.cmd .v {
-  color: var(--term-val);
-}
-.cmd .eq {
-  color: var(--term-dim);
-}
-.cmd .term-flav {
-  color: #c79bf0;
-}
-.cmd .term-scope {
-  color: #6f7f9c;
-  opacity: 0.85;
-} /* the base scope: shown so a copied command reproduces results, but visibly not typed */
-.cmd .bad {
-  color: #f0795f;
-  text-decoration: underline wavy #f0795f;
-  text-underline-offset: 3px;
-}
-.cli-line {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.term-edit {
-  margin-top: 2px;
-}
-.te-wrap {
-  position: relative;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.85;
-}
-.te-hl,
-.te-input {
-  margin: 0;
-  font: inherit;
-  line-height: inherit;
-  white-space: pre-wrap;
-  word-break: break-word;
-  padding: 2px 0;
-  border: none;
-}
-.te-hl {
-  position: absolute;
-  inset: 0;
-  color: #d7e2f4;
-  pointer-events: none;
-}
-.te-input {
-  position: relative;
-  display: block;
-  width: 100%;
-  background: transparent;
-  color: transparent;
-  caret-color: transparent;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-}
-.te-input::placeholder {
-  color: #44566f;
-}
-.cmd.fallback .te-hl {
-  display: none;
-}
-.cmd.fallback .te-input {
-  color: var(--term-fg);
-  caret-color: var(--term-fg);
-}
-.te-extra {
-  color: #6f7f9c;
-  font-size: 11.5px;
-  margin-top: 4px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.te-warn {
-  display: none;
-  margin-top: 8px;
-  font-family: var(--ui);
-  font-size: 11.5px;
-  color: #f0b86b;
-  background: rgba(240, 121, 95, 0.12);
-  border: 1px solid rgba(240, 121, 95, 0.4);
-  border-radius: 6px;
-  padding: 5px 9px;
-}
-.te-warn.show {
-  display: block;
-}
-.py-view {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.9;
-  padding: 4px 2px;
-}
-.py-line {
-  display: flex;
-  align-items: baseline;
-}
-/* The prompt (`>>> ` / `... `) and the editable line's gutter MUST be the same width, or the typed
-   kwargs won't line up under the read-only ones. Both are exactly 4 monospace columns. */
-.py-prompt,
-.py-gutter {
-  display: inline-block;
-  flex: 0 0 4ch;
-  width: 4ch;
-  padding-right: 0;
-}
-.py-prompt {
-  color: var(--term-prompt);
-  font-weight: 700;
-}
-.py-line.cont .py-prompt {
-  color: #44566f;
-  font-weight: 400;
-}
-.py-code {
-  color: var(--term-key);
-}
-.py-ml {
-  display: flex;
-  align-items: flex-start;
-}
-.py-gutter {
-  white-space: pre;
-  color: #44566f;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.9;
-  user-select: none;
-}
-/* …and the editable text is indented by the same 4 spaces the read-only `    key=` lines carry. */
-.py-wrap {
-  position: relative;
-  flex: 1;
-  min-width: 40px;
-}
-/* BOTH text layers carry the same 4-space indent as the read-only `    key=` lines. Padding the
-   WRAPPER doesn't work: .py-hl is absolutely positioned, so it ignores the wrapper's padding and
-   the overlay drifted out of alignment with the textarea beneath it. */
-.py-hl,
-.py-input {
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.9;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  padding: 0 0 0 4ch;
-}
-.py-hl {
-  position: absolute;
-  inset: 0;
-  color: var(--term-val);
-  pointer-events: none;
-}
-/* caret-color TRANSPARENT: we draw our own blinking block. Leaving the native caret on gave TWO
-   cursors on the python line. */
-.py-input {
-  position: relative;
-  display: block;
-  width: 100%;
-  background: transparent;
-  color: transparent;
-  caret-color: transparent;
-  border: none;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-}
-.py-input::placeholder {
-  color: #44566f;
-}
-.py-ghost {
-  color: #4d5d78;
-}
-.py-out {
-  color: #aeb9cf;
-  margin: 0 0 2px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.py-list {
-  font-family: var(--mono);
-  font-size: 12.5px;
 }
 .ac {
   position: absolute;
@@ -1811,22 +1209,20 @@
   flex: 1;
   min-width: 0;
 }
-.row .name {
+/* ONE complete path per row (see results.ts `pathEl`). A single line with an ellipsis: the whole
+   value lives in `title` and `aria-label`, so clipping loses nothing but pixels. `direction: rtl`
+   keeps the END of a long path - the part that identifies the file - visible when it is clipped,
+   while `unicode-bidi: plaintext` stops the text itself being reordered. */
+.row .path {
   font-size: 13px;
   font-weight: 600;
   font-family: var(--mono);
   overflow: hidden;
+  direction: rtl;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.row .dir {
-  font-size: 11px;
-  color: var(--faint);
-  font-family: var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 2px;
+  unicode-bidi: plaintext;
 }
 .fs {
   font-size: 11px;
@@ -1836,7 +1232,7 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
-/* #3 - list-view column header (uri | fs type). Sits directly on top of the .rows box. */
+/* List-view column header (uri | fs type). Sits directly on top of the .rows box. */
 .list-head {
   display: flex;
   align-items: center;
@@ -1902,7 +1298,8 @@
   gap: 8px;
   margin-bottom: 9px;
 }
-.gcard .name {
+/* A card may WRAP the path across lines - it is still one complete value, never two. */
+.gcard .path {
   font-size: 12px;
   font-weight: 600;
   font-family: var(--mono);
@@ -1914,15 +1311,6 @@
   color: var(--faint);
   margin-top: 6px;
   font-family: var(--mono);
-}
-.gcard .dir {
-  font-size: 10.5px;
-  color: var(--faint);
-  margin-top: 4px;
-  font-family: var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .kebab {
   width: 30px;
@@ -2296,7 +1684,7 @@
   border-radius: 5px;
   font-weight: 600;
 }
-/* #4 - Enlarge control + full-screen comparison overlay (scrolls X and Y for wide/tall tables). */
+/* Enlarge control + full-screen comparison overlay (scrolls X and Y for wide/tall tables). */
 .diff-tools {
   display: flex;
   justify-content: flex-end;
@@ -2467,6 +1855,89 @@
   font-size: 11px;
   color: var(--faint);
 }
+/* The export menu (components/exportMenu.ts)
+   ONE layout for both the whole-result Export and the pickbar's selected-files Download.
+
+   The previous markup reused `.desc` - the package's faint 11px CAPTION style - for the PRIMARY
+   label, and paired it with a `.sub` span that had no rule at all. Two inline spans with no line
+   break and no hierarchy is why the menu read as
+   "Intake catalogueintake-esm JSON for the whole result set". */
+.xm-head {
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  text-transform: uppercase;
+  /* The scope is stated ONCE, here, instead of being repeated in all three descriptions. */
+}
+.xm {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Never wider than the component it lives in: at a 320px mount the menu still fits. */
+  max-width: min(340px, calc(100vw - 24px));
+}
+.xm-item {
+  display: grid;
+  /* fixed icon column | text | optional format marker */
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px; /* a comfortable touch target */
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.xm-item:hover {
+  background: var(--surface-2);
+}
+.xm-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.xm-ic {
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+}
+.xm-text {
+  display: grid; /* label and description on their OWN lines - the actual bug */
+  gap: 1px;
+  min-width: 0;
+}
+.xm-label {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.xm-desc {
+  font-size: 11px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.xm-fmt {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .pop-sep {
   height: 1px;
   background: var(--border);
@@ -2720,7 +2191,6 @@
     box-shadow: var(--shadow);
   }
 }
-/* narrow / mobile */
 @media (max-width: 680px) {
   .top {
     gap: 8px;
@@ -2736,7 +2206,7 @@
     padding: 12px 12px 0;
   }
   .results-scroll {
-    padding: 8px 12px 92px;
+    padding: 0 12px 92px;
   }
   .details-panel {
     width: min(360px, calc(100vw - 24px));
@@ -2765,12 +2235,9 @@
     padding: 10px 10px 0;
   }
   .results-scroll {
-    padding: 8px 10px 92px;
+    padding: 0 10px 92px;
   }
 }
-/* On phones the 268px sidebar would swallow the content column. Collapsed, it stays a slim IN-FLOW
-   rail (it pushes the file panel - no superimposition over the cards). Expanded, it floats over the
-   file panel (like the details panel) so opening filters doesn't crush the narrow results. */
 @media (max-width: 560px) {
   .fdb-app:not(.side-collapsed) .side {
     position: absolute;
@@ -2832,7 +2299,7 @@
   font-size: 11.5px;
 }
 
-/* P8 - format thumbnails: the leading tile for zarr/nc/grib rows/cards. Other extensions
+/* Format thumbnails: the leading tile for zarr/nc/grib rows/cards. Other extensions
    keep the generic .ext text tile. The brand mark sits on a white chip so the fixed-palette logos
    (netCDF/GRIB/Intake are dark) read on light AND dark result cards. */
 .ftile {
@@ -2863,7 +2330,7 @@
   line-height: 0;
 }
 
-/* P4 - manual load-next with a proportion bar (no scroll auto-load: cheaper on Solr, no
+/* Manual load-next with a proportion bar (no scroll auto-load: cheaper on Solr, no
    jank at thousands of rendered rows). */
 .more-loader {
   margin: 14px 0 0;
@@ -2901,7 +2368,7 @@
   margin: 0;
 }
 
-/* P5 - one loading language: the shared inline spinner primitive. */
+/* One loading language: the shared inline spinner primitive. */
 .spin {
   width: 14px;
   height: 14px;
@@ -2921,7 +2388,7 @@
   animation: none;
 }
 
-/* P5 - flavour (naming) change: a clean spinner veil over the sidebar while labels/counts re-fetch. */
+/* Flavour (naming) change: a clean spinner veil over the sidebar while labels/counts re-fetch. */
 .side {
   position: relative;
 }
@@ -2945,7 +2412,7 @@
   display: none;
 }
 
-/* P2 - chip/mode/diff tags replace the removed `·` separators with quiet grouping. */
+/* Chip/mode/diff tags replace the removed `·` separators with quiet grouping. */
 .chip-tag {
   font-size: 10px;
   font-weight: 700;
@@ -3068,7 +2535,7 @@
 .status-dot.error {
   background: var(--danger);
 }
-/* #4 - the footer message itself is coloured by severity (green routine/ok, yellow warning, red
+/* The footer message itself is coloured by severity (green routine/ok, yellow warning, red
    error), so activity reads at a glance without an event-log panel. */
 .status-msg.info,
 .status-msg.success {
@@ -3300,7 +2767,7 @@
   transition: none;
 }
 
-/* Metadata-focused block controls (P6 + sort/collapse/additional) */
+/* Metadata-focused block controls: sort, collapse, additional */
 .fcard-h .drag-grip {
   cursor: grab;
   color: var(--dim);
@@ -3375,7 +2842,7 @@ body.fdb-dragging * {
   border-color: var(--accent);
 }
 
-/* Overview card drag-resize handle (P6) */
+/* Overview card drag-resize handle */
 .fcard {
   position: relative;
 }
@@ -3448,217 +2915,6 @@ body.fdb-dragging * {
   animation: none;
 }
 
-/* Terminal host span */
-.cmd .term-host {
-  color: #6f9cf0;
-  word-break: break-all;
-}
-
-/* Windows: blue title bar */
-.cmd[data-os="windows"] .term-bar {
-  background: linear-gradient(#1257c4, #0e46a0);
-  border-bottom-color: #0a3a86;
-}
-.cmd[data-os="windows"] .cmd-tab {
-  color: #cfe0ff;
-}
-.cmd[data-os="windows"] .cmd-tab.on {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
-}
-.cmd[data-os="windows"] .term-add,
-.cmd[data-os="windows"] .copy-ic {
-  color: #dceaff;
-}
-.cmd[data-os="windows"] .tl {
-  color: #eaf1ff;
-}
-.cmd[data-os="windows"] .tl:hover {
-  background: rgba(255, 255, 255, 0.16) !important;
-  color: #fff;
-}
-.cmd[data-os="windows"] .tl.close:hover {
-  background: #e81123 !important;
-  color: #fff;
-}
-
-/* Inline ghost autocomplete */
-.te-ghost {
-  color: #4d5d78;
-}
-.te-hint {
-  font-size: 10.5px;
-  color: #4d5d78;
-  margin-top: 3px;
-  font-family: var(--mono);
-}
-.cmd.fallback .te-hint {
-  display: none;
-}
-
-/* In-terminal completion menu (shell-style, replaces the floating popover) */
-.te-menu,
-.py-menu {
-  display: none;
-  margin: 6px 0 2px;
-  border: 1px solid #26364f;
-  border-radius: 6px;
-  max-height: 168px;
-  overflow-y: auto;
-  background: rgba(255, 255, 255, 0.03);
-}
-.te-menu.show,
-.py-menu.show {
-  display: block;
-}
-.tm-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 3px 10px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: #c7d4ea;
-  cursor: pointer;
-}
-.tm-item.hl {
-  background: rgba(79, 141, 247, 0.22);
-  color: #fff;
-}
-.tm-item:hover {
-  background: rgba(79, 141, 247, 0.12);
-}
-.tm-val {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tm-cnt {
-  color: #6f7f9c;
-  flex-shrink: 0;
-}
-
-/* Terminal: real tabs, blinking cursor, read-only prefix, panels */
-
-/* title bar + tabs */
-.term-bar {
-  background: color-mix(in srgb, var(--term-bg) 82%, #fff 6%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.cmd-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px 6px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 7px 7px 0 0;
-  margin-bottom: -1px;
-  color: #93a3bd;
-  font-size: 12px;
-  line-height: 1.4;
-}
-.cmd-tab .tab-ic {
-  display: inline-flex;
-  opacity: 0.75;
-}
-.cmd-tab[data-cmd="cli"] .tab-ic {
-  color: #7ee0a8;
-} /* bash */
-.cmd-tab[data-cmd="py"] .tab-ic {
-  color: #f0c04d;
-} /* python */
-.cmd-tab.on {
-  background: var(--term-bg);
-  color: var(--term-fg);
-  border-color: rgba(255, 255, 255, 0.14);
-  border-bottom: 1px solid var(--term-bg);
-}
-.cmd-tab.on .tab-ic {
-  opacity: 1;
-}
-.cmd-tab:not(.on):hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--term-fg);
-}
-
-/* [copy] / info / colour controls */
-.copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: #93a3bd;
-  background: none;
-  border: none;
-  padding: 3px 7px;
-  border-radius: 6px;
-}
-.copy-btn .cb-caret {
-  color: #7ee0a8;
-  opacity: 0.8;
-}
-.copy-btn:hover {
-  color: var(--term-fg);
-  background: rgba(255, 255, 255, 0.07);
-}
-.copy-btn:hover .cb-caret {
-  opacity: 1;
-}
-.copy-btn.done,
-.copy-btn.done .cb-caret {
-  color: #7ee0a8;
-  opacity: 1;
-}
-.term-kebab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 22px;
-  color: #93a3bd;
-  background: none;
-  border: none;
-  border-radius: 6px;
-}
-.term-kebab:hover {
-  color: var(--term-fg);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-/* blinking block cursor (a real terminal, not a text field) */
-.te-caret {
-  display: inline-block;
-  width: 7px;
-  height: 1.05em;
-  vertical-align: text-bottom;
-  background: var(--term-fg);
-  animation: te-blink 1.05s step-end infinite;
-}
-@keyframes te-blink {
-  0%,
-  45% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .te-caret {
-    animation: none;
-  }
-}
-/* it blinks whether or not the terminal has focus - it's the "start typing here" cue. When the
-   input IS focused it's fully solid; unfocused it's a hollow box, the usual terminal convention. */
-.cmd .te-wrap:not(:focus-within) .te-caret,
-.cmd .py-wrap:not(:focus-within) .te-caret {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--term-fg);
-}
-
 /* read-only time/bbox prefix (always first) */
 /* Read-only (time/bbox/flavour) tokens are deliberately NOT blue/amber - those colours mean
    "you typed this, you can edit it". They're also NOT boxed: a bordered chip read as an
@@ -3672,137 +2928,6 @@ body.fdb-dragging * {
 .tf-eq,
 .tf-v {
   color: #7f8da3;
-}
-.py-fixedline .py-code,
-.py-ro {
-  color: #7f8da3;
-  font-style: italic;
-  opacity: 0.82;
-}
-
-/* overflow (\22ee) menu: terminal settings; the install guide lives in app-level Help */
-.term-menu {
-  display: none;
-  position: absolute;
-  right: 8px;
-  top: 42px;
-  z-index: 120;
-  min-width: 214px;
-  padding: 8px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: color-mix(in srgb, var(--term-bg) 88%, #fff 8%);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
-}
-.term-menu.show {
-  display: block;
-}
-.tmn-h {
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #7b8aa6;
-  font-family: var(--font);
-  margin: 2px 2px 7px;
-}
-.tmn-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  margin-top: 4px;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--term-fg);
-  font-family: var(--font);
-  font-size: 12px;
-  text-decoration: none;
-  cursor: pointer;
-}
-.tmn-item:hover {
-  background: rgba(255, 255, 255, 0.09);
-}
-
-/* colour palette (persisted) */
-.term-bg-panel {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-  padding: 0 2px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 4px;
-}
-.bg-sw {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  cursor: pointer;
-}
-.bg-sw.on {
-  outline: 2px solid #8fb6ff;
-  outline-offset: 1px;
-}
-
-/* completion menu: the empty state says so, instead of showing nothing -- */
-.tm-empty {
-  color: #6f7f9c;
-  font-style: italic;
-  cursor: default;
-}
-.tm-empty:hover {
-  background: none;
-}
-
-/* bash: the input CONTINUES the command line
-   The prefix (prompt · command · --flavour · read-only time/bbox) is painted at the start of the
-   line; the input sits on top at full width with its FIRST line indented past the prefix, so
-   wrapped text falls back to the left margin like a real shell - instead of the input becoming a
-   narrow column on the right (which is what a flex row gave us). */
-.cli-row {
-  position: relative;
-  --te-indent: 0px;
-}
-.cli-prefix {
-  position: absolute;
-  left: 0;
-  top: 0;
-  padding: 2px 0;
-  white-space: nowrap;
-  line-height: inherit;
-  pointer-events: none;
-} /* same padding as .te-hl/.te-input -> same baseline */
-.cli-row .term-edit {
-  margin-top: 0;
-}
-.cli-row .cli-line {
-  display: inline;
-}
-.cli-row .te-hl,
-.cli-row .te-input {
-  text-indent: var(--te-indent);
-}
-/* narrow window / very long prefix -> give the input its own line rather than a sliver */
-.cli-row.prefix-block .cli-prefix {
-  position: static;
-  white-space: pre-wrap;
-  display: block;
-}
-.cli-row.prefix-block .te-hl,
-.cli-row.prefix-block .te-input {
-  text-indent: 0;
-}
-
-/* no focus ring inside the terminal: the BLINKING CURSOR is the focus cue */
-.cmd .te-input:focus-visible,
-.cmd .py-input:focus-visible {
-  outline: none;
-}
-.cmd .te-wrap,
-.cmd .py-wrap {
-  border: none;
-  box-shadow: none;
 }
 
 /* app-level Help panel (top bar) */
@@ -3887,190 +3012,9 @@ body.fdb-dragging * {
 .help-link:hover {
   text-decoration: underline;
 }
-
-/* Terminal: hint vs suggestion, and a bar that survives a narrow window */
-
-/* 2) the GHOST is the only thing Tab will accept, so nothing else may look like it
-   The placeholder must not be the same dim grey as the ghost, or `project=cmip6 variable=tas`
-   read as a real suggestion waiting for Tab. The ghost keeps the "type-ahead" grey; the
-   placeholder and the hint are italic and clearly *instructional* (a different hue entirely). */
-.te-ghost,
-.py-ghost {
-  color: var(--term-ghost);
-  font-style: normal;
-}
-.te-input::placeholder,
-.py-input::placeholder {
-  color: var(--term-ph);
-  font-style: italic;
-  opacity: 0.8;
-}
-.te-hint {
-  margin-top: 6px;
-  font-family: var(--font);
-  font-size: 11px;
-  font-style: italic;
-  color: var(--term-hint);
-  opacity: 0.85;
-  letter-spacing: 0.01em;
-}
-.te-hint kbd,
-.tm-empty {
-  font-family: var(--mono);
-  font-style: normal;
-}
-/* keycaps: the hint keys look like real keys - subtle fill, a border with a thicker bottom edge for
-   depth, and a hairline shadow. Tuned per terminal theme (dark tokens by default). */
-.te-hint kbd {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 5px;
-  margin: 0 1px;
-  min-width: 16px;
-  justify-content: center;
-  border-radius: 4px;
-  font-size: 10px;
-  line-height: 1.7;
-  color: var(--term-fg);
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-bottom-width: 2px;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
-}
-.cmd[data-term-light="true"] .te-hint kbd {
-  background: rgba(0, 0, 0, 0.06);
-  border-color: rgba(0, 0, 0, 0.22);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
-}
-/* Terminal footer: a status strip pinned under the body that carries the keyboard hint.
-   The window has overflow:visible (so the ⋮ menu isn't clipped), so the footer rounds its OWN bottom
-   corners to match the window. Hidden when docked (only the bar shows) or in the textarea fallback. */
-.term-foot {
-  padding: 5px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 0 0 10px 10px;
-  background: color-mix(in srgb, var(--term-bg) 96%, #000 5%);
-  display: flex;
-  align-items: center;
-  min-height: 26px;
-  flex-shrink: 0;
-}
-.term-foot .te-hint {
-  margin: 0;
-  opacity: 0.9;
-}
-.cmd[data-term-light="true"] .term-foot {
-  border-top-color: rgba(0, 0, 0, 0.1);
-  background: color-mix(in srgb, var(--term-bg) 92%, #000 4%);
-}
-.cmd.minimized .term-foot,
-.cmd.fallback .term-foot {
-  display: none;
-}
-/* the "how to type this" rows in the menu are guidance, not completions */
-.tm-empty {
-  color: var(--term-hint);
-  font-style: italic;
-  cursor: default;
-}
-.tm-empty:hover {
-  background: none;
-}
-
-/* 5) narrow window: the window controls must never be pushed out of the bar */
-.cmd.show {
-  min-width: 340px;
-}
-.term-bar {
-  flex-wrap: nowrap;
-}
-.traffic,
-.term-add,
-.copy-btn,
-.term-kebab {
-  flex: 0 0 auto;
-}
 .spacer {
   flex: 1 1 0;
   min-width: 0;
-}
-.cmd-tab {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-}
-.cmd-tab .tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* below this WINDOW width (set by a ResizeObserver on the terminal itself - a viewport media
-   query can't see the window's own size) the tab labels give way before the controls do */
-.cmd.narrow .cmd-tab .tab-label {
-  display: none;
-}
-.cmd.narrow .copy-btn .cb-word {
-  display: none;
-}
-
-/* 7) opacity slider in the ⋮ menu */
-.tmn-alpha {
-  padding: 2px 2px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 4px;
-}
-.term-alpha {
-  width: 100%;
-  accent-color: #8fb6ff;
-  cursor: pointer;
-}
-
-/* completion menu placement
-   The terminal sits in the bottom-right corner, so a list under the caret is often below the
-   fold of the scrolling body. When there's no room beneath, the menu FLIPS to sit directly above
-   the prompt - the same thing a shell does when completing at the bottom of a screen. Explicit
-   flex `order` values (rather than DOM order) let the menu move without moving anything else. */
-.cli-view,
-.py-view {
-  display: flex;
-  flex-direction: column;
-}
-
-.cli-view > .cli-row {
-  order: 10;
-}
-.cli-view > .te-menu {
-  order: 20;
-}
-.cli-view > .te-extra {
-  order: 30;
-}
-.cli-view > .te-warn {
-  order: 50;
-}
-.cli-view.menu-above > .te-menu {
-  order: 5;
-  margin: 0 0 6px;
-} /* above the prompt line */
-
-.py-view > .py-line {
-  order: 10;
-}
-.py-view > .py-fixed {
-  order: 30;
-}
-.py-view > .py-ml {
-  order: 40;
-}
-.py-view > .py-menu {
-  order: 50;
-}
-.py-view > .py-close {
-  order: 60;
-}
-.py-view.menu-above > .py-menu {
-  order: 35;
-  margin: 0 0 6px;
 } /* above the editable kwargs */
 
 /* Sidebar - one "Filter" header, sections named by what they are, each with its
@@ -4108,27 +3052,9 @@ body.fdb-dragging * {
   position: relative;
   transition: background-color 0.12s;
 }
-/* the count badge clears all filters. On hover/focus the number is replaced by
-   a red × (a ::after overlay; the number goes transparent) on a red-tinted rectangle - the same
-   affordance as a single facet's badge, so "clear everything" reads the same as "clear one". */
-.sf-badge:hover,
-.sf-badge:focus-visible {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
-  color: transparent;
-  outline: none;
-}
-.sf-badge:hover::after,
-.sf-badge:focus-visible::after {
-  content: "\00d7";
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: var(--danger);
-  font-weight: 800;
-  font-size: 14px;
-  font-family: var(--font);
-}
+/* The global Filter total's hover treatment lives at the end of this sheet: a real element swap in
+   a NEUTRAL colour. A red `::after` cross over a merely-transparent number puts two crosses on
+   screen, and takes its red from `--danger`, which in a red-branded deployment is the accent. */
 
 /* sections: a hairline rule between them, chevron on the RIGHT (the e-commerce convention) */
 .facet {
@@ -4284,7 +3210,7 @@ body.fdb-dragging * {
   height: auto !important;
 }
 
-/* (a wider card gets more columns automatically from the auto-fill grid on .fcard-vals - #1) */
+/* (a wider card gets more columns automatically from the auto-fill grid on .fcard-vals) */
 
 /* resize grip: now a 2-D handle (sideways AND up), so say so */
 .fcard-resize {
@@ -4314,16 +3240,20 @@ body.fdb-dragging * {
   overflow: auto;
   padding: 6px 8px 8px;
 }
+/* Centred only while the content FITS. `justify-content: center` on a scroll container pushes
+   overflow off both ends, and the start-side overflow is unreachable - which is how the From row
+   ended up hidden beneath the card header. `safe center` falls back to start-alignment the moment
+   the content is taller than the body. */
 .fcard-special-body.time-body {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: safe center;
 }
-/* #8 - the inline editor is stretched to height:100% (so the bbox map can fill its card), which left
+/* The inline editor is stretched to height:100% (so the bbox map can fill its card), which left
    nothing for the body's justify-content to centre. Centre the time picker's rows WITHIN that
    full-height editor instead. Only time - the bbox editor wants its map to fill. */
 .fcard-special-body.time-body .editor.inline {
-  justify-content: center;
+  justify-content: safe center;
 }
 /* the embedded editors size to the CARD instead of overflowing it */
 .fcard-special-body .editor {
@@ -4399,7 +3329,7 @@ body.fdb-dragging * {
   gap: 6px;
 }
 .editor.inline .daterow input {
-  min-width: 0;
+  min-width: 0; /* a grid item's default `min-width: auto` would let the field push the row wider */
 }
 .editor.inline .modes {
   gap: 4px;
@@ -4477,9 +3407,14 @@ body.fdb-dragging * {
   padding: 4px 6px;
   font-size: 11px;
 }
+/* THREE children, THREE columns: label, text field, calendar button.
+   Declaring only `34px 1fr` puts the calendar button on an implicit second grid row, making each
+   date row two lines tall. Two of those plus the mode buttons overflow the card body, and because
+   the body centres its content the overflow goes off BOTH ends, clipping the From row under the
+   card header. The third column is what holds it, not a taller card. */
 .editor.inline .daterow {
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
 }
 .editor.inline .daterow label {
@@ -4514,6 +3449,16 @@ body.fdb-dragging * {
 .lmap.drawing,
 .lmap.drawing .leaflet-grab {
   cursor: crosshair;
+}
+/* While a rectangle is being dragged the pointer sweeps across the +/- controls and the attribution,
+   and the browser treats that as a text selection - the controls light up with the selection
+   highlight mid-gesture. Suppressing selection for the duration of Draw mode, on this map only,
+   removes the highlight without touching hit-testing: the controls are still clickable, still
+   focusable, still keyboard-activatable, and Pan mode selects text normally again. */
+.lmap.drawing,
+.lmap.drawing * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 .lmap-mode {
   position: absolute;
@@ -4608,7 +3553,7 @@ body.fdb-dragging * {
   background: var(--surface-2);
   color: var(--accent);
 }
-/* #2 - export locked past the 100k ceiling: greyed out, not-allowed cursor, no hover lift. The click
+/* Export locked past the 100k ceiling: greyed out, not-allowed cursor, no hover lift. The click
    handler already refuses to export; this makes it LOOK unavailable. Hover still shows the tooltip. */
 .tbtn.is-disabled {
   opacity: 0.4;
@@ -4730,7 +3675,7 @@ body.fdb-dragging * {
   --di-border: var(--border);
   --di-surface: var(--surface-2);
   --di-accent: var(--accent);
-  /* #1 - the xarray repr colours default to a fixed LIGHT palette (--jp-* and white fallbacks), so
+  /* The xarray repr colours default to a fixed LIGHT palette (--jp-* and white fallbacks), so
      the metadata table ignored the app theme. Map them onto our tokens so the table follows light/night. */
   --xr-font-color0: var(--text);
   --xr-font-color2: var(--dim);
@@ -4740,14 +3685,14 @@ body.fdb-dragging * {
   --xr-background-color: var(--surface);
   --xr-background-color-row-even: var(--surface);
   --xr-background-color-row-odd: var(--surface-2);
-  /* #1 - the chunk-cube diagram (shown on an expanded variable) defaults to Freva's brown
+  /* The chunk-cube diagram (shown on an expanded variable) defaults to Freva's brown
      (#9b7a52). Shade it from our accent so it reads as the dominant blue, in both themes. */
   --xr-chunk-face: var(--accent);
   --xr-chunk-top: color-mix(in srgb, var(--accent) 68%, #fff);
   --xr-chunk-side: color-mix(in srgb, var(--accent) 80%, #000);
   --xr-chunk-edge: color-mix(in srgb, var(--accent) 38%, #fff);
 }
-/* #2 - for a direct zarr store the resolved URL IS the file path, so the component's "Zarr:" row
+/* For a direct zarr store the resolved URL IS the file path, so the component's "Zarr:" row
    just duplicates the path bar above it. Our inspector only ever loads zarr stores, so suppress it.
    (If server-side non-zarr->zarr conversion is ever wired, revisit - then the URLs genuinely differ.) */
 .freva-db data-inspector .di-zarr-row {
@@ -4780,7 +3725,696 @@ body.fdb-dragging * {
 .freva-db data-inspector .di-header .di-btn-split {
   border-left-color: rgba(0, 0, 0, 0.12);
 }
-/* #2 - let the metadata fill the modal instead of the built-in 700px cap. */
+/* Let the metadata fill the modal instead of the built-in 700px cap. */
 .freva-db data-inspector .xr-wrap {
   max-width: none;
+}
+/* Production hardening. Each block names the defect it removes. */
+
+/* Screen-reader-only utilities
+   Used by the in-field search status and, when `features.footer:false`, by the status region.
+   `display:none` / `visibility:hidden` would take the node OUT of the accessibility tree and
+   silence the live region - which is the whole reason this class exists. */
+.freva-db .sr-only,
+.freva-db .sr-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Footer as an independent option
+   The grid drops to two rows, so the strip consumes NO height (rather than being painted and then
+   hidden, which still reserves its track). */
+.freva-db .fdb-app.no-footer {
+  grid-template-rows: auto 1fr;
+}
+
+/* Overlays are COMPONENT-scoped, not viewport-scoped
+   All three overlay owners now append to `.freva-db` and are positioned absolutely in its
+   coordinate space by anchor.ts. `position: fixed` here would re-introduce exactly the embedded-host
+   bug that fix exists to remove (a transformed/contained ancestor changes what `fixed` resolves
+   against, and an `overflow:hidden` mount clips whatever lands outside it). */
+.freva-db .fdb-tip {
+  position: absolute;
+  /* A very long unbroken label - a deep path, an ensemble id - must not push the bubble past a
+     viewport edge, and must not render as one unwrappable line. */
+  max-inline-size: min(280px, calc(100vw - 16px));
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* Chips: one long value cannot own the row
+   Without a bounded, ellipsised label an unbroken value stretched its chip past the available
+   width, pushing Clear all and the Browse/Overview cluster off a phone screen. The full value stays
+   available as the tooltip and the accessible name. */
+.freva-db .chip {
+  min-width: 0;
+  max-width: 100%;
+}
+.freva-db .chip-label {
+  min-width: 0;
+  max-inline-size: min(22ch, 60vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The NEGATIVE chip is neutral - dotted, hatched, struck on the value only. `--danger` red says
+   nothing in a red-branded deployment, in greyscale or in forced colours. Its rules live at the end of this sheet with the rest of the language. */
+/* An IMMUTABLE base-scope indicator. Not a button: there is nothing to click, and "Clear all"
+   deliberately does not touch it. */
+.freva-db .chip.scope {
+  background: var(--surface-3);
+  color: var(--dim);
+  border: 1px solid var(--border);
+  cursor: default;
+  font-weight: 600;
+}
+
+/* The top row wraps DETERMINISTICALLY at phone widths
+   Chips take a full-width row of their own; Clear all and the Browse/Overview cluster share the
+   next one. Nothing is absolutely positioned, so they cannot overlap however long the labels get.
+   An empty chip row collapses instead of leaving a blank strip. */
+.freva-db .chips.empty {
+  display: none;
+}
+@media (max-width: 430px) {
+  .freva-db .toprow {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 8px;
+  }
+  .freva-db .toprow > .chips {
+    flex: 1 0 100%; /* own row */
+    order: 1;
+  }
+  .freva-db .toprow > .clear-btn {
+    order: 2;
+  }
+  .freva-db .toprow > .ctrl-cluster {
+    order: 3;
+    margin-left: auto; /* the following row, right-aligned - never overlapping the chips */
+  }
+  .freva-db .chip-label {
+    max-inline-size: min(18ch, 52vw);
+  }
+}
+
+/* The list header stays visible
+   It sticks INSIDE `.results-scroll` (it deliberately stays out of `.rows`, whose children are
+   counted by the incremental append). Overview/terminal content above it scrolls away first,
+   because sticking only begins once the header reaches the top of the scroller. */
+.freva-db .results-scroll .list-head {
+  position: sticky;
+  top: 0;
+  z-index: 6; /* above rows, below the pickbar/popovers/toasts */
+  /* Opaque: rows scrolling underneath a translucent header is unreadable. A z-index alone would
+     only put the strip BEHIND the header. What holds is that there is no band for rows to occupy
+     (see `.results-scroll`'s padding); this keeps whatever does pass under it hidden. */
+  background: var(--surface-2);
+  box-shadow: 0 1px 0 var(--border);
+  /* SQUARE top corners. The header's background is opaque, but a rounded corner is not part of the
+     background - it is a hole, and a row passing underneath shows through the two little curved
+     wedges at the top left and top right. There is no honest way to round the corner of something
+     other content slides beneath, so the corner goes rather than the opacity. `.rows` already
+     squares its own top corners when the header is present, so the two still read as one table. */
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* The comparison matrix has a bounded height
+   Growing with the number of differing fields would push the rest of the Details panel out of
+   reach. A SHORT comparison still uses only the height it needs (max-height, not height). */
+.freva-db .dscroll {
+  max-height: clamp(180px, 38vh, 360px);
+  overflow: auto; /* both axes */
+}
+.freva-db .dmatrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2); /* opaque, or the scrolled rows show through the header */
+}
+
+/* Include / exclude, side by side
+   TWO sibling controls. Nesting a button inside the button-like value row would be invalid HTML and
+   unreliable for AT and touch. */
+.freva-db .fval-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.freva-db .fval-row > .fval {
+  flex: 1;
+  min-width: 0;
+}
+.freva-db .fval-ex {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--faint);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  /* Compact on pointer devices: revealed on hover/focus-within, so the row stays calm. */
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.freva-db .fval-row:hover .fval-ex,
+.freva-db .fval-row:focus-within .fval-ex,
+.freva-db .fval-ex:focus-visible,
+.freva-db .fval-ex.on {
+  opacity: 1;
+}
+.freva-db .fval-ex:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+.freva-db .fval-ex.on {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+/* An EXCLUDED value in a FACET LIST: struck through, `!=`-marked and latched with a dashed control.
+   The strike belongs here - a value list is a set of things you are choosing between, and the line
+   is what shows at a glance which ones are out. The top-level CHIPS are the opposite case: there
+   the value IS the label you have to read, so those are left unstruck. */
+.freva-db .fval.excl .nm {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.freva-db .fval.excl {
+  color: var(--danger);
+}
+/* On a touch layout there is no hover, so the control must be permanently discoverable. */
+@media (hover: none), (pointer: coarse) {
+  .freva-db .fval-ex {
+    opacity: 1;
+  }
+}
+
+/* Selection cap */
+.freva-db .cb.capped {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.freva-db .pickbar .cnt.at-cap b {
+  color: var(--warn);
+}
+
+/* Remote source-file list */
+.freva-db .dl-pop {
+  width: min(460px, calc(100% - 24px));
+}
+.freva-db .dl-head {
+  font-weight: 700;
+  font-size: 13px;
+  padding: 4px 8px 2px;
+}
+.freva-db .dl-note {
+  font-size: 11.5px;
+  color: var(--dim);
+  padding: 0 8px 8px;
+  line-height: 1.5;
+}
+.freva-db .dl-list {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.freva-db .dl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.freva-db .dl-item:hover {
+  background: var(--surface-2);
+}
+.freva-db .dl-name {
+  font-weight: 600;
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.freva-db .dl-path {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* keep the informative TAIL of a long path visible */
+  text-align: left;
+}
+
+/* Native date picker beside the text field
+   The text input remains the source of truth (it is the only one that can express YYYY, YYYY-MM
+   and open bounds); the native input exists solely to raise the platform calendar. */
+.freva-db .date-pickwrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.freva-db .date-pick {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--dim);
+  cursor: pointer;
+}
+.freva-db .date-pick:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+}
+/* Present for showPicker()/focus(), but never a second visible field or a tab stop. */
+.freva-db .date-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+}
+
+/* Flavour control: a real control, not a caption
+   Layout only - the switching logic was already correct. */
+.freva-db .lens {
+  height: 43px;
+  min-width: 160px;
+  padding: 0 12px;
+  gap: 10px;
+  background: var(--surface); /* opaque - it sits over the top bar, not in it */
+  border-color: var(--border-2);
+  box-shadow: 0 1px 2px rgba(16, 28, 52, 0.06);
+}
+.freva-db .lens .v {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.freva-db .lens svg {
+  flex-shrink: 0;
+  margin-left: auto; /* the caret stays pinned at the far edge as the value flexes */
+}
+/* The menu is never narrower than the control it drops from. */
+.freva-db .lens-pop {
+  min-width: 170px;
+}
+.freva-db .lens-pop .pop-item {
+  padding: 9px 11px;
+}
+.freva-db .lens-pop .pop-item.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+@media (max-width: 680px) {
+  /* Dropping the FLAVOUR caption is fine; a usable value width and touch target are not optional. */
+  .freva-db .lens {
+    min-width: 108px;
+    height: 42px;
+  }
+}
+
+/* Search is the primary control */
+.freva-db .search input {
+  height: 45px;
+  font-size: 14.5px;
+  background: var(--surface); /* opaque, so it reads as raised rather than as part of the bar */
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  padding-right: 38px; /* the reserved spinner slot */
+}
+.freva-db .search .ic {
+  color: var(--accent);
+}
+.freva-db .search input::placeholder {
+  /* Explicit colour AND opacity:1 - the UA default is a low-opacity render of the text colour,
+     which lands well under 4.5:1 and differs between engines. */
+  color: var(--faint);
+  opacity: 1;
+}
+.freva-db .search input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* The slot is ALWAYS reserved; only visibility changes, so showing the spinner shifts nothing. */
+.freva-db .search-spin {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  visibility: hidden;
+  color: var(--accent);
+}
+.freva-db .search-spin.show {
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Still visibly BUSY, just not spinning: a static ring rather than nothing at all. */
+  .freva-db .search-spin .spin {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.85;
+  }
+}
+
+/* Small-text legibility
+   Meaningful 9.5-10px labels move to 11px where the space exists. Hierarchy comes from weight,
+   spacing and grouping - not from making text too faint to read. */
+.freva-db .dmatrix thead th,
+.freva-db .list-head,
+.freva-db .dl-path,
+.freva-db .fval .n {
+  font-size: 11px;
+}
+.freva-db .scope-note,
+.freva-db .more-info {
+  font-size: 11.5px;
+}
+.freva-db input::placeholder,
+.freva-db textarea::placeholder {
+  color: var(--faint);
+  opacity: 1;
+}
+/* Disabled text still has to be READ to be understood. 0.5 alpha on --dim does not clear 4.5:1. */
+.freva-db .btn:disabled,
+.freva-db [aria-disabled="true"] {
+  opacity: 0.72;
+}
+
+/* 1,000-row interaction cost
+   `content-visibility` lets the engine skip layout and paint for rows that are off screen.
+   `contain-intrinsic-size` supplies a placeholder box so the scrollbar stays honest and the
+   scroll position does not jump. Checked in Chromium against focus, keyboard navigation, the
+   sticky list header and scrolling. Engines that ignore these properties simply render every row,
+   exactly as before - the fallback is doing nothing. */
+.freva-db .rows > .row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+.freva-db .grid > .gcard {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 132px;
+}
+/* At or above the documented threshold (MANY_RESULTS_THRESHOLD = 500 loaded rows) the side panels
+   stop ANIMATING their width. A width transition on a panel re-lays-out the centre column on every
+   animation frame; with 1,000 rows in it, that is the measured cost of opening Details or
+   collapsing the sidebar. The panels still change state instantly - only the tween is dropped. */
+.freva-db.many-results .side,
+.freva-db.many-results .details-panel {
+  transition: none;
+}
+@media (max-width: 1100px) {
+  /* Where the details panel is already an OVERLAY it does not reflow the grid, so its motion is
+     compositor-only and can stay. */
+  .freva-db.many-results .details-panel {
+    transition: transform 0.18s ease;
+  }
+}
+
+/* The top bar fits a phone
+   At 320px the brand, the flavour control, the search field and four icon buttons cannot all keep
+   their comfortable sizes. Rather than let the bar set a min-content width that pushes the entire
+   app off screen, the negotiable parts give way in a defined order: the brand mark stays, the
+   flavour control shrinks to a usable-but-tight touch target, and the search field keeps the rest. */
+@media (max-width: 430px) {
+  .freva-db .top {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .freva-db .lens {
+    min-width: 84px;
+    padding: 0 8px;
+    gap: 4px;
+  }
+  .freva-db .search input {
+    padding-left: 34px;
+    padding-right: 32px;
+  }
+  .freva-db .search .ic {
+    left: 10px;
+  }
+}
+
+/* INCLUSION vs EXCLUSION - told apart by CHARACTER and SHAPE, not by colour
+
+   The host's accent is configurable and may itself be red, so "accent = kept, red = removed" is not
+   a distinction at all in some deployments - and it is none whatsoever in greyscale, in
+   `forced-colors`, or to a colour-blind reader. Every surface carries the meaning twice:
+
+     +N   kept      a FILLED badge, and the control that clears ONLY the kept values
+     -N   removed   a DASHED outlined badge, and the control that clears ONLY the removed ones
+     !=   an excluded VALUE, struck through, on a dotted hatched chip
+
+   Colour still reinforces all of it; it is simply never the only carrier. */
+
+/* The per-facet +N / -N clear buttons */
+.freva-db .fh-count {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  /* Sized by the COUNT either way, so swapping in the cross cannot make the header jump.
+     `--fb-ch` is the count's character length, set when the button is built. */
+  min-width: calc(var(--fb-ch, 2) * 1ch + 16px);
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  flex: none;
+  transition: background-color 0.12s;
+}
+.freva-db .fh-count.fb-inc {
+  background: var(--accent);
+  color: #fff;
+}
+.freva-db .fh-count.fb-exc {
+  background: transparent;
+  /* `currentColor`, not the danger colour: in forced-colors the dash survives and the hue need not.
+     The dashes ARE the signal. */
+  border: 1px dashed currentColor;
+  color: var(--text);
+  font-weight: 700;
+}
+/* The count and the cross occupy the SAME grid cell and exactly one is rendered. Fading a cross in
+   on top of a number leaves both readable at once, which is what "no overlap" rules out. */
+.freva-db .fh-count > .fb-n,
+.freva-db .fh-count > .fb-x {
+  grid-area: 1 / 1;
+}
+.freva-db .fh-count > .fb-x {
+  display: none;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  /* NEUTRAL - the button's own text colour, never `--danger` and never the accent, both of which
+     can be the same red in a themed deployment. */
+  color: currentColor;
+}
+.freva-db .fh-count:hover > .fb-n,
+.freva-db .fh-count:focus-visible > .fb-n {
+  display: none;
+}
+.freva-db .fh-count:hover > .fb-x,
+.freva-db .fh-count:focus-visible > .fb-x {
+  display: block;
+}
+/* Hover changes what is WRITTEN, not what shape the badge is: solid stays solid, dashed dashed. */
+.freva-db .fh-count.fb-inc:hover,
+.freva-db .fh-count.fb-inc:focus-visible {
+  background: color-mix(in srgb, var(--accent) 78%, var(--text));
+  outline: none;
+}
+.freva-db .fh-count.fb-exc:hover,
+.freva-db .fh-count.fb-exc:focus-visible {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  outline: none;
+}
+
+/* The facet header is a ROW of siblings, never nested buttons */
+.freva-db .facet-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.freva-db .facet-head > .fh-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.freva-db .facet-head > .fh-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* The GLOBAL Filter total: ONE number, swapped for ONE cross */
+.freva-db .sf-badge {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  min-width: calc(var(--fb-ch, 1) * 1ch + 14px);
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.freva-db .sf-badge > .sf-n,
+.freva-db .sf-badge > .sf-x {
+  grid-area: 1 / 1;
+}
+.freva-db .sf-badge > .sf-x {
+  display: none;
+  font-size: 14px;
+  line-height: 1;
+  color: currentColor;
+}
+.freva-db .sf-badge:hover > .sf-n,
+.freva-db .sf-badge:focus-visible > .sf-n {
+  display: none;
+}
+.freva-db .sf-badge:hover > .sf-x,
+.freva-db .sf-badge:focus-visible > .sf-x {
+  display: block;
+}
+
+/* An excluded VALUE, in the lists */
+.freva-db .fval-row.excl .nm,
+.freva-db .fval.excl .nm,
+.freva-db .fval.excl .fv-t {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.freva-db .fval-row.excl .nm::before,
+.freva-db .fval.excl .nm::before,
+.freva-db .fval.excl .fv-t::before {
+  content: "\2260\00a0";
+  text-decoration: none;
+  display: inline-block;
+  font-weight: 700;
+}
+.freva-db .fval-row.excl .fval-ex,
+.freva-db .fval-row .fval-ex[aria-pressed="true"] {
+  border: 1px dashed currentColor;
+  border-radius: 5px;
+}
+
+/* Negative top-level chips: neutral, dotted, hatched */
+/* No `--danger`, no red, no accent. The chip reads as "removed" from its dotted outline, its `NOT`
+   tag, its `!=` operator and a subtle static hatch - all theme-neutral, so the same treatment works
+   in a dark theme, a light one and a red-branded deployment alike. */
+.freva-db .chip.neg {
+  border: 1px dotted var(--border-2);
+  color: var(--text);
+  background-color: var(--surface-2);
+  /* Built from the TEXT colour at low alpha, so it follows the theme rather than carrying one of
+     its own, and it is static - a moving pattern behind a label is unreadable. */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text) 9%, transparent) 0 1px,
+    transparent 1px 6px
+  );
+}
+.freva-db .chip.neg .chip-label {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+}
+.freva-db .chip.neg .chip-k,
+.freva-db .chip.neg .chip-op,
+.freva-db .chip.neg .chip-tag,
+.freva-db .chip.neg .x {
+  color: var(--text);
+  text-decoration: none;
+}
+/* The value is NOT struck through: the dotted outline, the hatch, `NOT` and `!=` carry the meaning,
+   and an unstruck value stays legible - which matters most for the long ones. */
+.freva-db .chip.neg .chip-v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.freva-db .chip.neg .chip-tag {
+  background: none;
+  border: 1px dotted currentColor;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+.freva-db .chip.neg .x {
+  opacity: 0.9;
+}
+
+@media (forced-colors: active) {
+  /* No hatch survives forced colours, and none is needed: the dotted border, `NOT` and `!=` carry
+     it on their own. */
+  .freva-db .chip.neg {
+    background-image: none;
+    border-style: dotted;
+  }
+  .freva-db .fh-count.fb-inc {
+    border: 1px solid CanvasText;
+  }
+  .freva-db .fh-count.fb-exc {
+    border: 1px dashed CanvasText;
+  }
+  .freva-db .fval-row.excl .fval-ex {
+    border-style: dashed;
+  }
 }

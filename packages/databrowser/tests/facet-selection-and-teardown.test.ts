@@ -21,12 +21,12 @@ import {
 import { mountDataBrowser } from "../src/index.js";
 import type { DataBrowserConfig, DataBrowserHandle } from "../src/types.js";
 import {
-  cliCommand,
   createInitialState,
   filterCommittable,
   posixQuote,
   selectionsEqual,
 } from "../src/state.js";
+import { cliCommand } from "../src/commands.js";
 import type { AppState } from "../src/types.js";
 
 function q<T extends Element = Element>(r: ParentNode, s: string): T | null {
@@ -79,9 +79,10 @@ function baseState(): AppState {
       lensSwitcher: true,
       inspect: true,
       brand: true,
+      footer: true,
     },
     theme: {},
-    brand: { title: "Freva", mark: "≈", description: "" },
+    brand: { title: "Freva", mark: "≈", description: "", showMark: true, showTitle: true },
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,
@@ -114,8 +115,9 @@ test("a same-length search with a changed MIDDLE row rebuilds (no stale row surv
     return { body: {} };
   };
   const { handle, root } = await mount(router);
-  const namesBefore = qa(root, "#fdb-results .row .name").map((n) => n.textContent);
-  assert.deepEqual(namesBefore, ["A.nc", "MID.nc", "C.nc"]);
+  // One complete path per row, so the assertion is on the whole value rather than a basename.
+  const namesBefore = qa(root, "#fdb-results .row .path").map((n) => n.textContent);
+  assert.deepEqual(namesBefore, ["/d/A.nc", "/d/MID.nc", "/d/C.nc"]);
 
   openFacet(root, "project");
   byText<HTMLElement>(root, ".side-scroll .fval", "cmip6")!.click();
@@ -127,10 +129,10 @@ test("a same-length search with a changed MIDDLE row rebuilds (no stale row surv
     ["/d/A.nc", "/d/X.nc", "/d/C.nc"],
     "controller state updated",
   );
-  const namesAfter = qa(root, "#fdb-results .row .name").map((n) => n.textContent);
+  const namesAfter = qa(root, "#fdb-results .row .path").map((n) => n.textContent);
   assert.deepEqual(
     namesAfter,
-    ["A.nc", "X.nc", "C.nc"],
+    ["/d/A.nc", "/d/X.nc", "/d/C.nc"],
     "DOM matches state - the stale MID row is gone",
   );
   handle.destroy();
@@ -268,7 +270,7 @@ test('an export failure overrides a held "Not applied" warning', async () => {
   // A held "Not applied" warning must not mask it.
   q<HTMLButtonElement>(root, '[aria-label="Export catalogue"]')!.click();
   await tick();
-  byText<HTMLButtonElement>(root, ".pop-item", "Intake catalogue")!.click();
+  byText<HTMLButtonElement>(root, ".xm-item", "Intake catalogue")!.click();
   await wait(60);
   const shown = q<HTMLElement>(root, ".status .mono")!.textContent ?? "";
   assert.match(shown, /error|failed|try again/i, "a real export error is visible");
@@ -368,12 +370,10 @@ test("1-of-2 details success still shows the partial-failure retry", async () =>
     return { body: {} };
   };
   const { handle, root } = await mount(router, { enableHeavyOps: true });
-  // pick both rows
   const cbs = qa<HTMLElement>(root, "#fdb-results .row .cb");
   cbs[0].click();
   cbs[1].click();
   await tick();
-  // open details
   q<HTMLButtonElement>(root, '[aria-label="Details panel"]')!.click();
   await wait(40);
   assert.ok(q(root, ".partial-flag"), "partial-failure flag shown in the single-file view");
@@ -394,7 +394,7 @@ test("export object URL is revoked on immediate destroy", async () => {
   const { handle, root } = await mount(router, { authEnabled: true, getAuthToken: () => "tok" });
   q<HTMLButtonElement>(root, '[aria-label="Export catalogue"]')!.click();
   await tick();
-  byText<HTMLButtonElement>(root, ".pop-item", "Intake catalogue")!.click();
+  byText<HTMLButtonElement>(root, ".xm-item", "Intake catalogue")!.click();
   await wait(40);
   assert.ok(objectUrls.created >= 1, "an object URL was created");
   handle.destroy(); // flushes before the revoke timer would normally fire
