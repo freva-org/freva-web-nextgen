@@ -1,13 +1,19 @@
 // components/tooltip.ts - immediate, styled tooltips.
 //
 // The browser's native `title` popup is slow (~1s delay) and unstyled. el() routes every `title` to
-// `data-tip`, and this installs ONE delegated listener on the app root that shows a single reused,
-// fixed-position bubble next to the hovered/focused target. Fixed positioning means it is never
-// clipped by a scroll container's overflow, and it flips/clamps to stay on screen. No per-element
-// nodes, no library. Tooltip text reaches the DOM via textContent.
+// `data-tip`, and this installs ONE delegated listener on the app root that shows a single reused
+// bubble next to the hovered/focused target. No per-element nodes, no library. Tooltip text reaches
+// the DOM via textContent.
+//
+// Positioning goes through the shared component-scoped helper (anchor.ts): absolute, in the
+// component root's coordinate space, clamped to the visible intersection of the root and the
+// viewport. The bubble also re-anchors on scroll/resize and hides when its source is detached or
+// scrolled out of view, so a long label near a viewport edge - or inside an embedded host's clipped
+// container - can neither overflow nor float free of what it describes.
 
 import type { Disposables } from "../dom.js";
 import { el } from "../dom.js";
+import { anchorVisible, positionAnchored } from "../anchor.js";
 
 const SHOW_DELAY = 80; // ms - brief, so it feels immediate without flashing on a quick pass-through
 const GAP = 8;
@@ -21,23 +27,17 @@ export function installTooltips(root: HTMLElement, dis: Disposables): void {
   const place = (t: HTMLElement): void => {
     const text = t.getAttribute("data-tip") ?? "";
     if (!text || !t.isConnected) return; // never anchor to a node a re-render removed
+    if (!anchorVisible(root, t)) {
+      hide();
+      return;
+    }
     tip.textContent = text;
     tip.classList.add("show"); // measure with it laid out
     mo?.observe(root, { childList: true, subtree: true }); // hide if this anchor is later detached
-    const r = t.getBoundingClientRect();
-    const tr = tip.getBoundingClientRect();
-    // prefer below the target; flip above if it would run off the bottom
-    let top = r.bottom + GAP;
-    let above = false;
-    if (top + tr.height > window.innerHeight - 4) {
-      top = r.top - GAP - tr.height;
-      above = true;
-    }
-    let left = r.left + r.width / 2 - tr.width / 2;
-    left = Math.max(6, Math.min(left, window.innerWidth - tr.width - 6));
-    tip.style.left = `${Math.round(left)}px`;
-    tip.style.top = `${Math.round(top)}px`;
-    tip.classList.toggle("above", above);
+    const before = tip.getBoundingClientRect().top;
+    positionAnchored(root, tip, t, { placement: "below", gap: GAP, margin: 6 });
+    // `.above` only drives the pointer arrow - the helper owns the flip decision itself.
+    tip.classList.toggle("above", tip.getBoundingClientRect().top < before);
   };
 
   const hide = (): void => {
@@ -93,6 +93,9 @@ export function installTooltips(root: HTMLElement, dis: Disposables): void {
   // any press or scroll dismisses (a held position would go stale)
   dis.listen(root, "pointerdown", hide, true);
   dis.listen(window, "scroll", hide, true);
+  dis.listen(window, "resize", () => {
+    if (target) place(target);
+  });
   dis.add(() => {
     window.clearTimeout(showT);
     mo?.disconnect();

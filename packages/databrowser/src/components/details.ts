@@ -25,7 +25,7 @@ import { paintRect, worldSVG } from "../geo.js";
 import { mountLeafletMap } from "./leafletMap.js";
 import { inspectEnabled } from "./inspector.js";
 import type { FileRow } from "../types.js";
-import { MAX_FILE_SELECTION } from "../types.js";
+import { MAX_AGGREGATE_FILES, MAX_SELECTED_FILES } from "../types.js";
 
 // no module-level Disposables: the region bucket is passed explicitly per render.
 
@@ -102,31 +102,43 @@ function infoSec(icon: keyof typeof ICONS | null, label: string): HTMLElement {
   sec.append(el("span", { text: label }));
   return sec;
 }
+/**
+ * The SELECTION the action block acts on. This is deliberately NOT "the rows whose metadata
+ * loaded": a metadata request that failed changes what we can SHOW, never what the user selected.
+ * Conflating the two produces a wrong "N files selected", a wrong `deselect N`, and - with
+ * a single successful fetch out of several - a multi-file selection presenting single-file actions.
+ */
+export interface ActionTarget {
+  /** Every selected file, in selection order, regardless of metadata outcome. */
+  files: string[];
+  /** files.length, carried explicitly so the arithmetic reads unambiguously. */
+  count: number;
+}
+
 // catalogue download actions (scoped to the picked files via file=)
 // NOTE: per-file Details fetches are issued ONE request per file on purpose. A single
 // multi-file ?file=a&file=b call returns an AGGREGATE facets block that cannot be attributed
 // back to an individual file, so a per-file diff genuinely requires per-file calls. Selection is
-// unlimited, so those calls are run through a bounded concurrency pool (see ensureFetch) rather
-// than all at once. Do not "batch into one request".
-function actionsBlock(
-  ctx: AppContext,
-  reg: Disposables,
-  files: string[],
-  multi: boolean,
-): HTMLElement {
+// capped at MAX_SELECTED_FILES, and those calls still run through a bounded concurrency pool (see
+// ensureFetch) rather than all at once. Do not "batch into one request".
+function actionsBlock(ctx: AppContext, reg: Disposables, target: ActionTarget): HTMLElement {
+  const files = target.files;
+  const multi = target.count > 1;
   // Primary action depends on the selection. A SINGLE file -> Inspect (read one store; an already-zarr
   // file renders without sign-in, a non-zarr file surfaces its own "needs sign-in / data-portal"
   // message). A BUNCH -> Aggregate (combine into one dataset) - Inspect makes no sense for many stores.
-  // The Aggregate button mirrors the pickbar's gating: it LOCKS past MAX_FILE_SELECTION and needs
+  // The Aggregate button mirrors the pickbar's gating: it LOCKS past MAX_AGGREGATE_FILES and needs
   // auth + the data-portal, and it shows the reason so a disabled button never looks broken.
   let primary: HTMLElement;
   let lockNote: HTMLElement | null = null;
   if (multi) {
-    const n = files.length;
-    const overCap = n > MAX_FILE_SELECTION;
+    // The SELECTED count, not the loaded-metadata count: with 25 selected this must say to deselect
+    // 15 to reach the 10-file aggregate limit, even if only 3 of the 25 returned metadata.
+    const n = target.count;
+    const overCap = n > MAX_AGGREGATE_FILES;
     const disabled = !ctx.cfg.authEnabled || !ctx.cfg.enableHeavyOps || overCap;
     const why = overCap
-      ? `Aggregation handles up to ${MAX_FILE_SELECTION} files - deselect ${n - MAX_FILE_SELECTION} to enable it`
+      ? `Aggregation handles up to ${MAX_AGGREGATE_FILES} files - deselect ${n - MAX_AGGREGATE_FILES} to enable it`
       : !ctx.cfg.authEnabled
         ? "Aggregate - needs sign-in"
         : !ctx.cfg.enableHeavyOps
@@ -195,7 +207,7 @@ function actionsBlock(
     el("p", {
       class: "scope-note",
       text: multi
-        ? `scoped to your ${files.length} picks - file= constraint`
+        ? `scoped to your ${target.count} picks - file= constraint`
         : "scoped to this file - file= constraint",
     }),
     intake,
@@ -227,7 +239,13 @@ function partialFlag(ctx: AppContext, reg: Disposables, failedCount: number): HT
   ]);
 }
 
-function renderSingle(ctx: AppContext, reg: Disposables, row: FileRow, failedCount = 0): void {
+function renderSingle(
+  ctx: AppContext,
+  reg: Disposables,
+  row: FileRow,
+  target: ActionTarget,
+  failedCount = 0,
+): void {
   const scroll = ctx.roots.infoScroll;
   const nodes: HTMLElement[] = [
     el("div", { class: "info-name", text: basename(row.file) }),
@@ -317,14 +335,18 @@ function renderSingle(ctx: AppContext, reg: Disposables, row: FileRow, failedCou
   }
   nodes.push(meta);
 
-  nodes.push(actionsBlock(ctx, reg, [row.file], false));
+  // `target` - not `[row.file]`. When several files are selected but only one returned metadata,
+  // the VIEW is single-file (there is nothing to diff) while the ACTIONS still act on the whole
+  // selection; passing the one loaded row here would silently downgrade them.
+  nodes.push(actionsBlock(ctx, reg, target));
   replaceChildren(scroll, ...nodes);
 }
 
 // multi-pick diff view
-/** Beyond this many files the comparison table (and its per-file fetches) is capped for performance;
- *  the remainder is surfaced as a count, and the user can narrow the selection to compare them. */
-const DIFF_MAX = 25;
+/** A DEFENSIVE internal ceiling on the comparison table and its per-file fetches. The UI already
+ *  caps selection at MAX_SELECTED_FILES, so this normally never bites; it exists so corrupted or
+ *  restored state that exceeds the UI limit still cannot fan out into unbounded requests. */
+const DIFF_MAX = MAX_SELECTED_FILES;
 
 /** Open the comparison matrix full-screen in a scrollable overlay (scroll X and Y for wide tables). */
 function openMatrixModal(
@@ -425,6 +447,7 @@ function renderDiff(
   ctx: AppContext,
   reg: Disposables,
   rows: FileRow[],
+  target: ActionTarget,
   failedCount: number,
   hiddenCount = 0,
 ): void {
@@ -438,7 +461,8 @@ function renderDiff(
   const common = keys.filter((k) => !varying.includes(k));
 
   const nodes: HTMLElement[] = [
-    el("div", { class: "info-name", text: `${rows.length} files selected` }),
+    // The SELECTED count heads the panel; `rows.length` is only how many could be compared.
+    el("div", { class: "info-name", text: `${target.count} files selected` }),
     el("div", {
       class: "info-sub",
       text: `comparing - ${varying.length} field${varying.length === 1 ? "" : "s"} differ`,
@@ -560,14 +584,7 @@ function renderDiff(
   });
   nodes.push(shared);
 
-  nodes.push(
-    actionsBlock(
-      ctx,
-      reg,
-      rows.map((r) => r.file),
-      true,
-    ),
-  );
+  nodes.push(actionsBlock(ctx, reg, target));
   replaceChildren(scroll, ...nodes);
 }
 
@@ -771,6 +788,11 @@ export function renderDetails(ctx: AppContext): void {
   const rows = loaded.map(
     (r) => ctx.state.detailsCache.get(cacheKey(ctx.state.flavour, r.key)) as FileRow,
   );
-  if (rows.length > 1) renderDiff(ctx, reg, rows, failedCount, hiddenCount);
-  else renderSingle(ctx, reg, rows[0], failedCount);
+  // The action target is the SELECTION (every present row), independent of which fetches succeeded.
+  const target: ActionTarget = {
+    files: present.map((r) => r.file),
+    count: present.length,
+  };
+  if (rows.length > 1) renderDiff(ctx, reg, rows, target, failedCount, hiddenCount);
+  else renderSingle(ctx, reg, rows[0], target, failedCount);
 }

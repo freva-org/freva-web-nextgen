@@ -23,10 +23,11 @@ export default tseslint.config(
     },
   },
   // Build/release tooling: plain Node ESM scripts whose whole job is to print a
-  // verdict to stdout.
+  // verdict to stdout. A few of them install jsdom globals and then drive the component, so both
+  // global sets are legitimate here for the same reason they are in browser-tests.
   {
     files: ["**/scripts/**/*.mjs", "*.config.js"],
-    languageOptions: { globals: globals.node },
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: { "no-console": "off" },
   },
   // Browser-test drivers: Node on the outside, page callbacks evaluated inside a

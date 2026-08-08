@@ -9,7 +9,16 @@
 import type { AppContext } from "../context.js";
 import { appendChunked, el, replaceChildren, svgIcon, type Disposables } from "../dom.js";
 import { ICONS } from "../icons.js";
-import { describeValue, displayFacetValues, isGatedValue, isSelected } from "../state.js";
+import { NEQ, badgeSpecs, facetBreakdown, modeBadge } from "./facetBadge.js";
+import {
+  describeValue,
+  displayFacetValues,
+  excludedValues,
+  facetSelectionCount,
+  isExcluded,
+  isGatedValue,
+  isSelected,
+} from "../state.js";
 import type { Facet } from "../types.js";
 
 const VALUE_CHUNK = 60;
@@ -19,7 +28,7 @@ const SEARCH_THRESHOLD = 8;
 function seed(ctx: AppContext): void {
   if (ctx.state.sidebarSeeded || ctx.state.facets.length === 0) return;
   for (const f of ctx.state.facets) {
-    if ((ctx.state.selected[f.key] ?? []).length) ctx.state.sidebarOpen.add(f.key);
+    if (facetSelectionCount(ctx.state, f.key)) ctx.state.sidebarOpen.add(f.key);
   }
   ctx.state.sidebarSeeded = true;
 }
@@ -32,20 +41,25 @@ function valueRow(
   facet: Facet,
   value: string,
   count: number,
-): HTMLButtonElement {
+): HTMLElement {
   const sel = isSelected(ctx.state, facet.key, value);
+  const excl = isExcluded(ctx.state, facet.key, value);
   const gated = isGatedValue(ctx.state, facet.key, value); // part of the locked base scope
   const desc = describeValue(ctx.state, facet.key, value);
   const cb = el("span", { class: "cb" }, sel ? [svgIcon(ICONS.check, { size: 11 })] : []);
   const row = el(
     "button",
     {
-      class: `fval${sel ? " sel" : ""}${gated ? " locked" : ""}`,
+      class: `fval${sel ? " sel" : ""}${excl ? " excl" : ""}${gated ? " locked" : ""}`,
       type: "button",
       role: "checkbox",
       "aria-checked": sel ? "true" : "false",
       "aria-disabled": gated ? "true" : "false",
-      "aria-label": gated ? `${facet.label}: ${value} (locked scope)` : `${facet.label}: ${value}`,
+      // Specific accessible names: "Include project cmip6", not a bare value the user has to
+      // guess the effect of - especially now that two controls sit on one row.
+      "aria-label": gated
+        ? `${facet.label}: ${value} (locked scope)`
+        : `Include ${facet.label} ${value}`,
       title: gated
         ? `${value} - this instance is scoped to this value`
         : desc
@@ -55,17 +69,40 @@ function valueRow(
     [cb, el("span", { class: "nm", text: value }), el("span", { class: "n", text: fmt(count) })],
   );
   if (!gated) reg.listen(row, "click", () => ctx.toggleFacet(facet.key, value)); // the gate can't be toggled off
-  return row;
+  if (gated) return el("div", { class: "fval-row" }, [row]);
+
+  // TWO SIBLING controls, never a button nested inside a button-like row: nesting is invalid HTML,
+  // and it makes the inner control unreachable for some AT and impossible to hit reliably by touch.
+  const ex = el("button", {
+    class: `fval-ex${excl ? " on" : ""}`,
+    type: "button",
+    "aria-pressed": excl ? "true" : "false",
+    "aria-label": `Exclude ${facet.label} ${value}`,
+    title: excl ? `Stop excluding ${value}` : `Exclude ${value} from the results`,
+    text: "≠", // ≠ - a glyph, so the state never rests on colour alone
+  });
+  reg.listen(ex, "click", (e) => {
+    e.stopPropagation();
+    ctx.excludeFacet(facet.key, value);
+  });
+  return el("div", { class: `fval-row${excl ? " excl" : ""}` }, [row, ex]);
 }
 
 function facetNode(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement {
   const selected = ctx.state.selected[facet.key] ?? [];
-  const nsel = selected.length;
+  const excluded = excludedValues(ctx.state, facet.key);
+  // The badge and the Clear affordance count BOTH modes - a facet with only exclusions is just as
+  // filtered as one with only inclusions, and must be just as visibly clearable.
+  const nsel = facetSelectionCount(ctx.state, facet.key);
   const open = ctx.state.sidebarOpen.has(facet.key);
   const wrap = el("div", { class: `facet${open ? " open" : ""}`, "data-key": facet.key });
 
-  const head = el("button", {
-    class: `facet-head${nsel ? " active" : ""}`,
+  // The header is a ROW, not a button: it holds the disclosure control AND the `+N` / `-N` clear
+  // buttons as siblings. Nesting them inside the disclosure button is invalid HTML and leaves the
+  // inner controls unreachable for some assistive technology.
+  const head = el("div", { class: `facet-head${nsel ? " active" : ""}` });
+  const toggle = el("button", {
+    class: "fh-toggle",
     type: "button",
     "aria-expanded": open ? "true" : "false",
   });
@@ -74,33 +111,26 @@ function facetNode(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement
   ]);
   // The selected values read as a SUBTITLE under the section name, so you can see what's active
   // without expanding anything (the e-commerce filter pattern).
-  if (nsel) headText.append(el("span", { class: "fh-sel", text: selected.join(", ") }));
-  head.append(headText);
   if (nsel) {
-    // The selected-count badge doubles as a "clear this facet" control: on hover it becomes a red
-    // × (CSS), and clicking it clears every selected value for this facet. stopPropagation keeps
-    // the click from toggling the accordion the head button owns.
-    const clearBadge = el("span", {
-      class: "fh-count",
-      role: "button",
-      tabindex: "0",
-      title: `Clear ${facet.label} filter`,
-      "aria-label": `Clear ${facet.label} filter - ${nsel} selected`,
-      text: String(nsel),
-    });
-    reg.listen(clearBadge, "click", (e) => {
-      e.stopPropagation();
-      ctx.clearFacet(facet.key);
-    });
-    reg.listen(clearBadge, "keydown", (e) => {
-      const k = (e as KeyboardEvent).key;
-      if (k === "Enter" || k === " ") {
-        e.preventDefault();
-        e.stopPropagation();
-        ctx.clearFacet(facet.key);
-      }
-    });
-    head.append(clearBadge);
+    const parts = [...selected, ...excluded.map((v) => `${NEQ} ${v}`)];
+    headText.append(el("span", { class: "fh-sel", text: parts.join(", ") }));
+  }
+  toggle.append(headText);
+  head.append(toggle);
+  if (nsel) {
+    // Two INDEPENDENT controls: `+N` clears only what is kept, `-N` only what is removed. Clearing
+    // one leaves the other exactly as it was, in one state update and one search.
+    const br = facetBreakdown(ctx.state, facet.key);
+    for (const spec of badgeSpecs(br)) {
+      head.append(
+        modeBadge(
+          spec,
+          facet.label,
+          () => ctx.clearFacetMode(facet.key, spec.negative),
+          (n, t, f) => reg.listen(n, t, f),
+        ),
+      );
+    }
   } else {
     const badge = facet.hasMore ? `${facet.values.length}+` : String(facet.values.length);
     head.append(el("span", { class: "badge", text: badge }));
@@ -162,7 +192,7 @@ function facetNode(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement
   reg.listen(head, "click", () => {
     const nowOpen = !wrap.classList.contains("open");
     wrap.classList.toggle("open", nowOpen);
-    head.setAttribute("aria-expanded", nowOpen ? "true" : "false");
+    toggle.setAttribute("aria-expanded", nowOpen ? "true" : "false");
     if (nowOpen) {
       ctx.state.sidebarOpen.add(facet.key);
       fillBody();
@@ -208,22 +238,34 @@ export function renderSidebar(ctx: AppContext): void {
 
   // ONE header. The sections below are named by what they actually are (Project, Model, …), so a
   // generic "Facets" meta-label - Solr's word, not the user's - would add nothing.
+  // Every selected value counts, positive or negative - state.selected already holds both, keyed
+  // by `project` and `project_not_` respectively.
+  // The GLOBAL header is deliberately unchanged: one number, `FILTER N`. The include/exclude split
+  // belongs to the per-facet controls, where it is actionable - here it would only be a second thing
+  // to read on the way to a button that clears everything anyway.
   const active =
     Object.values(ctx.state.selected).reduce((n, vs) => n + vs.length, 0) +
     (ctx.state.time ? 1 : 0) +
     (ctx.state.bbox ? 1 : 0);
   const headBits: HTMLElement[] = [el("span", { class: "sf-title", text: "Filter" })];
   if (active) {
-    // The count badge IS the clear-all control. Hovering it reveals a red × and clicking clears
-    // every filter, so the sidebar carries no separate "Clear all" link; the main one lives under
-    // the search bar.
-    const badge = el("button", {
-      class: "sf-badge",
-      type: "button",
-      title: "Clear all filters",
-      "aria-label": `Clear all ${active} filter${active === 1 ? "" : "s"}`,
-      text: String(active),
-    });
+    // The count badge IS the clear-all control: on hover or focus the number is REPLACED by one
+    // centred x - replaced, not covered, so nothing shows through underneath - and clicking clears
+    // every filter. Its size, styling, keyboard behaviour and accessible name are unchanged.
+    const badge = el(
+      "button",
+      {
+        class: "sf-badge",
+        type: "button",
+        title: "Clear all filters",
+        "aria-label": `Clear all ${active} filter${active === 1 ? "" : "s"}`,
+      },
+      [
+        el("span", { class: "sf-n", text: String(active) }),
+        el("span", { class: "sf-x", "aria-hidden": "true", text: "×" }),
+      ],
+    );
+    badge.style.setProperty("--fb-ch", String(String(active).length));
     reg.listen(badge, "click", () => ctx.clearAllFacets());
     headBits.push(badge);
   }

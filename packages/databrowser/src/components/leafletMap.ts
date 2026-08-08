@@ -216,6 +216,13 @@ export async function mountLeafletMap(
     };
     const onDown = (e: L): void => {
       if (!drawing || onControl(e)) return; // controls (+/−, the toggle) never start a selection
+      // Suppress the native selection the primary button would otherwise begin: a rectangle drag
+      // sweeps over the +/- controls and the attribution, and the browser highlights them as if the
+      // user were selecting their text. This runs only for a gesture that starts on the DRAWING
+      // SURFACE with the primary button, so a click on a control - which returned above - keeps its
+      // default behaviour, including focus and activation.
+      const oe = e.originalEvent as MouseEvent | undefined;
+      if (oe && oe.button === 0) oe.preventDefault();
       start = e.latlng;
     };
     const onMove = (e: L): void => {

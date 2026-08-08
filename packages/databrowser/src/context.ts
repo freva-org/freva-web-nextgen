@@ -24,7 +24,6 @@ export interface Roots {
   exportBtn: HTMLButtonElement;
   selectAllBtn: HTMLButtonElement;
   shelveBtn: HTMLButtonElement;
-  cmdStrip: HTMLElement;
   listHead: HTMLElement;
   results: HTMLElement;
   moreWrap: HTMLElement;
@@ -68,9 +67,14 @@ export interface AppContext {
   recountOverview(): void;
 
   // mutations
+  /** Toggle (key, value) as an INCLUDE. Removes any exclusion of the same pair first. */
   toggleFacet(key: string, value: string): void;
+  /** Toggle (key, value) as an EXCLUDE (`<key>_not_=value`). Removes any include of the same pair. */
+  excludeFacet(key: string, value: string): void;
   /** Clear every selected value for one facet (the facet header-badge affordance). */
   clearFacet(key: string): void;
+  /** Clear only the INCLUDED (`negative: false`) or only the EXCLUDED values of one facet. */
+  clearFacetMode(key: string, negative: boolean): void;
   clearAllFacets(): void;
   setTime(t: TimeSelection | null): void;
   setBbox(b: BBoxSelection | null): void;

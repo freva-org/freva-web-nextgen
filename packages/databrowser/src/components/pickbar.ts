@@ -1,19 +1,21 @@
 // components/pickbar.ts - the PINNED selection bar. Shown only
 // when files are picked; docked at the bottom so it is always visible without scrolling.
 //
-// Selection is UNLIMITED. Five actions, scoped to the picks via file=:
+// Selection is CAPPED at MAX_SELECTED_FILES (25). Actions, scoped to the picks via file=:
 //   • Details      - open the comparison panel over the selection (any size)
 //   • Download ▾   - Intake / STAC catalogue + URI manifest, streamed for the picks
-//   • Aggregate    - the one HEAVY op (auth-gated); it LOCKS past MAX_FILE_SELECTION rather
-//                    than blocking the selection itself.
+//   • Aggregate    - the one HEAVY op (auth-gated); it LOCKS past MAX_AGGREGATE_FILES (10), which
+//                    is deliberately LOWER than the selection cap: you may select 25 files to
+//                    compare them, but only 10 can be aggregated into one dataset.
 // The three downloads collapse into one menu (same trio as the whole-query Export) so five actions
 // never crowd the bar.
 
 import type { AppContext } from "../context.js";
-import { el, replaceChildren, svgIcon } from "../dom.js";
-import { brandIcon } from "../brand.js";
+import { el, replaceChildren, svgIcon, type Disposables } from "../dom.js";
 import { ICONS } from "../icons.js";
-import { MAX_FILE_SELECTION } from "../types.js";
+import { MAX_AGGREGATE_FILES, MAX_SELECTED_FILES, type FileRow } from "../types.js";
+import { downloadFilename, partitionDownloadable } from "../downloads.js";
+import { exportMenu, exportMenuItem, selectionHeading } from "./exportMenu.js";
 
 /** A catalogue/manifest download scoped to the picked files via file= (streaming export). */
 function runDownload(ctx: AppContext, kind: "intake" | "stac" | "uris"): void {
@@ -25,49 +27,114 @@ function runDownload(ctx: AppContext, kind: "intake" | "stac" | "uris"): void {
 
 function downloadMenu(ctx: AppContext, anchor: HTMLElement): void {
   const pop = ctx.region("popover"); // per-open bucket, flushed when the next popover opens
-  const item = (
-    kind: "intake" | "stac" | "uris",
-    icon: Node,
-    label: string,
-    desc: string,
-  ): HTMLButtonElement => {
-    const b = el("button", { class: "pop-item pic", type: "button" }, [
-      icon,
-      el("span", {}, [
-        el("span", { class: "desc", text: label }),
-        el("span", { class: "sub", text: desc }),
-      ]),
-    ]);
-    pop.listen(b, "click", () => {
-      ctx.popover.close();
-      runDownload(ctx, kind);
-    });
-    return b;
-  };
+  // The SAME renderer the whole-result Export uses - only the scope heading and the extra
+  // remote-files row differ. Two implementations of one menu drift apart.
+  const remote = remoteFilesItem(ctx, pop);
+  anchor.setAttribute("aria-expanded", "true");
   ctx.popover.open(
     anchor,
-    [
-      item(
-        "intake",
-        brandIcon("intake", { size: 16 }),
-        "Intake catalogue (.json)",
-        "intake-esm for your selection",
-      ),
-      item(
-        "stac",
-        brandIcon("stac", { size: 16 }),
-        "STAC catalogue (.zip)",
-        "STAC items for your selection",
-      ),
-      item(
-        "uris",
-        svgIcon(ICONS.uris, { size: 16 }),
-        "URI manifest (.txt)",
-        "plain-text list of the file URIs",
-      ),
-    ],
-    { placement: "below", className: "export-pop" }, // 'below' auto-flips ABOVE the bottom-pinned bar
+    exportMenu(pop, {
+      heading: selectionHeading(ctx.state.pickedKeys.size),
+      onPick: (kind) => {
+        ctx.popover.close();
+        runDownload(ctx, kind);
+      },
+      ...(remote ? { extra: [remote] } : {}),
+    }),
+    // 'below' auto-flips ABOVE the bottom-pinned bar
+    {
+      placement: "below",
+      className: "export-pop",
+      autoFocus: true,
+      // Every close route funnels through `PopoverManager.close()`, so one callback covers
+      // selection, Escape, outside click, scroll and replacement by another popover.
+      onClose: () => anchor.setAttribute("aria-expanded", "false"),
+    },
   );
+}
+
+/** The selected rows, in SELECTION order (not result order) - the order the user built. */
+function selectedRows(ctx: AppContext): FileRow[] {
+  const byKey = new Map(ctx.state.rows.map((r) => [r.key, r]));
+  return [...ctx.state.pickedKeys].map((k) => byKey.get(k)).filter((r): r is FileRow => !!r);
+}
+
+/**
+ * "Remote source files (N)" - a bounded, scrollable list of ONE anchor per eligible file.
+ *
+ * Each anchor is clicked by the USER, one file at a time. Auto-clicking them would trigger every
+ * browser's multiple-download blocker after the second file, so most of the downloads would be
+ * silently dropped and the user would have no way to tell which. Bundling or streaming them
+ * together is likewise out: that would mean pulling gigabytes through JavaScript memory.
+ */
+function remoteFilesItem(ctx: AppContext, pop: Disposables): HTMLElement | null {
+  const rows = selectedRows(ctx);
+  const { eligible, skipped } = partitionDownloadable(rows);
+  if (eligible.length === 0) return null;
+  return exportMenuItem({
+    icon: svgIcon(ICONS.download, { size: 16 }),
+    label: `Remote source files (${eligible.length})`,
+    desc: skipped
+      ? `direct links - ${skipped} selected file${skipped === 1 ? "" : "s"} not remote`
+      : "direct links - one download per click",
+    onPick: () => {
+      ctx.popover.close();
+      openRemoteFileList(ctx, eligible, skipped);
+    },
+    reg: pop,
+  });
+}
+
+function openRemoteFileList(
+  ctx: AppContext,
+  eligible: Array<{ row: FileRow; href: string }>,
+  skipped: number,
+): void {
+  const reg = ctx.region("popover");
+  const list = el("div", { class: "dl-list", role: "list" });
+  for (const { row, href } of eligible) {
+    list.append(
+      el(
+        "a",
+        {
+          class: "dl-item",
+          role: "listitem",
+          href,
+          download: downloadFilename(href),
+          target: "_blank",
+          rel: "noopener noreferrer",
+          title: href,
+        },
+        [
+          svgIcon(ICONS.download, { size: 14 }),
+          el("span", { class: "dl-name", text: downloadFilename(href) }),
+          el("span", { class: "dl-path", text: row.file }),
+        ],
+      ),
+    );
+  }
+  const nodes: HTMLElement[] = [
+    el("div", {
+      class: "dl-head",
+      text: `${eligible.length} remote source file${eligible.length === 1 ? "" : "s"}`,
+    }),
+    el("div", {
+      class: "dl-note",
+      text: skipped
+        ? `Click a file to download it. ${skipped} selected file${skipped === 1 ? " is" : "s are"} local or not a supported remote format, so ${skipped === 1 ? "it has" : "they have"} no direct link.`
+        : "Click a file to download it.",
+    }),
+    list,
+  ];
+  ctx.popover.open(ctx.roots.pickbar, nodes, {
+    placement: "below",
+    className: "dl-pop",
+    autoFocus: true,
+    scrollBehavior: "close",
+  });
+  reg.add(() => {
+    /* anchors carry no listeners; the bucket exists so the popover cleans up like every other */
+  });
 }
 
 export function renderPickbar(ctx: AppContext): void {
@@ -87,10 +154,11 @@ export function renderPickbar(ctx: AppContext): void {
   );
   reg.listen(clear, "click", () => ctx.clearPicks());
 
-  // Unlimited count - no "/ max"; the number just climbs.
-  const count = el("span", { class: "cnt" }, [
-    el("b", { text: String(n) }),
-    el("span", { text: n === 1 ? " file selected" : " files selected" }),
+  // The cap is part of the count, so the ceiling is visible BEFORE it is hit rather than only in
+  // the message you get for bouncing off it.
+  const count = el("span", { class: `cnt${n >= MAX_SELECTED_FILES ? " at-cap" : ""}` }, [
+    el("b", { text: `${n} / ${MAX_SELECTED_FILES}` }),
+    el("span", { text: " selected" }),
   ]);
 
   // Details - the existing comparison panel over the selection (works at any size).
@@ -107,7 +175,13 @@ export function renderPickbar(ctx: AppContext): void {
   // Download ▾ - Intake / STAC / URI manifest, scoped to the picks.
   const download = el(
     "button",
-    { class: "btn", type: "button", title: "Download for your selection" },
+    {
+      class: "btn",
+      type: "button",
+      title: "Download for your selection",
+      "aria-haspopup": "menu",
+      "aria-expanded": "false",
+    },
     [
       svgIcon(ICONS.download, { size: 14 }),
       el("span", { text: "Download" }),
@@ -116,13 +190,14 @@ export function renderPickbar(ctx: AppContext): void {
   );
   reg.listen(download, "click", () => downloadMenu(ctx, download));
 
-  // Aggregate - the heavy op. Auth-gated AND capped: past MAX_FILE_SELECTION it locks (the selection
-  // does not). Everything else above stays available.
+  // Aggregate - the heavy op. Auth-gated AND capped at its OWN, lower limit: past
+  // MAX_AGGREGATE_FILES it locks while the selection (up to MAX_SELECTED_FILES) stays valid, so
+  // everything else in the bar keeps working.
   const authOk = ctx.cfg.authEnabled && ctx.cfg.enableHeavyOps;
-  const overCap = n > MAX_FILE_SELECTION;
+  const overCap = n > MAX_AGGREGATE_FILES;
   const disabled = !authOk || overCap;
   const why = overCap
-    ? `Aggregation handles up to ${MAX_FILE_SELECTION} files - deselect ${n - MAX_FILE_SELECTION} to enable it`
+    ? `Aggregation handles up to ${MAX_AGGREGATE_FILES} files - deselect ${n - MAX_AGGREGATE_FILES} to enable it`
     : !ctx.cfg.authEnabled
       ? "Aggregate - needs sign-in"
       : !ctx.cfg.enableHeavyOps
@@ -151,7 +226,7 @@ export function renderPickbar(ctx: AppContext): void {
       el("span", {
         class: "scope-note",
         style: "margin:0 0 0 4px",
-        text: `Aggregate: max ${MAX_FILE_SELECTION} files`,
+        text: `Aggregate: max ${MAX_AGGREGATE_FILES} files`,
       }),
     );
   } else if (!authOk) {

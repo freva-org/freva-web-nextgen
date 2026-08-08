@@ -5,9 +5,11 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build     --workspaces",
+    "build": "npm run build -w @freva-org/freva-client-terminal && npm run build --workspaces",
     "dev": "npm run dev       --workspaces --if-present",
     "test": "npm run test      --workspaces --if-present",
+    "test:browser": "npm run test:browser -w @freva-org/databrowser",
+    "test:browser:strict": "npm run test:browser:strict -w @freva-org/databrowser",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

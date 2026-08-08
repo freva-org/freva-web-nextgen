@@ -101,8 +101,18 @@ export interface FileRow {
 
 export type LoadState = "idle" | "loading" | "loaded" | "empty" | "error";
 
-export interface AppState {
-  // selection / query
+/**
+ * THE headless search/query boundary: the smallest slice of state that DETERMINES the effective
+ * REST query. Nothing here is DOM, view, or lifecycle - it is exactly what `facetQueryString()`,
+ * `queryPairs()` and `buildUrlQuery()` read.
+ *
+ * It exists so a second consumer (the compact `/picker` entry) can build the SAME query from its
+ * own, much smaller state without importing the full application. `AppState` extends it, so the
+ * full browser and the picker are provably running one implementation of the facet algebra,
+ * `_not_` semantics, flavour translation, base-scope gating and time/bbox representation - not two
+ * that happen to agree today. See `src/search/query.ts` and `tests/search-boundary.test.ts`.
+ */
+export interface QueryScope {
   flavour: FlavourName;
   uniqKey: UniqKey;
   selected: Record<string, string[]>;
@@ -112,7 +122,16 @@ export interface AppState {
   baseFilters: Record<string, string[]>;
   time: TimeSelection | null;
   bbox: BBoxSelection | null;
+  /** Per-flavour translation between freva's canonical facet keys and that flavour's names, built
+   *  from GET /flavours. `forward` is freva->flavour, `backward` is flavour->freva. Lets us re-key the
+   *  active selection when the lens changes (model⇄source_id) using freva as the pivot. */
+  flavourMaps: Record<
+    string,
+    { forward: Record<string, string>; backward: Record<string, string> }
+  >;
+}
 
+export interface AppState extends QueryScope {
   // results (last committed search)
   rows: FileRow[];
   totalCount: number;
@@ -124,13 +143,6 @@ export interface AppState {
   facetMapping: Record<string, string>;
   attributeKeys: string[];
   flavours: FlavourName[];
-  /** Per-flavour translation between freva's canonical facet keys and that flavour's names, built
-   *  from GET /flavours. `forward` is freva->flavour, `backward` is flavour->freva. Lets us re-key the
-   *  active selection when the lens changes (model⇄source_id) using freva as the pivot. */
-  flavourMaps: Record<
-    string,
-    { forward: Record<string, string>; backward: Record<string, string> }
-  >;
   start: number;
   search: LoadState;
   searchError?: string;
@@ -271,15 +283,26 @@ export interface FeatureFlags {
   lensSwitcher?: boolean;
   /** Inspect (ncdump via @freva-org/data-inspector). Also requires authEnabled + enableHeavyOps. */
   inspect?: boolean;
+  /** The whole top-bar brand block (mark + title). Finer control: brand.showMark / brand.showTitle. */
   brand?: boolean;
+  /**
+   * The status footer strip. Default true. When false the footer consumes NO height, but status
+   * and toasts keep working: the status message moves to an off-screen `aria-live` region so
+   * screen-reader feedback is preserved, and toasts still appear.
+   */
+  footer?: boolean;
 }
 
 export interface BrandConfig {
   title?: string;
   /** short mark shown in the brand badge (glyph or ≤2 chars). */
   mark?: string;
-  /** optional one-line description shown under the results scope. */
+  /** optional one-line description shown under the results scope. Set `''` to omit it. */
   description?: string;
+  /** Render the brand MARK (logo/glyph). Default true. */
+  showMark?: boolean;
+  /** Render the brand TITLE text. Default true. */
+  showTitle?: boolean;
 }
 
 /**
@@ -321,6 +344,20 @@ export interface DataBrowserConfig {
    *  e.g. `{ project: 'waterpark' }` makes the instance behave as if waterpark were the whole archive.
    *  Read a URL param in your bootstrap and pass it here (that key is then excluded from the removable
    *  deep-link import).
+   *
+   *  TWO FORMS are supported:
+   *
+   *  • POSITIVE - `{ project: 'waterpark' }`. The scope OWNS `project`: its values render locked in
+   *    the sidebar/overview, and no user include or exclude on `project` is sent, so the scope
+   *    cannot be widened or contradicted.
+   *  • NEGATIVE - `{ project_not_: 'cmip6' }` (or `['cmip6','cordex']`). Always sent, so the excluded
+   *    values are never reachable, but the scope does NOT own `project`: the user can still narrow
+   *    with `project=cordex`, which is a subset of the scope. A base-excluded value is absent from
+   *    the returned facets entirely, so there is no row to lock - the UI shows an immutable
+   *    `Scope: project ≠ cmip6` indicator that "Clear all" does not remove.
+   *
+   *  Keys are freva-canonical in BOTH forms and are translated suffix-aware when the flavour changes
+   *  (`project_not_` -> `mip_era_not_`, never a literal lookup of `project_not_`).
    *
    *  NOTE: this is CLIENT-SIDE scoping, not an authorization boundary. It shapes what THIS UI sends and
    *  shows; it does not stop anyone from calling the API directly. Enforce real tenant isolation on the
@@ -391,5 +428,28 @@ export interface DataBrowserHandle {
 }
 
 export const STREAM_CATALOGUE_MAXIMUM = 100_000;
-export const MAX_FILE_SELECTION = 10;
+
+/**
+ * Hard cap on how many files may be SELECTED at once. Selection drives per-file metadata fetches,
+ * the comparison matrix and `file=`-scoped export URLs, so an unbounded selection turns a click
+ * into thousands of requests and a GET URL long enough to earn a 414.
+ */
+export const MAX_SELECTED_FILES = 25;
+
+/**
+ * Cap for the heavy AGGREGATE action only. Lower than the selection cap on purpose: you may select
+ * 25 files to compare them, but only 10 can be aggregated into one dataset.
+ */
+export const MAX_AGGREGATE_FILES = 10;
+
 export const SEARCH_PAGE_SIZE = 100;
+
+/** Loaded-row count at which the interaction-cost mitigations (see `.many-results`) switch on. */
+export const MANY_RESULTS_THRESHOLD = 500;
+
+/**
+ * Conservative ceiling for a GET URL we build ourselves (`file=` repeated per selected file).
+ * Browsers and proxies disagree wildly above ~8k; servers commonly answer 414 well before their
+ * documented limit. We refuse before sending rather than surfacing an opaque failure.
+ */
+export const MAX_EXPORT_URL_LENGTH = 6000;

@@ -6,6 +6,7 @@
 import type { Disposables } from "./dom.js";
 import type { OverviewResult, ResolvedConfig, SearchResult, UniqKey } from "./types.js";
 import { STREAM_TOO_BIG_DETAIL } from "./types.js";
+import { buildSearchUrl } from "./search/query.js";
 
 const enc = encodeURIComponent;
 
@@ -149,18 +150,17 @@ export class Api {
 
   // URL builders
 
+  // Delegates to the SHARED builder in search/query.ts. The picker's transport calls the same
+  // function, which is what makes "the same serialized search state produces the same effective
+  // REST query in both" a property of the code rather than a coincidence.
   private searchUrl(
     endpoint: "extended-search" | "metadata-search",
     flavour: string,
     uniqKey: UniqKey,
     query: string,
-    opts?: { maxResults?: number; start?: number; rows?: boolean },
+    opts?: { maxResults?: number; start?: number },
   ): string {
-    let url = `${this.base}/${endpoint}/${enc(flavour)}/${uniqKey}?translate=true`;
-    if (opts?.maxResults !== undefined) url += `&max-results=${opts.maxResults}`;
-    if (opts?.start) url += `&start=${opts.start}`;
-    if (query) url += `&${query}`;
-    return url;
+    return buildSearchUrl(this.base, endpoint, flavour, uniqKey, query, opts ?? {});
   }
 
   catalogueUrl(kind: "intake" | "stac", flavour: string, uniqKey: UniqKey, query: string): string {

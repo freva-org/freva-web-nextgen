@@ -7,46 +7,23 @@
 import type { AppContext } from "../context.js";
 import type { Disposables } from "../dom.js";
 import { el, replaceChildren } from "../dom.js";
+import { anchorVisible, positionAnchored } from "../anchor.js";
 import { describeValue, isSelected, labelFor } from "../state.js";
+import { rankValueMatches, type ValueMatch } from "../search/rank.js";
 
 export interface SearchBarController {
   destroy(): void;
 }
 
-interface Match {
-  key: string;
-  label: string;
-  value: string;
-  count: number;
-  desc: string | null;
-}
+type Match = ValueMatch;
 
-const MAX_RESULTS = 40;
-
-/** Rank matches: prefix hits before substring hits; then by count desc. */
+/** Rank matches through the SHARED ranker, so the picker's field orders results identically. */
 function collectMatches(ctx: AppContext, raw: string): Match[] {
-  const q = raw.trim().toLowerCase();
-  if (!q) return [];
-  const prefix: Match[] = [];
-  const substr: Match[] = [];
-  for (const facet of ctx.state.facets) {
-    const label = labelFor(ctx.state, facet.key);
-    for (const v of facet.values) {
-      if (isSelected(ctx.state, facet.key, v.value)) continue; // already applied
-      const val = v.value.toLowerCase();
-      const desc = describeValue(ctx.state, facet.key, v.value);
-      const inVal = val.includes(q);
-      const inDesc = desc ? desc.toLowerCase().includes(q) : false;
-      if (!inVal && !inDesc) continue;
-      const m: Match = { key: facet.key, label, value: v.value, count: v.count, desc };
-      if (val.startsWith(q)) prefix.push(m);
-      else substr.push(m);
-    }
-  }
-  const byCount = (a: Match, b: Match): number => b.count - a.count;
-  prefix.sort(byCount);
-  substr.sort(byCount);
-  return [...prefix, ...substr].slice(0, MAX_RESULTS);
+  return rankValueMatches(ctx.state.facets, raw, {
+    label: (f) => labelFor(ctx.state, f.key),
+    describe: (k, v) => describeValue(ctx.state, k, v),
+    isApplied: (k, v) => isSelected(ctx.state, k, v),
+  });
 }
 
 export function createValueSearch(ctx: AppContext, input: HTMLInputElement): SearchBarController {
@@ -56,7 +33,9 @@ export function createValueSearch(ctx: AppContext, input: HTMLInputElement): Sea
     role: "listbox",
     "aria-label": "Facet value matches",
   });
-  pop.style.position = "fixed";
+  // Component-scoped and ABSOLUTE, placed by the shared helper - see anchor.ts for why
+  // `position: fixed` breaks inside an embedded host's clipping/transformed container.
+  pop.style.position = "absolute";
   ctx.roots.app.append(pop);
 
   let matches: Match[] = [];
@@ -73,11 +52,18 @@ export function createValueSearch(ctx: AppContext, input: HTMLInputElement): Sea
   };
 
   const position = (): void => {
-    const r = input.getBoundingClientRect();
-    pop.style.top = `${r.bottom + 5}px`;
-    pop.style.left = `${r.left}px`;
-    pop.style.minWidth = `${Math.max(r.width, 280)}px`;
-    pop.style.maxWidth = `${Math.max(r.width, 420)}px`;
+    const w = input.getBoundingClientRect().width;
+    positionAnchored(ctx.roots.app, pop, input, {
+      placement: "below",
+      gap: 5,
+      minWidth: Math.max(w, 280),
+      maxWidth: Math.max(w, 420),
+      // The stylesheet asks for 340px and means it. Without this the positioner writes the whole
+      // available height as an inline style, which beats the rule - so the list grows to nearly the
+      // full component. It stays content-sized below 340 and scrolls internally above it, and an
+      // embedded host that offers less than 340 still wins, because the cap is a `min`.
+      maxHeight: 340,
+    });
   };
 
   const paintHighlight = (): void => {
@@ -175,7 +161,25 @@ export function createValueSearch(ctx: AppContext, input: HTMLInputElement): Sea
     }
   });
   dis.listen(window, "resize", () => open && position());
-  dis.listen(window, "scroll", () => open && position(), true);
+  // This is a transient menu: an external scroll dismisses it rather than dragging it along. A
+  // scroll INSIDE the dropdown (browsing a long match list) must not close it.
+  dis.listen(
+    window,
+    "scroll",
+    (e) => {
+      if (!open) return;
+      // `window`'s own scroll targets the Window, which is not a Node - check before contains().
+      const t = e.target as Node | null;
+      if (t && typeof t.nodeType === "number" && pop.contains(t)) return;
+      hide();
+    },
+    true,
+  );
+  // The input can scroll out of the component's visible area inside an embedded host; a dropdown
+  // pointing at an off-screen field is just a floating menu.
+  dis.listen(input, "blur", () => {
+    if (open && !anchorVisible(ctx.roots.app, input)) hide();
+  });
   dis.add(() => pop.remove());
 
   return { destroy: hide };

@@ -10,9 +10,13 @@
 import type { AppContext } from "../context.js";
 import { appendChunked, el, replaceChildren, svgIcon, type Disposables } from "../dom.js";
 import { ICONS } from "../icons.js";
+import { badgeSpecs, facetBreakdown, modeBadge } from "./facetBadge.js";
 import {
   describeValue,
   displayFacetValues,
+  excludedValues,
+  facetSelectionCount,
+  isExcluded,
   isGatedValue,
   isSelected,
   overviewFacets,
@@ -61,11 +65,10 @@ function wireHeadToggle(ctx: AppContext, reg: Disposables, head: HTMLElement, ke
 const MAX_SPAN = 24;
 const clampSpan = (n: number): number => Math.min(MAX_SPAN, Math.max(1, n));
 // Real browsers resolve gridTemplateColumns to a space-separated list of pixel tracks, so counting
-// them gives the live column count. A DOM that does no layout (jsdom) returns the declaration
-// verbatim instead, so the count there follows the CSS source text rather than the grid.
-// tokens gives the live column count. jsdom returns the SPECIFIED value instead, so the .facet-grid
-// `grid-template-columns` must stay at three space-separated tokens (repeat(...) minmax(...) …) - e.g.
-// keep any min()/clamp() commas SPACE-FREE - or this count (and resize snapping) drifts under test.
+// them gives the live column count. A DOM that does no layout (jsdom) returns the SPECIFIED value
+// instead, so under test the count follows the CSS source text rather than the grid: `.facet-grid`'s
+// `grid-template-columns` must stay at three space-separated tokens - keep any min()/clamp() commas
+// SPACE-FREE - or this count, and resize snapping with it, drifts.
 const gridCols = (host: HTMLElement): number =>
   Math.max(1, getComputedStyle(host).gridTemplateColumns.split(" ").filter(Boolean).length);
 // Resizing snaps to BLOCKS, never to arbitrary pixels: width snaps to whole grid columns, height
@@ -76,18 +79,10 @@ const clampRows = (n: number): number => Math.min(MAX_ROWS, Math.max(1, n));
 const spanOf = (card: HTMLElement): number =>
   clampSpan(parseInt(card.style.gridColumn.replace("span ", ""), 10) || 1);
 
-// Handles can be operated with a pointer OR the keyboard. A reorderable card's grip is a real button
-// (focusable, arrow-keys move it); a special card (__time/__bbox) can't reorder, so its grip stays
-// decorative. The resize corner is always a button (facets AND specials resize).
-function gripEl(label: string, reorderable: boolean): HTMLElement {
-  // A special card (__time/__bbox) can't be reordered, so its grip is a purely decorative glyph with
-  // NO "drag to reorder" affordance - advertising a gesture that can't work only invites a dead drag.
-  if (!reorderable)
-    return el("span", {
-      class: "drag-grip drag-grip-fixed",
-      "aria-hidden": "true",
-      text: "\u283f",
-    });
+// Handles can be operated with a pointer OR the keyboard, and EVERY card has the same ones - Time
+// and BBox included. A decorative, unfocusable grip or no reordering at all on those two would make
+// them the only blocks a user could not put where they wanted. They are just two more cards.
+function gripEl(label: string): HTMLElement {
   return el("button", {
     class: "drag-grip",
     type: "button",
@@ -121,16 +116,47 @@ function focusHandleAfterRender(ctx: AppContext): void {
     }
   }
 }
-function reorderByKeyboard(ctx: AppContext, host: HTMLElement, key: string, dir: -1 | 1): void {
-  if (key.startsWith("__")) return; // specials aren't reorderable
-  const keys = Array.from(host.querySelectorAll<HTMLElement>(".fcard[data-key]"))
+/**
+ * Fold a new VISIBLE order back into the remembered one without losing the cards that are not on
+ * screen. "Show additional facets" is off most of the time, so a plain overwrite would silently
+ * forget where every hidden block used to sit - the user would discover that only after re-opening
+ * the section. Each hidden key is re-anchored behind the visible key it used to follow.
+ */
+export function mergeOrder(prev: readonly string[], visible: readonly string[]): string[] {
+  const vis = new Set(visible);
+  const trailing = new Map<string | null, string[]>();
+  let anchor: string | null = null;
+  for (const k of prev) {
+    if (vis.has(k)) {
+      anchor = k;
+      continue;
+    }
+    const bucket = trailing.get(anchor) ?? [];
+    bucket.push(k);
+    trailing.set(anchor, bucket);
+  }
+  const out = [...(trailing.get(null) ?? [])];
+  for (const k of visible) {
+    out.push(k);
+    for (const hidden of trailing.get(k) ?? []) out.push(hidden);
+  }
+  return out;
+}
+
+/** The keys of every card currently in the grid, in DOM order. */
+function visibleKeys(host: HTMLElement): string[] {
+  return Array.from(host.querySelectorAll<HTMLElement>(".fcard[data-key]"))
     .map((c) => c.dataset.key ?? "")
-    .filter((k) => k && !k.startsWith("__"));
+    .filter(Boolean);
+}
+
+function reorderByKeyboard(ctx: AppContext, host: HTMLElement, key: string, dir: -1 | 1): void {
+  const keys = visibleKeys(host);
   const i = keys.indexOf(key);
   const j = i + dir;
   if (i < 0 || j < 0 || j >= keys.length) return;
   [keys[i], keys[j]] = [keys[j], keys[i]];
-  ctx.state.overviewOrder = keys;
+  ctx.state.overviewOrder = mergeOrder(ctx.state.overviewOrder, keys);
   pendingFocus.set(ctx, { key, handle: "grip" });
   persist(ctx);
   ctx.renderOverview();
@@ -171,15 +197,54 @@ function reconcileStacked(ctx: AppContext, facetKeys: string[]): void {
 }
 
 /**
- * ONE mouse-based controller for the metadata grid, wired once on the stable host. NO native
+ * ONE pointer-based controller for the metadata grid, wired once on the stable host. NO native
  * HTML5 drag - it hijacks the resize gesture and blocks the card's inputs:
- *   • drag the ⠿ grip  -> reorder blocks (live DOM move, order committed on mouseup)
- *   • drag the corner  -> resize the block's column span, snapped to the grid
- * Both start only from their own handle, so value rows, the filter box and buttons stay clickable.
+ *   • drag the ⠿ grip, OR any non-interactive part of a normal card -> reorder blocks
+ *     (live DOM move, order committed on pointerup)
+ *   • drag the corner -> resize the block's column span, snapped to the grid
+ *
+ * Dragging from the card SURFACE is armed on pointerdown and only becomes a drag past a small
+ * movement threshold, so an ordinary click still collapses/selects the card and text selection
+ * still works. Value rows, the filter box, links and every other control keep their own behaviour
+ * (see NO_DRAG_SELECTOR).
  */
+/**
+ * Elements inside a card that must keep their OWN behaviour: a press on any of these can never
+ * become a drag. `[contenteditable]` and the interactive ARIA roles are here so a future control
+ * added to a card is excluded by default rather than silently becoming a drag handle.
+ */
+const NO_DRAG_SELECTOR = [
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "a",
+  "label",
+  "[contenteditable]",
+  '[role="button"]',
+  '[role="checkbox"]',
+  '[role="textbox"]',
+  '[role="listbox"]',
+  '[role="option"]',
+  '[role="slider"]',
+  '[role="menuitem"]',
+  ".fcard-resize",
+  ".leaflet-container",
+  // Time and BBox now reorder like any other card, so their EDITORS have to be excluded explicitly:
+  // the SVG world map, the map's drawing surface and the time picker are drag surfaces of their own.
+  ".fcard-special-body svg",
+  ".bbox-map",
+  ".map-svg",
+  ".te-map",
+].join(", ");
+
 function wireDrag(ctx: AppContext, host: HTMLElement): void {
   let mode: "reorder" | "resize" | null = null;
   let card: HTMLElement | null = null;
+  /** Armed on pointerdown over a draggable surface; promoted to a real drag past the threshold. */
+  let armed: { x: number; y: number; card: HTMLElement; pointerId: number } | null = null;
+  /** Set when a drag actually happened, so the click it generates can be swallowed exactly once. */
+  let suppressClick = false;
   let rez: {
     startX: number;
     startY: number;
@@ -190,9 +255,23 @@ function wireDrag(ctx: AppContext, host: HTMLElement): void {
     maxSpan: number;
   } | null = null;
 
-  ctx.dis.listen(host, "mousedown", (e) => {
-    const me = e as MouseEvent;
-    const target = me.target as HTMLElement;
+  // 5-6px: far enough that a normal click (which the OS reports with 1-2px of jitter, and a touch
+  // with more) still collapses/selects the card, close enough that a deliberate drag feels immediate.
+  const DRAG_THRESHOLD = 5;
+
+  const beginReorder = (c: HTMLElement): void => {
+    mode = "reorder";
+    card = c;
+    c.classList.add("dragging");
+    document.body.classList.add("fdb-dragging");
+  };
+
+  // Pointer Events, so mouse, pen and touch share ONE code path (and one set of bugs) rather than
+  // a mouse-only path the other two have to be bolted onto.
+  ctx.dis.listen(host, "pointerdown", (e) => {
+    const pe = e as PointerEvent;
+    if (pe.button !== undefined && pe.button !== 0) return; // primary button / touch contact only
+    const target = pe.target as HTMLElement;
     const c = target.closest(".fcard") as HTMLElement | null;
     if (!c) return;
     if (target.closest(".fcard-resize")) {
@@ -205,8 +284,8 @@ function wireDrag(ctx: AppContext, host: HTMLElement): void {
       const cols = gridCols(host);
       const rows = clampRows(Number(c.dataset.rows) || 1);
       rez = {
-        startX: me.clientX,
-        startY: me.clientY,
+        startX: pe.clientX,
+        startY: pe.clientY,
         startSpan: span,
         startRows: rows,
         pitch: Math.max(120, r.width / span),
@@ -215,19 +294,39 @@ function wireDrag(ctx: AppContext, host: HTMLElement): void {
       };
       c.classList.add("resizing");
       document.body.classList.add("fdb-dragging");
-      me.preventDefault();
-    } else if (target.closest(".drag-grip") && !(c.dataset.key ?? "").startsWith("__")) {
-      mode = "reorder";
-      card = c;
-      c.classList.add("dragging");
-      document.body.classList.add("fdb-dragging");
-      me.preventDefault();
+      pe.preventDefault();
+      return;
     }
+    // The GRIP still starts a drag immediately - it advertises exactly that, and it is the
+    // documented keyboard-reorder handle too.
+    if (target.closest(".drag-grip")) {
+      beginReorder(c);
+      pe.preventDefault();
+      return;
+    }
+    // Anywhere else on a normal card ARMS a drag. Nothing is preventDefault'ed and no selection is
+    // disabled yet: until the threshold is crossed this is still an ordinary click, and the user
+    // must remain free to select header text.
+    if (target.closest(NO_DRAG_SELECTOR)) return;
+    armed = { x: pe.clientX, y: pe.clientY, card: c, pointerId: pe.pointerId };
   });
 
-  ctx.dis.listen(window, "mousemove", (e) => {
+  ctx.dis.listen(window, "pointermove", (e) => {
+    const pe = e as PointerEvent;
+    if (armed && !card) {
+      if (pe.pointerId !== armed.pointerId) return;
+      const dx = pe.clientX - armed.x;
+      const dy = pe.clientY - armed.y;
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // still a click, not a drag
+      beginReorder(armed.card);
+      suppressClick = true; // the drag will end in a click the card must NOT act on
+      // Only NOW is the gesture ours: from here the browser's own text selection would fight it.
+      const sel = host.ownerDocument.getSelection?.();
+      sel?.removeAllRanges();
+      pe.preventDefault();
+    }
     if (!card) return;
-    const me = e as MouseEvent;
+    const me = pe as unknown as MouseEvent;
     if (mode === "resize" && rez) {
       // snap to whole COLUMNS, capped by the columns the grid actually has
       const dx = Math.round((me.clientX - rez.startX) / rez.pitch);
@@ -252,6 +351,7 @@ function wireDrag(ctx: AppContext, host: HTMLElement): void {
   });
 
   const end = (): void => {
+    armed = null;
     if (!card) return;
     if (mode === "resize") {
       const key = card.dataset.key;
@@ -262,9 +362,7 @@ function wireDrag(ctx: AppContext, host: HTMLElement): void {
       card.classList.remove("resizing");
     } else if (mode === "reorder") {
       card.classList.remove("dragging");
-      ctx.state.overviewOrder = Array.from(host.querySelectorAll<HTMLElement>(".fcard[data-key]"))
-        .map((c) => c.dataset.key ?? "")
-        .filter((k) => k && !k.startsWith("__"));
+      ctx.state.overviewOrder = mergeOrder(ctx.state.overviewOrder, visibleKeys(host));
     }
     document.body.classList.remove("fdb-dragging");
     mode = null;
@@ -273,7 +371,21 @@ function wireDrag(ctx: AppContext, host: HTMLElement): void {
     persist(ctx);
     ctx.renderOverview();
   };
-  ctx.dis.listen(window, "mouseup", end);
+  ctx.dis.listen(window, "pointerup", end);
+  ctx.dis.listen(window, "pointercancel", end);
+  // A completed drag ends with a click on whatever is under the pointer. Swallow exactly that one
+  // click, in the CAPTURE phase, so the card does not also collapse as if it had been tapped.
+  ctx.dis.listen(
+    host,
+    "click",
+    (e) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    true,
+  );
   // Keyboard equivalents of the two gestures (accessibility): a focused grip reorders with ← ->; a
   // focused resize corner changes width (← ->) and height (↑ ↓). One delegated listener on the host.
   ctx.dis.listen(host, "keydown", (e) => {
@@ -305,6 +417,8 @@ function wireDrag(ctx: AppContext, host: HTMLElement): void {
   // lock never fires. Undo it on teardown, but ONLY when THIS instance owns the active drag, so one
   // mount's destroy can't wipe another mount's in-flight gesture.
   ctx.dis.add(() => {
+    armed = null;
+    suppressClick = false;
     if (!card) return;
     card.classList.remove("resizing", "dragging");
     document.body.classList.remove("fdb-dragging");
@@ -333,19 +447,22 @@ function valueRow(
   facet: Facet,
   value: string,
   count: number,
-): HTMLButtonElement {
+): HTMLElement {
   const sel = isSelected(ctx.state, facet.key, value);
+  const excl = isExcluded(ctx.state, facet.key, value);
   const gated = isGatedValue(ctx.state, facet.key, value); // part of the locked base scope
   const desc = describeValue(ctx.state, facet.key, value);
   const row = el(
     "button",
     {
-      class: `fval${sel ? " sel" : ""}${gated ? " locked" : ""}`,
+      class: `fval${sel ? " sel" : ""}${excl ? " excl" : ""}${gated ? " locked" : ""}`,
       type: "button",
       role: "checkbox",
       "aria-checked": sel ? "true" : "false",
       "aria-disabled": gated ? "true" : "false",
-      "aria-label": gated ? `${facet.label}: ${value} (locked scope)` : `${facet.label}: ${value}`,
+      "aria-label": gated
+        ? `${facet.label}: ${value} (locked scope)`
+        : `Include ${facet.label} ${value}`,
       "data-val": value.toLowerCase(),
       title: gated
         ? `${value} - this instance is scoped to this value`
@@ -363,7 +480,21 @@ function valueRow(
     row.style.setProperty("--pct", `${pct}%`); // drawn by ::before - no extra element
   }
   if (!gated) reg.listen(row, "click", () => ctx.toggleFacet(facet.key, value)); // the gate can't be toggled
-  return row;
+  if (gated) return el("div", { class: "fval-row" }, [row]);
+  // Two SIBLING controls (see sidebar.ts) - the main action stays Include, Exclude sits beside it.
+  const ex = el("button", {
+    class: `fval-ex${excl ? " on" : ""}`,
+    type: "button",
+    "aria-pressed": excl ? "true" : "false",
+    "aria-label": `Exclude ${facet.label} ${value}`,
+    title: excl ? `Stop excluding ${value}` : `Exclude ${value} from the results`,
+    text: "\u2260",
+  });
+  reg.listen(ex, "click", (e) => {
+    e.stopPropagation();
+    ctx.excludeFacet(facet.key, value);
+  });
+  return el("div", { class: `fval-row${excl ? " excl" : ""}` }, [row, ex]);
 }
 
 /**
@@ -458,7 +589,7 @@ function sortBtn(
 
 function facetCard(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement {
   const s = ctx.state;
-  const nsel = (s.selected[facet.key] ?? []).length;
+  const nsel = facetSelectionCount(s, facet.key); // includes + excludes
   const collapsed = s.overviewCollapsed.has(facet.key);
   const span = Math.min(MAX_SPAN, Math.max(1, s.overviewSpan[facet.key] ?? 1));
   const sortMode = s.overviewSort[facet.key] ?? "count";
@@ -472,33 +603,24 @@ function facetCard(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement
   card.dataset.rows = String(collapsed ? 1 : rows); // CSS turns this into 1 or 2 block heights
 
   const head = el("div", { class: `fcard-h${nsel ? " active" : ""}` }, [
-    gripEl(facet.label, true),
+    gripEl(facet.label),
     el("span", { class: "fh-label", text: facet.label }),
   ]);
   if (nsel) {
     // Same "clear this facet" affordance as the sidebar: hover -> red × (CSS), click clears the
     // facet. stopPropagation guards any header-level handler (drag/collapse).
-    const clearBadge = el("span", {
-      class: "fh-count",
-      role: "button",
-      tabindex: "0",
-      title: `Clear ${facet.label} filter`,
-      "aria-label": `Clear ${facet.label} filter - ${nsel} selected`,
-      text: String(nsel),
-    });
-    reg.listen(clearBadge, "click", (e) => {
-      e.stopPropagation();
-      ctx.clearFacet(facet.key);
-    });
-    reg.listen(clearBadge, "keydown", (e) => {
-      const k = (e as KeyboardEvent).key;
-      if (k === "Enter" || k === " ") {
-        e.preventDefault();
-        e.stopPropagation();
-        ctx.clearFacet(facet.key);
-      }
-    });
-    head.append(clearBadge);
+    // Two INDEPENDENT controls, exactly as in the sidebar: `+N` clears what is kept, `-N` what is
+    // removed. `.fcard-h` is already a row of siblings (it holds the drag grip), so no nesting.
+    for (const spec of badgeSpecs(facetBreakdown(s, facet.key))) {
+      head.append(
+        modeBadge(
+          spec,
+          facet.label,
+          () => ctx.clearFacetMode(facet.key, spec.negative),
+          (n, t, f) => reg.listen(n, t, f),
+        ),
+      );
+    }
   }
   head.append(
     el("span", {
@@ -622,7 +744,7 @@ function specialCard(ctx: AppContext, reg: Disposables, kind: "time" | "bbox"): 
 
   // the same header the facet cards have - that's what makes them read as one family
   const head = el("div", { class: `fcard-h${set ? " active" : ""}` }, [
-    gripEl(spLabel, false),
+    gripEl(spLabel),
     svgIcon(isTime ? ICONS.clock : ICONS.box, { size: 14 }),
     el("span", { class: "fh-label", text: spLabel }),
   ]);
@@ -689,12 +811,19 @@ function specialCard(ctx: AppContext, reg: Disposables, kind: "time" | "bbox"): 
   return card;
 }
 
-/** Order the visible facets by the persisted drag order, unknown keys keeping their natural order. */
-function ordered(ctx: AppContext, facets: Facet[]): Facet[] {
+/**
+ * Order blocks by the persisted drag order; unknown keys keep their natural (array) position.
+ *
+ * Generic over the block rather than over `Facet`, because Time and BBox are ordered in the SAME
+ * flow as the primary facets - sorting them separately would pin them to the end.
+ * `Array.prototype.sort` is stable, so with no saved order at all the natural order stands: primary
+ * facets, then Time, then BBox.
+ */
+function orderedBlocks<T extends { key: string }>(ctx: AppContext, blocks: T[]): T[] {
   const order = ctx.state.overviewOrder;
-  if (order.length === 0) return facets;
+  if (order.length === 0) return blocks;
   const rank = new Map(order.map((k, i) => [k, i]));
-  return facets.slice().sort((a, b) => (rank.get(a.key) ?? 1e6) - (rank.get(b.key) ?? 1e6));
+  return blocks.slice().sort((a, b) => (rank.get(a.key) ?? 1e6) - (rank.get(b.key) ?? 1e6));
 }
 
 /** Toggle the "stacked" overview.
@@ -776,19 +905,28 @@ export function renderOverview(ctx: AppContext): void {
   const primary = primarySet.size ? shown.filter((f) => primarySet.has(f.key)) : shown;
   const additional = primarySet.size ? shown.filter((f) => !primarySet.has(f.key)) : [];
 
-  const cards: HTMLElement[] = [];
-  for (const f of ordered(ctx, primary)) cards.push(facetCard(ctx, reg, f));
-  // Time and BBox sit RIGHT AFTER the primary facets, in the same flow - they are just two more
-  // blocks. Appending them after the full-width "additional facets" row is what exiles them to a
-  // lonely strip at the bottom.
-  cards.push(specialCard(ctx, reg, "time"));
-  cards.push(specialCard(ctx, reg, "bbox"));
+  // ONE ordered flow, containing every block that is currently on screen: the primary facets, Time,
+  // BBox, and - when the section is open - the additional facets too. Ordering those two groups
+  // SEPARATELY makes a move across the boundary a no-op: the state records the new position and the
+  // render then re-sorts each group independently, so the card comes back where it started.
+  // With no saved order the natural sequence is unchanged (stable sort): primaries, Time, BBox,
+  // then the additional facets. While the section is closed the additional keys simply are not in
+  // this list, and `mergeOrder` keeps their remembered positions for when it is reopened.
+  type Block = { key: string; make: () => HTMLElement };
+  const blocks: Block[] = [
+    ...primary.map((f) => ({ key: f.key, make: () => facetCard(ctx, reg, f) })),
+    { key: "__time", make: () => specialCard(ctx, reg, "time") },
+    { key: "__bbox", make: () => specialCard(ctx, reg, "bbox") },
+    ...(ctx.state.overviewAddOpen
+      ? additional.map((f) => ({ key: f.key, make: () => facetCard(ctx, reg, f) }))
+      : []),
+  ];
 
-  // "Show additional facets": reveal non-primary blocks here too.
+  const cards: HTMLElement[] = [];
+  for (const b of orderedBlocks(ctx, blocks)) cards.push(b.make());
+
+  // The toggle itself is chrome, not a reorderable block: it always sits after the cards.
   if (additional.length) {
-    if (ctx.state.overviewAddOpen) {
-      for (const f of ordered(ctx, additional)) cards.push(facetCard(ctx, reg, f));
-    }
     const addBtn = el(
       "button",
       {
@@ -829,10 +967,13 @@ export function syncOverviewSelection(ctx: AppContext): void {
   for (const card of host.querySelectorAll<HTMLElement>(".fcard[data-key]")) {
     const key = card.dataset.key;
     if (!key || key.startsWith("__")) continue;
+    const excluded = new Set(excludedValues(ctx.state, key));
     for (const row of card.querySelectorAll<HTMLElement>(".fval")) {
       const val = row.querySelector(".nm")?.textContent ?? "";
       const sel = isSelected(ctx.state, key, val);
+      const excl = excluded.has(val);
       row.classList.toggle("sel", sel);
+      row.classList.toggle("excl", excl);
       row.setAttribute("aria-checked", sel ? "true" : "false");
       const cb = row.querySelector(".cb");
       if (cb) {
@@ -840,41 +981,37 @@ export function syncOverviewSelection(ctx: AppContext): void {
         if (sel && !hasIcon) cb.append(svgIcon(ICONS.check, { size: 11 }));
         else if (!sel && hasIcon) cb.textContent = "";
       }
+      // The exclude control is a SIBLING, so patch it from the row wrapper rather than inside .fval.
+      const wrap = row.parentElement;
+      wrap?.classList.toggle("excl", excl);
+      const ex = wrap?.querySelector<HTMLElement>(".fval-ex");
+      if (ex) {
+        ex.classList.toggle("on", excl);
+        ex.setAttribute("aria-pressed", excl ? "true" : "false");
+      }
     }
     // header active-state + the selected-count "clear this facet" badge follow the selection too
     const head = card.querySelector<HTMLElement>(".fcard-h");
     if (!head) continue;
-    const nsel = (ctx.state.selected[key] ?? []).length;
+    const nsel = facetSelectionCount(ctx.state, key); // includes + excludes
     head.classList.toggle("active", nsel > 0);
-    let badge = head.querySelector<HTMLElement>(".fh-count");
+    // The badges are rebuilt rather than patched: there can be one, two or none, and which is which
+    // is carried by the class, the text and the label together.
+    for (const old of head.querySelectorAll(".fh-count")) old.remove();
     if (nsel > 0) {
       const label = head.querySelector(".fh-label")?.textContent ?? key;
-      if (!badge) {
-        badge = el("span", {
-          class: "fh-count",
-          role: "button",
-          tabindex: "0",
-          title: `Clear ${label} filter`,
-        });
-        // transient node: it is discarded on the next full render, so raw listeners are fine here.
-        badge.addEventListener("click", (e) => {
-          e.stopPropagation();
-          ctx.clearFacet(key);
-        });
-        badge.addEventListener("keydown", (e) => {
-          const k = (e as KeyboardEvent).key;
-          if (k === "Enter" || k === " ") {
-            e.preventDefault();
-            e.stopPropagation();
-            ctx.clearFacet(key);
-          }
-        });
-        head.querySelector(".fh-label")?.after(badge);
+      let anchor = head.querySelector(".fh-label");
+      for (const spec of badgeSpecs(facetBreakdown(ctx.state, key))) {
+        // transient nodes: discarded on the next full render, so raw listeners are fine here.
+        const b = modeBadge(
+          spec,
+          label,
+          () => ctx.clearFacetMode(key, spec.negative),
+          (n, t, f) => n.addEventListener(t, f),
+        );
+        anchor?.after(b);
+        anchor = b;
       }
-      badge.textContent = String(nsel);
-      badge.setAttribute("aria-label", `Clear ${label} filter - ${nsel} selected`);
-    } else if (badge) {
-      badge.remove();
     }
   }
 }

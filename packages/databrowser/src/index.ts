@@ -7,14 +7,17 @@
 import { Api, ApiError } from "./api.js";
 import type { AppContext, LogSeverity, Roots } from "./context.js";
 import { Disposables, el, makeDebounce, svgIcon } from "./dom.js";
-import { brandIcon, brandSprite } from "./brand.js";
+import { brandSprite } from "./brand.js";
 import { LOGO_DATA_URI } from "./logo.js";
 import { ICONS } from "./icons.js";
 import { DEFAULT_MAP_CONFIG } from "./map.js";
 import { PopoverManager } from "./popover.js";
 import {
   BUILTIN_FLAVOURS,
+  baseFacetKey,
+  baseFilterKeys,
   buildFacets,
+  facetSelectionCount,
   isGatedKey,
   PRIMARY_FACET_FALLBACK,
   ADDITIONAL_FACET_FALLBACK,
@@ -23,6 +26,9 @@ import {
   buildFlavourMaps,
   queryPairs,
   clearAll,
+  includedValues,
+  excludedValues,
+  clearFacetMode,
   clearSelectedFacet,
   createInitialState,
   roundBbox,
@@ -32,11 +38,10 @@ import {
   filterCommittable,
   knownFacetKeys,
   normalizeBaseFilters,
-  translateKey,
   fromApiRow,
   parseFacetTokens,
   selectionsEqual,
-  toggleSelected,
+  toggleFacetMode,
   translateSelection,
 } from "./state.js";
 import { createPerf } from "./perf.js";
@@ -54,6 +59,8 @@ import {
   saveView,
 } from "./theme.js";
 import {
+  MAX_EXPORT_URL_LENGTH,
+  MAX_SELECTED_FILES,
   STREAM_CATALOGUE_MAXIMUM,
   STREAM_TOO_BIG_DETAIL,
   type AppState,
@@ -69,16 +76,20 @@ import { renderChips } from "./components/chips.js";
 import { renderDetails } from "./components/details.js";
 import { renderOverview, syncOverviewSelection, toggleStack } from "./components/overview.js";
 import { renderPickbar } from "./components/pickbar.js";
-import { renderResults, updateRowStates } from "./components/results.js";
+import { renderResults, selectAllPlan, updateRowStates } from "./components/results.js";
 import { renderSidebar } from "./components/sidebar.js";
 import { openBboxEditor } from "./components/bboxEditor.js";
 import { openTimeEditor } from "./components/timeEditor.js";
-import { createTerminal, type TerminalController } from "./components/terminal.js";
+import {
+  createDatabrowserTerminal,
+  type TerminalController,
+} from "./components/databrowserTerminalAdapter.js";
 import { createNotes, type NotesController } from "./components/notes.js";
 import { createValueSearch } from "./components/searchBar.js";
 import { createConsole, type ConsoleController } from "./components/console.js";
 import { installTooltips } from "./components/tooltip.js";
 import { createInspector, DEFAULT_INSPECTOR_URL } from "./components/inspector.js";
+import { exportMenu, wholeResultHeading } from "./components/exportMenu.js";
 
 const DEFAULT_API_BASE = "/api/freva-nextgen/databrowser";
 const SEARCH_DEBOUNCE_MS = 250;
@@ -110,12 +121,17 @@ function resolveConfig(config: DataBrowserConfig): ResolvedConfig {
       lensSwitcher: config.features?.lensSwitcher ?? true,
       inspect: config.features?.inspect ?? true,
       brand: config.features?.brand ?? true,
+      footer: config.features?.footer ?? true,
     },
     theme: config.theme ?? {},
     brand: {
       title: config.brand?.title ?? "Freva",
       mark: config.brand?.mark ?? "≈",
       description: config.brand?.description ?? "",
+      // Independent of each other AND of features.brand: `features.brand=false` still removes the
+      // whole block, while these two let a host keep just the mark, or just the wordmark.
+      showMark: config.brand?.showMark ?? true,
+      showTitle: config.brand?.showTitle ?? true,
     },
     terminal: {
       host: config.terminal?.host ?? null,
@@ -138,6 +154,9 @@ interface ShellRefs {
   helpPanel: HTMLElement;
   sideCollapse: HTMLButtonElement;
   searchInput: HTMLInputElement;
+  searchRegion: HTMLElement;
+  searchSpin: HTMLElement;
+  searchStatus: HTMLElement;
   resultsCtrl: HTMLButtonElement;
   shelveBtn: HTMLButtonElement;
   overviewCtrl: HTMLButtonElement;
@@ -184,9 +203,19 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
     autocomplete: "off",
     spellcheck: false,
   });
+  // A spinner INSIDE the field, at its right edge. It occupies a reserved slot at all times
+  // (visibility, not display), so showing it never reflows the field or nudges the caret - and it
+  // appears for EVERY loading state, including a re-search that still shows the previous rows,
+  // which is exactly the case where a count-only spinner leaves the UI looking idle.
+  const searchSpin = el("span", { class: "search-spin", "aria-hidden": "true" }, [
+    el("span", { class: "spin" }),
+  ]);
+  const searchStatus = el("span", { class: "sr-only", role: "status", "aria-live": "polite" });
   const search = el("div", { class: "search" }, [
     el("span", { class: "ic" }, [svgIcon(ICONS.search, { size: 16 })]),
     searchInput,
+    searchSpin,
+    searchStatus,
   ]);
 
   const notesBtn = cfg.devNotes
@@ -227,8 +256,9 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
   // A WebP loop can't be paused via CSS, so under prefers-reduced-motion we render a STATIC mark
   // rather than an indefinitely-looping image (the existing reduced-motion CSS covers only the rest).
   const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
-  const markNode =
-    cfg.brand.mark === "\u2248"
+  const markNode = !cfg.brand.showMark
+    ? null
+    : cfg.brand.mark === "\u2248"
       ? reduceMotion
         ? el("span", { class: "mark brand-mark-static", text: "\u2248", "aria-hidden": "true" })
         : el("img", {
@@ -239,7 +269,15 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
             decoding: "async",
           })
       : el("span", { class: "mark", text: cfg.brand.mark });
-  const brand = el("div", { class: "brand" }, [markNode, el("span", { text: cfg.brand.title })]);
+  // With BOTH parts off the wrapper itself is omitted, so it consumes no width - an empty flex
+  // child would still take its gap and leave a visible notch in the top bar.
+  const brand =
+    cfg.brand.showMark || cfg.brand.showTitle
+      ? el("div", { class: "brand" }, [
+          markNode,
+          cfg.brand.showTitle ? el("span", { text: cfg.brand.title }) : null,
+        ])
+      : null;
   const topChildren = [
     f.brand ? brand : null,
     f.lensSwitcher ? lensBtn : null,
@@ -395,6 +433,12 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
       type: "button",
       "aria-label": "Export catalogue",
       title: "Export catalogue",
+      // It opens a menu, and it says so before it is pressed. `aria-expanded` is maintained on
+      // EVERY close route by the popover's own `onClose`, which is the single funnel every route
+      // goes through - selection, Escape, outside click, scroll, and replacement by another
+      // popover (which closes the previous one first).
+      "aria-haspopup": "menu",
+      "aria-expanded": "false",
     },
     [svgIcon(ICONS.download, { size: 15 }), el("span", { class: "tbtn-lbl", text: "Export" })],
   );
@@ -448,8 +492,9 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
   ];
   const resBar = el("div", { class: "res-bar" }, resBarKids);
 
-  // center: command strip + results + pagination
-  const cmdStrip = el("div", { class: "cmd" }); // terminal builds its skeleton inside
+  // center: results + pagination
+  // The terminal is NOT in this flow: it is a floating window the terminal package mounts on the
+  // component root, positioned and clamped against that root rather than the viewport.
   // List-view column header (uri | fs type). Lives OUTSIDE the results host (which counts its
   // children for incremental append), and is shown only in list view with rows (toggled in render).
   const listHead = el("div", { class: "list-head", hidden: "true" }, [
@@ -464,7 +509,6 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
   const centerFixed = el("div", { class: "center-fixed" }, [toprow, resBar]);
   const resultsScroll = el("div", { class: "results-scroll" }, [
     overviewWrap,
-    cmdStrip,
     listHead,
     results,
     moreWrap,
@@ -500,16 +544,30 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
   // / red error), each message overriding the previous.
   const statusDot = el("span", { class: "status-dot info" });
   const statusMsg = el("span", { class: "mono" });
-  const status = el("footer", { class: "status", "aria-live": "polite", "aria-label": "Status" }, [
-    statusDot,
-    statusMsg,
-  ]);
+  // With `features.footer:false` the strip is removed from the GRID so it consumes no height, but
+  // the very same nodes are re-parented into an off-screen aria-live region. `display:none` would
+  // have silenced the live region too, so a screen-reader user would lose every status update
+  // (search failures, export outcomes) with no visual equivalent to fall back on.
+  const status = f.footer
+    ? el("footer", { class: "status", "aria-live": "polite", "aria-label": "Status" }, [
+        statusDot,
+        statusMsg,
+      ])
+    : null;
+  const srStatus = f.footer
+    ? null
+    : el(
+        "div",
+        { class: "sr-status", "aria-live": "polite", "aria-label": "Status", role: "status" },
+        [statusDot, statusMsg],
+      );
   const toastHost = el("div", { class: "toast-host", "aria-live": "polite" });
 
-  const shell = el("div", { class: "fdb-app" }, [top, body, status]);
+  const shell = el("div", { class: `fdb-app${f.footer ? "" : " no-footer"}` }, [top, body, status]);
   // overlays live on the outer box (not the app grid, whose rows must stay header/body/footer)
   const outer = el("div", { class: "freva-db", "data-theme": "night" }, [
     shell,
+    srStatus, // off-screen, outside the grid - only present when the visible footer is disabled
     toastHost,
     helpPanel,
   ]);
@@ -534,7 +592,6 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
     exportBtn,
     shelveBtn,
     selectAllBtn: selectAll,
-    cmdStrip,
     listHead,
     results,
     moreWrap,
@@ -562,6 +619,9 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
     helpPanel,
     sideCollapse,
     searchInput,
+    searchRegion: search,
+    searchSpin,
+    searchStatus,
     resultsCtrl,
     overviewCtrl,
     shelveBtn,
@@ -643,12 +703,20 @@ export function mountDataBrowser(
       } else if (link.flavour) {
         pendingUrlFlavour = link.flavour; // custom flavour: reconsider once /overview lists it
       }
-      // A key that's part of the base scope must NOT also be imported as a removable facet - the gate
-      // owns it. Computed AFTER the flavour is applied so gated keys translate under the right flavour.
-      const gated = new Set(
-        Object.keys(state.baseFilters).map((k) => translateKey(state, k, "freva", state.flavour)),
-      );
-      for (const k of gated) delete link.selected[k];
+      // A key the base scope OWNS must not also arrive as a removable facet - the gate owns it.
+      // Computed AFTER the flavour is applied, so the scope's keys translate under the right flavour.
+      //
+      // Ownership is by BASE key and belongs to the POSITIVE form only (baseFilterKeys already
+      // encodes that rule):
+      //   • `{project: waterpark}` owns `project`, so BOTH `?project=` and `?project_not_=` are
+      //     dropped - the second would otherwise become an inert chip on a key the user cannot
+      //     affect, or worse, appear to narrow a scope it never reaches.
+      //   • `{project_not_: cmip6}` owns nothing, so the user may still narrow with `?project=` AND
+      //     add further exclusions with `?project_not_=`; both are merged into the wire query.
+      const gatedBase = baseFilterKeys(state);
+      for (const k of Object.keys(link.selected)) {
+        if (gatedBase.has(baseFacetKey(k).toLowerCase())) delete link.selected[k];
+      }
       if (Object.keys(link.selected).length) {
         state.selected = link.selected;
         for (const k of Object.keys(link.selected)) urlOwnedKeys.add(k);
@@ -718,7 +786,16 @@ export function mountDataBrowser(
     roots.resCount.textContent = text;
     // any search in flight (even a re-search with existing rows) shows a spinner, so
     // nothing slow looks idle.
-    roots.resSpin.classList.toggle("show", state.search === "loading");
+    const loading = state.search === "loading";
+    roots.resSpin.classList.toggle("show", loading);
+    // The in-field spinner is the PRIMARY indicator: it sits where the user is looking and typing.
+    // No artificial minimum delay is added to make it visible - a fast search should just be fast.
+    refs.searchSpin.classList.toggle("show", loading);
+    refs.searchRegion.setAttribute("aria-busy", loading ? "true" : "false");
+    // Screen-reader equivalent of the spinner. Only written when it CHANGES, so a polite live
+    // region doesn't re-announce "Searching" on every unrelated recount.
+    const srText = loading ? "Searching" : "";
+    if (refs.searchStatus.textContent !== srText) refs.searchStatus.textContent = srText;
   }
 
   function exportDisabled(): boolean {
@@ -1059,7 +1136,11 @@ export function mountDataBrowser(
     urlImportsReconciled = true;
     let changed = false;
     for (const k of Object.keys(state.selected)) {
-      if (!known.has(k.toLowerCase())) {
+      // Validate the UNDERLYING positive facet key while keeping the original state key. Checking
+      // the literal `project_not_` against a list of positive facet names never matches, so a
+      // deep-linked exclusion would be discarded the moment the first payload landed - taking the
+      // filter out of the query, out of the URL, and firing a corrective UNFILTERED search.
+      if (!known.has(baseFacetKey(k).toLowerCase())) {
         delete state.selected[k]; // not a facet - release it back to the host page
         urlOwnedKeys.delete(k);
         changed = true;
@@ -1204,18 +1285,46 @@ export function mountDataBrowser(
   let facetsAppliedId = 0;
 
   // mutations
-  function toggleFacet(key: string, value: string): void {
+  /**
+   * Include / exclude one facet value. The two modes are MUTUALLY EXCLUSIVE and share ONE commit:
+   * choosing a mode removes the pair from the other first, so a (facet, value) can never be both
+   * required and forbidden, and only a single search is fired.
+   */
+  function setFacetMode(key: string, value: string, negated: boolean): void {
     if (isGatedKey(state, key)) return; // the base scope owns this key - never mutate/search on it
     state.externalEdits++; // not typed in the terminal -> the terminal must re-sync
-    toggleSelected(state, key, value);
+    toggleFacetMode(state, key, value, negated);
     syncAll();
     commitSearch();
   }
+  function toggleFacet(key: string, value: string): void {
+    setFacetMode(key, value, false);
+  }
+  function excludeFacet(key: string, value: string): void {
+    setFacetMode(key, value, true);
+  }
   function clearFacet(key: string): void {
     if (isGatedKey(state, key)) return; // can't clear the gate
-    if (!state.selected[key]?.length) return; // nothing selected -> no-op (no needless refetch)
+    // MODE-AWARE: the header badge counts includes AND excludes, so it must be able to clear a facet
+    // that carries only exclusions. Guarding on `state.selected[key]` alone would make the badge a
+    // no-op whenever state holds just `{ project_not_: [...] }`: a visible count, a dead control.
+    if (facetSelectionCount(state, key) === 0) return; // nothing selected -> no needless refetch
     state.externalEdits++; // not typed in the terminal -> the terminal must re-sync
     clearSelectedFacet(state, key);
+    syncAll();
+    commitSearch();
+  }
+  /**
+   * Clear ONE mode of a facet. The `+N` and `-N` badges are independent controls, so clearing the
+   * exclusions must leave the inclusions exactly where they were - and vice versa - in ONE state
+   * update and ONE search, with chips, URL, bash and python all resynchronised from it.
+   */
+  function clearFacetModeFn(key: string, negative: boolean): void {
+    if (isGatedKey(state, key)) return; // can't clear the gate
+    const before = negative ? excludedValues(state, key).length : includedValues(state, key).length;
+    if (before === 0) return; // nothing in this mode -> no needless refetch
+    state.externalEdits++; // not typed in the terminal -> the terminal must re-sync
+    clearFacetMode(state, key, negative);
     syncAll();
     commitSearch();
   }
@@ -1317,21 +1426,39 @@ export function mountDataBrowser(
   function focusFile(key: string): void {
     state.focusKey = key;
     state.detailSource = "focus"; // clicking a row makes THAT file the Details subject, even with picks
-    updateRowStates(ctx); // in-place class/aria patch - no full row rebuild on click
+    // No picked state changed - only the two rows involved in the focus move are patched.
+    updateRowStates(ctx, []);
     if (state.detailsOpen) renderDetails(ctx);
   }
-  function togglePick(key: string): void {
+  /**
+   * Add or remove one file from the selection. THE cap lives here, so every entry point - the row
+   * checkbox, keyboard activation, Select all, and any future caller - goes through the same rule.
+   * A deselect is ALWAYS allowed, even at the cap: a selection you cannot undo is a trap.
+   * Returns false when the addition was refused.
+   */
+  function togglePick(key: string): boolean {
     if (state.pickedKeys.has(key)) {
       state.pickedKeys.delete(key);
     } else {
-      // Selection is UNLIMITED - pick as many as you like. Only the heavy Aggregate action is
-      // capped (it locks in the pickbar past MAX_FILE_SELECTION); downloads and Details are not.
+      if (state.pickedKeys.size >= MAX_SELECTED_FILES) {
+        // The 26th selection changes NOTHING - no partial state, no silent swap - and says why once.
+        setStatus(
+          `You can select up to ${MAX_SELECTED_FILES} files - deselect one to choose another.`,
+          3000,
+        );
+        ctx.toast(
+          "warn",
+          `Selection is limited to ${MAX_SELECTED_FILES} files. Deselect one first.`,
+        );
+        return false;
+      }
       state.pickedKeys.add(key);
     }
     state.detailSource = "picks"; // (de)selecting makes the current picks the Details subject
-    updateRowStates(ctx);
+    updateRowStates(ctx, [key]); // exactly one row changed
     renderPickbar(ctx);
     if (state.detailsOpen) renderDetails(ctx);
+    return true;
   }
   function clearPicks(): void {
     state.pickedKeys.clear();
@@ -1428,8 +1555,10 @@ export function mountDataBrowser(
     recountOverview,
     exportCatalogue: (kind, query, uniqKey) => doExport(kind, query, uniqKey),
     toggleFacet,
+    excludeFacet,
     clearAllFacets,
     clearFacet,
+    clearFacetMode: clearFacetModeFn,
     setTime,
     setBbox,
     setFlavour,
@@ -1471,7 +1600,7 @@ export function mountDataBrowser(
   const inspector = createInspector(ctx);
 
   // terminal + notes need the assembled ctx
-  if (cfg.features.terminal) terminal = createTerminal(ctx);
+  if (cfg.features.terminal) terminal = createDatabrowserTerminal(ctx);
   if (cfg.devNotes) notes = createNotes(ctx);
 
   // top-bar wiring
@@ -1497,12 +1626,24 @@ export function mountDataBrowser(
   }
   syncShelve();
   dis.listen(refs.selectAllBtn, "click", () => {
-    const keys = state.rows.map((r) => r.key);
-    const all = keys.length > 0 && keys.every((k) => state.pickedKeys.has(k));
-    if (all) for (const k of keys) state.pickedKeys.delete(k);
-    else for (const k of keys) state.pickedKeys.add(k);
+    // ONE plan drives the label, the accessible name and the action - see selectAllPlan().
+    const plan = selectAllPlan(ctx);
+    if (plan.willClear) {
+      state.pickedKeys.clear();
+      setStatus("Selection cleared.");
+    } else {
+      // Deterministic: the result is exactly `target`, never target plus earlier leftovers.
+      state.pickedKeys.clear();
+      for (const k of plan.target) state.pickedKeys.add(k);
+      setStatus(
+        plan.capped
+          ? `Selected the first ${MAX_SELECTED_FILES} of ${state.rows.length.toLocaleString("en-US")} listed files - ${plan.omitted.toLocaleString("en-US")} were not selected.`
+          : `Selected ${plan.target.length} file${plan.target.length === 1 ? "" : "s"}.`,
+        plan.capped ? 4000 : 0,
+      );
+    }
     state.detailSource = "picks";
-    updateRowStates(ctx); // also re-syncs the Select-all control
+    updateRowStates(ctx); // also re-syncs the bulk control's label + accessible name
     renderPickbar(ctx);
     if (state.detailsOpen) renderDetails(ctx);
   });
@@ -1576,48 +1717,24 @@ export function mountDataBrowser(
       return;
     }
     const pop = region("popover"); // per-open bucket; flushed when the next popover opens
-    const mk = (
-      kind: "intake" | "stac" | "uris",
-      icon: Node,
-      label: string,
-      desc: string,
-    ): HTMLButtonElement => {
-      const b = el("button", { class: "pop-item pic", type: "button" }, [
-        icon,
-        el("span", {}, [
-          el("span", { class: "desc", text: label }),
-          el("span", { class: "sub", text: desc }),
-        ]),
-      ]);
-      pop.listen(b, "click", () => {
-        popover.close();
-        void doExport(kind);
-      });
-      return b;
-    };
+    // ONE menu renderer, shared with the pickbar's selected-files Download. The scope is stated in
+    // the heading rather than repeated in all three descriptions.
+    roots.exportBtn.setAttribute("aria-expanded", "true");
     popover.open(
       roots.exportBtn,
-      [
-        mk(
-          "intake",
-          brandIcon("intake", { size: 16 }),
-          "Intake catalogue",
-          "intake-esm JSON for the whole result set",
-        ),
-        mk(
-          "stac",
-          brandIcon("stac", { size: 16 }),
-          "STAC catalogue",
-          "STAC zip for the whole result set",
-        ),
-        mk(
-          "uris",
-          svgIcon(ICONS.uris, { size: 16 }),
-          "URI manifest",
-          "Plain-text list of file URIs for the whole result set",
-        ),
-      ],
-      { placement: "below", className: "export-pop" },
+      exportMenu(pop, {
+        heading: wholeResultHeading(state.totalCount),
+        onPick: (kind) => {
+          popover.close();
+          void doExport(kind);
+        },
+      }),
+      {
+        placement: "below",
+        className: "export-pop",
+        autoFocus: true,
+        onClose: () => roots.exportBtn.setAttribute("aria-expanded", "false"),
+      },
     );
   });
 
@@ -1660,6 +1777,18 @@ export function mountDataBrowser(
         : api.catalogueUrl(kind, state.flavour, key, q);
     clearStatusHold(); // an explicit export supersedes a lingering search-bar warning
 
+    // A selected export repeats `file=` once per file in a GET URL. The 25-file selection cap makes
+    // the reported 1,000-selection 414 impossible, but it is NOT a universal length guarantee -
+    // deep archive paths are long, and proxies cut off well below their documented limits. Measure
+    // the FINAL encoded URL and refuse an oversized one with an actionable message, rather than
+    // firing a request that dies as an opaque 414 (which we also handle explicitly below).
+    if (url.length > MAX_EXPORT_URL_LENGTH) {
+      const msg = `This selection makes too long a request for ${label} - select fewer files and try again.`;
+      setStatus(msg, 4000);
+      ctx.toast("error", msg);
+      return;
+    }
+
     const save = (href: string): void => {
       const a = document.createElement("a");
       a.href = href;
@@ -1685,7 +1814,11 @@ export function mountDataBrowser(
           const msg =
             probe.status === 413
               ? `This query is too large for the server to export - narrow it and try again.`
-              : `${label} couldn't be prepared (server responded ${probe.status}).`;
+              : probe.status === 414
+                ? // 414 URI Too Long: our own length guard is conservative, but a proxy in front of
+                  // the API may cut off earlier still. Name the actual remedy.
+                  `The request URL is too long for ${label} - select fewer files and try again.`
+                : `${label} couldn't be prepared (server responded ${probe.status}).`;
           setStatus(msg);
           ctx.toast("error", msg);
           return;
@@ -1722,6 +1855,10 @@ export function mountDataBrowser(
     } catch (e) {
       if (e instanceof ApiError && e.aborted) return;
       if (e instanceof DOMException && e.name === "AbortError") return;
+      if (e instanceof ApiError && e.status === 414) {
+        ctx.toast("error", `The request URL is too long - select fewer files and try again.`);
+        return;
+      }
       if (e instanceof ApiError && (e.status === 413 || e.detail === STREAM_TOO_BIG_DETAIL)) {
         updateExportState();
         ctx.toast(

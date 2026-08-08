@@ -45,6 +45,7 @@ export function buildTimeEditor(
   const current = ctx.state.time;
   let mode: SelectMode = current?.mode ?? "flexible";
   const fromInput = el("input", {
+    class: "date-text",
     type: "text",
     inputmode: "numeric",
     placeholder: "YYYY or YYYY-MM-DD",
@@ -52,6 +53,7 @@ export function buildTimeEditor(
     "aria-label": "From",
   });
   const toInput = el("input", {
+    class: "date-text",
     type: "text",
     inputmode: "numeric",
     placeholder: "YYYY or YYYY-MM-DD",
@@ -60,6 +62,65 @@ export function buildTimeEditor(
   });
 
   const errLine = el("div", { class: "err-line" });
+
+  /**
+   * An OPTIONAL native calendar beside each text field.
+   *
+   * The text input stays the source of truth: freva accepts `YYYY`, `YYYY-MM`, full dates,
+   * datetimes and open bounds, and `<input type=date>` can represent NONE of those partial forms.
+   * Replacing the field would therefore delete capability. So the picker is a side door: choosing a
+   * full date writes its ISO value into the text field and runs the SAME validation and live-apply
+   * path a typed date does, and a partial or open value in the field is simply left alone.
+   */
+  const pickerFor = (input: HTMLInputElement, which: "From" | "To"): HTMLElement => {
+    const native = el("input", {
+      type: "date",
+      class: "date-native",
+      tabindex: "-1",
+      "aria-hidden": "true",
+    }) as HTMLInputElement;
+    const btn = el(
+      "button",
+      {
+        class: "date-pick",
+        type: "button",
+        "aria-label": `Choose a ${which.toLowerCase()} date from a calendar`,
+        title: `Pick a ${which.toLowerCase()} date`,
+      },
+      [svgIcon(ICONS.clock, { size: 14 })],
+    );
+    /** Only a COMPLETE date can be shown in a native picker; anything else leaves it untouched. */
+    const syncIntoPicker = (): void => {
+      const v = input.value.trim();
+      native.value = /^\d{4}-\d{2}-\d{2}$/.test(v) && validPart(v) ? v : "";
+    };
+    reg.listen(btn, "click", () => {
+      syncIntoPicker();
+      // showPicker() must be called from the user's own gesture - which this is. Where it is
+      // missing (older Safari, Firefox before 101), focusing/clicking the native input is the
+      // documented fallback and still opens the platform calendar.
+      const withPicker = native as HTMLInputElement & { showPicker?: () => void };
+      if (typeof withPicker.showPicker === "function") {
+        try {
+          withPicker.showPicker();
+          return;
+        } catch {
+          /* NotAllowedError outside a user gesture - fall through to the manual route */
+        }
+      }
+      native.focus();
+      native.click();
+    });
+    reg.listen(native, "change", () => {
+      if (!native.value) return; // cleared in the picker - leave whatever the user typed
+      input.value = native.value; // ISO YYYY-MM-DD, exactly what the text field already accepts
+      refresh();
+      applyLive();
+    });
+    reg.listen(input, "change", syncIntoPicker);
+    syncIntoPicker();
+    return el("span", { class: "date-pickwrap" }, [btn, native]);
+  };
 
   const modeButtons: HTMLButtonElement[] = (["flexible", "strict", "file"] as SelectMode[]).map(
     (m) => {
@@ -126,8 +187,16 @@ export function buildTimeEditor(
       el("span", { text: "Time range" }),
       el("span", { class: "sub", text: "time_select" }),
     ]),
-    el("div", { class: "daterow" }, [el("label", { text: "From" }), fromInput]),
-    el("div", { class: "daterow" }, [el("label", { text: "To" }), toInput]),
+    el("div", { class: "daterow" }, [
+      el("label", { text: "From" }),
+      fromInput,
+      pickerFor(fromInput, "From"),
+    ]),
+    el("div", { class: "daterow" }, [
+      el("label", { text: "To" }),
+      toInput,
+      pickerFor(toInput, "To"),
+    ]),
     el("div", { class: "modes" }, modeButtons),
     errLine,
     ...(inline ? [] : [el("div", { class: "actions" }, [clear])]),

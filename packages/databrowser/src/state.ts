@@ -8,6 +8,7 @@ import type {
   Facet,
   FileRow,
   FlavourName,
+  QueryScope,
   ResolvedConfig,
   SearchResult,
   SelectMode,
@@ -15,7 +16,6 @@ import type {
   TimeSelection,
   UniqKey,
 } from "./types.js";
-import { SHELLS, type Shell, type ShellId } from "./shell.js";
 
 export const BUILTIN_FLAVOURS: FlavourName[] = ["freva", "cmip5", "cmip6", "cordex", "user"];
 
@@ -150,17 +150,142 @@ export function overviewFacets(state: AppState): Facet[] {
   return out;
 }
 
-export function isSelected(state: AppState, key: string, value: string): boolean {
-  return (state.selected[key] ?? []).includes(value) || isGatedValue(state, key, value);
+// Negative (excluded) facet selections
+//
+// freva-rest's UNAMBIGUOUS negation form is a KEY suffix: `project_not_=cmip6` (see
+// freva-rest/src/freva_rest/databrowser_api/core.py - `_validate_query_params()` strips `_not_`
+// before validating the key, and `_join_facet_queries()` turns a `_not_` key into an exclusion).
+// We adopt that as the browser's canonical representation, so the existing
+// `Record<string, string[]>` selection shape is unchanged and serialises straight through the
+// query string, the URL, the CLI tokens and the python kwargs.
+//
+// The REST API ALSO accepts legacy VALUE prefixes (`not `, `!`, `-`). We deliberately do NOT parse
+// those here: a genuine positive value that begins with one of them (the real `ensemble` value
+// "not set") is indistinguishable from a negation, so inferring it would silently turn a real
+// filter into its opposite. See splitNegation() below.
+
+/** The canonical negation suffix on a facet KEY. */
+export const NEG_SUFFIX = "_not_";
+
+/**
+ * Split a canonical facet key into its underlying (positive) facet key and whether it negates.
+ * `_not_` is recognised ONLY as a suffix, and only when something precedes it - `_not_` on its own
+ * is an ordinary (if odd) key, not a negation of the empty key.
+ */
+export function parseFacetKey(key: string): { baseKey: string; negated: boolean } {
+  if (key.length > NEG_SUFFIX.length && key.toLowerCase().endsWith(NEG_SUFFIX)) {
+    return { baseKey: key.slice(0, key.length - NEG_SUFFIX.length), negated: true };
+  }
+  return { baseKey: key, negated: false };
 }
 
-/** True when (key,value) is part of the base scope for the current flavour - a LOCKED selection that
- *  shows as active in the sidebar/overview but is never a removable chip and can't be toggled. */
-export function isGatedValue(state: AppState, key: string, value: string): boolean {
-  const lk = key.toLowerCase();
+/** The negative key for a base facet (`project` -> `project_not_`). Idempotent. */
+export function negativeKey(baseKey: string): string {
+  return parseFacetKey(baseKey).negated ? baseKey : `${baseKey}${NEG_SUFFIX}`;
+}
+
+/** The underlying positive facet key for any canonical key. */
+export function baseFacetKey(key: string): string {
+  return parseFacetKey(key).baseKey;
+}
+
+/** The canonical key for (base facet, mode). */
+export function keyForMode(baseKey: string, negated: boolean): string {
+  return negated ? negativeKey(baseKey) : baseFacetKey(baseKey);
+}
+
+/** Values the user has INCLUDED for a base facet. */
+export function includedValues(state: QueryScope, baseKey: string): string[] {
+  return state.selected[baseFacetKey(baseKey)] ?? [];
+}
+
+/** Values the user has EXCLUDED for a base facet. */
+export function excludedValues(state: QueryScope, baseKey: string): string[] {
+  return state.selected[negativeKey(baseKey)] ?? [];
+}
+
+/** How many user selections (include + exclude) a base facet carries - what the badges count. */
+export function facetSelectionCount(state: QueryScope, baseKey: string): number {
+  return includedValues(state, baseKey).length + excludedValues(state, baseKey).length;
+}
+
+/** Clear BOTH modes for one base facet (the facet-header "clear this facet" affordance). */
+export function clearFacetModes(state: QueryScope, baseKey: string): void {
+  delete state.selected[baseFacetKey(baseKey)];
+  delete state.selected[negativeKey(baseKey)];
+}
+
+/**
+ * Clear ONE mode of one base facet, leaving the other alone.
+ *
+ * The `+N` and `-N` badges are separate controls precisely so "stop excluding these three" does not
+ * also throw away the two values the user chose to keep. `clearFacetModes` remains the both-modes
+ * operation for the places that mean both.
+ */
+export function clearFacetMode(state: QueryScope, baseKey: string, negative: boolean): void {
+  delete state.selected[negative ? negativeKey(baseKey) : baseFacetKey(baseKey)];
+}
+
+/**
+ * Translate a canonical key between flavours, suffix-aware: the BASE key is translated
+ * (`project` <-> `mip_era`) and the `_not_` suffix is reapplied afterwards. Translating the literal
+ * `project_not_` would find no mapping and silently pass a mis-keyed exclusion to the backend.
+ */
+export function translateFacetKey(
+  state: QueryScope,
+  key: string,
+  from: string,
+  to: string,
+): string {
+  const { baseKey, negated } = parseFacetKey(key);
+  return keyForMode(translateKey(state, baseKey, from, to), negated);
+}
+
+/** True when the user has INCLUDED (key, value). Gated base-scope values also read as selected. */
+export function isSelected(state: QueryScope, key: string, value: string): boolean {
+  const base = baseFacetKey(key);
+  return (state.selected[base] ?? []).includes(value) || isGatedValue(state, base, value);
+}
+
+/** True when the user has EXCLUDED (key, value). */
+export function isExcluded(state: QueryScope, key: string, value: string): boolean {
+  return excludedValues(state, key).includes(value);
+}
+
+/**
+ * Set/unset one (facet, value) in one mode. The two modes are MUTUALLY EXCLUSIVE: choosing one
+ * removes the pair from the other first, so a single search is committed and the pair can never be
+ * both required and forbidden.
+ */
+export function toggleFacetMode(
+  state: QueryScope,
+  baseKey: string,
+  value: string,
+  negated: boolean,
+): void {
+  const other = keyForMode(baseKey, !negated);
+  const otherArr = state.selected[other];
+  if (otherArr) {
+    const j = otherArr.indexOf(value);
+    if (j >= 0) {
+      otherArr.splice(j, 1);
+      if (otherArr.length === 0) delete state.selected[other];
+    }
+  }
+  toggleSelected(state, keyForMode(baseKey, negated), value);
+}
+
+/** True when (key,value) is part of the POSITIVE base scope for the current flavour - a LOCKED
+ *  selection that shows as active in the sidebar/overview but is never a removable chip and can't
+ *  be toggled. A NEGATIVE base filter gates nothing here: its value is absent from the returned
+ *  facets entirely, so there is no row to lock (see baseScopeExclusions). */
+export function isGatedValue(state: QueryScope, key: string, value: string): boolean {
+  const lk = baseFacetKey(key).toLowerCase();
   for (const bk of Object.keys(state.baseFilters)) {
+    const { baseKey, negated } = parseFacetKey(bk);
+    if (negated) continue;
     if (
-      translateKey(state, bk, "freva", state.flavour).toLowerCase() === lk &&
+      translateKey(state, baseKey, "freva", state.flavour).toLowerCase() === lk &&
       state.baseFilters[bk].includes(value)
     ) {
       return true;
@@ -171,32 +296,52 @@ export function isGatedValue(state: AppState, key: string, value: string): boole
 
 /** True when `key` (in the CURRENT flavour's naming) is owned by the base scope. Such a key is
  *  inescapable: the UI must not let it be toggled, chipped, completed, or queried outside the gate. */
-export function isGatedKey(state: AppState, key: string): boolean {
-  return baseFilterKeys(state).has(key.toLowerCase());
+export function isGatedKey(state: QueryScope, key: string): boolean {
+  // Suffix-aware: `project_not_` is a user selection on the gated BASE key `project`, so it must be
+  // refused for the same reason a positive `project=` is - it would contradict the locked scope.
+  return baseFilterKeys(state).has(baseFacetKey(key).toLowerCase());
 }
 
 /** Values to DISPLAY for a facet. A gated key shows ONLY its scope values (never any out-of-scope
  *  value a mis-scoped/buggy server might return), so the locked facet can't present an escape hatch. */
 export function displayFacetValues(
-  state: AppState,
+  state: QueryScope,
   facet: Facet,
 ): Array<{ value: string; count: number }> {
   if (!isGatedKey(state, facet.key)) return facet.values;
   return facet.values.filter((v) => isGatedValue(state, facet.key, v.value));
 }
 
-/** The base scope's (key, value) pairs in the CURRENT flavour's naming. Used to annotate the printed
- *  CLI command so a copied `freva-client …` reproduces the SAME scoped results the widget shows. */
-export function baseScopePairs(state: AppState): Array<[string, string]> {
+/** The base scope's (key, value) pairs in the CURRENT flavour's naming, INCLUDING any negative
+ *  (`<key>_not_`) scope. Used to annotate the printed CLI command / python call so a copied
+ *  `freva-client …` reproduces the SAME scoped results the widget shows. */
+export function baseScopePairs(state: QueryScope): Array<[string, string]> {
   const out: Array<[string, string]> = [];
   for (const [k, vs] of Object.entries(state.baseFilters)) {
-    const fk = translateKey(state, k, "freva", state.flavour);
+    const fk = translateFacetKey(state, k, "freva", state.flavour); // suffix-aware
     for (const v of vs) out.push([fk, v]);
   }
   return out;
 }
 
-export function toggleSelected(state: AppState, key: string, value: string): void {
+/**
+ * The NEGATIVE half of the base scope, as (base facet key in the current flavour, value) pairs.
+ * A base-excluded value never appears in the returned facet list, so there is no row to lock -
+ * the UI renders these as an immutable "Scope: project ≠ cmip6" indicator instead, which Clear All
+ * does not touch.
+ */
+export function baseScopeExclusions(state: QueryScope): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const [k, vs] of Object.entries(state.baseFilters)) {
+    const { baseKey, negated } = parseFacetKey(k);
+    if (!negated) continue;
+    const fk = translateKey(state, baseKey, "freva", state.flavour);
+    for (const v of vs) out.push([fk, v]);
+  }
+  return out;
+}
+
+export function toggleSelected(state: QueryScope, key: string, value: string): void {
   const arr = state.selected[key] ?? (state.selected[key] = []);
   const i = arr.indexOf(value);
   if (i >= 0) {
@@ -207,18 +352,19 @@ export function toggleSelected(state: AppState, key: string, value: string): voi
   }
 }
 
-export function clearAll(state: AppState): void {
+export function clearAll(state: QueryScope): void {
   state.selected = {};
   state.time = null;
   state.bbox = null;
 }
 
-/** Clear every selected value for ONE facet (the header-badge "clear this facet" affordance). */
-export function clearSelectedFacet(state: AppState, key: string): void {
-  delete state.selected[key];
+/** Clear every selected value for ONE facet - INCLUDED and EXCLUDED alike (the header-badge
+ *  "clear this facet" affordance, which counts both). */
+export function clearSelectedFacet(state: QueryScope, key: string): void {
+  clearFacetModes(state, key);
 }
 
-export function hasAnySelection(state: AppState): boolean {
+export function hasAnySelection(state: QueryScope): boolean {
   return Object.keys(state.selected).length > 0 || !!state.time || !!state.bbox;
 }
 
@@ -226,7 +372,8 @@ export function humaniseKey(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function labelFor(state: AppState, key: string): string {
+/** Display label for a facet key. Needs only the mapping, so the picker can call it too. */
+export function labelFor(state: { facetMapping: Record<string, string> }, key: string): string {
   return state.facetMapping[key] ?? humaniseKey(key);
 }
 
@@ -255,7 +402,7 @@ export function buildFlavourMaps(
 
 /** A facet key expressed in `from`'s flavour -> the same concept in `to`'s flavour, pivoting through
  *  freva's canonical name. Unmapped keys (flavour-specific, or maps not loaded yet) pass through. */
-export function translateKey(state: AppState, key: string, from: string, to: string): string {
+export function translateKey(state: QueryScope, key: string, from: string, to: string): string {
   if (from === to) return key;
   const freva = state.flavourMaps[from]?.backward[key] ?? key; // flavour->freva
   return state.flavourMaps[to]?.forward[freva] ?? freva; // freva->flavour
@@ -263,14 +410,15 @@ export function translateKey(state: AppState, key: string, from: string, to: str
 
 /** Re-key an entire selection (values untouched) from one flavour's names to another's. */
 export function translateSelection(
-  state: AppState,
+  state: QueryScope,
   selected: Record<string, string[]>,
   from: string,
   to: string,
 ): Record<string, string[]> {
   if (from === to) return selected;
   const out: Record<string, string[]> = {};
-  for (const [k, v] of Object.entries(selected)) out[translateKey(state, k, from, to)] = v;
+  // Suffix-aware: translate `project` and reapply `_not_`, never the literal `project_not_`.
+  for (const [k, v] of Object.entries(selected)) out[translateFacetKey(state, k, from, to)] = v;
   return out;
 }
 
@@ -366,8 +514,12 @@ export function knownFacetKeys(state: AppState): Set<string> {
  *    therefore left to the backend. Key match is case-insensitive.
  */
 export function closedValueSet(state: AppState, key: string): Set<string> | null {
-  const lk = key.toLowerCase();
+  // Suffix-aware: the domain of `project_not_` is the domain of `project`. Either MODE having
+  // values collapses that list (an exclusion removes the excluded value from the facet response
+  // entirely), so both are checked before trusting it.
+  const lk = baseFacetKey(key).toLowerCase();
   if ((state.selected[lk] ?? []).length > 0) return null; // self-filtered ⇒ list is collapsed
+  if ((state.selected[negativeKey(lk)] ?? []).length > 0) return null; // excluded values are gone
   const facet = state.facets.find((f) => f.key.toLowerCase() === lk);
   if (!facet || facet.hasMore || facet.values.length === 0) return null;
   return new Set(facet.values.map((v) => v.value));
@@ -399,7 +551,10 @@ export function filterCommittable(
     rejected.push(`${key}=${shellQuote(v)}`);
   };
   for (const key of Object.keys(parsed)) {
-    if (gated.has(key.toLowerCase()) || known.size === 0 || !known.has(key)) {
+    // Validate/look up the UNDERLYING positive facet key: `project_not_` is committable exactly
+    // when `project` is. The canonical (suffixed) key is what lands in state.selected.
+    const base = baseFacetKey(key).toLowerCase();
+    if (gated.has(base) || known.size === 0 || !known.has(base)) {
       for (const v of parsed[key]) rej(key, v);
       continue;
     }
@@ -411,6 +566,22 @@ export function filterCommittable(
       }
       (accepted[key] ?? (accepted[key] = [])).push(v);
     }
+  }
+  // A (facet, value) can never be both required and forbidden. If a draft asks for both, the
+  // INCLUDE wins and the exclusion is reported as rejected, so the contradiction is visible in the
+  // terminal rather than silently resolved on the wire.
+  for (const key of Object.keys(accepted)) {
+    const { baseKey, negated } = parseFacetKey(key);
+    if (!negated) continue;
+    const positives = accepted[baseKey];
+    if (!positives?.length) continue;
+    const kept = accepted[key].filter((v) => {
+      if (!positives.includes(v)) return true;
+      rej(key, v);
+      return false;
+    });
+    if (kept.length) accepted[key] = kept;
+    else delete accepted[key];
   }
   return { accepted, rejected };
 }
@@ -528,20 +699,26 @@ export function timeRangeFromFilename(file: string): string | null {
 const enc = encodeURIComponent;
 
 /**
- * Documented hook for a FUTURE, explicit, UI-controlled negation marker that would map to
- * `<key>_not_` without reshaping state. It is intentionally NOT called by the query builder:
- * inferring negation from raw value text silently corrupts genuine values (e.g. the real
- * `ensemble` value "not set" would become `ensemble_not_=set`, matching ~943k files). Negation
- * must be a deliberate flagged selection, never parsed out of arbitrary user text. Exported so
- * it stays available without tripping noUnusedLocals.
+ * KNOWN BACKEND LIMITATION - the legacy value-prefix negation.
+ *
+ * freva-rest also accepts negation written into the VALUE (`project="not cmip6"`, `!cmip6`,
+ * `-cmip6`). The web client deliberately does NOT parse that form, in either direction:
+ *
+ *  • Reading it would corrupt genuine values. The real `ensemble` value "not set" would become
+ *    `ensemble_not_=set`, silently inverting a filter the user asked for.
+ *  • Writing it would be ambiguous for exactly the same reason.
+ *
+ * So negation here is ALWAYS the explicit `<key>_not_` key form, and a value that happens to begin
+ * with `not `, `!` or `-` is preserved verbatim and sent as an ordinary positive value. That value
+ * is still ambiguous ON THE WIRE - freva-rest will read it as a negation - and no client-side
+ * workaround can fix that. Resolving it requires an escaping contract in the REST API (e.g. a
+ * documented `\` escape, or making `_not_` keys the only negation form). Until then this is a
+ * genuine backend limitation, recorded here rather than papered over with a guess.
  */
-export function splitNegation(value: string): { negated: boolean; bare: string } {
-  const m = value.match(/^(?:not |!|-)(.+)$/i);
-  return m ? { negated: true, bare: m[1] } : { negated: false, bare: value };
-}
+export const LEGACY_VALUE_NEGATION_PREFIXES = ["not ", "!", "-"] as const;
 
 /** Ordered key=value pairs for the query string. Multi-value -> repeated key (OR). Values verbatim. */
-function facetPairs(state: AppState): Array<[string, string]> {
+export function facetPairs(state: QueryScope): Array<[string, string]> {
   const pairs: Array<[string, string]> = [];
   for (const key of Object.keys(state.selected)) {
     for (const value of state.selected[key]) pairs.push([key, value]);
@@ -571,7 +748,7 @@ function bboxPairs(bbox: BBoxSelection | null): Array<[string, string]> {
 }
 
 /** All query pairs (facets + time + bbox), in stable order. */
-export function queryPairs(state: AppState): Array<[string, string]> {
+export function queryPairs(state: QueryScope): Array<[string, string]> {
   return [...facetPairs(state), ...timePairs(state.time), ...bboxPairs(state.bbox)];
 }
 
@@ -588,27 +765,43 @@ export function normalizeBaseFilters(
   return out;
 }
 
-/** Base-scope facet keys in the CURRENT flavour's naming. Their facet still renders, but its values
- *  show as LOCKED (non-toggleable) and the key never becomes a chip, URL param, or terminal token. */
-export function baseFilterKeys(state: AppState): Set<string> {
+/**
+ * Base-scope facet keys the scope OWNS, in the CURRENT flavour's naming. Their facet still renders,
+ * but its values show as LOCKED (non-toggleable) and the key never becomes a chip, URL param, or
+ * terminal token.
+ *
+ * ONLY POSITIVE base filters own a key. A negative base filter (`project_not_: cmip6`) narrows the
+ * scope without claiming the facet: the user must still be able to narrow further with a positive
+ * `project=cordex`, which is a subset of the scope and therefore cannot escape it.
+ */
+export function baseFilterKeys(state: QueryScope): Set<string> {
   const s = new Set<string>();
-  for (const k of Object.keys(state.baseFilters))
-    s.add(translateKey(state, k, "freva", state.flavour).toLowerCase());
+  for (const k of Object.keys(state.baseFilters)) {
+    const { baseKey, negated } = parseFacetKey(k);
+    if (negated) continue;
+    s.add(translateKey(state, baseKey, "freva", state.flavour).toLowerCase());
+  }
   return s;
 }
 
 /** Facet pairs actually sent to the server: the invisible base scope (freva->current flavour) UNIONed
  *  with the user's selection. The URL and chips use `facetPairs`/`selected` only, so the gate never
  *  shows; only the wire query carries it. */
-function wireFacetPairs(state: AppState): Array<[string, string]> {
-  const gated = baseFilterKeys(state); // flavour-named keys the scope owns
+function wireFacetPairs(state: QueryScope): Array<[string, string]> {
+  const gated = baseFilterKeys(state); // flavour-named BASE keys the scope owns
   const merged: Record<string, string[]> = {};
   for (const [k, vs] of Object.entries(state.baseFilters)) {
-    const fk = translateKey(state, k, "freva", state.flavour); // base keys are freva-canonical
-    (merged[fk] ??= []).push(...vs);
+    const fk = translateFacetKey(state, k, "freva", state.flavour); // base keys are freva-canonical
+    // Deduplicate: two freva-canonical base keys can translate onto the SAME flavour key, and a
+    // user's URL selection may repeat a value the scope already sends. A repeated pair is harmless
+    // to Solr but makes the wire query - and every command copied from it - misleading.
+    const cur = (merged[fk] ??= []);
+    for (const v of vs) if (!cur.includes(v)) cur.push(v);
   }
   for (const [k, vs] of Object.entries(state.selected)) {
-    if (gated.has(k.toLowerCase())) continue; // a gated key is INESCAPABLE - user values never widen it
+    // A gated BASE key is INESCAPABLE: neither `project=` nor `project_not_=` from the user may
+    // widen or contradict it (`project_not_=waterpark` would empty a waterpark-scoped instance).
+    if (gated.has(baseFacetKey(k).toLowerCase())) continue;
     const cur = (merged[k] ??= []);
     for (const v of vs) if (!cur.includes(v)) cur.push(v);
   }
@@ -618,7 +811,7 @@ function wireFacetPairs(state: AppState): Array<[string, string]> {
 }
 
 /** Encoded query string (no leading separator); keys AND values encodeURIComponent'd. */
-export function facetQueryString(state: AppState): string {
+export function facetQueryString(state: QueryScope): string {
   return [...wireFacetPairs(state), ...timePairs(state.time), ...bboxPairs(state.bbox)]
     .map(([k, v]) => `${enc(k)}=${enc(v)}`)
     .join("&");
@@ -627,7 +820,7 @@ export function facetQueryString(state: AppState): string {
 /** Serialize the shareable state (flavour + facets + time + bbox) into a URL query string. The
  *  facet keys are already in the CURRENT flavour's names (translate=true), so the link reproduces
  *  the exact view. `freva` is the default and is left implicit to keep those URLs clean. */
-export function buildUrlQuery(state: AppState): string {
+export function buildUrlQuery(state: QueryScope): string {
   const p = new URLSearchParams();
   if (state.flavour && state.flavour !== "freva") p.set("flavour", state.flavour);
   for (const [k, v] of queryPairs(state)) p.append(k, v);
@@ -676,14 +869,20 @@ export const URL_RESERVED_KEYS = new Set([
  * enrichment so the value list for the key being completed isn't collapsed by that key's
  * own committed values - the enrich call must not destroy its own candidate list.
  */
-export function facetQueryStringExcluding(state: AppState, excludeKey: string): string {
+export function facetQueryStringExcluding(state: QueryScope, excludeKey: string): string {
   // Uses the base-aware WIRE pairs, not selection-only, so completions are scoped to baseFilters just
   // like the main search. The excluded key is the one being completed - but a GATED key's base pair is
   // never dropped, so completing a gated key can't fire an unscoped metadata query that leaks values
   // from outside the hosted scope (fail-closed).
   const gated = baseFilterKeys(state);
+  // Base-aware: completing `project_not_` must also drop the committed `project` pairs (and vice
+  // versa), because either mode collapses the SAME candidate list.
+  const excludeBase = baseFacetKey(excludeKey).toLowerCase();
   return [...wireFacetPairs(state), ...timePairs(state.time), ...bboxPairs(state.bbox)]
-    .filter(([k]) => k !== excludeKey || gated.has(k.toLowerCase()))
+    .filter(([k]) => {
+      const base = baseFacetKey(k).toLowerCase();
+      return base !== excludeBase || gated.has(base);
+    })
     .map(([k, v]) => `${enc(k)}=${enc(v)}`)
     .join("&");
 }
@@ -710,50 +909,6 @@ export function posixQuote(v: string): string {
   if (v === "") return "''";
   if (/^[A-Za-z0-9_./:@%+=-]+$/.test(v)) return v; // safe bare token
   return `'${v.replace(/'/g, "'\\''")}'`;
-}
-
-/**
- * Reproducible CLI command, copyable into a shell. Shell-aware quoting and an explicit
- * `--host` (so it runs on the user's LOCAL machine against the API). With no options it
- * renders the bash form with no host.
- */
-export function cliCommand(state: AppState, opts?: { shell?: ShellId }): string {
-  const shell = SHELLS[opts?.shell ?? "bash"];
-  const parts = ["freva-client databrowser data-search"];
-  if (state.flavour !== "freva") parts.push(`--flavour ${shell.quote(state.flavour)}`);
-  // The base scope is part of every query the widget runs. Include it in the COPYABLE command (quoted
-  // for the chosen shell) so a pasted command reproduces the scoped results instead of the whole
-  // archive. The editable textarea still owns only user selections, so the gate can't be edited off.
-  for (const [k, v] of baseScopePairs(state)) parts.push(`${k}=${shell.quote(v)}`);
-  parts.push(cliFacetTokens(state, shell));
-  return parts.filter(Boolean).join(" ").trim();
-}
-
-/** Read-only time/bbox tokens - they always come FIRST, before the editable facet tokens. */
-export function cliFixedTokens(state: AppState, shell: Shell = SHELLS.bash): string {
-  const q = shell.quote;
-  const tokens: string[] = [];
-  const t = state.time;
-  if (t && (t.from || t.to)) {
-    tokens.push(`time=${q(`${t.from || "1"} TO ${t.to || "9999"}`)}`);
-    tokens.push(`time_select=${t.mode}`);
-  }
-  const b = state.bbox;
-  if (b) {
-    tokens.push(`bbox=${b.minLon},${b.maxLon},${b.minLat},${b.maxLat}`);
-    tokens.push(`bbox_select=${b.mode}`);
-  }
-  return tokens.join(" ");
-}
-
-/** The facet/time/bbox tokens for the COPYABLE CLI command - shell-quoted (shell-safe). */
-export function cliFacetTokens(state: AppState, shell: Shell = SHELLS.bash): string {
-  const q = shell.quote;
-  const fixed = cliFixedTokens(state, shell);
-  const facets = facetPairs(state)
-    .map(([k, v]) => `${k}=${q(v)}`)
-    .join(" ");
-  return [fixed, facets].filter(Boolean).join(" ");
 }
 
 /** Just the facet tokens (no time/bbox) - the terminal textarea owns only these. */

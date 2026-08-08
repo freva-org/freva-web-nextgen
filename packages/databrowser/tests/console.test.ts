@@ -63,7 +63,6 @@ test("footer shows the latest event as a coloured message with a severity dot, a
     /status-msg (info|success|warn|error)/,
     "the message is coloured by severity",
   );
-  // there is no expandable event log at all
   assert.equal(q(root, ".console-panel"), null, "no event-log panel");
   assert.equal(q(root, ".log-toggle"), null, "no log toggle");
   assert.equal(q(root, ".log-count"), null, "no log count");
@@ -89,7 +88,7 @@ test("toasts pop and auto-dismiss, and the footer reflects the outcome", async (
   });
   (q<HTMLButtonElement>(root, '[aria-label="Export catalogue"]') as HTMLButtonElement).click();
   await wait(5);
-  const intake = qa<HTMLButtonElement>(root, ".pop-item").find((b) =>
+  const intake = qa<HTMLButtonElement>(root, ".xm-item").find((b) =>
     /intake/i.test(b.textContent ?? ""),
   );
   intake?.click();

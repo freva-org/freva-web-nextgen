@@ -85,7 +85,6 @@ test("tabs close and reopen via + (at most one bash and one python)", async () =
   const { root, handle } = await mountTerm();
   const pyTab = () => q<HTMLElement>(root, '.cmd-tab[data-cmd="py"]') as HTMLElement;
   assert.equal(pyTab().style.display, "", "python tab open by default");
-  // close python via its ×
   (pyTab().querySelector(".tab-x") as HTMLElement).click();
   await tick();
   assert.equal(pyTab().style.display, "none", "python tab closed");
@@ -94,7 +93,6 @@ test("tabs close and reopen via + (at most one bash and one python)", async () =
     "",
     "reopen (+) shown when a tab is closed",
   );
-  // reopen via +
   (q<HTMLButtonElement>(root, ".term-add") as HTMLButtonElement).click();
   await tick();
   assert.equal(pyTab().style.display, "", "python tab reopened");
@@ -442,33 +440,73 @@ test("you can actually TYPE in the python tab (the collapsed line opens on focus
   handle.destroy();
 });
 
-test("bash: the input continues the command line (prefix painted inline, first line indented)", async () => {
+test("bash: the prefix and the command share ONE inline flow (no indent, no prefix-block)", async () => {
   const { root, handle } = await mountTerm();
   await wait(20);
-  const row = q<HTMLElement>(root, ".cli-row") as HTMLElement;
-  assert.ok(row, "there is a single command row");
-  const prefix = row.querySelector(".cli-prefix");
+  // The prompt/command/read-only tokens are painted as an inline prefix, and `.cli-line` still
+  // names it for host stylesheets.
+  const prefix = q<HTMLElement>(root, ".cli-prefix");
   assert.ok(prefix, "prompt/command/read-only tokens are painted as one inline prefix");
-  assert.ok(prefix!.querySelector(".cli-line"), "the prompt+command live in the prefix");
-  assert.ok(row.querySelector(".term-edit"), "the input shares the row (not a column beside it)");
-  // An UNMEASURABLE prefix (hidden view / zero-width layout, as in jsdom) must NOT be written as a
-  // ~0 indent - that would make the typed text overlap the painted prompt the next time bash is
-  // shown. No measurement -> keep the last good value rather than clobbering it.
-  assert.equal(
-    row.style.getPropertyValue("--te-indent"),
-    "",
-    "no bogus indent from a 0-width measure",
+  assert.ok(prefix!.classList.contains("cli-line"), "the prompt+command live in the prefix");
+  assert.ok(q(root, ".term-edit"), "the input shares the row (not a column beside it)");
+
+  // No absolutely-positioned nowrap prefix and no `text-indent` on the input: an indent shifts
+  // only the FIRST line, so once the prefix itself wraps the two layers disagree and the typed
+  // text either overlaps the prompt or is pushed to the next line. There is no indent variable,
+  // no width threshold and no prefix-block mode.
+  const styleText = qa<HTMLElement>(root, "style")
+    .map((s) => s.textContent ?? "")
+    .join("\n");
+  assert.doesNotMatch(styleText, /--te-indent/, "the indent variable is gone");
+  assert.doesNotMatch(styleText, /\.cli-row/, "the two-layer command row is gone");
+  assert.doesNotMatch(
+    styleText,
+    /\.cli-row\.prefix-block/,
+    "the prefix-on-its-own-line fallback mode is gone",
   );
+  assert.doesNotMatch(
+    styleText,
+    /\.cli-prefix\s*\{[^}]*position:\s*absolute/,
+    "the prefix is not an absolutely-positioned layer",
+  );
+  assert.equal(
+    (q<HTMLElement>(root, ".cli-row") as HTMLElement | null)?.style.getPropertyValue("--te-indent"),
+    undefined,
+    "nothing writes an indent onto a command row any more",
+  );
+
+  // In the shared flow the prefix and the editable command are INLINE SIBLINGS of one container.
+  const flow = q<HTMLElement>(root, ".te-flow");
+  assert.ok(flow, "there is a single shared inline flow");
+  assert.ok(flow!.querySelector(".cli-prefix"), "the prefix lives in that flow");
+  assert.ok(flow!.querySelector(".te-cmd"), "…and so does the editable command");
   handle.destroy();
 });
 
 test("time/bbox are shown ONCE (no duplicate summary under the prompt)", async () => {
   const { root, handle } = await mountTerm();
   await wait(20);
+  const input = q<HTMLTextAreaElement>(root, ".te-input") as HTMLTextAreaElement;
+  input.focus();
+  input.value = 'time="2000 TO 2010" time_select=flexible ';
+  input.setSelectionRange(input.value.length, input.value.length);
+  input.dispatchEvent(new win.Event("input", { bubbles: true }));
+  await wait(340);
+  // time/bbox are FIRST-CLASS editable tokens, so they appear exactly once - in the command line
+  // itself. There is deliberately no second, read-only summary strip repeating the same values.
+  const occurrences = (haystack: string): number => (haystack.match(/2000 TO 2010/g) ?? []).length;
+  const view = q<HTMLElement>(root, ".te-view") as HTMLElement; // the shell tab's view
+  assert.equal(occurrences(input.value), 1, "the token is in the editable line");
   assert.equal(
-    (q<HTMLElement>(root, ".te-extra")?.textContent ?? "").trim(),
-    "",
-    "the aux line does not repeat the same time/bbox values",
+    occurrences(q<HTMLElement>(root, ".cli-prefix")?.textContent ?? ""),
+    0,
+    "…and NOT repeated in the read-only prefix",
+  );
+  assert.equal(
+    occurrences(view.textContent ?? "") -
+      occurrences(q<HTMLElement>(root, ".te-hl")?.textContent ?? ""),
+    0,
+    "…nor anywhere else in the view besides the highlight of that same line",
   );
   handle.destroy();
 });
@@ -551,7 +589,11 @@ test("the window cannot be dragged past any edge of the page", async () => {
 test("exactly ONE cursor per tab (the native caret is hidden; we draw our own)", async () => {
   const { root, handle } = await mountTerm();
   await wait(20);
-  const styleText = q<HTMLElement>(root, "style")?.textContent ?? "";
+  // The terminal ships its own stylesheet, so the rules live in the package's <style>, not the
+  // app's. Concatenate every stylesheet in the subtree rather than assuming which one holds them.
+  const styleText = qa<HTMLElement>(root, "style")
+    .map((s) => s.textContent ?? "")
+    .join("\n");
   // both inputs must hide the native caret, or it shows up alongside the drawn block cursor
   assert.match(
     styleText,
@@ -1074,7 +1116,6 @@ test("Terminal hint lives in a single footer, not duplicated in the scrolling bo
   assert.ok(foot, "the terminal has a footer strip");
   assert.ok(foot!.querySelector(".te-hint"), "the hint is in the footer");
   assert.match(foot!.textContent ?? "", /Tab.*completes/, "footer carries the keyboard hint");
-  // the keys are real keycaps (<kbd>), not plain text
   assert.ok(qa<HTMLElement>(foot!, "kbd").length >= 3, "the hint keys render as keycaps");
   // one shared copy - it must not be duplicated in both the bash and python views
   assert.equal(qa<HTMLElement>(cmd, ".te-hint").length, 1, "exactly one hint, shared");

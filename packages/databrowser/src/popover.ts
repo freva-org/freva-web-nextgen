@@ -1,14 +1,24 @@
 // popover.ts - one active floating popover at a time, anchored to a trigger element.
-// Uses fixed positioning + getBoundingClientRect so it stays correct regardless of which
-// inner scroll container the anchor lives in. Outside-click, Esc, scroll and resize teardown
-// all route through the Disposables registry so destroy() leaves nothing behind.
+//
+// Positioning is COMPONENT-SCOPED, not viewport-scoped: the popover is a child of `.freva-db`, is
+// `position: absolute`, and is placed and clamped by the shared helper in anchor.ts. See that file
+// for why `position: fixed` is wrong inside an embedded host.
+//
+// Outside-click, Esc, scroll and resize teardown all route through the Disposables registry so
+// destroy() leaves nothing behind.
 
+import {
+  anchorVisible,
+  positionAnchored,
+  type OverlayPlacement,
+  type ScrollBehavior,
+} from "./anchor.js";
 import type { Disposables } from "./dom.js";
 import { el } from "./dom.js";
 
 export interface PopoverOptions {
   /** below = drop under the anchor (menus); right = sit to the right (editors). */
-  placement?: "below" | "right";
+  placement?: OverlayPlacement;
   className?: string;
   onClose?: () => void;
   /** focus the first focusable child after opening. */
@@ -17,6 +27,12 @@ export interface PopoverOptions {
    *  the replacement anchor (or null -> close). Lets an editor whose own action re-renders the sidebar
    *  (e.g. drawing a bbox triggers a search) stay open, re-anchored to the rebuilt row. */
   reanchor?: () => HTMLElement | null;
+  /**
+   * What an EXTERNAL scroll (the page, the results scroller, any ancestor) does.
+   * Defaults to 'close' for menus; an editor that supplies `reanchor` defaults to 'reposition'.
+   * Scrolling INSIDE the popover never closes it either way.
+   */
+  scrollBehavior?: ScrollBehavior;
 }
 
 export class PopoverManager {
@@ -25,6 +41,7 @@ export class PopoverManager {
   private anchor: HTMLElement | null = null;
   private onCloseCb: (() => void) | null = null;
   private reanchorCb: (() => HTMLElement | null) | null = null;
+  private scrollMode: ScrollBehavior = "close";
 
   constructor(root: HTMLElement, dis: Disposables) {
     this.root = root;
@@ -55,14 +72,38 @@ export class PopoverManager {
         this.close();
         return;
       }
+      // The anchor may still exist but have scrolled out of the component's visible area (a nested
+      // result scroller). A menu pointing at something the user cannot see is just clutter.
+      if (!anchorVisible(this.root, this.anchor) && !this.tryReanchor()) {
+        this.close();
+        return;
+      }
       this.position(this.current, this.anchor, this.placement);
     };
-    this.placement = "below";
     dis.listen(window, "resize", reposition);
-    dis.listen(window, "scroll", reposition, true);
+    // Capture phase: this must see scrolls of INNER containers (the results scroller, the sidebar,
+    // a host's own panel), which do not bubble.
+    dis.listen(
+      window,
+      "scroll",
+      (e) => {
+        if (!this.current) return;
+        // A scroll that happened INSIDE the popover is the user reading its own list - never a
+        // reason to dismiss it. NB a scroll on `window` targets the Window, which is not a Node -
+        // passing it to contains() throws, so the node check comes first.
+        const target = e.target as Node | null;
+        if (target && typeof target.nodeType === "number" && this.current.contains(target)) return;
+        if (this.scrollMode === "close") {
+          this.close();
+          return;
+        }
+        reposition();
+      },
+      true,
+    );
   }
 
-  private placement: "below" | "right" = "below";
+  private placement: OverlayPlacement = "below";
 
   isOpen(): boolean {
     return this.current !== null;
@@ -75,7 +116,7 @@ export class PopoverManager {
    */
   closeIfAnchorDetached(): void {
     if (this.current && this.anchor && !this.anchor.isConnected) {
-      if (this.tryReanchor()) this.position(this.current, this.anchor!, this.placement);
+      if (this.tryReanchor()) this.position(this.current, this.anchor, this.placement);
       else this.close();
     }
   }
@@ -100,7 +141,8 @@ export class PopoverManager {
       class: `pop show${opts.className ? " " + opts.className : ""}`,
       role: "dialog",
     });
-    pop.style.position = "fixed";
+    // ABSOLUTE, in the component root's coordinate space - see anchor.ts.
+    pop.style.position = "absolute";
     for (const c of Array.isArray(content) ? content : [content]) pop.append(c);
     this.root.append(pop);
     this.current = pop;
@@ -108,48 +150,21 @@ export class PopoverManager {
     this.onCloseCb = opts.onClose ?? null;
     this.reanchorCb = opts.reanchor ?? null;
     this.placement = opts.placement ?? "below";
+    // An editor that can re-anchor is one that survives its own re-render, so repositioning is the
+    // sensible default for it; everything else is a transient menu.
+    this.scrollMode = opts.scrollBehavior ?? (opts.reanchor ? "reposition" : "close");
     this.position(pop, anchor, this.placement);
     if (opts.autoFocus) {
       const focusable = pop.querySelector<HTMLElement>(
-        "input, button, [tabindex], select, textarea",
+        "input, button, [href], [tabindex], select, textarea",
       );
       focusable?.focus();
     }
     return pop;
   }
 
-  private position(pop: HTMLElement, anchor: HTMLElement, placement: "below" | "right"): void {
-    const margin = 8;
-    // Never let a popover be taller than the viewport - otherwise a tall one (the bbox map + inputs)
-    // runs off the bottom with no way back. Cap it and let its own content scroll.
-    const maxH = window.innerHeight - margin * 2;
-    pop.style.maxHeight = `${maxH}px`;
-    pop.style.overflowY = "auto";
-    const r = anchor.getBoundingClientRect();
-    const pw = pop.offsetWidth;
-    const ph = Math.min(pop.offsetHeight, maxH);
-    let top: number;
-    let left: number;
-    if (placement === "right") {
-      top = r.top;
-      left = r.right + margin;
-      if (left + pw > window.innerWidth - margin) left = r.left - pw - margin;
-    } else {
-      top = r.bottom + 6;
-      left = r.left;
-    }
-    if (left + pw > window.innerWidth - margin) left = window.innerWidth - pw - margin;
-    if (left < margin) left = margin;
-    // Vertical: prefer the natural spot; if it would overflow the bottom, flip above (for 'below') or
-    // slide up (for 'right'); then clamp so the WHOLE popover is on-screen (top and bottom both).
-    if (top + ph > window.innerHeight - margin) {
-      top = placement === "right" ? window.innerHeight - ph - margin : r.top - ph - 6;
-    }
-    if (top < margin) top = margin;
-    if (top + ph > window.innerHeight - margin)
-      top = Math.max(margin, window.innerHeight - ph - margin);
-    pop.style.top = `${top}px`;
-    pop.style.left = `${left}px`;
+  private position(pop: HTMLElement, anchor: HTMLElement, placement: OverlayPlacement): void {
+    positionAnchored(this.root, pop, anchor, { placement });
   }
 
   close(): void {
