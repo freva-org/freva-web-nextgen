@@ -1,5 +1,11 @@
 # @freva-org/databrowser
 
+## 2609.0.0
+
+### Major Changes
+
+- 891b260: Add /metadata and /intent subpath, define options for managing the facets
+
 ## 2608.1.1
 
 ### Patch Changes
