@@ -373,7 +373,6 @@ describe("buildXarrayRepr", () => {
   });
 });
 
-
 function resetSheets(): void {
   document.head.innerHTML = "";
   // `head.innerHTML` does not touch adopted sheets: they are a property of the document, not of
