@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/databrowser",
-  "version": "2608.1.1",
+  "version": "2609.0.0",
   "description": "Freva Data-Browser - framework-free, typed, first-party runtime dependencies only (@freva-org/freva-client-terminal, @freva-org/data-inspector).",
   "type": "module",
   "repository": {
