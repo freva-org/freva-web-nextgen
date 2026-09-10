@@ -1,7 +1,5 @@
-// The package used STANDALONE - no data browser anywhere in the process.
-//
-// That is the point of the seam: the window knows about text, segments and callbacks, and nothing
-// about facets. If any of these tests needed application state, the seam would be leaking.
+// The package used STANDALONE - no data browser anywhere in the process. The window knows text,
+// segments and callbacks and nothing about facets; a test needing application state would leak.
 
 import "./helpers.js";
 import assert from "node:assert/strict";
@@ -16,8 +14,8 @@ const q = <T extends Element>(r: ParentNode, s: string): T | null => r.querySele
 const qa = <T extends Element>(r: ParentNode, s: string): T[] => [...r.querySelectorAll<T>(s)];
 
 /**
- * A minimal host: one tab over a tiny "greet NAME" grammar. Deliberately NOT a facet browser - a
- * second freva-client command should be able to register a tab exactly like this.
+ * A minimal host: one tab over a tiny "greet NAME" grammar - NOT a facet browser, so a second
+ * freva-client command can register a tab exactly like this.
  */
 function greetTab(state: { text: string; commits: string[] }): TerminalTab {
   return {
@@ -104,7 +102,6 @@ test("it ships its own stylesheet, scoped to its own root", () => {
   const style = q<HTMLElement>(root, "style");
   assert.ok(style, "the window injects its stylesheet itself - no host CSS required");
   assert.equal(style!.textContent, STYLES);
-  // Everything is under `.freva-term`, so nothing leaks into a host page.
   const selectors = STYLES.split("\n").filter((l) => /^[.#a-zA-Z[].*\{\s*$/.test(l.trim()));
   const unscoped = selectors.filter((l) => !l.includes(".freva-term") && !l.trim().startsWith("@"));
   assert.deepEqual(unscoped, [], "every rule is scoped to the package root");
@@ -116,9 +113,8 @@ test("the prefix and the command are inline SIBLINGS in one flow - no indent lay
   const flow = q<HTMLElement>(root, ".te-flow");
   assert.ok(flow, "there is a shared flow container");
   const kids = [...flow!.children];
-  // Prefix, command, then the two PRESENTATION-ONLY siblings: the ghost layer and the parked
-  // caret. Both live outside the editable node on purpose - a ghost inside it would end up in
-  // `Editor.value`, which is the buffer that gets committed, copied and parsed.
+  // Prefix, command, then two PRESENTATION-ONLY siblings: ghost layer and parked caret. Both sit
+  // outside the editable node - a ghost inside would land in `Editor.value`, the committed buffer.
   assert.equal(kids.length, 4, "prefix, command, ghost layer, parked caret");
   assert.ok(kids[1].classList.contains("te-cmd"), "the command is the second child");
   assert.ok(kids[2].classList.contains("te-ghost"), "the ghost is a SIBLING of the command");
@@ -143,10 +139,8 @@ test("a plain-textarea fallback is retained for engines without plaintext-only",
 });
 
 test("the open window is positioned in its CONTAINER's space, never the viewport's", () => {
-  // A stylesheet-level guard on purpose. jsdom does not compute `position`, so only a real browser
-  // can catch the window reverting to `position: fixed`, and that reversion is silent. `fixed`
-  // inside a transformed or contained ancestor resolves against THAT ancestor, and inside an
-  // `overflow: hidden` mount the window is simply clipped away.
+  // A stylesheet-level guard: jsdom computes no `position`, so a revert to `fixed` is invisible
+  // here. `fixed` resolves against a transformed ancestor; an `overflow: hidden` mount clips it.
   const rules = STYLES.match(/\.freva-term\.show\s*\{[^}]*\}/g) ?? [];
   assert.ok(rules.length > 0, "the open-window rule exists");
   const positioned = rules.filter((r) => /position:/.test(r));
@@ -184,9 +178,7 @@ test("the settings menu opens ABOVE the bar when the window is minimized", async
     );
     assert.equal(menu.style.top, "auto");
     assert.match(menu.style.bottom, /calc\(100% \+/, "it is flipped over the title bar");
-    // …and it is clamped to the container, so it cannot run off the top either.
     assert.ok(parseFloat(menu.style.maxHeight) <= 560, "clamped within the container");
-    // The controls it exists for stay reachable.
     assert.ok(qa(menu, ".bg-sw").length > 0, "colour swatches are present");
     assert.ok(q(menu, ".term-alpha"), "the opacity control is present");
     assert.match(STYLES, /\.freva-term\.minimized \.term-menu\.show\s*\{\s*display:\s*block/);
@@ -211,8 +203,10 @@ test("extra menu items from the host are rendered and stay clickable while docke
   await tick();
   (q<HTMLElement>(handle.el, ".tl.min") as HTMLElement).click();
   (q<HTMLElement>(handle.el, ".term-kebab") as HTMLElement).click();
-  const items = qa<HTMLElement>(handle.el, ".term-menu .tmn-item");
+  // Scoped to the host's half: the appearance group's `Reset appearance` row is not a host item.
+  const items = qa<HTMLElement>(handle.el, ".tmn-sections .tmn-item");
   assert.equal(items.length, 2);
+  assert.ok(q(handle.el, ".tmn-group .tmn-reset"), "the appearance group has its own reset row");
   items[0].click();
   assert.equal(helped, 1, "the host's callback ran");
   assert.equal(items[1].getAttribute("rel"), "noopener noreferrer");
@@ -280,7 +274,6 @@ test("Tab completes, and Esc-then-Tab is the advertised way out (WCAG 2.1.2)", a
   };
   assert.equal(tab(), true, "Tab is the terminal's - it completes rather than moving focus");
   assert.equal(input.value, "name=", "…and it completed");
-  // Esc arms the exit, and the footer hint says so.
   input.dispatchEvent(
     new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
   );
@@ -320,10 +313,8 @@ test("two mounts are independent", async () => {
 });
 
 test("the plain surface is APPLIED on the first render, not just declared", () => {
-  // Initialising `mode` to "plain" and then calling `setMode("plain")` must still write the DOM:
-  // an early return there leaves `data-mode` unset, and `.te-plain` - which the stylesheet hides
-  // until that attribute says otherwise - stays invisible. Python is always plain, so that gives
-  // Python a textarea nobody can see, focus or click.
+  // `setMode("plain")` on an already-"plain" `mode` must still write the DOM: an early return
+  // leaves `data-mode` unset, so `.te-plain` stays hidden and always-plain Python loses its input.
   const { root, handle } = mountStandalone();
   const editor = q<HTMLElement>(root, ".te-editor");
   assert.ok(editor, "there is an editor root");
@@ -332,8 +323,8 @@ test("the plain surface is APPLIED on the first render, not just declared", () =
   const flow = q<HTMLElement>(root, ".te-flow");
   assert.equal(plain!.style.display, "", "the plain surface is not inline-hidden");
   assert.equal(flow!.style.display, "none", "the rich flow is inline-hidden while plain is active");
-  // …and the reveal is keyed off the GENERIC editor class, which every tab's root carries - not off
-  // a per-tab class that python's `.py-wrap` root does not have.
+  // …and the reveal is keyed off the GENERIC editor class every tab root carries, not off a
+  // per-tab class that python's `.py-wrap` root lacks.
   assert.ok(
     STYLES.includes('.te-editor[data-mode="plain"] .te-plain'),
     "the stylesheet reveals the plain surface via .te-editor",
@@ -345,8 +336,8 @@ test("the plain surface is APPLIED on the first render, not just declared", () =
 });
 
 test("an unaccepted suggestion is never part of the buffer", () => {
-  // The ghost is presentation. It lives OUTSIDE the editable node, so `Editor.value` - the buffer
-  // that is committed, copied, parsed and retained - cannot contain it however the painting goes.
+  // The ghost is presentation and lives OUTSIDE the editable node, so the committed, copied and
+  // parsed `Editor.value` can never contain it.
   const { root, handle } = mountStandalone();
   const input = q<HTMLTextAreaElement>(root, ".te-input")!;
   input.focus();
