@@ -16,6 +16,10 @@
  * a partial release rather than failing. One package failing skips only the
  * packages that depend on it.
  *
+ * Two lists reach $GITHUB_OUTPUT: `published` is what this run pushed to the
+ * registry, `tags` is every version it confirmed there. `tags` is the wider of
+ * the two, so a re-run of a partial release still tags the first attempt's work.
+ *
  * Usage: node scripts/publish-packages.mjs [--dry-run]
  */
 import { execFileSync } from "node:child_process";
@@ -60,7 +64,7 @@ function isPublished(name, version) {
 }
 
 /** The registry is read-through-cached, so a fresh version is not instantly visible. */
-function waitForRegistry(name, version, timeoutMs = 120_000) {
+function waitForRegistry(name, version, timeoutMs = 600_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (isPublished(name, version)) return true;
@@ -130,73 +134,104 @@ log("");
 
 const published = [];
 const skipped = [];
+const unconfirmed = [];
 const failed = new Set();
 
-for (const w of ordered) {
-  const { name, version } = w.pkg;
-  const edges = edgesOf(w);
+/** The run's summary and step outputs, written even if a pass ends early. */
+function report() {
+  log("");
+  if (published.length) log(`Published: ${published.join(", ")}`);
+  if (skipped.length) log(`Already published: ${skipped.join(", ")}`);
+  if (unconfirmed.length) log(`Awaiting the registry cache: ${unconfirmed.join(", ")}`);
+  if (failed.size) log(`Failed: ${[...failed].join(", ")}`);
 
-  const blocked = edges.filter((e) => failed.has(e.name)).map((e) => e.name);
-  if (blocked.length) {
-    log(`- ${name}@${version}: SKIPPED, waiting on ${blocked.join(", ")}`);
-    failed.add(name);
-    continue;
+  if (process.env.GITHUB_OUTPUT) {
+    const tags = [...published, ...skipped];
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `published=${JSON.stringify(published)}\ntags=${JSON.stringify(tags)}\n`,
+    );
   }
+}
 
-  if (isPublished(name, version)) {
-    log(`- ${name}@${version}: already on npm`);
-    skipped.push(`${name}@${version}`);
-    continue;
-  }
+try {
+  for (const w of ordered) {
+    const { name, version } = w.pkg;
+    try {
+      const edges = edgesOf(w);
 
-  // In a dry run a package published earlier in this same pass counts as present,
-  // so the plan reads as it would really unfold.
-  const satisfied = (e) =>
-    (DRY && published.includes(`${e.name}@${e.version}`)) || isPublished(e.name, e.version);
-  const missing = edges.filter((e) => !satisfied(e));
-  if (missing.length) {
-    const list = missing.map((e) => `${e.name}@${e.version}`).join(", ");
-    log(`- ${name}@${version}: FAILED, not installable yet - ${list} is not on npm`);
-    failed.add(name);
-    continue;
-  }
+      // A failed package blocks a dependent only at the version that dependent
+      // pins: an esm.sh pin often names an older release that is already live.
+      const blocked = edges
+        .filter((e) => failed.has(e.name) && !isPublished(e.name, e.version))
+        .map((e) => `${e.name}@${e.version}`);
+      if (blocked.length) {
+        log(`- ${name}@${version}: SKIPPED, waiting on ${blocked.join(", ")}`);
+        failed.add(name);
+        continue;
+      }
 
-  if (DRY) {
-    log(`- ${name}@${version}: would publish`);
-    published.push(`${name}@${version}`);
-    continue;
-  }
+      if (isPublished(name, version)) {
+        log(`- ${name}@${version}: already on npm`);
+        skipped.push(`${name}@${version}`);
+        continue;
+      }
 
-  try {
-    log(`- ${name}@${version}: publishing...`);
-    run("npm", ["publish", "--provenance", "--access=public"], { cwd: w.dir, stdio: "inherit" });
-  } catch (err) {
-    const text = `${err.stdout ?? ""}${err.stderr ?? ""}`;
-    if (/EPUBLISHCONFLICT|cannot publish over/i.test(text)) {
-      log(`- ${name}@${version}: already on npm`);
-      skipped.push(`${name}@${version}`);
-      continue;
+      // In a dry run a package published earlier in this same pass counts as present,
+      // so the plan reads as it would really unfold.
+      const satisfied = (e) =>
+        (DRY && published.includes(`${e.name}@${e.version}`)) || isPublished(e.name, e.version);
+      const missing = edges.filter((e) => !satisfied(e));
+      if (missing.length) {
+        const list = missing.map((e) => `${e.name}@${e.version}`).join(", ");
+        log(`- ${name}@${version}: FAILED, not installable yet - ${list} is not on npm`);
+        failed.add(name);
+        continue;
+      }
+
+      if (DRY) {
+        log(`- ${name}@${version}: would publish`);
+        published.push(`${name}@${version}`);
+        continue;
+      }
+
+      try {
+        log(`- ${name}@${version}: publishing...`);
+        run("npm", ["publish", "--provenance", "--access=public"], {
+          cwd: w.dir,
+          stdio: "inherit",
+        });
+      } catch (err) {
+        const text = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+        if (/EPUBLISHCONFLICT|cannot publish over/i.test(text)) {
+          log(`- ${name}@${version}: already on npm`);
+          skipped.push(`${name}@${version}`);
+          continue;
+        }
+        log(`- ${name}@${version}: FAILED to publish\n${text.trim()}`);
+        failed.add(name);
+        continue;
+      }
+
+      // npm accepted the upload, so the version is live and earns its tag. Only
+      // the read-through cache is behind, and a dependent that needs it in this
+      // same pass still has to see it on the registry to publish.
+      published.push(`${name}@${version}`);
+      if (waitForRegistry(name, version)) {
+        log(`- ${name}@${version}: published`);
+      } else {
+        log(`- ${name}@${version}: published, not served by the registry yet`);
+        unconfirmed.push(`${name}@${version}`);
+      }
+    } catch (err) {
+      // Only an unreachable registry gets this far; treat it as this package's
+      // failure so the rest of the pass, the summary and the outputs survive.
+      log(`- ${name}@${version}: FAILED, the registry is unreachable - ${err.message}`);
+      failed.add(name);
     }
-    log(`- ${name}@${version}: FAILED\n${text.trim()}`);
-    failed.add(name);
-    continue;
   }
-
-  if (!waitForRegistry(name, version)) {
-    log(`- ${name}@${version}: published, but the registry has not served it yet`);
-    failed.add(name);
-    continue;
-  }
-  log(`- ${name}@${version}: published`);
-  published.push(`${name}@${version}`);
+} finally {
+  report();
 }
 
-log("");
-if (published.length) log(`Published: ${published.join(", ")}`);
-if (skipped.length) log(`Already published: ${skipped.join(", ")}`);
-if (failed.size) log(`Failed: ${[...failed].join(", ")}`);
-
-if (process.env.GITHUB_OUTPUT) {
-  appendFileSync(process.env.GITHUB_OUTPUT, `published=${JSON.stringify(published)}\n`);
-}
 process.exit(failed.size ? 1 : 0);

@@ -1,4 +1,4 @@
-name: Publish
+name: Release
 
 on:
   push:
@@ -59,16 +59,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ts-oidc-auth-client's prepublishOnly runs its strict three-engine gate.
-      - name: Install Playwright engines
-        run: npm exec -- playwright install --with-deps chromium firefox webkit
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm test
-
       # Changesets present -> open/refresh the "Version Packages" PR, publish
       # nothing. Changesets consumed -> that PR was just merged, so the publish
       # step below runs. An ordinary feature merge can only move the release PR
@@ -84,13 +74,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.tok.outputs.token }}
 
+      # Only the publish path needs a build, and every other push to main stops at
+      # the version PR. ts-oidc-auth-client's prepublishOnly runs its strict
+      # three-engine gate, so the engines come with it.
+      - name: Install Playwright engines
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: npm exec -- playwright install --with-deps chromium firefox webkit
+
+      - name: Build
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: npm run build
+
+      - name: Test
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: npm test
+
       - name: Publish
         id: publish
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: node scripts/publish-packages.mjs
 
+      # `tags` covers versions found already on the registry too, so a re-run of a
+      # partial release tags what the first attempt published. A tag marks the
+      # commit that released its version, so an existing one keeps its target.
       - name: Tag published versions
-        if: steps.publish.outputs.published != '' && steps.publish.outputs.published != '[]'
+        if: steps.publish.outputs.tags != '' && steps.publish.outputs.tags != '[]'
         env:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
         run: |
@@ -98,7 +106,12 @@ jobs:
           git config user.email "freva-bot@users.noreply.github.com"
           git remote set-url origin \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          for tag in $(echo '${{ steps.publish.outputs.published }}' | jq -r '.[]'); do
-            git tag -f "$tag"
-            git push -f origin "$tag"
+          existing=$(git ls-remote --tags origin | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u)
+          for tag in $(echo '${{ steps.publish.outputs.tags }}' | jq -r '.[]'); do
+            if printf '%s\n' "$existing" | grep -qxF "$tag"; then
+              echo "$tag is already tagged."
+              continue
+            fi
+            git tag "$tag"
+            git push origin "$tag"
           done
