@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/freva-client-terminal",
-  "version": "2608.0.0",
+  "version": "2609.0.0",
   "description": "Reusable, framework-free terminal window for freva-client commands - UI only, zero runtime dependencies.",
   "type": "module",
   "repository": {
