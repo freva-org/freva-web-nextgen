@@ -471,20 +471,64 @@ test("the title bar is two groups with a gap between them, and the ⋮ menu is l
   win.destroy();
 });
 
-test("`controlsSide` moves the window controls without disturbing the application group", () => {
+const trafficSide = (win: ReturnType<typeof createTerminalWindow>): string =>
+  win.barStart.querySelector(".traffic")
+    ? "start"
+    : win.barEnd.querySelector(".traffic")
+      ? "end"
+      : "nowhere";
+
+test("the window controls sit on the side the chosen OS puts them on", () => {
   const host = makeHost();
-  // `data-os` decides how the controls LOOK; this decides where they are. `start` is the default.
-  const left = createTerminalWindow(host, { os: "linux", copyText: () => "x" });
-  assert.ok(left.barStart.querySelector(".traffic"), "the default is not the left");
+  // macOS keeps its dots at the left; Windows and GNOME put their cluster at the right, which is
+  // what this package's own OS style rules say.
+  for (const [os, side] of [
+    ["mac", "start"],
+    ["windows", "end"],
+    ["linux", "end"],
+  ] as const) {
+    const win = createTerminalWindow(host, { os, copyText: () => "x" });
+    assert.equal(trafficSide(win), side, `${os} controls are on the wrong side`);
+    win.destroy();
+  }
+
+  // No `os` is a mac-styled window; so is an unrecognised one.
+  for (const opts of [{}, { os: "haiku" }]) {
+    const win = createTerminalWindow(host, opts);
+    assert.equal(trafficSide(win), "start");
+    win.destroy();
+  }
+});
+
+test("`controlsSide` overrides the OS default in either direction", () => {
+  const host = makeHost();
+  const left = createTerminalWindow(host, { os: "linux", controlsSide: "start" });
+  assert.equal(trafficSide(left), "start", "a GNOME window could not be asked for the left");
   left.destroy();
 
-  const right = createTerminalWindow(host, { os: "linux", controlsSide: "end" });
-  assert.ok(right.barEnd.querySelector(".traffic"), "`end` did not move the controls");
-  // …and the ⋮ menu is STILL the last application control: with `order: 99` on the traffic cluster
-  // the gap opens after the menu, pressing the window's controls against the host's title.
-  const end = Array.from(right.barEnd.children).map((n) => String(n.className).split(" ")[0]);
-  assert.equal(end[end.length - 1], "term-kebab");
+  const right = createTerminalWindow(host, { os: "mac", controlsSide: "end" });
+  assert.equal(trafficSide(right), "end", "a mac window could not be asked for the right");
   right.destroy();
+});
+
+test("controls on the end sit outboard of the application's own, and the gap stays before them", () => {
+  const host = makeHost();
+  const win = createTerminalWindow(host, { os: "windows", copyText: () => "x" });
+  // The cluster is at the window's outer edge with copy and the ⋮ menu inboard of it, and it is
+  // there in the DOM, so a reader tabs through the bar in the order they see it.
+  const end = Array.from(win.barEnd.children).map((n) => String(n.className).split(" ")[0]);
+  assert.deepEqual(end, ["copy-btn", "term-kebab", "traffic"]);
+  assert.equal(win.bar.children[1], win.barSpacer, "the spacer left the middle");
+
+  // A host control still lands before the menu, never after it.
+  const extra = document.createElement("button");
+  extra.className = "host-control";
+  win.addBarControl(extra, "end");
+  assert.deepEqual(
+    Array.from(win.barEnd.children).map((n) => String(n.className).split(" ")[0]),
+    ["copy-btn", "host-control", "term-kebab", "traffic"],
+  );
+  win.destroy();
 });
 
 // confirmation

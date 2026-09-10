@@ -165,10 +165,12 @@ export interface TerminalWindowOptions {
    */
   bounds?: () => HTMLElement | null;
   /**
-   * Which side the window's own close/minimise/maximise cluster sits on. Default `start` (left).
-   * `os` decides how those controls LOOK and in what order; this decides where they are. Following
-   * the reader's OS for POSITION would put one product's close button on different edges for two
-   * people looking at it together; `end` is there for a host that wants the desktop convention.
+   * Which side the window's own close/minimise/maximise cluster sits on.
+   *
+   * Defaults to the side the chosen `os` uses: `start` for `mac` and for an unrecognised value,
+   * `end` for `windows` and `linux`. The edge is part of imitating a platform's title bar, not
+   * separable from it. Set this to override the default in either direction, for a host that wants
+   * one convention for every reader.
    */
   controlsSide?: "start" | "end";
   /** Draw the footer strip. Omit for a window whose content owns the whole body. */

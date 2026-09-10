@@ -192,10 +192,10 @@ export function createTerminalWindow(
   //
   //   [ start: window controls, then the host's identity ] [ spacer ] [ end: copy, host, kebab ]
   //
-  // Two named groups, not one flat row: `data-os="windows"` and `data-os="linux"` move `.traffic`
-  // to the end with `order: 99`, and a spacer with no order of its own stays BEFORE the copy
-  // button, pushing the right-hand controls against the host's title. A gap between two named
-  // groups holds for every `data-os`, and `addBarControl` puts a control in the right group.
+  // Two named groups, not one flat row: the gap is BETWEEN two elements rather than at a position
+  // in a list, so no control can drift out of its group and the spacer cannot end up on the wrong
+  // side of one. That holds for every `data-os`, and `addBarControl` puts a control in the right
+  // group.
   const traffic = el("span", { class: "traffic" }, [closeBtn, minBtn, zoomBtn]);
   const spacer = el("div", { class: "spacer" });
   const barStart = el("div", { class: "term-bar-group term-bar-start" });
@@ -429,16 +429,25 @@ export function createTerminalWindow(
   }
 
   const resizeGrip = el("div", { class: "term-resize", "aria-hidden": "true" });
-  // WHICH SIDE THE WINDOW CONTROLS SIT ON: appearance follows the OS, position does not - the
-  // default is the left for every OS style. `data-os` decides how close/minimise/maximise LOOK and
-  // in what order - macOS dots, Windows labelled buttons, GNOME symbolic circles - because those
-  // are the shapes a visitor recognises. Where the cluster SITS is a different question: this is a
-  // panel inside somebody's page, not a window on their desktop, so following their OS edge gives
-  // the same portal a different title bar for two readers side by side and leaves the bar with two
-  // competing right-hand groups. A consumer that wants the desktop convention asks for it by name.
-  (opts.controlsSide === "end" ? barEnd : barStart).append(traffic);
+  // WHICH SIDE THE WINDOW CONTROLS SIT ON follows the OS style, because the edge is as much a part
+  // of a title bar as the shape of its buttons: macOS keeps its dots at the left, Windows and GNOME
+  // put their cluster at the right, which is what this package's own OS rules say - "labelled
+  // buttons on the RIGHT", "rounded symbolic buttons on the RIGHT". `data-os` decides how the
+  // controls look and in what order; this decides the edge, and `controlsSide` overrides it in
+  // either direction. An unrecognised `os` is styled as mac and placed with it.
+  const OS_CONTROLS_SIDE: Record<string, "start" | "end"> = {
+    mac: "start",
+    windows: "end",
+    linux: "end",
+  };
+  const controlsSide = opts.controlsSide ?? OS_CONTROLS_SIDE[opts.os ?? "mac"] ?? "start";
+  if (controlsSide === "start") barStart.append(traffic);
   if (opts.copyText) barEnd.append(copyBtn);
   barEnd.append(kebabBtn);
+  // Appended AFTER the application controls, so the cluster is at the window's outer edge with copy
+  // and the kebab menu inboard of it. Placing it in the DOM rather than reordering it in CSS is
+  // what keeps the tab order the same as the order a reader sees.
+  if (controlsSide === "end") barEnd.append(traffic);
   root.append(bar, body, ...(foot ? [foot] : []), settings, resizeGrip);
   mount.append(root);
 
@@ -941,8 +950,9 @@ export function createTerminalWindow(
     barStart,
     barEnd,
     addBarControl(node: HTMLElement, side: "start" | "end" = "start"): void {
-      // The ⋮ menu is ALWAYS last in the end group: it is the overflow for everything beside it,
-      // and an overflow menu that is not at the end of the row it overflows is a menu nobody finds.
+      // The ⋮ menu is ALWAYS last of the application controls: it is the overflow for everything
+      // beside it, and an overflow menu that is not at the end of the row it overflows is a menu
+      // nobody finds. A window cluster at this end sits outboard of it, not in the run it overflows.
       if (side === "end") barEnd.insertBefore(node, kebabBtn);
       else barStart.append(node);
       fitBar();
