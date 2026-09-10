@@ -3,13 +3,10 @@
 // and run `npm run gen:styles`. The component bundles no CSS file, so the tokens + component
 // styles live here as one constant.
 
-export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
-   Moved verbatim from the databrowser's stylesheet (so the visual identity is unchanged) and
-   re-scoped under \`.freva-term\`, which IS the window root. The package injects this into its own
-   subtree, so a host that never loads the databrowser still gets a complete terminal.
-
-   Host tokens (--shadow, --mono, --ui, --border-2) are inherited when the terminal is mounted
-   inside a themed app; the fallbacks below make standalone use work on a bare page. */
+export const STYLES = `/* styles.css - @freva-org/freva-client-terminal. Scoped under \`.freva-term\`, which IS the window
+   root, and injected into the package's own subtree, so a host without the databrowser still gets a
+   complete terminal. Host tokens (--shadow, --mono, --ui, --border-2) are inherited inside a themed
+   app; the fallbacks below make standalone use work on a bare page. */
 
 .freva-term {
   --font: var(--mono, "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace);
@@ -23,13 +20,16 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   box-sizing: border-box;
 }
 
-/* terminal - keeps its own dark tokens so it stays dark in day theme */
-/* Terminal colours are user-chosen and PERSISTED; each preset ships its own
-   foreground so text can never end up unreadable. Defaults to black. */
+/* Keeps its own dark tokens so it stays dark in day theme. Colours are user-chosen and PERSISTED;
+   each preset ships its own foreground so text can never be unreadable. Defaults to black. */
 .freva-term {
   --term-bg: #0b0f16;
   --term-fg: #d8e2f2;
   --term-alpha: 0.94;
+  /* Text size multiplier on CONTENT only: every content size is \`calc(Npx * var(--term-scale))\`,
+     no chrome size is - a title bar grown with its text stops fitting its own controls and drifts
+     the traffic lights away from the OS conventions they imitate. */
+  --term-scale: 1;
   /* token colours; the light presets override these (see [data-term-light]) */
   --term-prompt: #28c840;
   --term-key: #8fb6ff;
@@ -113,9 +113,8 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
    horizontal position is a variable so the dock can be dragged left/right (never up/down). */
 .freva-term.minimized {
   height: auto !important;
-  /* \`.freva-term.show\` sets \`min-height: 220px\` for an OPEN window. \`height: auto\` cannot shrink
-     past a minimum, so the dock stayed ~220px tall with \`.term-body\` hidden inside it - the large
-     empty dark rectangle. The minimum has to be reset, not just the height. */
+  /* \`.freva-term.show\` sets \`min-height: 220px\` for an OPEN window and \`height: auto\` cannot shrink
+     past a minimum, so the dock needs the minimum reset too, not just the height. */
   min-height: 0 !important;
   width: 300px !important;
   right: var(--dock-right, 20px) !important;
@@ -204,6 +203,25 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   background: #0e1626;
   border-bottom: 1px solid #1b2942;
 }
+/* Two groups with a gap between them. \`min-width: 0\` on the start group so a long session title
+   ellipsises instead of pushing the right group off the edge; \`flex: 0 0 auto\` on the end group so
+   its controls never squeeze - \`fitBar\` moves them to the kebab menu instead. */
+.freva-term .term-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.freva-term .term-bar-start {
+  flex: 0 1 auto;
+}
+.freva-term .term-bar-end {
+  flex: 0 0 auto;
+}
+.freva-term .spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
 .freva-term .traffic {
   display: inline-flex;
   gap: 8px;
@@ -244,7 +262,6 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 /* OS-specific window controls */
 /* Windows: labelled buttons on the RIGHT, order min · max · close, red close hover. */
 .freva-term[data-os="windows"] .traffic {
-  order: 99;
   gap: 0;
   margin: 0 0 0 4px;
 }
@@ -295,7 +312,6 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 
 /* Linux (GNOME-ish): rounded symbolic buttons on the RIGHT. */
 .freva-term[data-os="linux"] .traffic {
-  order: 99;
   gap: 7px;
   margin: 0 0 0 4px;
 }
@@ -380,14 +396,13 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 .freva-term .term-body {
   padding: 14px;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.85;
   color: var(--term-fg);
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  /* fills the window height (flex) and scrolls inside - so enlarging the window grows the body and
-     keeps the footer pinned to the bottom, instead of leaving dead space below a capped body. */
+  /* Fills the window height and scrolls inside, so the footer stays pinned to the bottom. */
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -451,7 +466,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 .freva-term .te-wrap {
   position: relative;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.85;
 }
 .freva-term .te-hl,
@@ -495,7 +510,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   display: none;
   margin-top: 8px;
   font-family: var(--ui);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--term-scale));
   color: #f0b86b;
   background: rgba(240, 121, 95, 0.12);
   border: 1px solid rgba(240, 121, 95, 0.4);
@@ -510,15 +525,13 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.9;
   padding: 4px 2px;
 }
-/* The generic multi-line edit row.
-   NO \`gap\`. The gutter is exactly as wide as the read-only prompt column (4 monospace columns for
-   python) and the editable layers carry the matching indent; a flex gap on top of that pushed the
-   typed kwargs a further 8px right of the \`>>> \` lines they have to line up under. These rules sit
-   ABOVE the per-tab ones deliberately, so a tab that states its own gutter metrics wins. */
+/* The generic multi-line edit row. NO \`gap\`: the gutter is exactly the read-only prompt column's
+   width (4 monospace columns for python) and the editable layers match it, so a gap pushes typed
+   kwargs 8px right of the \`>>> \` lines. Above the per-tab rules, so a tab's own metrics win. */
 .freva-term .term-editrow {
   display: flex;
   align-items: flex-start;
@@ -533,7 +546,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   white-space: pre;
   color: var(--term-dim);
   font-family: var(--font);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.65;
   user-select: none;
 }
@@ -570,23 +583,21 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   white-space: pre;
   color: #44566f;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.9;
   user-select: none;
 }
-/* …and the editable text is indented by the same 4 spaces the read-only \`    key=\` lines carry. */
 .freva-term .py-wrap {
   position: relative;
   flex: 1;
   min-width: 40px;
 }
-/* BOTH text layers carry the same 4-space indent as the read-only \`    key=\` lines. Padding the
-   WRAPPER doesn't work: .py-hl is absolutely positioned, so it ignores the wrapper's padding and
-   the overlay drifted out of alignment with the textarea beneath it. */
+/* BOTH text layers carry the 4-space indent of the read-only \`    key=\` lines; padding the WRAPPER
+   cannot do it, as absolutely-positioned \`.py-hl\` ignores it and drifts out of alignment. */
 .freva-term .py-hl,
 .freva-term .py-input {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.9;
   white-space: pre-wrap;
   word-break: break-word;
@@ -599,8 +610,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   color: var(--term-val);
   pointer-events: none;
 }
-/* caret-color TRANSPARENT: we draw our own blinking block. Leaving the native caret on gave TWO
-   cursors on the python line. */
+/* caret-color TRANSPARENT: the block cursor is drawn here, a native caret would be a second one. */
 .freva-term .py-input {
   position: relative;
   display: block;
@@ -627,10 +637,9 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 }
 .freva-term .py-list {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
 }
 
-/* Terminal host span */
 .freva-term .term-host {
   color: #6f9cf0;
   word-break: break-all;
@@ -678,7 +687,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   display: none;
 }
 
-/* In-terminal completion menu (shell-style, replaces the floating popover) */
+/* In-terminal completion menu (shell-style, not a floating popover) */
 .freva-term .te-menu,
 .freva-term .py-menu {
   display: none;
@@ -699,7 +708,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   gap: 14px;
   padding: 3px 10px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--term-scale));
   color: #c7d4ea;
   cursor: pointer;
 }
@@ -834,8 +843,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   }
 }
 
-/* it blinks whether or not the terminal has focus - it's the "start typing here" cue. When the
-   input IS focused it's fully solid; unfocused it's a hollow box, the usual terminal convention. */
+/* Blinks focused or not - the "start typing here" cue: solid when focused, hollow when not. */
 .freva-term .te-wrap:not(:focus-within) .te-caret,
 .freva-term .py-wrap:not(:focus-within) .te-caret {
   background: transparent;
@@ -891,6 +899,117 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 .freva-term .tmn-item:hover {
   background: rgba(255, 255, 255, 0.09);
 }
+.freva-term .tmn-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.freva-term .tmn-item:disabled:hover {
+  background: none;
+}
+/* A row that throws state away is coloured like one, so it cannot be hit by muscle memory. */
+.freva-term .tmn-danger {
+  color: #ff9a8b;
+}
+.freva-term[data-term-light="true"] .tmn-danger {
+  color: #a3352a;
+}
+
+/* The nested appearance group, OPEN by default: the nesting bounds the controls, not hides them. */
+.freva-term .tmn-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--term-fg);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+}
+.freva-term .tmn-sub:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.freva-term .tmn-sub-chev {
+  transition: transform 0.12s;
+  color: #7b8aa6;
+}
+.freva-term .tmn-group.open .tmn-sub-chev {
+  transform: rotate(90deg);
+}
+.freva-term .tmn-subpanel {
+  display: none;
+  padding: 6px 2px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.freva-term .tmn-group.open .tmn-subpanel {
+  display: block;
+}
+
+/* THE SAME GROUP, OPENING SIDEWAYS when the host has placed it among its own rows: unrolled inline
+   there, the panel pushes everything below it off the bottom of the menu, so it hangs off the row
+   instead and the row stays one row tall open or shut. LEFT by default because the menu hangs from
+   the right of the title bar; \`--right\` is measured when there is no room that side. Neither is a
+   coordinate: the panel anchors to the group's own box, so a dragged window carries it along. */
+/* The menu stops clipping while a flyout is out: it is a scroll container, and a scroll container
+   clips both axes whatever the other one says. See the note beside the class in \`window.ts\`. */
+.freva-term .term-menu.has-flyout {
+  overflow: visible;
+}
+.freva-term .tmn-group--side {
+  position: relative;
+}
+/* The offset and the cap are \`placeFlyout\`'s, measured against the viewport when the panel opens.
+   The fallbacks - level with the row, no cap - apply when it has not run. */
+.freva-term .tmn-group--side.open .tmn-subpanel {
+  display: block;
+  position: absolute;
+  top: var(--tmn-flyout-top, -8px);
+  right: calc(100% + 10px);
+  z-index: 1;
+  min-width: 196px;
+  max-height: var(--tmn-flyout-max, none);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--term-bg) 88%, #fff 8%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+.freva-term .tmn-group--side.tmn-group--right.open .tmn-subpanel {
+  right: auto;
+  left: calc(100% + 10px);
+}
+/* Pointing at where the panel appears, rather than down into a list that is not there. */
+.freva-term .tmn-group--side .tmn-sub-chev {
+  transform: rotate(180deg);
+}
+.freva-term .tmn-group--side.tmn-group--right .tmn-sub-chev {
+  transform: none;
+}
+.freva-term .tmn-group--side.open .tmn-sub-chev {
+  transform: rotate(180deg);
+}
+.freva-term .tmn-group--side.tmn-group--right.open .tmn-sub-chev {
+  transform: none;
+}
+.freva-term .tmn-group--side.open > .tmn-sub {
+  background: rgba(255, 255, 255, 0.09);
+}
+.freva-term .tmn-sub:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.freva-term .tmn-block + .tmn-block {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
 
 /* colour palette (persisted) */
 .freva-term .term-bg-panel {
@@ -898,7 +1017,6 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   gap: 7px;
   flex-wrap: wrap;
   padding: 0 2px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   margin-bottom: 4px;
 }
 .freva-term .bg-sw {
@@ -913,7 +1031,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   outline-offset: 1px;
 }
 
-/* completion menu: the empty state says so, instead of showing nothing -- */
+/* completion menu: the empty state says so, instead of showing nothing */
 .freva-term .tm-empty {
   color: #6f7f9c;
   font-style: italic;
@@ -923,13 +1041,10 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   background: none;
 }
 
-/* bash: the prefix and the command share ONE inline text flow.
-   The geometry to avoid - an absolutely-positioned, non-wrapping prefix layer, a
-   custom indent property written onto the input, a 62%-of-width threshold and a "prefix on its own
-   line" escape hatch - WAS the wrapping defect, not a workaround for it: an indent shifts only the
-   first line, so the moment the prefix itself wrapped, the painted prompt and the typed text
-   disagreed. The replacement is \`.te-flow\` further down - plain inline siblings in one pre-wrap
-   container. Those old rules are deliberately absent, and a test asserts they stay absent. */
+/* bash: the prefix and the command share ONE inline text flow - \`.te-flow\` further down, plain
+   inline siblings in one pre-wrap container. An absolute prefix layer, a custom indent on the
+   input, a width threshold or a "prefix on its own line" mode each break wrapping - an indent
+   shifts only the first line - so all four are absent, and a test asserts they stay absent. */
 
 /* no focus ring inside the terminal: the BLINKING CURSOR is the focus cue */
 .freva-term .te-input:focus-visible,
@@ -944,10 +1059,8 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 
 /* Terminal: hint vs suggestion, and a bar that survives a narrow window */
 
-/* 2) the GHOST is the only thing Tab will accept, so nothing else may look like it
-   The placeholder must not be the same dim grey as the ghost, or \`project=cmip6 variable=tas\`
-   read as a real suggestion waiting for Tab. The ghost keeps the "type-ahead" grey; the
-   placeholder and the hint are italic and clearly *instructional* (a different hue entirely). */
+/* The GHOST is the only thing Tab accepts, so nothing else may look like it: it keeps the
+   "type-ahead" grey, and the placeholder and hint are italic in a different hue entirely. */
 .freva-term .te-ghost,
 .freva-term .py-ghost {
   color: var(--term-ghost);
@@ -973,8 +1086,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   font-family: var(--mono);
   font-style: normal;
 }
-/* keycaps: the hint keys look like real keys - subtle fill, a border with a thicker bottom edge for
-   depth, and a hairline shadow. Tuned per terminal theme (dark tokens by default). */
+/* keycaps: subtle fill, thicker bottom border, hairline shadow; per theme, dark tokens default. */
 .freva-term .te-hint kbd {
   display: inline-flex;
   align-items: center;
@@ -996,9 +1108,8 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   border-color: rgba(0, 0, 0, 0.22);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
 }
-/* Terminal footer: a status strip pinned under the body that carries the keyboard hint.
-   The window has overflow:visible (so the ⋮ menu isn't clipped), so the footer rounds its OWN bottom
-   corners to match the window. Hidden when docked (only the bar shows) or in the textarea fallback. */
+/* Terminal footer: the keyboard-hint strip under the body. The window is overflow:visible for the
+   ⋮ menu, so the footer rounds its OWN bottom corners. Hidden when docked or in the fallback. */
 .freva-term .term-foot {
   padding: 5px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.09);
@@ -1031,7 +1142,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   background: none;
 }
 
-/* 5) narrow window: the window controls must never be pushed out of the bar */
+/* narrow window: the window controls must never be pushed out of the bar */
 .freva-term.show {
   min-width: 340px;
 }
@@ -1063,7 +1174,11 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   display: none;
 }
 
-/* 7) opacity slider in the ⋮ menu */
+/* opacity slider in the ⋮ menu */
+.freva-term .term-scale {
+  width: 100%;
+  accent-color: #8fb6ff;
+}
 .freva-term .tmn-alpha {
   padding: 2px 2px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -1075,11 +1190,9 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   cursor: pointer;
 }
 
-/* completion menu placement
-   The window sits in the bottom-right corner, so a list under the caret is often below the fold of
-   the scrolling body. When there is no room beneath, the menu FLIPS to sit directly above the
-   prompt - the same thing a shell does when completing at the bottom of a screen. Explicit flex
-   \`order\` values (rather than DOM order) let the menu move without moving anything else. */
+/* completion menu placement: the window sits bottom-right, so a list under the caret is often below
+   the fold. With no room beneath, the menu FLIPS above the prompt, as a shell does; explicit flex
+   \`order\` values (not DOM order) move it alone. */
 .freva-term .term-view {
   display: flex;
   flex-direction: column;
@@ -1104,21 +1217,15 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   margin: 0 0 6px;
 }
 
-/* NOTE: there is deliberately no blanket dimming of \`.term-head .te-prompt\` here. It would dim
-   every prompt in the header and footer, sweeping up python's real \`>>>\` lines along with the
-   \`...\` continuations. Continuations are dimmed by their own kind (\`.te-contprompt\`, above). */
+/* NO blanket dimming of \`.term-head .te-prompt\`: it would sweep up python's real \`>>>\` lines along
+   with the \`...\` continuations. Continuations are dimmed by their own kind, \`.te-contprompt\`. */
 
-/* LAYOUT OVERRIDES for the extracted package's markup.
+/* LAYOUT OVERRIDES for this package's markup. These come last on purpose: everything above is the
+   shared visual identity, and this block re-states only the geometry that differs. */
 
-   These come last on purpose: everything above is the moved, unchanged visual
-   identity, and this block re-states only the geometry that actually changed. */
-
-/* Container-relative window.
-   \`position: fixed\` sized against \`100vw/58vh\` assumes the window owns the
-   top-level page. Inside an embedded host - a mount relocated into a clipped,
-   \`overflow: hidden\`, transformed container - that puts the window outside its
-   own component and lets it be dragged out of reach. It is instead
-   positioned and clamped against its MOUNT, which the host supplies. */
+/* Container-relative window. \`position: fixed\` sized against \`100vw/58vh\` assumes the window owns
+   the top-level page; in a clipped, \`overflow: hidden\`, transformed host container that puts it
+   outside its own component and out of reach. It is clamped against its MOUNT, host-supplied. */
 .freva-term.show {
   display: flex;
   flex-direction: column;
@@ -1134,18 +1241,15 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
     0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
-/* The shared inline flow (THE WRAPPING FIX).
-   The immutable prefix and the editable command are ordinary inline content in
-   ONE \`pre-wrap\` flow. No \`text-indent\`, no absolute prefix layer, no width
-   threshold, and no "prefix on its own line" mode - all four were the defect. The command
-   therefore starts immediately after the last prefix token at every width, and a
-   wrapped line continues at the container's normal left edge, like a shell. */
+/* The shared inline flow: the immutable prefix and the editable command are ordinary inline
+   content in ONE \`pre-wrap\` flow, so the command starts right after the last prefix token at every
+   width and a wrapped line continues at the container's normal left edge, like a shell. */
 .freva-term .te-flow {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: normal;
   font-family: var(--font);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.65;
   padding: 2px 0;
 }
@@ -1164,10 +1268,8 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   white-space: inherit;
   min-width: 1px;
   color: var(--term-fg);
-  /* TRANSPARENT, like the plain fallback's textarea. This is a terminal: the cursor is the blinking
-     BLOCK drawn beside it, and leaving the browser's thin native caret on gave two cursors - the
-     same defect the python line had before the extraction, and the reason \`.py-input\` has carried
-     \`caret-color: transparent\` all along. */
+  /* TRANSPARENT, like the plain fallback's textarea: the cursor is the blinking BLOCK drawn beside
+     it, so a native caret on top would be a second one - \`.py-input\` does the same for that. */
   caret-color: transparent;
 }
 .freva-term .te-cmd.is-empty::after {
@@ -1175,12 +1277,9 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   color: var(--term-ph);
   pointer-events: none;
 }
-/* The block cursor in the rich flow.
-   It cannot be an inline node the way the plain overlay's is - inserting one at the caret would mean
-   splitting the EDITABLE text, and nothing but the buffer may live in there. So it is an absolutely
-   positioned sibling placed on the caret's own client rect, measured in \`paint()\`. That is what
-   makes it follow the caret at the start, in the middle, at the end and onto a wrapped line: the
-   rect of a collapsed range is already on the correct visual line. */
+/* The block cursor in the rich flow cannot be an inline node: inserting one at the caret would
+   split the EDITABLE text, where only the buffer may live. It is an absolutely positioned sibling
+   on the caret's client rect from \`paint()\`, already on the right visual line, wrapped or not. */
 .freva-term .te-flow {
   position: relative;
 }
@@ -1190,21 +1289,18 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   top: 0;
   vertical-align: baseline;
 }
-/* Hidden only while a RANGE is selected - a selection draws its own highlight, and a block cursor
-   inside it would be a second, contradictory cue. */
+/* Hidden only while a RANGE is selected: the selection highlight is the cue, not a block cursor. */
 .freva-term .te-flow > .te-caret.hide {
   display: none;
 }
-/* Unfocused: the hollow parked box, the original terminal convention and the "start typing here"
-   cue. \`.te-flow\` is the focus scope for the rich surface, exactly as \`.te-wrap\` is for the plain
-   one. */
+/* Unfocused: the hollow parked box, the terminal convention and the "start typing here" cue.
+   \`.te-flow\` is the focus scope for the rich surface, as \`.te-wrap\` is for the plain one. */
 .freva-term .te-flow:not(:focus-within) > .te-caret {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--term-fg);
 }
-/* When a suggestion is showing and the cursor sits at the end of the buffer, the ghost starts where
-   the cursor is drawn. Reserve the cursor's width so the suggestion appears AFTER the block rather
-   than underneath it - which is where the pre-extraction inline caret pushed it. */
+/* With a suggestion showing and the cursor at the end of the buffer, the ghost starts where the
+   cursor is drawn; reserving the cursor's width puts it AFTER the block rather than underneath. */
 .freva-term .te-flow > .te-ghost.after-cursor {
   padding-left: 7px;
 }
@@ -1220,9 +1316,8 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 .freva-term .te-plain {
   display: none;
 }
-/* \`.te-editor\` is on EVERY editor root; the per-tab \`\${prefix}-wrap\` class is not (python's root is
-   \`.py-wrap\`). Keying the reveal off \`.te-wrap\` therefore left python's textarea permanently
-   hidden even once \`data-mode\` was being written. */
+/* The reveal keys off \`.te-editor\`, which is on EVERY editor root; the per-tab \`\${prefix}-wrap\`
+   class is not (python's root is \`.py-wrap\`), so keying off \`.te-wrap\` never reveals python. */
 .freva-term .te-editor[data-mode="plain"] .te-plain {
   display: block;
 }
@@ -1256,7 +1351,7 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 .freva-term .term-head,
 .freva-term .term-foot-lines {
   font-family: var(--font);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--term-scale));
   line-height: 1.65;
   color: var(--term-dim);
 }
@@ -1274,28 +1369,23 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   display: block;
 }
 
-/* Segment colours.
-   The package emits kind-prefixed classes (\`te-key\`, \`te-value\`, …) instead of
-   the databrowser's bare \`.k\`/\`.v\`/\`.eq\`, because an unprefixed class in a
-   shared subtree is a collision waiting to happen. Same palette. */
+/* Segment colours. The package emits kind-prefixed classes (\`te-key\`, \`te-value\`, …) rather than
+   bare \`.k\`/\`.v\`/\`.eq\`, because an unprefixed class in a shared subtree collides. Same palette. */
 .freva-term .te-prompt {
   color: var(--term-prompt);
   font-weight: 700;
 }
-/* NO generic \`.te-fixed\` colour. One - say \`var(--term-dim)\` - would sit after \`.fixed\` in this
-   sheet and quietly repaint BOTH tabs' immutable text the same grey. The two tabs do not share
-   a colour: bash's \`freva-client databrowser data-search\` and its fixed flags
-   are foreground-weight, and python's \`from freva_client import databrowser\` / \`databrowser(\` / \`)\`
-   are the KEY colour, because in python they are code rather than a command line. \`.fixed\` (further
-   up) carries bash's treatment; python states its own below. */
+/* NO generic \`.te-fixed\` colour: one would sit after \`.fixed\` here and repaint BOTH tabs' fixed
+   text the same grey. bash's command and flags are foreground-weight; python's \`import\` line and
+   \`databrowser(\` / \`)\` are KEY-coloured, being code not a command line. \`.fixed\` carries bash's,
+   python states its own below. */
 .freva-term .term-view[data-cmd="py"] .te-fixed {
   color: var(--term-key);
   font-weight: 400;
   opacity: 1;
 }
-/* The \`...\` gutter of a read-only continuation line is quiet; a real \`>>>\` prompt is not. They used
-   to be told apart by markup (\`.py-line.cont .py-prompt\`); the extraction paints both from
-   segments, so the host says which is which and this styles the answer. */
+/* The \`...\` gutter of a read-only continuation line is quiet; a real \`>>>\` prompt is not. Both are
+   painted from segments, so the host says which is which and this styles the answer. */
 .freva-term .te-contprompt {
   color: #44566f;
   font-weight: 400;
@@ -1327,11 +1417,9 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
   pointer-events: none;
 }
 
-/* Settings menu: it must survive being MINIMIZED.
-   A minimized window is pinned to the bottom of its container, so a menu anchored
-   under the title bar opened straight off the bottom edge and became unreachable.
-   \`.above\` flips it over the bar; both placements are clamped to the container by
-   the inline max-height the controller sets. */
+/* Settings menu: it must survive being MINIMIZED. A minimized window is pinned to the bottom of
+   its container, so a menu anchored under the title bar opens off the bottom edge, out of reach;
+   \`.above\` flips it over the bar. Both placements are clamped by the controller's max-height. */
 .freva-term .term-menu {
   max-height: none;
   overflow-y: auto;
@@ -1343,11 +1431,9 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 .freva-term.minimized .term-menu.show {
   display: block;
 }
-/* The minimized dock hides most of the window, and these three have to opt back IN because the
-   settings menu is still reachable from it. \`display: revert\` was the wrong way to do that for the
-   colour panel: revert takes the class back to its UA default (\`block\`), which throws away the
-   flex row - so the swatches lost their 7px gaps and stacked against each other. Each of these now
-   opts back in to the display it actually uses. */
+/* The minimized dock hides most of the window, but the settings menu is still reachable from it,
+   so these three opt back IN to the display each actually uses. \`display: revert\` will not do for
+   the colour panel: the UA default (\`block\`) drops the flex row and with it the 7px swatch gaps. */
 .freva-term.minimized .term-bg-panel {
   display: flex;
   gap: 7px;
@@ -1359,6 +1445,81 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal.
 .freva-term.minimized .tmn-alpha,
 .freva-term.minimized .tmn-item {
   display: revert;
+}
+
+/* confirmation */
+
+/* The window's own question, in its own colours: inside \`.freva-term\`, absolutely positioned
+   against it, so it dims this window and nothing else of the host's. Not \`<dialog showModal()>\`
+   either - that paints in the top layer, above anything a host ordered above the window. */
+.freva-term .term-confirm-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 8, 16, 0.62);
+  border-radius: inherit;
+}
+.freva-term .term-confirm {
+  max-width: 30rem;
+  padding: 16px 18px;
+  border: 1px solid #2a3d5e;
+  border-radius: 10px;
+  background: #101b2e;
+  color: #dbe4f3;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+.freva-term .term-confirm-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.freva-term .term-confirm-body {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #aebbd4;
+}
+.freva-term .term-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.freva-term .term-confirm-btn {
+  padding: 6px 12px;
+  border: 1px solid #2a3d5e;
+  border-radius: 7px;
+  background: #16233a;
+  color: #dbe4f3;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.freva-term .term-confirm-btn:hover {
+  border-color: #34507c;
+  color: #fff;
+}
+.freva-term .term-confirm-btn:focus-visible {
+  outline: 2px solid #4f8df7;
+  outline-offset: 2px;
+}
+.freva-term .term-confirm-ok {
+  border-color: #34507c;
+  background: #1d3050;
+}
+/* The destructive answer LOOKS destructive and is still not focused: focus is what protects. */
+.freva-term .term-confirm-danger {
+  border-color: #8a3b34;
+  background: #3a1c19;
+  color: #ffd5cf;
+}
+.freva-term .term-confirm-danger:hover {
+  border-color: #c1584c;
+  color: #fff;
 }
 
 /* Reduced motion */

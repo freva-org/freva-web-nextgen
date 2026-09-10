@@ -1,42 +1,27 @@
 // editor.ts - the editable command line.
 //
-// THE WRAPPING FIX LIVES HERE.
-//
-// The previous geometry painted the immutable prefix in an absolutely-positioned, `white-space:
-// nowrap` layer and pushed the editable text past it with `text-indent`, plus a 62%-of-width
-// threshold that dropped the whole prefix onto its own line. That is not how a shell wraps: an
-// indent only shifts the FIRST line, so as soon as the prefix itself wrapped, the two layers
-// disagreed and the typed text either overlapped the prompt or was exiled to the next line.
-//
-// Now the prefix and the command are ordinary inline content inside ONE `white-space: pre-wrap`
-// flow. There is no indent, no absolute layer, no threshold and no `prefix-block` mode: the command
-// starts immediately after the last prefix token at every width, and a wrapped line continues at the
-// container's normal left edge - exactly what a terminal does.
+// The prefix and the command are ordinary inline content in ONE `white-space: pre-wrap` flow: no
+// indent, no absolute layer, no width threshold, so the command starts right after the last prefix
+// token and a wrapped line continues at the container's left edge, as a terminal does. An indent
+// shifts only the FIRST line, so a wrapped prefix would leave typed text overlapping the prompt.
 //
 // Two modes:
-//   • rich  - a controlled `contenteditable="plaintext-only"` span. Highlighting is the editable
-//             surface itself, so there is no overlay to keep in sync and no second text layer to
-//             mis-measure. Used for single-line buffers where the engine supports plaintext-only.
-//   • plain - the explicit fallback: a real <textarea> with a <pre> highlight overlay and the prefix
-//             as a block above it. Used for multi-line buffers, narrow viewports, forced fallback,
-//             and any engine without plaintext-only (which includes jsdom).
+//   • rich  - a controlled `contenteditable="plaintext-only"` span; the highlight IS the editable
+//             surface, so there is no overlay to keep in sync. Single-line buffers.
+//   • plain - the fallback: a <textarea> with a <pre> highlight overlay and the prefix in a block
+//             above. Multi-line buffers, narrow viewports, forced fallback, no plaintext-only.
 //
 // THREE RULES THAT ARE NOT NEGOTIABLE:
-//
-//   1. THE MODE IS APPLIED, NOT ASSUMED. `setMode` writes the DOM state every time it is called,
-//      including the first. Returning early when the requested mode equals the field's initial
-//      value leaves `data-mode` unset, and `.te-plain` - `display: none` until that attribute says
-//      otherwise - stays hidden. Python is ALWAYS plain, so Python's textarea would sit in the
-//      document unable to be seen, focused or clicked.
+//   1. THE MODE IS APPLIED, NOT ASSUMED. `setMode` writes the DOM state on every call, including
+//      the first; returning early leaves `data-mode` unset and `.te-plain` at its `display: none`
+//      default. Python is ALWAYS plain, so its textarea would not be visible, focusable or
+//      clickable.
 //   2. THE GHOST IS NEVER INSIDE THE EDITABLE NODE. It is a sibling of `.te-cmd` in the same inline
-//      flow, so it looks identical and `Editor.value` - which is the authoritative buffer for
-//      commits, copies, parsing and retained drafts - cannot contain a suggestion the user never
-//      accepted. Appended INSIDE `.te-cmd`, with `value` reading that node's `textContent`, the
-//      next ordinary keystroke silently absorbs the suggestion.
-//   3. AN ACTIVE COMPOSITION IS LEFT ALONE. Highlighting rebuilds the editable DOM; doing that
-//      mid-composition destroys the IME's anchor and drops or duplicates characters. Composition
-//      suppresses both the input hook and the repaint, and one input is emitted on
-//      `compositionend`.
+//      flow, so it looks identical while `Editor.value` - the buffer commits, copies, parsing and
+//      drafts read - cannot hold a suggestion the user never accepted; inside it, a keystroke
+//      silently absorbs the suggestion.
+//   3. AN ACTIVE COMPOSITION IS LEFT ALONE. Highlighting rebuilds the editable DOM, destroying the
+//      IME's anchor; composition suppresses the input hook and the repaint until `compositionend`.
 
 import { el, replaceChildren, type Disposables } from "./dom.js";
 import type { TerminalSegment } from "./types.js";
@@ -57,8 +42,8 @@ export interface EditorConfig {
   ariaLabel: string;
   /**
    * Class-name prefix for this editor's surfaces (`te` -> `.te-wrap`, `.te-hl`, `.te-input`).
-   * PER-TAB rather than generic: two tabs sharing one class would make `.te-hl .te-caret` match two
-   * carets at once, and host stylesheets have always styled the shell and python editors separately.
+   * PER-TAB: two tabs sharing one class would make `.te-hl .te-caret` match two carets at once, and
+   * host stylesheets style the shell and python editors separately.
    */
   cssPrefix: string;
 }
@@ -75,10 +60,8 @@ export function supportsPlaintextOnly(doc: Document): boolean {
 }
 
 /**
- * SegmentKind -> class names. Each kind carries the package's generic `te-*` class AND the short
- * historical name the freva stylesheet has always used (`.k`, `.v`, `.eq`, `.bad`, …). Keeping both
- * is what let the terminal move into its own package without restyling it: the moved rules keep
- * matching, and they are scoped under `.freva-term`, so the short names cannot collide with a host.
+ * SegmentKind -> class names. Each kind carries the generic `te-*` class AND the short name the
+ * freva stylesheet uses (`.k`, `.v`, `.eq`, …), scoped under `.freva-term` so it cannot collide.
  */
 const SEGMENT_CLASS: Record<string, string> = {
   prompt: "te-prompt prompt",
@@ -131,12 +114,8 @@ function caretOffsetIn(host: HTMLElement): number {
 }
 
 /**
- * The whole selection as character offsets, or null when it is not in this host.
- *
- * Repainting rebuilds the editable DOM, so a NON-COLLAPSED selection has to survive it too - not
- * just the caret. Restoring only the caret collapsed the user's selection every time the highlight
- * refreshed, which turned "select a word, then type over it" into "select a word, watch it
- * deselect".
+ * The whole selection as character offsets, or null when it is not in this host. A repaint rebuilds
+ * the editable DOM, so a NON-COLLAPSED selection must survive it too, not just the caret.
  */
 function selectionIn(host: HTMLElement): { start: number; end: number } | null {
   const sel = host.ownerDocument.getSelection?.();
@@ -179,7 +158,7 @@ function setSelectionIn(host: HTMLElement, start: number, end: number): void {
     sel.removeAllRanges();
     sel.addRange(range);
   } catch {
-    /* a detached/hidden host cannot take a selection - harmless */
+    // a detached/hidden host cannot take a selection - harmless
   }
 }
 
@@ -217,8 +196,7 @@ export class Editor {
     this.richCapable = !cfg.multiline && supportsPlaintextOnly(document);
     this.ghostClass = `te-ghost ${cfg.cssPrefix}-ghost`;
 
-    // `cli-line` is kept alongside `cli-prefix` so host stylesheets and integration tests that
-    // already address the painted prompt keep working across the extraction.
+    // `cli-line` sits alongside `cli-prefix` so stylesheets and tests addressing the prompt match.
     this.richPrefix = el("span", { class: "cli-prefix cli-line", "aria-hidden": "true" });
     this.cmd = el("span", {
       class: "te-cmd",
@@ -229,12 +207,10 @@ export class Editor {
       autocapitalize: "off",
       tabindex: "0",
     });
-    // Presentation only, and OUTSIDE the editable node - see rule 2. Both are inert to the pointer
-    // and to the selection, so a click near them still lands in `.te-cmd`.
+    // Presentation only, OUTSIDE the editable node (rule 2), inert to pointer and selection.
     this.ghostLayer = el("span", { class: this.ghostClass, "aria-hidden": "true" });
     this.richCaret = el("span", { class: "te-caret", "aria-hidden": "true" });
-    // The whole point: ONE inline flow, `pre-wrap`, no indent and no absolute layer. The ghost and
-    // the parked caret are inline siblings, so they wrap with the command and read as one line.
+    // The ghost and the parked caret are inline siblings, so they wrap with the command.
     this.flow = el("div", { class: "te-flow" }, [
       this.richPrefix,
       this.cmd,
@@ -264,8 +240,7 @@ export class Editor {
     this.root = el("div", { class: `${cfg.cssPrefix}-wrap te-editor` }, [this.flow, this.plain]);
 
     const emitInput = (): void => {
-      // An IME is mid-word: the buffer is not a command yet, and touching it would break the
-      // composition. One input is emitted from `compositionend` instead.
+      // Mid-composition the buffer is not a command yet; `compositionend` emits the one input.
       if (this.composing) return;
       if (!this.cfg.multiline) this.stripNewlines();
       hooks.onInput();
@@ -275,8 +250,7 @@ export class Editor {
     for (const node of [this.ta, this.cmd] as HTMLElement[]) {
       dis.listen(node, "compositionstart", () => {
         this.composing = true;
-        // The suggestion belongs to the buffer as it was BEFORE the composition; leaving it on
-        // screen next to half-formed IME text is noise, and it must not be able to merge in.
+        // The suggestion belongs to the pre-composition buffer and must not merge into IME text.
         this.clearGhost();
       });
       dis.listen(node, "compositionend", () => {
@@ -294,8 +268,8 @@ export class Editor {
       dis.listen(node, "focus", () => hooks.onFocus());
       dis.listen(node, "blur", () => hooks.onBlur());
     }
-    // plaintext-only already refuses markup, but a paste is the one place a hostile clipboard could
-    // try to smuggle nodes in. Force the plain-text branch explicitly rather than trusting the flag.
+    // plaintext-only already refuses markup, but a paste is where a hostile clipboard would try to
+    // smuggle nodes in, so force the plain-text branch rather than trusting the flag.
     dis.listen(this.cmd, "paste", (e) => {
       const ev = e as ClipboardEvent;
       const text = ev.clipboardData?.getData("text/plain");
@@ -318,15 +292,10 @@ export class Editor {
   }
 
   /**
-   * Switch surfaces. IDEMPOTENT BUT NEVER A NO-OP: the DOM state is written on every call,
-   * including the first one from the constructor.
-   *
-   * Returning early when `want === this.mode` would leave `data-mode` unwritten for a field
-   * initialised to the mode the constructor asks for: `.te-plain` keeps its stylesheet default of
-   * `display: none`, and the textarea sits in the document invisible, unfocusable and un-clickable.
-   * Python is always plain, so Python would have no usable input at all. Only the value transfer is
-   * conditional - moving text between two surfaces already in sync is pointless; the DOM write is
-   * not.
+   * Switch surfaces. IDEMPOTENT BUT NEVER A NO-OP (rule 1): the DOM state is written on every call,
+   * including the first from the constructor, because returning early when `want === this.mode`
+   * leaves `data-mode` unwritten and `.te-plain` at its `display: none` default. Only the value
+   * transfer is conditional.
    */
   setMode(next: EditorMode): void {
     const want: EditorMode = next === "rich" && this.richCapable ? "rich" : "plain";
@@ -345,7 +314,7 @@ export class Editor {
     this.setPrefix(this.prefixSegments);
   }
 
-  /** The editable node's text. It cannot contain a ghost, because a ghost is never a child of it. */
+  /** The editable node's text; a ghost is never a child of it, so it cannot contain one. */
   private cmdText(): string {
     return this.cmd.textContent ?? "";
   }
@@ -366,24 +335,18 @@ export class Editor {
 
   setPrefix(segments: TerminalSegment[]): void {
     this.prefixSegments = segments;
-    // Paint BOTH hosts. Only one is displayed, but a mode switch (a resize crossing the fallback
-    // threshold) must not reveal an empty prompt, and it keeps `.cli-line` meaningful either way.
+    // Paint BOTH hosts: only one shows, but a mode switch must not reveal an empty prompt.
     paintSegments(this.richPrefix, segments);
     paintSegments(this.plainPrefix, segments);
-    // A tab with no prefix (python writes its prompt in its own gutter) must not get an empty block
-    // holding a line's worth of padding above the textarea.
+    // With no prefix (python prompts in its own gutter) an empty block still pads a line.
     this.plainPrefix.hidden = segments.length === 0;
-    // In rich mode the separator between the prefix and the command is an ordinary space INSIDE the
-    // flow, so it is a normal soft-wrap opportunity: the command continues on the prefix's last
-    // visual line when there is room, and falls to the next line only when there genuinely isn't.
+    // The prefix/command separator is a space INSIDE the flow, so it is a soft-wrap opportunity.
     if (segments.length) this.richPrefix.append(document.createTextNode(" "));
   }
 
   /**
-   * THE AUTHORITATIVE BUFFER. Everything downstream - commits, the parsed selection, the copied
-   * command, the retained draft - reads this. In rich mode it is the editable node's own text, and
-   * the ghost is a sibling, so an unaccepted suggestion cannot appear here by construction rather
-   * than by a filtering step someone can forget.
+   * In rich mode it is the editable node's text and the ghost is a sibling, so an unaccepted
+   * suggestion cannot appear here by construction.
    */
   get value(): string {
     return this.mode === "rich" ? this.cmdText() : this.ta.value;
@@ -436,14 +399,10 @@ export class Editor {
   }
 
   /**
-   * Draw the highlighted buffer.
-   *
-   * In rich mode the editable surface IS the highlight, so the rebuild has to preserve the user's
-   * SELECTION (both ends, not just the caret) by text offset. In plain mode the <pre> overlay
-   * mirrors the textarea character-for-character, exactly as it did before the extraction.
-   *
-   * A repaint during an IME composition is skipped entirely: rebuilding the editable DOM under a
-   * live composition drops or duplicates the characters being composed. The next paint after
+   * Draw the highlighted buffer. In rich mode the editable surface IS the highlight, so the rebuild
+   * preserves the SELECTION (both ends, not just the caret) by text offset; in plain mode the <pre>
+   * overlay mirrors the textarea character-for-character. A repaint during an IME composition is
+   * skipped entirely (it would drop or duplicate composed characters); the paint after
    * `compositionend` draws the settled text.
    */
   paint(segments: TerminalSegment[], ghost: string): void {
@@ -453,17 +412,17 @@ export class Editor {
       const sel = focused ? selectionIn(this.cmd) : null;
       paintSegments(this.cmd, segments);
       if (sel) setSelectionIn(this.cmd, sel.start, sel.end);
-      // The suggestion and the parked caret live OUTSIDE `.te-cmd`. Bash shows its ghost after the
-      // whole buffer, which is where the pre-extraction overlay put it.
+      // Suggestion and parked caret live OUTSIDE `.te-cmd`; bash ghosts after the whole buffer.
       this.ghostLayer.textContent = ghost && focused ? ghost : "";
       this.cmd.classList.toggle("is-empty", this.cmdText() === "");
       this.cmd.dataset.placeholder = this.cfg.placeholder;
       this.placeRichCaret();
       return;
     }
-    // The drawn caret sits where the REAL one is, so clicking mid-line moves the block with it.
-    // It is drawn even when the editor is UNFOCUSED (parked at the end), because it is what shows
-    // an untouched terminal where typing would begin - exactly one per tab, either way.
+    // As in the rich path: the placeholder can derive from data arriving after construction.
+    if (this.ta.placeholder !== this.cfg.placeholder) this.ta.placeholder = this.cfg.placeholder;
+    // The drawn caret sits where the REAL one is, so clicking mid-line moves the block with it,
+    // and is drawn UNFOCUSED too (parked at the end) to show where typing begins - one per tab.
     const caretNode = el("span", { class: "te-caret" });
     const at = focused ? this.caret : this.value.length;
     replaceChildren(this.hl);
@@ -471,9 +430,8 @@ export class Editor {
       const cls = segmentClass(kind);
       return cls ? el("span", { class: cls, text: t }) : document.createTextNode(t);
     };
-    // A MULTILINE buffer shows its suggestion AT THE CARET, because the caret can be on any line and
-    // a ghost parked after the whole buffer would appear several lines below the word it completes.
-    // A single-line buffer keeps the historical behaviour: the ghost follows the whole command.
+    // A MULTILINE buffer ghosts AT THE CARET, which can be on any line; a ghost after the whole
+    // buffer would sit lines below the word it completes. Single-line ghosts after the command.
     const ghostNode = ghost && focused ? el("span", { class: this.ghostClass, text: ghost }) : null;
     const ghostAtCaret = this.cfg.multiline;
     let pos = 0;
@@ -502,19 +460,12 @@ export class Editor {
   }
 
   /**
-   * Draw the block cursor at the caret, in the rich flow.
-   *
-   * A terminal's cursor is a block sitting ON the caret, not the browser's thin bar - the plain
-   * fallback has always drawn one, and the python line has carried `caret-color: transparent` for
-   * exactly this reason. The rich surface lost it in the extraction: the native caret was left
-   * visible and the painted block was parked after the command and only shown while unfocused.
-   *
-   * It cannot be an inline node here. Placing one at the caret would mean splitting the EDITABLE
-   * text, and nothing but the buffer may live inside `.te-cmd`. So it is measured instead: a
-   * collapsed `Range` at the caret offset reports its own client rect, already resolved onto the
-   * correct visual line, which is what makes the block follow the caret through a soft wrap.
-   *
-   * While a RANGE is selected there is no cursor - the selection is its own cue.
+   * Draw the block cursor at the caret, in the rich flow. A terminal's cursor is a block sitting ON
+   * the caret, not the thin native bar (hence `caret-color: transparent` on the python line). It
+   * cannot be an inline node here: that would split the EDITABLE text,
+   * and nothing but the buffer may live inside `.te-cmd`. So it is measured: a collapsed `Range` at
+   * the caret offset reports a client rect already resolved onto the correct visual line, which is
+   * what makes the block follow a soft wrap. A selected RANGE gets no cursor.
    */
   private placeRichCaret(): void {
     const flowBox = this.flow.getBoundingClientRect();
@@ -541,19 +492,35 @@ export class Editor {
       range.selectNodeContents(this.cmd);
       range.collapse(false);
     }
-    let rect: DOMRect | null = range.getBoundingClientRect();
-    // An empty buffer, or a collapsed range the engine will not measure: fall back to the command
-    // span's own box, which `min-width: 1px` guarantees is present.
-    if (!rect || (rect.width === 0 && rect.height === 0)) {
-      const b = this.cmd.getBoundingClientRect();
-      rect = b.height > 0 ? b : null;
+    const measured = range.getBoundingClientRect();
+    let rect: { left: number; top: number; height: number } | null =
+      measured && !(measured.width === 0 && measured.height === 0) ? measured : null;
+    // An empty buffer, or a collapsed range the engine will not measure. The fallback is ONE LINE
+    // BOX, not `this.cmd.getBoundingClientRect()`: for a SOFT WRAPPED command that box is the UNION
+    // of the line boxes, so it is as tall as every line at once and as far left as the leftmost of
+    // them. `getClientRects()` returns the boxes individually - the first when the caret is at the
+    // start of the buffer, the last otherwise, since the parked, unfocused cursor sits at the end.
+    if (!rect) {
+      const lines = this.cmd.getClientRects();
+      const line = at <= 0 ? lines[0] : lines[lines.length - 1];
+      if (line && line.height > 0) {
+        rect = { left: at <= 0 ? line.left : line.right, top: line.top, height: line.height };
+      } else {
+        const b = this.cmd.getBoundingClientRect();
+        rect = b.height > 0 ? { left: b.left, top: b.top, height: b.height } : null;
+      }
     }
     if (!rect) return;
+    // Never taller than a line, whichever branch measured it: a block cursor marks ONE cell on ONE
+    // line, and clamping here holds that for any measurement path an engine may report.
+    const lineBoxes = this.cmd.getClientRects();
+    let tallestLine = 0;
+    for (const box of lineBoxes) if (box.height > tallestLine) tallestLine = box.height;
+    const height = tallestLine > 0 ? Math.min(rect.height, tallestLine) : rect.height;
     this.richCaret.style.left = `${Math.round((rect.left - flowBox.left) * 100) / 100}px`;
     this.richCaret.style.top = `${Math.round((rect.top - flowBox.top) * 100) / 100}px`;
-    if (rect.height > 0) this.richCaret.style.height = `${Math.round(rect.height * 100) / 100}px`;
-    // The suggestion begins exactly where the block is drawn when the caret is at the end, so it
-    // needs the block's width of clearance to stay readable.
+    if (height > 0) this.richCaret.style.height = `${Math.round(height * 100) / 100}px`;
+    // With the caret at the end the suggestion starts where the block is, so it needs clearance.
     this.ghostLayer.classList.toggle(
       "after-cursor",
       this.ghostLayer.textContent !== "" && at === text.length,
@@ -577,11 +544,7 @@ export class Editor {
     if (h > 0) this.ta.style.height = `${h}px`;
   }
 
-  /**
-   * Insert text at the caret, REPLACING whatever is selected - which is what a paste does. Using
-   * the caret alone left the selected text in place and dropped the pasted text beside it, so
-   * "select the command, paste a new one" produced both.
-   */
+  /** Insert text at the caret, REPLACING whatever is selected - which is what a paste does. */
   private insertText(text: string): void {
     const v = this.value;
     const { start, end } = this.selection;
