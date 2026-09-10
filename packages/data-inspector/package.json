@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/data-inspector",
-  "version": "2608.0.0",
+  "version": "2609.0.0",
   "description": "NetCDF / Zarr file inspection dialog - framework-agnostic Web Component",
   "type": "module",
   "repository": {
