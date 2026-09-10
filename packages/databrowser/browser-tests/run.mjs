@@ -18,6 +18,7 @@ const SUITES = [
   "time-card.mjs",
   "search-dropdown.mjs",
   "filters-and-chrome.mjs",
+  "sidebar-and-field.mjs",
   "overview-order.mjs",
   "embedded-host.mjs",
   "export-menu.mjs",

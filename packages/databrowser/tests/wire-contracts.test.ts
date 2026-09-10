@@ -43,6 +43,9 @@ function cfg(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
 
     metadata: {},
     metadataScriptUrl: null,
+    defaultLayout: "results",
+    overview: { order: [], mainFacets: null },
+    scopeRemovable: false,
     features: {
       themeToggle: true,
       terminal: true,
@@ -287,7 +290,13 @@ test("bbox is rounded at the source, so the query and the copied command agree",
   const s = createInitialState({ apiBase: "/api", flavour: "freva" } as never);
   s.bbox = b;
   assert.doesNotMatch(cliFixedTokens(s), /\d\.\d{3,}/, "no long decimal tails in the CLI tokens");
-  assert.doesNotMatch(pyFixedLines(s).join("\n"), /\d\.\d{3,}/, "nor in the python kwargs");
+  assert.doesNotMatch(
+    pyFixedLines(s)
+      .map((l) => l.code)
+      .join("\n"),
+    /\d\.\d{3,}/,
+    "nor in the python kwargs",
+  );
 });
 
 test("time/bbox are real tokens: parsed into state, not committed as fake facets", async () => {

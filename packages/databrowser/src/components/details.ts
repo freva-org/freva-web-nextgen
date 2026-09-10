@@ -360,6 +360,7 @@ function openMatrixModal(
   const close = (): void => {
     scope.flush();
   }; // focus is restored by the scope cleanup below
+  let dialog: HTMLDialogElement | null = null;
   const closeBtn = el("button", { class: "x", type: "button", "aria-label": "Close comparison" }, [
     svgIcon(ICONS.close, { size: 18 }),
   ]);
@@ -368,18 +369,27 @@ function openMatrixModal(
     closeBtn,
   ]);
   const body = el("div", { class: "dmm-body" }, [table.cloneNode(true) as HTMLElement]);
-  const modal = el(
-    "div",
-    {
-      class: "dmm-modal",
-      role: "dialog",
-      "aria-modal": "true",
-      "aria-label": title,
-      tabindex: "-1",
-    },
-    [head, body],
-  );
-  const backdrop = el("div", { class: "dmm-backdrop" }, [modal]);
+  const modal = el("div", { class: "dmm-modal", tabindex: "-1" }, [head, body]);
+  /*
+   * A real <dialog>, opened with showModal() - not a div with a large z-index.
+   *
+   * This has been wrong in both directions, so it is worth writing down which problem each half
+   * solves. Painted inside the component's box, the comparison slid UNDER the portal's header and
+   * footer: the host mounts the widget inside a transformed, contained region, and `position:
+   * fixed` inside such an ancestor is positioned and clipped against THAT ancestor rather than the
+   * viewport - no z-index can lift it out, because it never left. Moved to the host's overlay root
+   * it escaped, and lost the theme: every colour in this table is a custom property declared on
+   * `.freva-db`, and an unresolvable `var()` invalidates the whole declaration, so the row rules
+   * became no border at all and the table rendered as a flat field.
+   *
+   * The top layer settles both at once, and is the only thing that does. A modal dialog is painted
+   * in the top layer, above every stacking context and outside every ancestor's clip and transform,
+   * with the VIEWPORT as its containing block - while still sitting inside `.freva-db` in the DOM,
+   * so it inherits the theme like anything else in the widget. Where the element lives and where it
+   * paints are separate questions; this is the API that separates them. (The Inspector already
+   * works this way - this surface simply had not been brought across.)
+   */
+  const backdrop = el("dialog", { class: "dmm-backdrop", "aria-label": title }, [modal]);
   scope.listen(closeBtn, "click", close);
   scope.listen(backdrop, "click", (e) => {
     if (e.target === backdrop) close();
@@ -420,6 +430,13 @@ function openMatrixModal(
   });
   scope.add(() => {
     try {
+      // Leave the top layer before leaving the DOM. Removing an open modal dialog outright can
+      // strand the top-layer entry and, with it, the inert state of everything behind it.
+      if (dialog?.open) dialog.close();
+    } catch {
+      /* never opened modally */
+    }
+    try {
       backdrop.remove();
     } catch {
       /* gone */
@@ -439,8 +456,87 @@ function openMatrixModal(
       }
     });
   });
+  /*
+   * Inside the component's own box - see the <dialog> note above for why that is now safe, and
+   * `roots.overlay` is deliberately NOT used: it can be anywhere in the host's document, including
+   * outside the themed subtree.
+   */
   ctx.roots.app.appendChild(backdrop);
+  const asDialog = backdrop as HTMLDialogElement;
+  if (typeof asDialog.showModal === "function") {
+    dialog = asDialog;
+    try {
+      asDialog.showModal();
+    } catch {
+      // Already open, or detached mid-flight. Fall through to the attribute so it is at least shown.
+      dialog = null;
+      asDialog.setAttribute("open", "");
+    }
+    // Escape reaches the dialog as `cancel` before it reaches the document. Take it here so the
+    // scope's own teardown (and its focus restoration) runs, rather than the UA just hiding it.
+    scope.listen(asDialog, "cancel", (e) => {
+      e.preventDefault();
+      close();
+    });
+  } else {
+    // No dialog support: an attribute-open dialog is an ordinary element, so it needs the
+    // stylesheet's z-index rather than the top layer. Everything else behaves the same.
+    asDialog.setAttribute("open", "");
+  }
   (focusables()[0] ?? modal).focus(); // move focus into the dialog on open
+}
+
+/*
+ * The two facts a per-file comparison needs that are not in the `?file=` facets block.
+ *
+ * Both are on the row already - the same response that fills `meta` carries `time` and `bbox` when
+ * the backend has them - and both were simply not being looked at, so a comparison of 25 files
+ * across a time series reported "3 fields differ" and none of them was the time. They are the two
+ * axes somebody picking between files is usually picking ALONG.
+ *
+ * Synthesised into the same shape the facet metadata already has, so there is one comparison and
+ * not a second one bolted beside it: the same distinct/varying pass, the same matrix, the same
+ * "these are common to all" summary. The keys are `__`-prefixed because they share a namespace
+ * with facet keys returned by the API and must not collide with one.
+ */
+const TIME_KEY = "__time";
+const BBOX_KEY = "__bbox";
+
+/** A file's time range as text. `null` when neither the API nor the filename yields one. */
+function timeCell(row: FileRow): string | null {
+  const stated = row.timeRange;
+  const inferred = stated ? null : timeRangeFromFilename(row.file);
+  const value = stated ?? inferred;
+  if (!value) return null;
+  /*
+   * Marked when it came from the NAME rather than from the archive. Comparing a stated range with
+   * a guessed one and printing the two identically would make the guess look like a fact - and in
+   * a table of 25 rows, the one row whose range was parsed out of its filename is exactly the row
+   * somebody would otherwise trust by mistake.
+   */
+  return inferred || row.timeRangeInferred === true ? `${value} (from filename)` : value;
+}
+
+/** A file's spatial extent as text, normalised the way the single-file panel reports it. */
+function bboxCell(row: FileRow): string | null {
+  if (!row.bbox) return null;
+  const nb = normalizeBboxLon(row.bbox);
+  const lon = nb.global
+    ? "lon −180 → 180"
+    : `lon ${nb.minLon} → ${nb.maxLon}${nb.wraps ? " (crosses the antimeridian)" : ""}`;
+  return `${lon}, lat ${row.bbox.minLat} → ${row.bbox.maxLat}`;
+}
+
+/**
+ * The column heading for a diff key.
+ *
+ * The two synthetic keys have no entry in the flavour's vocabulary - they are not facets - so
+ * asking `labelFor` for them would print the key itself.
+ */
+function diffLabel(ctx: AppContext, key: string): string {
+  if (key === TIME_KEY) return "Time range";
+  if (key === BBOX_KEY) return "Spatial extent";
+  return labelFor(ctx.state, key);
 }
 
 function renderDiff(
@@ -452,8 +548,25 @@ function renderDiff(
   hiddenCount = 0,
 ): void {
   const scroll = ctx.roots.infoScroll;
-  const metas = rows.map((r) => r.meta ?? {});
-  const keys = [...new Set(metas.flatMap((m) => Object.keys(m)))];
+  type DiffMeta = Record<string, string | string[] | number>;
+  const metas: DiffMeta[] = rows.map((r) => {
+    const time = timeCell(r);
+    const bbox = bboxCell(r);
+    const out: DiffMeta = { ...(r.meta ?? {}) };
+    if (time) out[TIME_KEY] = time;
+    if (bbox) out[BBOX_KEY] = bbox;
+    return out;
+  });
+  /*
+   * Time and extent lead the column order when they are present at all. They are the axes a
+   * selection is usually made along, and appending them after however many facet keys the archive
+   * happens to publish would put them off the right edge of the table on any real comparison.
+   */
+  const facetKeys = [...new Set(metas.flatMap((m) => Object.keys(m)))].filter(
+    (k) => k !== TIME_KEY && k !== BBOX_KEY,
+  );
+  const leading = [TIME_KEY, BBOX_KEY].filter((k) => metas.some((m) => k in m));
+  const keys = [...leading, ...facetKeys];
   const distinct = (k: string): string[] => [
     ...new Set(metas.map((m) => (k in m ? metaText(m[k]) : "-"))),
   ];
@@ -479,7 +592,7 @@ function renderDiff(
     for (const k of varying)
       summary.append(
         el("span", { class: "varchip" }, [
-          el("span", { class: "vc-k", text: labelFor(ctx.state, k) }),
+          el("span", { class: "vc-k", text: diffLabel(ctx, k) }),
           el("span", { class: "vc-n", text: String(distinct(k).length) }),
         ]),
       );
@@ -490,7 +603,7 @@ function renderDiff(
     for (const k of varying) colValues[k] = distinct(k);
     const thead = el("tr", {}, [
       el("th", { text: "#" }),
-      ...varying.map((k) => el("th", { text: labelFor(ctx.state, k) })),
+      ...varying.map((k) => el("th", { text: diffLabel(ctx, k) })),
     ]);
     const tbody = rows.map((r, i) => {
       const m = metas[i];
@@ -562,7 +675,7 @@ function renderDiff(
     el(
       "div",
       { class: "meta" },
-      common.map((k) => metaRow(labelFor(ctx.state, k), metaText(metas[0][k]))),
+      common.map((k) => metaRow(diffLabel(ctx, k), metaText(metas[0][k]))),
     ),
   ]);
   const sharedHead = el("div", { class: "info-sec shared-head", role: "button", tabindex: "0" }, [

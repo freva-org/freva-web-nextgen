@@ -180,7 +180,9 @@
   color: var(--text);
   font-size: 14px;
   font-family: inherit;
-  padding: 0 14px 0 40px;
+  /* Right padding clears the furniture: the spinner's reserved slot and the ⌘K hint. Reserved at
+     all times, so a search that starts loading never reflows the text under the caret. */
+  padding: 0 84px 0 40px;
   outline: none;
   transition:
     border-color 0.15s,
@@ -190,6 +192,110 @@
 .search input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The live edge.
+ *
+ * A slow wash of light in the field's own border: it drifts along the edge, it rises and falls, and
+ * it stops the moment somebody is typing in the field. Deliberately NOT an object travelling the
+ * border - a small, high-contrast shape with an outline is something the visual system locks onto
+ * and TRACKS at any speed - so this is one wide, low-contrast gradient whose brightest region
+ * moves, with no edge for the eye to follow.
+ *
+ * The two cycles do not divide into each other (30s and 11s), so they drift in and out of phase and
+ * never settle into a beat a reader can anticipate, which is how a slow loop becomes a tic.
+ *
+ * Drawn at `inset: 0`, so the ring sits exactly ON the input's own 1px border rather than beside
+ * it. That is what makes the failure mode harmless: where `mask-composite` is unavailable the
+ * pseudo-element paints nothing useful and the field still has the ordinary accent border
+ * underneath it, rather than no border at all.
+ */
+.freva-db .search {
+  /* One place to tune the whole treatment. */
+  --db-breathe: 11s; /* one full rise and fall */
+  --db-drift: 30s; /* one full pass of the light along the edge */
+  --db-amp: 0.45; /* how far the breath dips below full */
+  --db-hot: 62%; /* accent content of the light at its brightest */
+}
+@keyframes db-edge-drift {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 260% 50%;
+  }
+}
+@keyframes db-edge-breathe {
+  0%,
+  100% {
+    opacity: calc(1 - var(--db-amp));
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.freva-db .search::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-sm);
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--accent) 18%, transparent) 0%,
+    color-mix(in srgb, var(--accent) var(--db-hot), transparent) 26%,
+    color-mix(in srgb, var(--accent) 14%, transparent) 52%,
+    color-mix(in srgb, var(--accent) var(--db-hot), transparent) 76%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 100%
+  );
+  /* Wider than the box, so the drift has somewhere to travel from and to. */
+  background-size: 260% 100%;
+  /* Keep only the ring: paint the border box, subtract the padding box. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation:
+    db-edge-drift var(--db-drift) linear infinite,
+    db-edge-breathe var(--db-breathe) ease-in-out infinite;
+}
+/*
+ * In use, it stops.
+ *
+ * The caret is the thing to watch while you type, and a field somebody is reading their own
+ * keystrokes in is the one place a moving edge would genuinely be in the way. So focus settles it
+ * to an even, steady ring - still lit, no longer moving.
+ */
+.freva-db .search:focus-within::before {
+  /*
+   * `animation: none`, not `animation-play-state: paused`. A paused animation still holds the
+   * property at whatever keyframe it stopped on, which would leave the ring at whatever brightness
+   * the breath was passing through - a focus ring whose intensity depends on when you clicked.
+   * Removing the animations entirely is what lets the declarations below take effect.
+   */
+  animation: none;
+  opacity: 1;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 55%, transparent),
+    color-mix(in srgb, var(--accent) 92%, transparent),
+    color-mix(in srgb, var(--accent) 55%, transparent)
+  );
+  background-size: 100% 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The same edge, held still. The treatment is the light, not the movement of it, so the
+     reduced-motion field is the finished thing minus its motion - never a bare box. */
+  .freva-db .search::before {
+    animation: none;
+    opacity: 0.85;
+    background-position: 40% 50%;
+  }
 }
 .search .ic {
   position: absolute;
@@ -371,6 +477,35 @@
 .facet {
   border-radius: var(--r-sm);
 }
+/* The per-facet sort control. Present in the markup at all times so opening a panel stays a class
+   toggle rather than a re-render (see sidebar.ts), and revealed only once there is a list to sort.
+   `margin-left: auto` is deliberately NOT used: the +N / -N clear badges already claim that slot,
+   and the sort must sit between them and the chevron in both cases. */
+.facet .fh-sort {
+  display: none;
+}
+.facet.open .fh-sort {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 21px;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--faint);
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
+}
+.facet.open .fh-sort:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .facet-head {
   position: relative;
   display: flex;
@@ -445,6 +580,14 @@
   display: block;
 }
 .fval {
+  /*
+   * Positioned, because the share bar is a `::before` inside it. It was only the overview's cards
+   * that drew one, so the context lived there; the sidebar draws the same bar now, and a row that
+   * is `static` would hang the bar off whatever ancestor happened to be positioned - which in the
+   * sidebar is the scroll container, giving one full-width bar behind the whole list.
+   */
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -677,6 +820,32 @@
   border-radius: 999px;
   padding: 4px;
   box-shadow: var(--shadow);
+}
+/* The worded half of clear-all. Right-aligned so it reads as the row's action rather than as a
+   third thing about the count, and quiet until it is wanted - it is an undo, not an invitation. */
+.sf-clear {
+  margin-left: auto;
+  flex-shrink: 0;
+  height: 21px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--dim);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background-color 0.12s;
+}
+.sf-clear:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
 }
 .ctrl {
   width: 34px;
@@ -1697,21 +1866,55 @@
   align-items: center;
   gap: 6px;
 }
+/* The full-screen comparison. */
 .dmm-backdrop {
+  /*
+   * A <dialog>, so most of this is undoing the UA's own dialog box (fit-content width, auto
+   * margins, a border, a background, absolute positioning) to get a full-viewport scrim back.
+   *
+   * `position: fixed` here is against the VIEWPORT even inside a transformed host container,
+   * because a modal dialog is in the top layer and the top layer's containing block is the initial
+   * one. The z-index is only for the no-<dialog> fallback path, where this is an ordinary element
+   * again; nothing in the top layer needs one.
+   *
+   * `dvh`, not `vh`, on the modal below: on a phone `vh` is the viewport with the browser chrome
+   * RETRACTED, so a modal capped at 92vh is taller than the screen it is on until the address bar
+   * scrolls away - which for a modal that owns the scroll it never does.
+   */
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0;
+  border: none;
+  color: inherit;
+  z-index: 2147483000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
   background: rgba(8, 14, 26, 0.58);
+  /* Its own stacking context, so nothing inside can be re-ordered against the page by a host
+     stylesheet that happens to give something a higher z-index. */
+  isolation: isolate;
+  overscroll-behavior: contain;
+}
+/* `display: flex` above would otherwise defeat the UA's own `dialog:not([open])` rule. */
+.dmm-backdrop:not([open]) {
+  display: none;
+}
+/* The scrim is painted by the dialog itself (it has to be, for the fallback path), so the real
+   backdrop pseudo-element stays out of the way rather than doubling the dimming. */
+.dmm-backdrop::backdrop {
+  background: transparent;
 }
 .dmm-modal {
   display: flex;
   flex-direction: column;
   width: min(1200px, 96vw);
-  max-height: 92vh;
+  max-height: min(92vh, 92dvh);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -3020,13 +3223,30 @@ body.fdb-dragging * {
 /* Sidebar - one "Filter" header, sections named by what they are, each with its
    own search + capped scroll area. */
 
+/* Pinned, with its rule.
+ *
+ * "Filter" and its count are the sidebar's own header - what the panel below IS, and the control
+ * that clears it - so they stay put while the facets scroll under them. Scrolling a header out of
+ * a panel that has its own scrollbar loses the one clear-everything affordance exactly when a long
+ * filtered list is the reason you want it.
+ *
+ * The negative margins and the matching `top` pull the sticky edge out to `.side-scroll`'s border
+ * box, past its 10px padding: without them the head would stop 10px down and content would keep
+ * scrolling visibly through the gap above it. The background is opaque for the same reason - a
+ * transparent sticky header is a sticky header with the list running through it. */
 .side-filterhead {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 2px 10px;
-  margin-bottom: 4px;
+  padding: 12px 2px 10px;
+  margin: -10px -10px 4px;
+  padding-left: 12px;
+  padding-right: 12px;
   border-bottom: 1px solid var(--border-2);
+  position: sticky;
+  top: -10px;
+  z-index: 3;
+  background: var(--surface);
 }
 .sf-title {
   font-size: 12px;
@@ -3586,17 +3806,18 @@ body.fdb-dragging * {
 
 /* overview: share-of-result-set bar per value
    The bar is the value's share of the WHOLE result set (count / totalCount), so a bar means the
-   same thing in every card and cards can be compared with each other. A per-card scale made every
-   card's top value look "full", which is why `historical` (17%) and `cmip6` (56%) looked alike.
+   same thing in every card and cards can be compared with each other. A per-card scale makes every
+   card's top value look "full", so `historical` (17%) and `cmip6` (56%) read alike.
 
    Drawn as a tinted fill BEHIND the row via ::before - no extra DOM node, and it reads as a bar
-   chart rather than an underline. `--pct` is set per row in overview.ts. */
+   chart rather than an underline. `--pct` is set per row, by BOTH panels: the overview's cards and
+   the sidebar's filter lists draw the same bar off the same helper, so one value is one length
+   wherever a reader meets it. The positioning context is on `.fval` itself (see the base rule),
+   not on `.fcard .fval`, so both panels can carry a bar. */
 .fcard .fval {
-  position: relative;
-  isolation: isolate;
   border-radius: 6px;
 }
-.fcard .fval.has-bar::before {
+.fval.has-bar::before {
   content: "";
   position: absolute;
   z-index: -1;
@@ -3614,14 +3835,14 @@ body.fdb-dragging * {
   );
   transition: width 0.18s ease;
 }
-.fcard .fval.has-bar:hover::before {
+.fval.has-bar:hover::before {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--accent) 26%, transparent),
     color-mix(in srgb, var(--accent) 9%, transparent)
   );
 }
-.fcard .fval.sel.has-bar::before {
+.fval.sel.has-bar::before {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--accent) 36%, transparent),
@@ -3630,21 +3851,21 @@ body.fdb-dragging * {
 }
 /* Dark mode: the same accent needs more alpha to read on the dark surface. Still derived from
    --accent, so a custom accent recolours the dark bars too. */
-.freva-db[data-theme="night"] .fcard .fval.has-bar::before {
+.freva-db[data-theme="night"] .fval.has-bar::before {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--accent) 36%, transparent),
     color-mix(in srgb, var(--accent) 15%, transparent)
   );
 }
-.freva-db[data-theme="night"] .fcard .fval.has-bar:hover::before {
+.freva-db[data-theme="night"] .fval.has-bar:hover::before {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--accent) 50%, transparent),
     color-mix(in srgb, var(--accent) 21%, transparent)
   );
 }
-.freva-db[data-theme="night"] .fcard .fval.sel.has-bar::before {
+.freva-db[data-theme="night"] .fval.sel.has-bar::before {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--accent) 64%, transparent),
@@ -3658,7 +3879,7 @@ body.fdb-dragging * {
 }
 
 /* data-inspector: themed to the databrowser (blue), auto-following light/night
-   The <data-inspector> (lazy CDN component) renders inside .freva-db, so our design tokens are in
+   The <data-inspector> (imported lazily) renders inside .freva-db, so our design tokens are in
    scope. We map them onto the component's public knobs (--di-*), so the modal follows the app theme
    instead of prefers-color-scheme. On top of that:
      • a solid blue header - there is no --di-header-bg knob, so we colour .di-header directly and
@@ -4088,15 +4309,47 @@ body.fdb-dragging * {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 /* The slot is ALWAYS reserved; only visibility changes, so showing the spinner shifts nothing. */
-.freva-db .search-spin {
+/* The field's right-hand furniture: the spinner's reserved slot and the keyboard hint, in one
+   row. One element, so the input's right padding is a single number rather than a running sum. */
+.freva-db .search-aside {
   position: absolute;
-  right: 12px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none; /* the field underneath stays clickable across its whole width */
+}
+.freva-db .search-spin {
   display: grid;
   place-items: center;
   visibility: hidden;
   color: var(--accent);
+}
+/* The shortcut the field actually answers to. Quiet by design - it is a reminder for the second
+   visit, not a control - and it steps back further once the field is in use, where the caret is
+   the thing to look at. */
+.freva-db .search-kbd {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transition: opacity 0.18s;
+}
+.freva-db .search-kbd kbd {
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 5px;
+  min-width: 17px;
+  text-align: center;
+  border-radius: 4px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--faint);
+}
+.freva-db .search:focus-within .search-kbd {
+  opacity: 0.35;
 }
 .freva-db .search-spin.show {
   visibility: visible;
@@ -4417,4 +4670,147 @@ body.fdb-dragging * {
   .freva-db .fval-row.excl .fval-ex {
     border-style: dashed;
   }
+}
+
+/* The File Inspector, modal. */
+
+/*
+ * The Inspector is a `<dialog>` opened with `showModal()`, so the browser puts
+ * it in the top layer: laid out against the viewport, painted over everything,
+ * with the rest of the document inert. What it needs from CSS is only that the
+ * element inside stops trying to be the modal itself.
+ *
+ * The packaged element renders its own full-screen dimmer and centres a panel
+ * inside it, with both the panel and its body sized in `vh`. Inside a dialog
+ * that is a second modal inside the first, and the viewport units are measured
+ * against the whole screen while the box they live in is not, which pushes the
+ * header off the top and the actions off the bottom. So the dimmer becomes an
+ * ordinary flex box, the dialog carries the geometry, and the body is the only
+ * thing that scrolls.
+ */
+.freva-db.fdb-inspector-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  /* The panel sits in the middle of the frame; the frame is the whole band. */
+  justify-content: center;
+}
+.freva-db.fdb-inspector-dialog {
+  /* The component root's own `position: relative; height: 100%` are for a widget
+     filling a mount, and this is a dialog sizing itself to its content. */
+  position: fixed;
+  height: auto;
+  width: min(1100px, 96vw);
+  max-width: 96vw;
+  /*
+   * A *definite* height, not a cap - and this is the load-bearing line.
+   *
+   * With `max-height` alone the dialog's height stays "auto, then clamped", and
+   * an auto-height flex container does not make its items shrink: they lay out
+   * at their content size and overflow the clamp. Everything below inherits
+   * that indefiniteness, which is why the panel kept growing out of the box no
+   * matter how many `min-height: 0`s went into the chain.
+   *
+   * So the dialog is a full-height transparent frame with the panel centred in
+   * it, and every child below has something definite to resolve against.
+   * Dynamic units, so a mobile browser's collapsing toolbars cannot hide a row.
+   */
+  height: 92dvh;
+  max-height: 92dvh;
+  padding: 0;
+  border: 0;
+  background: none;
+  /* The dialog is the boundary; nothing inside it may paint past it. */
+  overflow: hidden;
+  color: inherit;
+}
+.freva-db.fdb-inspector-dialog::backdrop {
+  /* The dim, drawn here rather than by the element. From the top layer it covers
+     the whole viewport, which is the point: the header and the footer dim too. */
+  background: rgba(15, 23, 42, 0.55);
+}
+/*
+ * The custom element itself, which is a box like any other.
+ *
+ * `<data-inspector>` sits between the dialog and everything the element draws.
+ * Left unstyled it is an ordinary auto-height block, and it is the first and
+ * quietest break in the chain from the dialog's height down to the scrolling
+ * body - a chain only as definite as its least definite link.
+ */
+.freva-db.fdb-inspector-dialog > data-inspector {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/*
+ * The element's dimmer becomes an ordinary box inside the dialog.
+ *
+ * It keeps its node - its key handler is bound to it - and loses everything
+ * that would make it a modal in its own right: the fixed positioning, the
+ * full-screen inset, the dim (the dialog's `::backdrop` draws that), the
+ * padding, and `align-items: center`, which centres a panel taller than the box
+ * and lets it overflow off the top of the screen.
+ *
+ * It is a *shrinkable* flex column, which is the part that matters: it is the
+ * first link in the chain from the dialog's height down to the scrolling body,
+ * and a link that cannot shrink breaks the whole chain.
+ */
+.freva-db.fdb-inspector-dialog .di-backdrop {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  padding: 0;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/*
+ * The panel is the dialog's one flex item and shrinks with it.
+ *
+ * Not `max-height: 100%`: the dialog's height is `auto` capped by `max-height`,
+ * and a percentage against an indefinite height resolves to nothing at all.
+ * `flex: 1 1 auto` with `min-height: 0` is what actually makes a flex item
+ * smaller than its content - the automatic minimum size is the reason panels
+ * like this one grow through the bottom of the box that holds them.
+ */
+.freva-db.fdb-inspector-dialog .di-modal {
+  width: 100%;
+  /* Grows to its content and stops at the frame - now that the frame is
+     definite, `100%` is a real number and the panel can be smaller than it. */
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 100%;
+}
+/*
+ * The one unclassed box in the chain.
+ *
+ * Between the panel and the scrolling body sits `#nc-tabs-wrap`, an ordinary
+ * block. A block does not shrink, so the flex chain stopped there and the body
+ * grew to its content with the panel following it out of the dialog. Making it
+ * a shrinkable flex column is what connects the dialog's height to the body's.
+ */
+.freva-db.fdb-inspector-dialog #nc-tabs-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.freva-db.fdb-inspector-dialog #nc-tabs-wrap[hidden] {
+  display: none;
+}
+
+/*
+ * The header and the action row stay; only the body scrolls. `min-height: 0` is
+ * the load-bearing part - without it the flex item refuses to shrink below its
+ * content and the panel grows past the dialog again.
+ */
+.freva-db.fdb-inspector-dialog .di-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
 }

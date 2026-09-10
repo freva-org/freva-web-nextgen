@@ -7,8 +7,8 @@ import { loadInspector, setInspectorImporterForTests } from "../src/components/i
 
 test("loadInspector retries after a transient import failure", async () => {
   let calls = 0;
-  let lastUrl = "";
-  setInspectorImporterForTests(async (url: string) => {
+  let lastUrl: string | undefined = "";
+  setInspectorImporterForTests(async (url?: string) => {
     calls++;
     lastUrl = url;
     if (calls === 1) throw new Error("chunk load failed (transient)");
@@ -23,7 +23,7 @@ test("loadInspector retries after a transient import failure", async () => {
     const mod = await loadInspector("https://cdn.example/di.mjs"); // cache was reset -> this retries
     assert.ok(mod?.ready, "second attempt succeeds");
     assert.equal(calls, 2, "the import was actually retried, not served from a poisoned cache");
-    assert.equal(lastUrl, "https://cdn.example/di.mjs", "imports the configured URL");
+    assert.equal(lastUrl, "https://cdn.example/di.mjs", "imports the overridden URL");
   } finally {
     setInspectorImporterForTests(null); // restore the real dynamic import for other tests
   }

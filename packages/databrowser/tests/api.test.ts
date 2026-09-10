@@ -27,6 +27,9 @@ function cfg(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
 
     metadata: {},
     metadataScriptUrl: null,
+    defaultLayout: "results",
+    overview: { order: [], mainFacets: null },
+    scopeRemovable: false,
     features: {
       themeToggle: true,
       terminal: true,

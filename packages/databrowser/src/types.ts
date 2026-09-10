@@ -317,13 +317,58 @@ export interface TerminalConfig {
   os?: OSKind;
 }
 
+/**
+ * How the metadata overview is laid out before the visitor has rearranged it.
+ *
+ * Presentation only, and only a DEFAULT: every value here is what the panel looks like on a first
+ * visit, and a visitor who drags a block or opens the additional section has their own choice
+ * persisted over it. Nothing here changes which facets exist or what a query sends.
+ */
+export interface OverviewConfig {
+  /**
+   * Block keys in the order they should appear, e.g. `["project", "__time", "variable"]`.
+   *
+   * Time and BBox are ordered in the same flow as the facets and are named `__time` and `__bbox`,
+   * because a deployment that wants the map first should be able to say so without a second option
+   * for the two blocks that are not facets.
+   *
+   * Keys not listed keep their natural position AFTER the listed ones, so naming three keys is a
+   * statement about those three and not an accidental hiding of everything else. Unset: the order
+   * the API returns.
+   */
+  order?: string[];
+  /**
+   * The keys that are MAIN blocks. Everything else moves under "Show additional facets".
+   *
+   * Unset, this is the API's own `primary_facets`, which is the behaviour every deployment has
+   * today. Set to `[]` to make every facet a main block and remove the additional section.
+   */
+  mainFacets?: string[];
+}
+
 export interface DataBrowserConfig {
   apiBase?: string;
   flavour?: FlavourName;
   devNotes?: boolean;
-  /** ESM URL for the lazy @freva-org/data-inspector web component (CDN by default; override to a
-   *  self-hosted copy). Loaded on first Inspect only - never in the main bundle. */
+  /** Optional override: load @freva-org/data-inspector from this ESM URL instead of the packaged
+   *  dependency. Either way it is imported on first Inspect only - never in the main bundle. */
   inspectorUrl?: string;
+  /**
+   * Where the component's *global* surfaces go: the File Inspector and the
+   * terminal window.
+   *
+   * The widget's own overlays - tooltips, popovers, the facet dropdown - belong
+   * to the widget and stay inside it, positioned against `.freva-db`. Two do
+   * not. The Inspector is a modal over the whole application, and the terminal
+   * is a window that floats over it; both are meaningless clipped to the
+   * component's box. When a host embeds the widget inside a scrolling, contained
+   * region - which the portal does - it passes an element outside that region
+   * here and those two mount there instead.
+   *
+   * Unset, they mount on the component root exactly as before, so a standalone
+   * page needs to know nothing about this.
+   */
+  overlayRoot?: HTMLElement;
   /** heavy ops (load / data-portal) are auth.required(); off -> disabled placeholders. */
   authEnabled?: boolean;
   /**
@@ -377,11 +422,39 @@ export interface DataBrowserConfig {
    */
   metadata?: MetadataMap;
   /**
-   * URL of the deployment `metadata.js` script. It assigns per-facet window globals
-   * mapping value -> description. Pass `null` to disable
-   * script loading entirely (config-only). Default: '/static/js/metadata.js'.
+   * URL of a deployment-supplied `metadata.js`, for backward compatibility only.
+   *
+   * The shared climate descriptions ship inside this package, so this has NO DEFAULT: leave it
+   * unset and nothing is fetched and nothing is probed. Set it and that
+   * script is loaded and merged ON TOP of the built-in set and UNDER the `metadata` config object.
+   * Default: null.
    */
   metadataScriptUrl?: string | null;
+  /**
+   * Which of the two views a visitor lands on before they have chosen one.
+   *
+   * A DEFAULT, not a lock: the switch stays in the toolbar and a visitor's own choice is persisted
+   * and wins on every later visit. Unset is `"browse"`, which is where every deployment lands
+   * today. A deployment whose archive is better introduced by its shape than by its files sets
+   * `"overview"` and changes nothing else.
+   */
+  defaultLayout?: "browse" | "overview";
+  /** Default layout of the metadata overview. See {@link OverviewConfig}. */
+  overview?: OverviewConfig;
+  /**
+   * Whether a visitor may remove a value that came from {@link DataBrowserConfig.baseFilters}.
+   *
+   * Default `false`, which is the behaviour every deployment has today: a scoped value renders
+   * locked, cannot be toggled, and survives "Clear all", so the instance behaves as if the scope
+   * were the whole archive.
+   *
+   * `true` makes the scope a STARTING POINT instead of a boundary - the value is applied on load
+   * and shown as an ordinary selected facet the visitor can take off to see the wider archive. It
+   * is the right setting for a landing page that opens on a project and a wrong one for anything
+   * resembling tenancy, so it is opt-in and says so. Either way this was never an authorization
+   * boundary; see `baseFilters`.
+   */
+  scopeRemovable?: boolean;
   /** Feature gates for chrome (all default true). */
   features?: FeatureFlags;
   /** Embedder palette overrides applied as CSS custom properties on the root. */
@@ -401,7 +474,10 @@ export interface DataBrowserConfig {
 
 export interface ResolvedConfig {
   map: MapConfig;
-  inspectorUrl: string;
+  /** Set only when the host overrode the packaged @freva-org/data-inspector. */
+  inspectorUrl?: string;
+  /** The host's overlay root, if it gave one. See `DataBrowserConfig`. */
+  overlayRoot?: HTMLElement;
   apiBase: string;
   flavour: FlavourName;
   devNotes: boolean;
@@ -412,6 +488,9 @@ export interface ResolvedConfig {
   enableStrictBBoxModes: boolean;
   metadata: MetadataMap;
   metadataScriptUrl: string | null;
+  defaultLayout: "results" | "overview";
+  overview: { order: readonly string[]; mainFacets: readonly string[] | null };
+  scopeRemovable: boolean;
   features: Required<FeatureFlags>;
   theme: ThemeConfig;
   brand: Required<BrandConfig>;

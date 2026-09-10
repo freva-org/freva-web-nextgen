@@ -383,6 +383,9 @@ test("(pure): facetQueryString encodes keys as well as values", () => {
     enableStrictBBoxModes: false,
     metadata: {},
     metadataScriptUrl: null,
+    defaultLayout: "results",
+    overview: { order: [], mainFacets: null },
+    scopeRemovable: false,
     features: {
       themeToggle: true,
       terminal: true,
@@ -689,6 +692,9 @@ test("filterCommittable / selectionsEqual behave as the single commit guard", ()
     enableStrictBBoxModes: false,
     metadata: {},
     metadataScriptUrl: null,
+    defaultLayout: "results",
+    overview: { order: [], mainFacets: null },
+    scopeRemovable: false,
     features: {
       themeToggle: true,
       terminal: true,

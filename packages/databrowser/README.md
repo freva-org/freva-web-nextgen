@@ -1,8 +1,9 @@
 # @freva-org/databrowser
 
-Framework-free, strictly-typed climate-data browser for the `freva-nextgen` REST API. Its only
-runtime dependency is the first-party [`@freva-org/freva-client-terminal`](../freva-client-terminal),
-which owns the terminal window; there are **no third-party runtime dependencies**. Single mount point, self-contained styles, near-total teardown (one
+Framework-free, strictly-typed climate-data browser for the `freva-nextgen` REST API. Its runtime
+dependencies are both first-party - [`@freva-org/freva-client-terminal`](../freva-client-terminal),
+which owns the terminal window, and [`@freva-org/data-inspector`](../data-inspector), imported
+lazily on first Inspect; there are **no third-party runtime dependencies**. Single mount point, self-contained styles, near-total teardown (one
 documented page-global exception for the opt-in Leaflet map - see below).
 
 ## Install
@@ -60,7 +61,7 @@ page-global is ever installed.
 | `enableStrictBBoxModes` | `boolean`                                                                                            | `false`                          | Config back-compat flag for strict/file bbox semantics                                                                |
 | `syncUrl`               | `boolean`                                                                                            | `true`                           | Mirror the active query into the page URL and read it back on load (deep links)                                       |
 | `baseFilters`           | `Record<string, string \| string[]>`                                                                 | -                                | Always-applied client-side scope for a hosted filtered instance - positive and/or `_not_` keys (not an auth boundary) |
-| `inspectorUrl`          | `string`                                                                                             | CDN default                      | ESM URL for the lazy `@freva-org/data-inspector` component (self-host for air-gapped)                                 |
+| `inspectorUrl`          | `string`                                                                                             | packaged dependency              | Optional override: load `@freva-org/data-inspector` from this ESM URL instead of the bundled package                  |
 | `brand`                 | `{ title?, mark?, description?, showMark?, showTitle? }`                                             | `Freva` / `≈`, both shown        | Brand title, mark, description; `showMark`/`showTitle` hide either half independently                                 |
 | `devNotes`              | `boolean`                                                                                            | `false`                          | Opt-in developer drawer + `window.__frevaPerf` instrumentation                                                        |
 | `metadata`              | `{ [facetKey]: { [value]: string } }`                                                                | `undefined`                      | Facet-value descriptions; overrides the deployment script per (key, value)                                            |
