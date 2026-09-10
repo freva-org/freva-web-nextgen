@@ -1,5 +1,11 @@
 # @freva-org/data-inspector
 
+## 2609.0.0
+
+### Major Changes
+
+- 404fb52: The inspector renders under a strict `style-src` Content-Security-Policy.
+
 ## 2608.0.0
 
 _Adopts CalVer (`YYMM.MINOR.PATCH`). Supersedes 3.2.0; no functional difference._
