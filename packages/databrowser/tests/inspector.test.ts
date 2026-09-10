@@ -1,4 +1,4 @@
-// Inspect gating and graceful degradation (the inspector package is not bundled in tests).
+// Inspect gating and graceful degradation (the inspector is imported lazily, never at mount).
 
 import "./helpers.js";
 import { test } from "node:test";
@@ -55,13 +55,13 @@ test("Inspect is gated: without auth+heavyOps it warns and never imports the pac
   destroy();
 });
 
-test("Inspect enabled: attempts lazy import and degrades gracefully when the package is absent", async () => {
+test("Inspect enabled: the lazy import is attempted and never throws out of the click", async () => {
   const { root, statusMsg, destroy } = await openMenuInspect({
     authEnabled: true,
     enableHeavyOps: true,
   });
   await wait(60);
-  // the package is not bundled in the test env -> import rejects -> an error is surfaced (no throw)
+  // whether the module resolves or not, the outcome is surfaced rather than thrown
   assert.ok(statusMsg().length > 0, "the inspect attempt was surfaced on the footer");
   void root;
   destroy();

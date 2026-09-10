@@ -202,6 +202,9 @@ test(
       assert.ok(files.includes(required), `the root entry lost ${required}`);
     }
     assert.ok(g.bare.includes("@freva-org/freva-client-terminal"));
+    // The inspector is a declared dependency reached only through a dynamic import.
+    assert.ok(g.bare.includes("@freva-org/data-inspector"));
+    assert.ok(PKG.dependencies?.["@freva-org/data-inspector"]);
     // The root entry must NOT drag the picker in either - a host that never uses it pays nothing.
     assert.equal(files.includes("picker/mount.js"), false);
     assert.equal(files.includes("picker/styles.js"), false);

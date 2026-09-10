@@ -3883,7 +3883,7 @@ body.fdb-dragging * {
 }
 
 /* data-inspector: themed to the databrowser (blue), auto-following light/night
-   The <data-inspector> (lazy CDN component) renders inside .freva-db, so our design tokens are in
+   The <data-inspector> (imported lazily) renders inside .freva-db, so our design tokens are in
    scope. We map them onto the component's public knobs (--di-*), so the modal follows the app theme
    instead of prefers-color-scheme. On top of that:
      • a solid blue header - there is no --di-header-bg knob, so we colour .di-header directly and

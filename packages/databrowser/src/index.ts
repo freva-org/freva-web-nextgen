@@ -91,7 +91,7 @@ import { createNotes, type NotesController } from "./components/notes.js";
 import { createValueSearch, decorateSearchField } from "./components/searchBar.js";
 import { createConsole, type ConsoleController } from "./components/console.js";
 import { installTooltips } from "./components/tooltip.js";
-import { createInspector, DEFAULT_INSPECTOR_URL } from "./components/inspector.js";
+import { createInspector } from "./components/inspector.js";
 import { exportMenu, wholeResultHeading } from "./components/exportMenu.js";
 
 const DEFAULT_API_BASE = "/api/freva-nextgen/databrowser";
@@ -102,7 +102,7 @@ function resolveConfig(config: DataBrowserConfig): ResolvedConfig {
   const map = { ...DEFAULT_MAP_CONFIG, ...(config.map ?? {}) };
   return {
     map,
-    inspectorUrl: config.inspectorUrl ?? DEFAULT_INSPECTOR_URL,
+    ...(config.inspectorUrl ? { inspectorUrl: config.inspectorUrl } : {}),
     ...(config.overlayRoot ? { overlayRoot: config.overlayRoot } : {}),
     apiBase: config.apiBase ?? DEFAULT_API_BASE,
     flavour: config.flavour ?? "freva",

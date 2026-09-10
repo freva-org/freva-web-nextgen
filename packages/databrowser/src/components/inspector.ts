@@ -1,7 +1,6 @@
 // components/inspector.ts - per-file Inspect via @freva-org/data-inspector.
-// A sanctioned lazy dependency (alongside Leaflet): its ESM is dynamically imported from a CDN
-// URL on first use ONLY, so it never enters the main bundle or node_modules (the same model as
-// map.ts loads Leaflet). The URL is config-overridable (cfg.inspectorUrl) for self-hosting.
+// A normal dependency, imported lazily on first use ONLY, so it never enters the main bundle.
+// `cfg.inspectorUrl` overrides that with an explicit ESM URL, for a host serving its own copy.
 //
 // Two paths, matching what the package can actually do:
 //   • ALREADY ZARR (no auth): detectZarrStore() probes the file URL for a zarr store; if it is one,
@@ -12,39 +11,37 @@
 
 import type { AppContext } from "../context.js";
 
-/** Pinned CDN ESM for the inspector. esm.sh serves the package's self-contained module (the package
- *  has no runtime dependencies), so a bare dynamic import resolves with nothing else to fetch. */
-export const DEFAULT_INSPECTOR_URL = "https://esm.sh/@freva-org/data-inspector@2608.0.0";
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type InspectorModule = any;
 let modPromise: Promise<InspectorModule> | null = null;
 // `customElements.define('data-inspector', …)` can only run ONCE per page, so the inspector
-// is necessarily process-global: the first configured URL wins. A later mount with a different URL
-// keeps the first and warns, rather than silently registering nothing.
+// is necessarily process-global: the first configured source wins. A later mount with a different
+// one keeps the first and warns, rather than silently registering nothing.
 let loadedUrl: string | null = null;
 
 // The dynamic import is behind an injectable seam so a test can drive the load + both file paths
-// without a real chunk or network. Production imports the configured URL.
-const realImport = (url: string): Promise<InspectorModule> => import(/* @vite-ignore */ url);
-let importModule: (url: string) => Promise<InspectorModule> = realImport;
+// without a real chunk or network. No url imports the packaged dependency; a url imports that copy.
+const realImport = (url?: string): Promise<InspectorModule> =>
+  url ? import(/* @vite-ignore */ url) : import("@freva-org/data-inspector");
+let importModule: (url?: string) => Promise<InspectorModule> = realImport;
 export function setInspectorImporterForTests(
-  fn: ((url: string) => Promise<InspectorModule>) | null,
+  fn: ((url?: string) => Promise<InspectorModule>) | null,
 ): void {
   importModule = fn ?? realImport;
   modPromise = null;
   loadedUrl = null;
 }
 
-export async function loadInspector(url: string): Promise<InspectorModule> {
-  if (modPromise && loadedUrl && url !== loadedUrl) {
+export async function loadInspector(url?: string): Promise<InspectorModule> {
+  const source = url || null;
+  if (modPromise && source !== loadedUrl) {
     console.warn(
-      `[freva-databrowser] data-inspector already loaded from ${loadedUrl}; ignoring a second URL (${url}). The custom element can only be registered once per page.`,
+      `[freva-databrowser] data-inspector already loaded from ${loadedUrl ?? "the packaged dependency"}; ignoring a second source (${source ?? "the packaged dependency"}). The custom element can only be registered once per page.`,
     );
   }
   if (!modPromise) {
-    loadedUrl = url;
-    modPromise = importModule(url)
+    loadedUrl = source;
+    modPromise = importModule(source ?? undefined)
       .then((m: InspectorModule) => {
         if (m?.DataInspectorElement && !customElements.get("data-inspector")) {
           customElements.define("data-inspector", m.DataInspectorElement);

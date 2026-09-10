@@ -353,6 +353,9 @@ test("the shipped package does not depend on a runtime validator", () => {
   };
   // ajv is dev-only: hosts get a schema they can validate with their own tooling, not a validator
   // bolted into the bundle.
-  assert.deepEqual(Object.keys(pkg.dependencies ?? {}), ["@freva-org/freva-client-terminal"]);
+  assert.deepEqual(Object.keys(pkg.dependencies ?? {}).sort(), [
+    "@freva-org/data-inspector",
+    "@freva-org/freva-client-terminal",
+  ]);
   assert.ok("ajv" in (pkg.devDependencies ?? {}));
 });

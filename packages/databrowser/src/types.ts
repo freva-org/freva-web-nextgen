@@ -350,8 +350,8 @@ export interface DataBrowserConfig {
   apiBase?: string;
   flavour?: FlavourName;
   devNotes?: boolean;
-  /** ESM URL for the lazy @freva-org/data-inspector web component (CDN by default; override to a
-   *  self-hosted copy). Loaded on first Inspect only - never in the main bundle. */
+  /** Optional override: load @freva-org/data-inspector from this ESM URL instead of the packaged
+   *  dependency. Either way it is imported on first Inspect only - never in the main bundle. */
   inspectorUrl?: string;
   /**
    * Where the component's *global* surfaces go: the File Inspector and the
@@ -474,7 +474,8 @@ export interface DataBrowserConfig {
 
 export interface ResolvedConfig {
   map: MapConfig;
-  inspectorUrl: string;
+  /** Set only when the host overrode the packaged @freva-org/data-inspector. */
+  inspectorUrl?: string;
   /** The host's overlay root, if it gave one. See `DataBrowserConfig`. */
   overlayRoot?: HTMLElement;
   apiBase: string;
