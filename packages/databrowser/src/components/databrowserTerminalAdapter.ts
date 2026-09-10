@@ -13,6 +13,7 @@
 // coupling is exactly what this seam exists to keep out.
 
 import type {
+  SegmentKind,
   TerminalCompletion,
   TerminalCompletionItem,
   TerminalHandle,
@@ -207,11 +208,25 @@ export function createDatabrowserTerminal(ctx: AppContext): TerminalController {
       segs.push({ text: " " }, { text: "--flavour", kind: "fixed" });
       segs.push({ text: " " }, { text: ctx.state.flavour, kind: "accent" });
     }
-    // The base scope is invisible in the typed tokens but IS part of the query, so print it
-    // (dimmed, read-only) - a command copied into a real shell must reproduce the SAME scoped
-    // results the widget shows rather than silently querying the whole archive.
+    /*
+     * The base scope is invisible in the typed tokens but IS part of the query, so it is printed -
+     * a command copied into a real shell must reproduce the SAME scoped results the widget shows
+     * rather than silently querying the whole archive.
+     *
+     * Painted like any other applied token - key, `=`, value - and not `muted`. Muted is dim,
+     * italic and half-transparent, which in a field full of real tokens reads as a SUGGESTION: the
+     * greyed-out example a prompt offers before you type. This is the opposite of a suggestion. It
+     * is the one filter in the line the visitor cannot take off, and it is doing more work than
+     * anything they typed. What marks it as theirs-not-to-edit is that it lives in the read-only
+     * prefix and the caret cannot reach it, which is a stronger statement than a colour.
+     */
     for (const [k, v] of baseScopePairs(ctx.state)) {
-      segs.push({ text: " " }, { text: `${k}=${sh.quote(v)}`, kind: "muted" });
+      segs.push(
+        { text: " " },
+        { text: k, kind: "key" },
+        { text: "=", kind: "eq" },
+        { text: sh.quote(v), kind: "value" },
+      );
     }
     return segs;
   }
@@ -373,6 +388,38 @@ export function createDatabrowserTerminal(ctx: AppContext): TerminalController {
     return [...new Set(keep)].join(" ");
   }
 
+  /* The placeholder example.
+   *
+   * The empty-buffer example is DERIVED, never a literal: a hardcoded `project=cmip6 variable=tas`
+   * would, in a portal scoped to `project=waterpark`, keep suggesting a project the visitor cannot
+   * select and the wire silently drops. It is built from the live vocabulary with the gated keys
+   * removed - the same list autocomplete offers - and read through a getter, because the tab
+   * literal is constructed at mount and the archive's vocabulary only arrives with the first
+   * search.
+   */
+  function exampleTokens(style: "cli" | "py"): string {
+    const gated = (key: string): boolean => isGatedKey(ctx.state, key);
+    const pairs: Array<[string, string]> = [];
+    for (const facet of ctx.state.facets) {
+      if (pairs.length >= (style === "cli" ? 2 : 1)) break;
+      const key = facet.key.toLowerCase();
+      if (gated(key) || CONTROL_KEYS.has(key)) continue;
+      const value = facet.values[0]?.value;
+      if (value) pairs.push([key, value]);
+    }
+    if (!pairs.length) {
+      // No vocabulary yet: name a plausible key, still never a gated one, and no invented value.
+      const key = PRIMARY_FACET_FALLBACK.find((k) => !gated(k));
+      if (!key) return "";
+      return style === "cli" ? `${key}=…` : `${key}="…"`;
+    }
+    return pairs
+      .map(([k, v]) =>
+        style === "cli" ? `${k}=${SHELLS[shellId].quote(v)}` : `${k}=${JSON.stringify(v)}`,
+      )
+      .join(" ");
+  }
+
   const cliTab: TerminalTab = {
     id: "cli",
     // `te` is the historical class prefix for the shell editor in the freva stylesheet
@@ -381,7 +428,9 @@ export function createDatabrowserTerminal(ctx: AppContext): TerminalController {
     label: SHELLS[shellId].label,
     icon: ICONS.bashTab,
     multiline: false,
-    placeholder: "project=cmip6 variable=tas",
+    get placeholder(): string {
+      return exampleTokens("cli");
+    },
     ariaLabel: "Command facets",
     prefix: cliPrefix,
     text: () => terminalTokens(ctx.state),
@@ -481,15 +530,22 @@ export function createDatabrowserTerminal(ctx: AppContext): TerminalController {
   }
 
   /**
-   * One read-only python line. `muted` marks the echoed scope/flavour lines, which are also the
-   * CONTINUATION lines - their `...` gutter is quiet, while a real `>>>` keeps the prompt colour.
-   * Saying so here rather than in CSS is what lets the two be told apart at all: both arrive as
-   * painted segments rather than as distinguishable markup.
+   * One read-only python line.
+   *
+   * `cont` marks a CONTINUATION line - its `...` gutter is quiet, while a real `>>>` keeps the
+   * prompt colour. `code` is the kind for the code half, which varies INDEPENDENTLY of the gutter:
+   * a continuation line can hold a muted echo (the flavour) or genuine applied code (the base
+   * scope). Saying so here rather than in CSS is what lets the cases be told apart at all - both
+   * arrive as painted segments rather than as distinguishable markup.
    */
-  function pyLine(prompt: string, code: string, muted = false): TerminalSegment[] {
+  function pyLine(
+    prompt: string,
+    text: string,
+    { cont = false, code = "fixed" as SegmentKind } = {},
+  ): TerminalSegment[] {
     return [
-      { text: prompt, kind: muted ? "contprompt" : "prompt" },
-      { text: code, kind: muted ? "muted" : "fixed" },
+      { text: prompt, kind: cont ? "contprompt" : "prompt" },
+      { text, kind: code },
     ];
   }
 
@@ -498,7 +554,9 @@ export function createDatabrowserTerminal(ctx: AppContext): TerminalController {
     label: "python",
     icon: ICONS.pySnake,
     multiline: true,
-    placeholder: 'project="cordex"',
+    get placeholder(): string {
+      return exampleTokens("py");
+    },
     ariaLabel: "databrowser keyword arguments",
     // Python's prompt geometry is the `>>>`/`...` gutter, not an inline prefix, so the editable
     // line carries no prefix of its own.
@@ -509,7 +567,20 @@ export function createDatabrowserTerminal(ctx: AppContext): TerminalController {
         pyLine(">>> ", "databrowser("),
       ];
       // flavour + base scope are read-only continuation lines and always come FIRST.
-      for (const line of pyFixedLines(ctx.state)) lines.push(pyLine("... ", `    ${line},`, true));
+      /*
+       * The flavour echo is muted; the base scope is NOT. Same reasoning as the shell prefix: the
+       * scope is the one filter the visitor cannot remove and the biggest single narrowing in the
+       * call, and painting it in the greyed-out tone a prompt uses for its own suggestions invites
+       * exactly the misreading that it is an example waiting to be replaced. Read-only is already
+       * said by the `...` gutter and by the caret's inability to reach the line.
+       */
+      for (const line of pyFixedLines(ctx.state))
+        lines.push(
+          pyLine("... ", `    ${line.code},`, {
+            cont: true,
+            code: line.scope ? "fixed" : "muted",
+          }),
+        );
       return lines;
     },
     // The closing `)` is CODE (key-coloured, like `databrowser(`), but its `...` gutter is a
@@ -564,11 +635,23 @@ export function createDatabrowserTerminal(ctx: AppContext): TerminalController {
     revision: () => ctx.state.externalEdits,
   };
 
-  const handle: TerminalHandle = createTerminal(ctx.roots.app, {
+  /*
+   * The terminal is a window over the application, not a panel inside it.
+   *
+   * It mounts on the overlay root and is bounded by the overlay root, which is
+   * the component root on a standalone page and a viewport-sized layer when a
+   * host supplies one. Nothing else changes: the window is still positioned and
+   * clamped against its mount, so "drag it to the corner" means the corner of
+   * whatever the host decided its world is.
+   *
+   * It is deliberately not modal and draws no backdrop - it floats over the
+   * portal while the portal stays live underneath it.
+   */
+  const handle: TerminalHandle = createTerminal(ctx.roots.overlay, {
     tabs: [cliTab, pyTab],
     activeTab: ctx.state.terminalTab,
     os: os === "unknown" ? "mac" : os,
-    bounds: () => ctx.roots.app,
+    bounds: () => ctx.roots.overlay,
     // The data browser renders its own immediate, styled tooltips from `data-tip` (see
     // components/tooltip.ts). Leaving the terminal on the native `title` would give every control
     // in the window two tooltips - ours and the browser's slow, unstyled one.

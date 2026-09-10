@@ -10,7 +10,7 @@
 import type { AppContext } from "../context.js";
 import { appendChunked, el, replaceChildren, svgIcon, type Disposables } from "../dom.js";
 import { ICONS } from "../icons.js";
-import { badgeSpecs, facetBreakdown, modeBadge } from "./facetBadge.js";
+import { badgeSpecs, facetBreakdown, modeBadge, sharePct, shareTitle } from "./facetBadge.js";
 import {
   describeValue,
   displayFacetValues,
@@ -497,28 +497,8 @@ function valueRow(
   return el("div", { class: `fval-row${excl ? " excl" : ""}` }, [row, ex]);
 }
 
-/**
- * A value's share of the whole result set, 0–100. Returns null when there is no total to divide by.
- * Clamped at 100: a multi-valued facet (a file has many variables) can report counts that sum to
- * more than the result set, and a bar past the end of its track would just be wrong.
- */
-function sharePct(ctx: AppContext, count: number): number | null {
-  const total = ctx.state.totalCount;
-  if (!total || total <= 0) return null;
-  return Math.min(100, (count / total) * 100);
-}
-
-function shareTitle(ctx: AppContext, value: string, count: number, desc: string | null): string {
-  const pct = sharePct(ctx, count);
-  const share =
-    pct === null
-      ? ""
-      : ` - ${count.toLocaleString("en-US")} (${pct < 0.1 ? "<0.1" : pct.toFixed(1)}% of results)`;
-  return desc ? `${value} - ${desc}${share}` : `${value}${share}`;
-}
-
 /** Sorted copy of a facet's values per the block's sort choice (default: count desc). */
-function sortedValues(ctx: AppContext, facet: Facet): FacetValue[] {
+export function sortedValues(ctx: AppContext, facet: Facet): FacetValue[] {
   const mode = ctx.state.overviewSort[facet.key] ?? "count";
   const vs = displayFacetValues(ctx.state, facet).slice(); // gated key -> scope values only
   if (mode === "alpha") vs.sort((a, b) => a.value.localeCompare(b.value));
@@ -556,11 +536,19 @@ function iconBtn(
  * shows the icon AND its current mode ("A–Z" / "9–1") - the two orderings that make sense for
  * facet values (alphabetical, and by count descending).
  */
-function sortBtn(
+export function sortBtn(
   ctx: AppContext,
   reg: Disposables,
   key: string,
   mode: "count" | "alpha",
+  /*
+   * What to redraw once the mode has flipped. The overview re-renders its whole grid; the sidebar
+   * repaints one value list in place, which is what keeps the disclosure open and the scroll
+   * position where the visitor left it. The sort MODE itself is deliberately shared between the
+   * two views - the same facet ordered two different ways depending on which view you happened to
+   * open it in is a difference nobody asked for.
+   */
+  after: () => void = () => ctx.renderOverview(),
 ): HTMLButtonElement {
   const isAlpha = mode === "alpha";
   const b = el(
@@ -582,7 +570,7 @@ function sortBtn(
     e.stopPropagation();
     ctx.state.overviewSort[key] = isAlpha ? "count" : "alpha";
     persist(ctx);
-    ctx.renderOverview();
+    after();
   });
   return b;
 }
@@ -896,14 +884,24 @@ export function renderOverview(ctx: AppContext): void {
     host.dataset.rzwired = "1";
     wireDrag(ctx, host);
   }
-  const primarySet = new Set(ctx.state.primaryFacets);
+  /*
+   * Which blocks are MAIN: the deployment's list when it stated one, the API's otherwise.
+   *
+   * `null` and `[]` are different answers, which is why the config keeps them apart. `null` is "no
+   * opinion" - use `primary_facets`, the behaviour every deployment has today. `[]` is a deployment
+   * saying every facet is a main block, and it must therefore produce an empty additional section
+   * rather than falling through to the API's list.
+   */
+  const mainKeys = ctx.cfg.overview.mainFacets ?? ctx.state.primaryFacets;
+  const primarySet = new Set(mainKeys);
+  const splits = ctx.cfg.overview.mainFacets !== null || primarySet.size > 0;
   const shown = overviewFacets(ctx.state); // keep known blocks even when they match nothing now
   reconcileStacked(
     ctx,
     shown.map((f) => f.key),
   );
-  const primary = primarySet.size ? shown.filter((f) => primarySet.has(f.key)) : shown;
-  const additional = primarySet.size ? shown.filter((f) => !primarySet.has(f.key)) : [];
+  const primary = splits ? shown.filter((f) => primarySet.has(f.key)) : shown;
+  const additional = splits ? shown.filter((f) => !primarySet.has(f.key)) : [];
 
   // ONE ordered flow, containing every block that is currently on screen: the primary facets, Time,
   // BBox, and - when the section is open - the additional facets too. Ordering those two groups

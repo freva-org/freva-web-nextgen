@@ -32,8 +32,18 @@ export function saveTheme(t: "day" | "night"): void {
   write(KEY_THEME, t);
 }
 
-export function loadLayout(): "results" | "overview" {
-  return read(KEY_LAYOUT) === "overview" ? "overview" : "results";
+/**
+ * The visitor's own choice, or the deployment's default when they have not made one.
+ *
+ * The fallback is a parameter rather than a constant because "which view do people land on" is a
+ * deployment decision - an archive better introduced by its shape than by its files opens on the
+ * overview - while "which view did THIS person last use" is theirs, and outranks it.
+ */
+export function loadLayout(fallback: "results" | "overview" = "results"): "results" | "overview" {
+  const stored = read(KEY_LAYOUT);
+  if (stored === "overview") return "overview";
+  if (stored === "results") return "results";
+  return fallback;
 }
 export function saveLayout(l: "results" | "overview"): void {
   write(KEY_LAYOUT, l);

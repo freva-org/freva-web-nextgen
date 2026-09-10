@@ -9,10 +9,10 @@
 import type { AppContext } from "../context.js";
 import { appendChunked, el, replaceChildren, svgIcon, type Disposables } from "../dom.js";
 import { ICONS } from "../icons.js";
-import { NEQ, badgeSpecs, facetBreakdown, modeBadge } from "./facetBadge.js";
+import { NEQ, badgeSpecs, facetBreakdown, modeBadge, sharePct, shareTitle } from "./facetBadge.js";
+import { sortBtn, sortedValues } from "./overview.js";
 import {
   describeValue,
-  displayFacetValues,
   excludedValues,
   facetSelectionCount,
   isExcluded,
@@ -62,12 +62,24 @@ function valueRow(
         : `Include ${facet.label} ${value}`,
       title: gated
         ? `${value} - this instance is scoped to this value`
-        : desc
-          ? `${value} - ${desc}`
-          : value,
+        : shareTitle(ctx, value, count, desc),
     },
     [cb, el("span", { class: "nm", text: value }), el("span", { class: "n", text: fmt(count) })],
   );
+  /*
+   * The same share bar the overview cards draw, behind the same kind of row.
+   *
+   * Not a second implementation and not a second scale: `sharePct` is the share of the WHOLE result
+   * set, so a value reads identically in the sidebar and in the overview. A per-facet scale would
+   * have made the top value of every list a full bar - which says only "this is the top one", a
+   * thing the ordering already says - and would have meant one value drawn two different lengths on
+   * one screen depending on which panel the reader was looking at.
+   */
+  const pct = sharePct(ctx, count);
+  if (pct !== null && pct > 0) {
+    row.classList.add("has-bar");
+    row.style.setProperty("--pct", `${pct}%`); // drawn by ::before - no extra element
+  }
   if (!gated) reg.listen(row, "click", () => ctx.toggleFacet(facet.key, value)); // the gate can't be toggled off
   if (gated) return el("div", { class: "fval-row" }, [row]);
 
@@ -135,7 +147,8 @@ function facetNode(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement
     const badge = facet.hasMore ? `${facet.values.length}+` : String(facet.values.length);
     head.append(el("span", { class: "badge", text: badge }));
   }
-  head.append(el("span", { class: "chev" }, [svgIcon(ICONS.chevron, { size: 12 })]));
+  const chev = el("span", { class: "chev" }, [svgIcon(ICONS.chevron, { size: 12 })]);
+  head.append(chev);
 
   const body = el("div", { class: "facet-body" });
   const list = el("div", { class: "fval-list" }); // the scroll container (capped height)
@@ -153,7 +166,9 @@ function facetNode(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement
 
   const paint = (q: string): void => {
     const needle = q.trim().toLowerCase();
-    const source = displayFacetValues(ctx.state, facet); // gated key -> scope values only
+    // The SAME ordering the overview card uses, read from the same per-facet sort mode - a facet
+    // sorted A-Z in one view is sorted A-Z in the other. (Also gated key -> scope values only.)
+    const source = sortedValues(ctx, facet);
     const matches = needle ? source.filter((v) => v.value.toLowerCase().includes(needle)) : source;
     replaceChildren(list);
     empty.style.display = matches.length ? "none" : "";
@@ -166,10 +181,37 @@ function facetNode(ctx: AppContext, reg: Disposables, facet: Facet): HTMLElement
     );
   };
 
+  /*
+   * The sort control, shown only while the panel is OPEN.
+   *
+   * Sorting is a statement about a list, so it belongs beside the list rather than in a header row
+   * of collapsed sections where there is nothing yet to sort - eight of these stacked in a closed
+   * sidebar would be eight controls competing with the eight facet names.
+   *
+   * Built with the body, on first open, for the same reason the body is: a rail of eight closed
+   * facets should cost eight headers, not eight headers and eight buttons nobody has asked to see.
+   * It then stays in the head, hidden by CSS while the panel is closed, so re-opening is still a
+   * class toggle on a live node rather than a re-render that would discard the filled list.
+   *
+   * Clicking it repaints THIS list in place - the disclosure stays open and the scroll position
+   * holds - then replaces itself with a button labelled for the new mode.
+   */
+  const mountSort = (): void => {
+    const mode = ctx.state.overviewSort[facet.key] ?? "count";
+    const b = sortBtn(ctx, reg, facet.key, mode, () => {
+      b.remove();
+      mountSort();
+      paint(search.value);
+    });
+    b.classList.add("fh-sort");
+    head.insertBefore(b, chev);
+  };
+
   let filled = false;
   const fillBody = (): void => {
     if (filled) return;
     filled = true;
+    mountSort();
     // Show the per-facet search once there are enough values for it to earn its space. Beyond that
     // the list simply scrolls through the loaded values, like an overview card.
     if (facet.values.length > SEARCH_THRESHOLD) {
@@ -268,6 +310,25 @@ export function renderSidebar(ctx: AppContext): void {
     badge.style.setProperty("--fb-ch", String(String(active).length));
     reg.listen(badge, "click", () => ctx.clearAllFacets());
     headBits.push(badge);
+    /*
+     * The same action, said in words.
+     *
+     * The count badge turning into an x on hover is a nice thing to discover and a bad thing to
+     * depend on: it is only discoverable by hovering the one element somebody has no reason to
+     * hover, it says nothing at all on a touch screen, and a visitor who does not find it has no
+     * way to undo a filter set except removing each one. So the badge keeps its behaviour exactly
+     * as it was and this stands beside it - a plainly labelled control that needs no discovery.
+     * Both run `clearAllFacets`; neither is the fallback for the other.
+     */
+    const clearAll = el("button", {
+      class: "sf-clear",
+      type: "button",
+      title: "Clear all filters",
+      "aria-label": `Clear all ${active} filter${active === 1 ? "" : "s"}`,
+      text: "Clear all",
+    });
+    reg.listen(clearAll, "click", () => ctx.clearAllFacets());
+    headBits.push(clearAll);
   }
   const nodes: (Node | string)[] = [el("div", { class: "side-filterhead" }, headBits)];
 

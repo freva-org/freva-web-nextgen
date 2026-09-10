@@ -23,7 +23,15 @@
       "types": "./dist/picker.d.ts",
       "import": "./dist/picker.js"
     },
-    "./package.json": "./package.json"
+    "./metadata": {
+      "types": "./dist/metadata-public.d.ts",
+      "import": "./dist/metadata-public.js"
+    },
+    "./package.json": "./package.json",
+    "./intent": {
+      "types": "./dist/intent.d.ts",
+      "import": "./dist/intent.js"
+    }
   },
   "files": [
     "dist",

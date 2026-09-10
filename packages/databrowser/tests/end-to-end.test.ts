@@ -2152,12 +2152,28 @@ test('sidebar: one Filter header with an active count and Clear all (no "Facets"
   assert.equal(q<HTMLElement>(root, ".side-filterhead .fb-exc"), null, "no breakdown here");
   // the selected value reads as a subtitle under the section name - no expanding needed
   assert.equal(q<HTMLElement>(root, '.facet[data-key="project"] .fh-sel')?.textContent, "cmip6");
-  // the count badge IS the clear-all control - there is no separate sidebar "Clear all" link
-  assert.equal(
-    q<HTMLElement>(root, ".side-filterhead .sf-clear"),
-    null,
-    "the sidebar Clear all link is gone",
+  /*
+   * BOTH clear-all affordances, deliberately.
+   *
+   * The badge turning into an x on hover is still there and still clears everything - but it is
+   * only findable by hovering the one element nobody has a reason to hover, and on a touch screen
+   * it says nothing at all. So a plainly labelled button sits beside it. Neither is the fallback
+   * for the other; they are the same action offered two ways, and this asserts both survive.
+   */
+  const sideClear = q<HTMLButtonElement>(root, ".side-filterhead .sf-clear");
+  assert.ok(sideClear, "the sidebar offers clear-all in words");
+  assert.match(sideClear!.textContent ?? "", /clear all/i);
+  assert.ok(
+    q<HTMLElement>(root, ".side-filterhead .sf-badge"),
+    "…and the count badge is still there beside it",
   );
+  sideClear!.click();
+  await wait(60);
+  assert.deepEqual(handle.getState().selected, {}, "the worded button clears all filters");
+
+  // The badge's own behaviour is unchanged - pick again and clear the other way.
+  pickValue(root, "cmip6");
+  await wait(320);
   const badge = q<HTMLButtonElement>(root, ".side-filterhead .sf-badge");
   assert.ok(badge, "the FILTER count badge is present");
   badge!.click();
@@ -3084,9 +3100,22 @@ test("comparison: fetches are capped past DIFF_MAX and Enlarge opens a full-scre
   enlarge!.click();
   await tick();
   const modal = q<HTMLElement>(root, ".dmm-modal");
+  assert.ok(modal, "the inner panel is there");
   assert.ok(q(root, ".dmm-backdrop .dmatrix"), "the full-screen comparison matrix opened");
-  assert.equal(modal!.getAttribute("role"), "dialog", "the modal announces role=dialog");
-  assert.equal(modal!.getAttribute("aria-modal"), "true", "aria-modal is set");
+  /*
+   * Native semantics, not painted-on ones. A real <dialog> announces itself AND - crucially -
+   * paints in the top layer, which is the only way out of a host container that has been
+   * transformed or `contain`ed. Asserting the element rather than the ARIA attributes is what keeps
+   * it from being quietly swapped for a div with `role="dialog"` and a big z-index.
+   */
+  const dlg = q<HTMLElement>(root, ".dmm-backdrop");
+  assert.equal(dlg!.tagName, "DIALOG", "the comparison is a real dialog element");
+  assert.ok(dlg!.hasAttribute("open"), "…and it is open");
+  assert.match(
+    dlg!.getAttribute("aria-label") ?? "",
+    /^Comparing \d+ files$/,
+    "named for what it compares",
+  );
   assert.ok(modal!.contains(win.document.activeElement), "focus moved into the dialog on open");
   // Escape closes it and returns focus to the trigger
   win.document.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

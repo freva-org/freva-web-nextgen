@@ -76,9 +76,29 @@ test("the package exposes ./picker as a real subpath export, and keeps the root 
     types: "./dist/picker.d.ts",
     import: "./dist/picker.js",
   });
+  // `./intent` is the serialisation half of the SearchIntentV1 handoff, split out so a build-time
+  // consumer (the portal builder runs in Node) can produce a link without pulling the widget - and
+  // so the landing page and this component cannot disagree about the wire form.
+  assert.deepEqual(PKG.exports["./intent"], {
+    types: "./dist/intent.d.ts",
+    import: "./dist/intent.js",
+  });
+  // `./metadata` is the description half of the same handoff: the portal's landing box offers the
+  // values this component will show, and a box that cannot describe them is a box that finds
+  // nothing when a visitor searches for what a value MEANS. Data only - no mount, no DOM.
+  assert.deepEqual(PKG.exports["./metadata"], {
+    types: "./dist/metadata-public.d.ts",
+    import: "./dist/metadata-public.js",
+  });
   // No wildcard subpath: consumers must not be able to reach into internals and then depend on
   // them. `./package.json` is the one conventional extra (tooling reads it).
-  assert.deepEqual(Object.keys(PKG.exports).sort(), [".", "./package.json", "./picker"]);
+  assert.deepEqual(Object.keys(PKG.exports).sort(), [
+    ".",
+    "./intent",
+    "./metadata",
+    "./package.json",
+    "./picker",
+  ]);
   for (const key of Object.keys(PKG.exports)) assert.equal(key.includes("*"), false);
 });
 
@@ -124,6 +144,49 @@ test(
     for (const required of ["search/query.js", "search/engine.js", "state.js", "picker/mount.js"]) {
       assert.ok(files.includes(required), `the picker entry no longer uses ${required}`);
     }
+  },
+);
+
+test(
+  "the metadata entry is data only, and does not drag the built-in set into the initial load",
+  {
+    skip: built ? false : "dist/ not built - run `npm run build`",
+  },
+  () => {
+    const g = walk(join(DIST, "metadata-public.js"));
+    const files = g.files.map(rel);
+
+    // A host imports this to describe a facet value in ITS OWN UI. Anything that
+    // renders, mounts or fetches would make that import cost a page's worth of
+    // application for one string.
+    const FORBIDDEN: Array<[string, RegExp]> = [
+      ["the full application entry", /^index\.js$/],
+      ["the application shell builder", /^shell\.js$/],
+      ["the picker", /^picker(\.js|\/)/],
+      ["a component", /^components\//],
+      ["the Api client", /^api\.js$/],
+      ["the full databrowser stylesheet", /^styles\.js$/],
+      ["the leaflet map", /leafletMap|^map\.js$/],
+    ];
+    for (const [what, re] of FORBIDDEN) {
+      const hit = files.filter((f) => re.test(f));
+      assert.deepEqual(hit, [], `the metadata entry now reaches ${what}: ${hit.join(", ")}`);
+    }
+    assert.deepEqual(
+      g.bare,
+      [],
+      `the metadata entry gained external imports: ${g.bare.join(", ")}`,
+    );
+
+    // The 2,498 descriptions are reached through a DYNAMIC import, so a bundler
+    // splits them: importing this module must not, by itself, pull them in.
+    const entry = readFileSync(join(DIST, "metadata.js"), "utf8");
+    assert.match(entry, /import\(\s*["'].\/metadata-builtin\.js["']/);
+    assert.equal(
+      /(?:^|[\n;])\s*import\b[^'"\n]*?from\s*["'].\/metadata-builtin\.js["']/.test(entry),
+      false,
+      "metadata.js gained a STATIC import of the built-in set",
+    );
   },
 );
 
@@ -198,5 +261,21 @@ test(
       ratio < 0.35,
       `the picker entry grew to ${(ratio * 100).toFixed(1)}% of the root entry`,
     );
+  },
+);
+
+test(
+  "the intent entry stays free of the widget, so a Node build can import it",
+  {
+    skip: existsSync(join(DIST, "intent.js")) ? false : "dist/ not built - run `npm run build`",
+  },
+  () => {
+    // The portal builder imports this at *build* time to serialise a landing
+    // page's search into the component's own URL contract. If it pulled in the
+    // mounting half, a Node process would evaluate DOM-dependent modules to
+    // produce a query string.
+    const graph = walk(join(DIST, "intent.js"));
+    const forbidden = graph.files.map(rel).filter((f) => f !== "intent.js" && f !== "types.js");
+    assert.deepEqual(forbidden, [], `intent.js reached ${forbidden.join(", ")}`);
   },
 );

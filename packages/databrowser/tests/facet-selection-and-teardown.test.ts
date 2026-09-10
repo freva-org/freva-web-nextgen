@@ -69,6 +69,9 @@ function baseState(): AppState {
     enableStrictBBoxModes: false,
     metadata: {},
     metadataScriptUrl: null,
+    defaultLayout: "results",
+    overview: { order: [], mainFacets: null },
+    scopeRemovable: false,
     features: {
       themeToggle: true,
       terminal: true,

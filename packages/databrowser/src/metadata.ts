@@ -1,7 +1,17 @@
-// metadata.ts - the metadata.js contract. Two sources feed one
-// facetKey -> (value -> description) map: the mount-config `metadata` object and, optionally, the
-// deployment `metadata.js` script. Config WINS per (key, value). Everything degrades silently
-// when a source is absent or malformed - a missing description is just no tooltip, never an error.
+// metadata.ts - where facet descriptions come from. THREE sources feed one
+// facetKey -> (value -> description) map, in this order of increasing priority:
+//
+//   1. the built-in climate metadata shipped with this package (metadata-builtin.ts),
+//   2. a deployment `metadata.js` script, only when one is explicitly configured,
+//   3. the mount-config `metadata` object.
+//
+// Config WINS per (key, value); the built-in set only ever fills gaps. Everything degrades
+// silently when a source is absent or malformed - a missing description is just no tooltip,
+// never an error.
+//
+// The built-in set is reached through a dynamic import, so it is its own chunk: a page that
+// never mounts the Data Browser never loads it, and one that does pays for it after first
+// paint rather than in the initial bundle.
 //
 // A <script src> whose body assigns per-facet window globals
 // (window.project = { cmip6: '…' }, …). We read only an ALLOW-LIST of known facet
@@ -11,6 +21,7 @@
 import type { Disposables } from "./dom.js";
 import { ADDITIONAL_FACET_FALLBACK, PRIMARY_FACET_FALLBACK } from "./state.js";
 import type { MetadataMap, FacetDescriptions, ResolvedConfig } from "./types.js";
+export { describeMetadataValue } from "./describe.js";
 
 /** The facet keys we will read off the metadata.js global (superset of both fallback lists). */
 export const METADATA_FACET_KEYS: string[] = [
@@ -162,8 +173,27 @@ export async function resolveMetadata(
   root: HTMLElement,
 ): Promise<MetadataMap> {
   const config = sanitizeConfigMetadata(cfg.metadata);
+  const builtin = await loadBuiltinMetadata();
   const url = cfg.metadataScriptUrl;
-  if (!url) return config;
+  // No URL is the default and the common case: no probe, no <script>, no request.
+  if (!url) return mergeMetadata(builtin, config);
   const fromScript = await loadMetadataScript(url, dis, root);
-  return mergeMetadata(fromScript, config);
+  return mergeMetadata(mergeMetadata(builtin, fromScript), config);
+}
+
+/**
+ * The built-in climate metadata, as its own chunk.
+ *
+ * A dynamic import rather than a static one so the bundler can split it: 2,498 descriptions are
+ * worth about 190 kB of source, and no page should pay for them before it has decided to mount a
+ * Data Browser. Resolves to `{}` if the chunk cannot be loaded - a portal without descriptions is
+ * a portal without tooltips, not a broken one.
+ */
+export async function loadBuiltinMetadata(): Promise<MetadataMap> {
+  try {
+    const module = await import("./metadata-builtin.js");
+    return sanitizeConfigMetadata(module.BUILTIN_METADATA);
+  } catch {
+    return {};
+  }
 }

@@ -25,6 +25,7 @@
 // of it: a button inside a button is invalid HTML, and assistive technology cannot reach the inner
 // one reliably.
 
+import type { AppContext } from "../context.js";
 import { el } from "../dom.js";
 import { excludedValues, includedValues } from "../state.js";
 import type { QueryScope } from "../search/query.js";
@@ -108,4 +109,36 @@ export function modeBadge(
     onClear();
   });
   return btn;
+}
+
+/* Share bars.
+ *
+ * Here rather than in `overview.ts` because BOTH panels draw them. A value's share of the result
+ * set is one measure, and two copies of it - one per panel - is how the sidebar ends up scaled
+ * against the facet while the overview is scaled against the total, with the same value reading
+ * differently in two places on one screen.
+ */
+/**
+ * A value's share of the whole result set, 0–100. Returns null when there is no total to divide by.
+ * Clamped at 100: a multi-valued facet (a file has many variables) can report counts that sum to
+ * more than the result set, and a bar past the end of its track would just be wrong.
+ */
+export function sharePct(ctx: AppContext, count: number): number | null {
+  const total = ctx.state.totalCount;
+  if (!total || total <= 0) return null;
+  return Math.min(100, (count / total) * 100);
+}
+
+export function shareTitle(
+  ctx: AppContext,
+  value: string,
+  count: number,
+  desc: string | null,
+): string {
+  const pct = sharePct(ctx, count);
+  const share =
+    pct === null
+      ? ""
+      : ` - ${count.toLocaleString("en-US")} (${pct < 0.1 ? "<0.1" : pct.toFixed(1)}% of results)`;
+  return desc ? `${value} - ${desc}${share}` : `${value}${share}`;
 }

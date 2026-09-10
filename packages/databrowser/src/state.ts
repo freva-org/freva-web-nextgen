@@ -16,6 +16,7 @@ import type {
   TimeSelection,
   UniqKey,
 } from "./types.js";
+import { describeMetadataValue } from "./describe.js";
 
 export const BUILTIN_FLAVOURS: FlavourName[] = ["freva", "cmip5", "cmip6", "cordex", "user"];
 
@@ -481,12 +482,14 @@ export const BUILTIN_FLAVOUR_MAPS: Record<
  * facet key (project, variable, …), so we look up by the raw key. Degrades silently to null.
  */
 export function describeValue(state: AppState, key: string, value: string): string | null {
-  // With server-side translation on, `key` is in the current flavour's naming (source_id, mip_era…),
-  // but metadata.js is keyed by the NATIVE freva key (model, project…). Map back before the lookup.
-  const nativeKey = state.flavourMaps[state.flavour]?.backward[key] ?? key;
-  const block = state.metadata[nativeKey] ?? state.metadata[key];
-  const desc = block ? block[value] : undefined;
-  return typeof desc === "string" && desc.length > 0 ? desc : null;
+  // The back-mapping and the two-key fallback live in metadata.ts, so the portal's landing box
+  // resolves a description exactly the way this bar does.
+  return describeMetadataValue(
+    state.metadata,
+    state.flavourMaps[state.flavour]?.backward,
+    key,
+    value,
+  );
 }
 
 /**
@@ -718,6 +721,24 @@ const enc = encodeURIComponent;
 export const LEGACY_VALUE_NEGATION_PREFIXES = ["not ", "!", "-"] as const;
 
 /** Ordered key=value pairs for the query string. Multi-value -> repeated key (OR). Values verbatim. */
+/**
+ * The user's selections MINUS any on a key the scope owns - i.e. exactly what the wire sends.
+ *
+ * `wireFacetPairs` already drops these, because a gated key is inescapable: neither `project=` nor
+ * `project_not_=` from the user may widen or contradict a `project`-scoped instance. What was
+ * missing is that the COMMANDS did not drop them, so a waterpark-scoped browser printed
+ * `project=waterpark project=cmip6` - the scope, and then a token the query it claims to reproduce
+ * never sends. Copied into a shell that command returns a different result set than the one on
+ * screen, which is the one thing the terminal exists not to do.
+ *
+ * Selection-only surfaces - chips, the URL - are deliberately NOT built on this: they show what the
+ * visitor chose, and the gate is meant to be invisible there.
+ */
+export function sentFacetPairs(state: QueryScope): Array<[string, string]> {
+  const gated = baseFilterKeys(state);
+  return facetPairs(state).filter(([k]) => !gated.has(baseFacetKey(k).toLowerCase()));
+}
+
 export function facetPairs(state: QueryScope): Array<[string, string]> {
   const pairs: Array<[string, string]> = [];
   for (const key of Object.keys(state.selected)) {
@@ -854,6 +875,11 @@ export function parseUrlQuery(search: string): {
 }
 /** Transport/safety parameters the component owns; they must never be imported from the URL. */
 export const URL_RESERVED_KEYS = new Set([
+  // The landing-page search handoff owns these two: `siv` is the SearchIntentV1
+  // version marker and `q` is free text that the typed initializer maps onto the
+  // uniq key. Neither is ever imported as a facet.
+  "siv",
+  "q",
   "translate",
   "max-results",
   "start",
@@ -913,7 +939,7 @@ export function posixQuote(v: string): string {
 
 /** Just the facet tokens (no time/bbox) - the terminal textarea owns only these. */
 export function facetOnlyTokens(state: AppState): string {
-  return facetPairs(state)
+  return sentFacetPairs(state)
     .map(([k, v]) => `${k}=${shellQuote(v)}`)
     .join(" ");
 }
@@ -1014,7 +1040,11 @@ function pyValue(v: string): string {
 
 /** Facets grouped as key -> values[] in selection order. */
 function facetPairsGrouped(state: AppState): Array<[string, string[]]> {
-  return Object.keys(state.selected).map((k) => [k, state.selected[k]] as [string, string[]]);
+  // Gate-aware, like `sentFacetPairs`: the python snippet is the same claim as the shell command.
+  const gated = baseFilterKeys(state);
+  return Object.keys(state.selected)
+    .filter((k) => !gated.has(baseFacetKey(k).toLowerCase()))
+    .map((k) => [k, state.selected[k]] as [string, string[]]);
 }
 
 const UNQUOTE = /^(['"])([\s\S]*)\1$/;
@@ -1119,19 +1149,31 @@ export function parsePyConfig(text: string): string {
  *       host="…",
  *   )
  */
-export function pyFixedLines(state: AppState): string[] {
+/** One read-only line of the python call, and whether it states the deployment's base scope. */
+export interface PyFixedLine {
+  code: string;
+  /**
+   * True for a base-scope kwarg, false for the flavour echo. The terminal paints the two
+   * differently: the flavour is a setting mirrored from the header, while the scope is a filter
+   * genuinely narrowing the query and should read as applied code, not as a greyed-out example.
+   */
+  scope: boolean;
+}
+
+export function pyFixedLines(state: AppState): PyFixedLine[] {
   // The flavour (the lens) is read-only, chosen in the header. The base scope is likewise read-only -
   // include it so the copied call reproduces the scoped results, not the whole archive. time/bbox are
   // editable kwargs in the textarea, like every other token.
-  const lines: string[] = [];
-  if (state.flavour !== "freva") lines.push(pyKwarg("flavour", [state.flavour]));
+  const lines: PyFixedLine[] = [];
+  if (state.flavour !== "freva")
+    lines.push({ code: pyKwarg("flavour", [state.flavour]), scope: false });
   const byKey = new Map<string, string[]>();
   for (const [k, v] of baseScopePairs(state)) {
     const cur = byKey.get(k) ?? [];
     cur.push(v);
     byKey.set(k, cur);
   }
-  for (const [k, vs] of byKey) lines.push(pyKwarg(k, vs));
+  for (const [k, vs] of byKey) lines.push({ code: pyKwarg(k, vs), scope: true });
   return lines;
 }
 
@@ -1139,7 +1181,7 @@ export function pythonCommand(state: AppState): string {
   // The copied call is EXACTLY what the tab shows: the read-only flavour line, then the same
   // editable kwargs (time/bbox/facets). Sharing pyEditableLines() is what stops the copied command
   // and the editor from drifting apart.
-  const fixed = pyFixedLines(state).map((l) => `    ${l},`);
+  const fixed = pyFixedLines(state).map((l) => `    ${l.code},`);
   const editable = pyEditableLines(state)
     .split("\n")
     .filter((l) => l.trim())
@@ -1337,7 +1379,7 @@ export function terminalTokens(state: AppState): string {
     toks.push(`bbox=${b.minLon},${b.maxLon},${b.minLat},${b.maxLat}`);
     toks.push(`bbox_select=${b.mode}`);
   }
-  for (const [k, v] of facetPairs(state)) toks.push(`${k}=${shellQuote(v)}`);
+  for (const [k, v] of sentFacetPairs(state)) toks.push(`${k}=${shellQuote(v)}`);
   return toks.join(" ");
 }
 

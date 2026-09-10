@@ -33,6 +33,9 @@ import {
   createInitialState,
   roundBbox,
   parseControlTokens,
+  parseFacetKey,
+  keyForMode,
+  translateKey,
   parseUrlQuery,
   facetQueryString,
   filterCommittable,
@@ -85,7 +88,7 @@ import {
   type TerminalController,
 } from "./components/databrowserTerminalAdapter.js";
 import { createNotes, type NotesController } from "./components/notes.js";
-import { createValueSearch } from "./components/searchBar.js";
+import { createValueSearch, decorateSearchField } from "./components/searchBar.js";
 import { createConsole, type ConsoleController } from "./components/console.js";
 import { installTooltips } from "./components/tooltip.js";
 import { createInspector, DEFAULT_INSPECTOR_URL } from "./components/inspector.js";
@@ -100,6 +103,7 @@ function resolveConfig(config: DataBrowserConfig): ResolvedConfig {
   return {
     map,
     inspectorUrl: config.inspectorUrl ?? DEFAULT_INSPECTOR_URL,
+    ...(config.overlayRoot ? { overlayRoot: config.overlayRoot } : {}),
     apiBase: config.apiBase ?? DEFAULT_API_BASE,
     flavour: config.flavour ?? "freva",
     devNotes: config.devNotes ?? false,
@@ -109,8 +113,24 @@ function resolveConfig(config: DataBrowserConfig): ResolvedConfig {
     baseFilters: config.baseFilters,
     enableStrictBBoxModes: config.enableStrictBBoxModes ?? false,
     metadata: config.metadata ?? {},
-    metadataScriptUrl:
-      config.metadataScriptUrl === undefined ? "/static/js/metadata.js" : config.metadataScriptUrl,
+    // No default: the descriptions are built into the package, so defaulting this would make every
+    // deployment probe a file it does not need - a 404 on every mount for most of them. A
+    // deployment that serves its own script sets this explicitly, and it is merged over the
+    // built-in set.
+    metadataScriptUrl: config.metadataScriptUrl ?? null,
+    /*
+     * `"browse"` in the config, `"results"` inside: Browse is the visitor-facing name for that
+     * view, `results` the internal one. The translation lives here, once, rather than in a config
+     * surface that speaks the internals.
+     */
+    defaultLayout: config.defaultLayout === "overview" ? "overview" : "results",
+    overview: {
+      order: config.overview?.order ? [...config.overview.order] : [],
+      // `null` is "the API decides", which is not the same statement as `[]` - an empty array is a
+      // deployment saying every facet is a main block.
+      mainFacets: config.overview?.mainFacets ? [...config.overview.mainFacets] : null,
+    },
+    scopeRemovable: config.scopeRemovable ?? false,
     features: {
       themeToggle: config.features?.themeToggle ?? true,
       terminal: config.features?.terminal ?? true,
@@ -154,6 +174,7 @@ interface ShellRefs {
   helpPanel: HTMLElement;
   sideCollapse: HTMLButtonElement;
   searchInput: HTMLInputElement;
+  searchAside: HTMLElement;
   searchRegion: HTMLElement;
   searchSpin: HTMLElement;
   searchStatus: HTMLElement;
@@ -198,7 +219,7 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
   const searchInput = el("input", {
     class: "input",
     type: "text",
-    placeholder: "Search values - e.g. tas",
+    placeholder: "Search",
     "aria-label": "Search facet values",
     autocomplete: "off",
     spellcheck: false,
@@ -211,10 +232,13 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
     el("span", { class: "spin" }),
   ]);
   const searchStatus = el("span", { class: "sr-only", role: "status", "aria-live": "polite" });
+  // The field's right-hand furniture: the spinner's reserved slot, and the keyboard hint beside it.
+  // One element so the input's right padding is a single number rather than a sum that drifts.
+  const searchAside = el("span", { class: "search-aside" }, [searchSpin]);
   const search = el("div", { class: "search" }, [
     el("span", { class: "ic" }, [svgIcon(ICONS.search, { size: 16 })]),
     searchInput,
-    searchSpin,
+    searchAside,
     searchStatus,
   ]);
 
@@ -582,6 +606,8 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
 
   const roots: Roots = {
     app: outer,
+    // The host's overlay root when it gave one; the component root otherwise.
+    overlay: cfg.overlayRoot ?? outer,
     facetList,
     chips,
     clearAllBtn,
@@ -620,6 +646,7 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
     sideCollapse,
     searchInput,
     searchRegion: search,
+    searchAside,
     searchSpin,
     searchStatus,
     resultsCtrl,
@@ -659,7 +686,8 @@ export function mountDataBrowser(
   const state: AppState = createInitialState(cfg);
   state.flavour = cfg.flavour;
   state.theme = cfg.theme.mode ?? loadTheme(); // a host can open the widget in its own mode
-  state.layout = loadLayout();
+  // The deployment's default, which a visitor's own persisted choice overrides.
+  state.layout = loadLayout(cfg.defaultLayout);
   state.view = loadView();
   state.flavours = [...BUILTIN_FLAVOURS];
   // On a phone the filter sidebar starts COLLAPSED (a slim rail the user taps to open) so the file
@@ -667,6 +695,14 @@ export function mountDataBrowser(
   const narrowStart = typeof matchMedia === "function" && matchMedia("(max-width: 560px)").matches;
   state.sidebarCollapsed = loadSidebarCollapsed(narrowStart);
   // restore persisted metadata-view block choices
+  /*
+   * The deployment's default order, under anything the visitor has arranged themselves.
+   *
+   * Seeded BEFORE the persisted preferences are read, so a visitor who has dragged a block keeps
+   * their arrangement and one who has not gets the deployment's. `orderedBlocks` ranks by this
+   * list and leaves unlisted keys after it, so naming three keys orders those three.
+   */
+  if (cfg.overview.order.length) state.overviewOrder = [...cfg.overview.order];
   const ovPrefs = loadOverviewPrefs();
   if (ovPrefs) {
     state.overviewSort = ovPrefs.sort;
@@ -682,7 +718,44 @@ export function mountDataBrowser(
   // Config-supplied descriptions are available immediately; the deployment script (if any)
   // merges UNDER them once it lands (config wins per key/value).
   state.metadata = initialMetadata(cfg);
-  state.baseFilters = normalizeBaseFilters(cfg.baseFilters); // the invisible always-applied scope
+  /*
+   * The scope: a boundary by default, a starting point when the deployment says so.
+   *
+   * Default - `baseFilters` becomes the invisible, always-applied scope. Its values render locked,
+   * are never chips, never reach the URL, and survive "Clear all". That is every deployment's
+   * behaviour today and is unchanged.
+   *
+   * `scopeRemovable` - the same values are seeded as ORDINARY SELECTIONS instead, and the scope
+   * itself is empty. Nothing downstream needs a flag: a seeded value is a chip, is in the URL, is
+   * cleared by "Clear all", because it genuinely is a normal selection that happened to be made
+   * for the visitor. The alternative - a `removable` flag threaded through the gate, the chips,
+   * the URL writer and Clear all - would be four places that have to agree about one boolean.
+   *
+   * Seeded only when the URL carries no query of its own. Once a visitor takes the value off, the
+   * URL reflects what is left, and re-seeding on that reload would put back the thing they just
+   * removed - which would make "removable" true for one interaction and false for the next.
+   */
+  const scopeSeed = normalizeBaseFilters(cfg.baseFilters);
+  if (cfg.scopeRemovable) {
+    state.baseFilters = {};
+    const link =
+      cfg.syncUrl && typeof window !== "undefined" && window.location
+        ? parseUrlQuery(window.location.search)
+        : null;
+    const urlHasQuery = Boolean(
+      link && (Object.keys(link.selected).length > 0 || link.time || link.bbox),
+    );
+    if (!urlHasQuery) {
+      for (const [key, values] of Object.entries(scopeSeed)) {
+        const { baseKey, negated } = parseFacetKey(key);
+        const inFlavour = keyForMode(translateKey(state, baseKey, "freva", state.flavour), negated);
+        const into = (state.selected[inFlavour] ??= []);
+        for (const value of values) if (!into.includes(value)) into.push(value);
+      }
+    }
+  } else {
+    state.baseFilters = scopeSeed; // the invisible always-applied scope
+  }
 
   // Deep-link: the URL is the source of truth on load. Apply flavour FIRST (the facet keys in the
   // link are in that flavour's naming), then the facets/time/bbox. This runs before the first
@@ -1670,7 +1743,12 @@ export function mountDataBrowser(
 
   // Value-first main search bar: the user types a VALUE and
   // picks a facet=value match from the dropdown. The key=value power syntax lives in the terminal.
-  if (cfg.features.search) createValueSearch(ctx, refs.searchInput);
+  if (cfg.features.search) {
+    createValueSearch(ctx, refs.searchInput);
+    // The field's furniture is wired even when the dropdown is not: a deployment that turns the
+    // value dropdown off still has a field somebody has to be able to reach and read.
+  }
+  decorateSearchField(ctx, refs.searchInput, refs.searchAside);
 
   // lens dropdown
   dis.listen(refs.lensBtn, "click", () => {
@@ -2080,4 +2158,16 @@ export function mountDataBrowser(
 }
 
 export type { DataBrowserConfig, DataBrowserHandle } from "./types.js";
+export {
+  SEARCH_INTENT_VERSION,
+  SEARCH_INTENT_VERSION_KEY,
+  SEARCH_INTENT_TEXT_KEY,
+  applySearchIntentV1,
+  parseSearchIntentV1,
+  serializeSearchIntentV1,
+  textToFacetValue,
+  mountDataBrowserFromIntent,
+  type ParsedIntent,
+  type SearchIntentV1,
+} from "./intent-mount.js";
 export default mountDataBrowser;

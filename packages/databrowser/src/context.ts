@@ -14,6 +14,14 @@ import type {
 
 export interface Roots {
   app: HTMLElement;
+  /**
+   * Where the two *global* surfaces go - the Inspector and the terminal window.
+   *
+   * The host's `overlayRoot` when it gave one, and `app` when it did not, so
+   * every caller reads one field and a standalone page behaves exactly as it
+   * always did.
+   */
+  overlay: HTMLElement;
   facetList: HTMLElement;
   chips: HTMLElement;
   clearAllBtn: HTMLButtonElement;
