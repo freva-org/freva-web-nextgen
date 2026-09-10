@@ -1,5 +1,11 @@
 # @freva-org/freva-client-terminal
 
+## 2609.0.0
+
+### Major Changes
+
+- 0467e8c: add the window on its own, with a content slot, for a host that needs this frame around content of its own.
+
 ## 2608.0.0
 
 ### Initial release

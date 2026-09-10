@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/databrowser",
-  "version": "2608.1.0",
+  "version": "2608.1.1",
   "description": "Freva Data-Browser - framework-free, typed, one first-party runtime dependency (@freva-org/freva-client-terminal).",
   "type": "module",
   "repository": {
@@ -47,7 +47,7 @@
   },
   "license": "BSD-3-Clause",
   "dependencies": {
-    "@freva-org/freva-client-terminal": "2608.0.0"
+    "@freva-org/freva-client-terminal": "2609.0.0"
   },
   "devDependencies": {
     "@types/jsdom": "^28.0.3",
