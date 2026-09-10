@@ -212,6 +212,16 @@ function injectChromeCss(): void {
   if (chromeInjected) return;
   if (typeof document === "undefined") return;
   chromeInjected = true;
+  try {
+    if (typeof CSSStyleSheet === "function" && Array.isArray(document.adoptedStyleSheets)) {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(CHROME_CSS);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      return;
+    }
+  } catch {
+    // an engine that has the API and refuses the sheet falls through to the element
+  }
   const style = document.createElement("style");
   style.setAttribute("data-data-inspector", "1");
   style.textContent = CHROME_CSS;

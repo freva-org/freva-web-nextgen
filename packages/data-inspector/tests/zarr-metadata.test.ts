@@ -234,8 +234,8 @@ describe("openDatasetMeta (v2)", () => {
 
     const result = await openDatasetMeta(URL_BASE);
     const groups = (result as { groups: Record<string, ZarrDataset> }).groups;
-    // Root ("/") plus the two leaf groups that actually hold arrays; the
-    // pure-container "model" group is omitted.
+    // Root ("/") plus the two leaf groups that hold arrays; the pure-container "model" group is
+    // omitted.
     expect(Object.keys(groups).sort()).toEqual(["/", "model/atmos", "model/ocean"]);
     expect(groups["/"].data_vars.root_var).toBeDefined();
     expect(groups["model/ocean"].data_vars.temp).toBeDefined();
@@ -373,27 +373,46 @@ describe("buildXarrayRepr", () => {
   });
 });
 
+function resetSheets(): void {
+  document.head.innerHTML = "";
+  // `head.innerHTML` does not touch adopted sheets: they are a property of the document, not of
+  // its markup, so without this each test starts with every earlier test's stylesheet still on it.
+  document.adoptedStyleSheets = [];
+}
+
+function reprSheets(): string[] {
+  const adopted = (document.adoptedStyleSheets ?? []).map((sheet) =>
+    [...sheet.cssRules].map((rule) => rule.cssText).join("\n"),
+  );
+  const elements = [...document.head.querySelectorAll("style[data-xarray-repr]")].map(
+    (node) => node.textContent ?? "",
+  );
+  return [...adopted, ...elements].filter((css) => css.includes("--xr-chunk-face"));
+}
+
 describe("injectXarrayCss", () => {
   it("appends a single style tag and is idempotent", async () => {
     vi.resetModules();
-    document.head.innerHTML = "";
+    resetSheets();
     const mod = await import("../src/zarr-metadata");
 
     mod.injectXarrayCss();
     mod.injectXarrayCss();
 
-    const styles = document.head.querySelectorAll("style[data-xarray-repr]");
-    expect(styles.length).toBe(1);
+    expect(reprSheets().length).toBe(1);
   });
 
   it("derives chunk colors from a provided mainColor", async () => {
     vi.resetModules();
-    document.head.innerHTML = "";
+    resetSheets();
     const mod = await import("../src/zarr-metadata");
 
     mod.injectXarrayCss({ mainColor: "#000000" });
-    const style = document.head.querySelector("style[data-xarray-repr]");
-    expect(style?.textContent).toContain("--xr-chunk-face:rgb(0,0,0)");
+    expect(
+      reprSheets()
+        .join("\n")
+        .replace(/\s*:\s*/g, ":"),
+    ).toContain("--xr-chunk-face:rgb(0,0,0)");
   });
 
   it("is callable through the statically imported module", () => {
@@ -412,7 +431,7 @@ describe("loadZarrMetadataHtml", () => {
 
   it("injects CSS by default before building HTML", async () => {
     vi.resetModules();
-    document.head.innerHTML = "";
+    resetSheets();
     const mod = await import("../src/zarr-metadata");
     globalThis.fetch = routeFetch({
       zmetadata: { ok: false },
@@ -421,6 +440,6 @@ describe("loadZarrMetadataHtml", () => {
 
     const html = await mod.loadZarrMetadataHtml(URL_BASE);
     expect(html).toContain("xarray.Dataset");
-    expect(document.head.querySelectorAll("style[data-xarray-repr]").length).toBe(1);
+    expect(reprSheets().length).toBe(1);
   });
 });

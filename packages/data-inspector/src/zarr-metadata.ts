@@ -583,7 +583,7 @@ function collapsibleSection(
   `;
 }
 
-const XR_ICONS = `<svg style="position:absolute;width:0;height:0;overflow:hidden"><defs>
+const XR_ICONS = `<svg class="xr-icons" aria-hidden="true"><defs>
 <symbol id="icon-database" viewBox="0 0 32 32">
   <path d="M16 0c-8.837 0-16 2.239-16 5v4c0 2.761 7.163 5 16 5s16-2.239 16-5v-4c0-2.761-7.163-5-16-5z"/>
   <path d="M16 17c-8.837 0-16-2.239-16-5v6c0 2.761 7.163 5 16 5s16-2.239 16-5v-6c0 2.761-7.163 5-16 5z"/>
@@ -741,6 +741,7 @@ dl.xr-attrs{padding:0;margin:0;display:grid;grid-template-columns:125px auto}
 .xr-attrs dt,.xr-attrs dd{padding:0;margin:0;float:left;padding-right:10px;width:auto}
 .xr-attrs dt{font-weight:normal;grid-column:1}
 .xr-attrs dd{grid-column:2;white-space:pre-wrap;word-break:break-all}
+.xr-icons{position:absolute;width:0;height:0;overflow:hidden}
 .xr-icon-database,.xr-icon-file-text2{display:inline-block;vertical-align:middle;width:1em;height:1.5em!important;stroke-width:0;stroke:currentColor;fill:currentColor}
 .xr-var-attrs-in:checked+label>.xr-icon-file-text2,.xr-var-data-in:checked+label>.xr-icon-database{color:var(--xr-font-color0);filter:drop-shadow(1px 1px 5px var(--xr-font-color2));stroke-width:.8px}
 .xr-var-item>input+label{cursor:pointer;color:var(--xr-font-color2);padding:0 1px}
@@ -778,10 +779,20 @@ export function injectXarrayCss(options: InjectCssOptions = {}): void {
       --xr-chunk-face:${ca(0.85, 0.65)};--xr-chunk-top:${ca(1.25, 0.65)};--xr-chunk-side:${ca(0.55, 0.65)};--xr-chunk-edge:${inv}
     }
   `;
-
+  const css = chunkVars + XR_CSS;
+  try {
+    if (typeof CSSStyleSheet === "function" && Array.isArray(document.adoptedStyleSheets)) {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(css);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      return;
+    }
+  } catch {
+    // an engine that has the API and refuses the sheet falls through to the element
+  }
   const style = document.createElement("style");
   style.setAttribute("data-xarray-repr", "1");
-  style.textContent = chunkVars + XR_CSS;
+  style.textContent = css;
   document.head.appendChild(style);
 }
 
