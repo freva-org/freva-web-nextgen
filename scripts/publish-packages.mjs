@@ -63,6 +63,23 @@ function isPublished(name, version) {
   return false;
 }
 
+/** Has this package ever been published? A network error is not a "no". */
+function packageExists(name) {
+  try {
+    run("npm", ["view", name, "name", `--registry=${REGISTRY}`]);
+    return true;
+  } catch (err) {
+    const text = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    if (/E404|is not in this registry/i.test(text)) return false;
+    throw new Error(`npm view ${name} failed: ${text.trim()}`);
+  }
+}
+
+/** A GitHub annotation when running there, an ordinary line when not. */
+function warn(message) {
+  log(process.env.GITHUB_ACTIONS ? `::warning::${message}` : `WARNING: ${message}`);
+}
+
 /** The registry is read-through-cached, so a fresh version is not instantly visible. */
 function waitForRegistry(name, version, timeoutMs = 600_000) {
   const deadline = Date.now() + timeoutMs;
@@ -136,6 +153,7 @@ const published = [];
 const skipped = [];
 const unconfirmed = [];
 const failed = new Set();
+const manual = new Set();
 
 /** The run's summary and step outputs, written even if a pass ends early. */
 function report() {
@@ -143,6 +161,7 @@ function report() {
   if (published.length) log(`Published: ${published.join(", ")}`);
   if (skipped.length) log(`Already published: ${skipped.join(", ")}`);
   if (unconfirmed.length) log(`Awaiting the registry cache: ${unconfirmed.join(", ")}`);
+  if (manual.size) log(`Awaiting a first publish by hand: ${[...manual].join(", ")}`);
   if (failed.size) log(`Failed: ${[...failed].join(", ")}`);
 
   if (process.env.GITHUB_OUTPUT) {
@@ -163,11 +182,13 @@ try {
       // A failed package blocks a dependent only at the version that dependent
       // pins: an esm.sh pin often names an older release that is already live.
       const blocked = edges
-        .filter((e) => failed.has(e.name) && !isPublished(e.name, e.version))
-        .map((e) => `${e.name}@${e.version}`);
+        .filter(
+          (e) => (failed.has(e.name) || manual.has(e.name)) && !isPublished(e.name, e.version),
+        )
+        .map((e) => e.name);
       if (blocked.length) {
         log(`- ${name}@${version}: SKIPPED, waiting on ${blocked.join(", ")}`);
-        failed.add(name);
+        (blocked.some((n) => failed.has(n)) ? failed : manual).add(name);
         continue;
       }
 
@@ -206,6 +227,19 @@ try {
         if (/EPUBLISHCONFLICT|cannot publish over/i.test(text)) {
           log(`- ${name}@${version}: already on npm`);
           skipped.push(`${name}@${version}`);
+          continue;
+        }
+        // Nothing of this package is on the registry, so there is no trusted publisher
+        // to authenticate against - npm will not let CI create a package it has never
+        // seen. That is a one-time human step, not a broken release.
+        if (!packageExists(name)) {
+          warn(
+            `${name} has never been published, so this workflow cannot create it: ` +
+              `trusted publishing needs the package to exist first. Publish ${version} once by ` +
+              `hand (npm publish -w ${name}), add the trusted publisher on npmjs.com, then re-run ` +
+              `this job - it will skip the version and tag it.`,
+          );
+          manual.add(name);
           continue;
         }
         log(`- ${name}@${version}: FAILED to publish\n${text.trim()}`);
