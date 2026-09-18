@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@freva-org/dataset-tree playground</title>
+    <link rel="stylesheet" href="../dist/styles.css" />
+    <style>
+      /*
+       * The playground's own chrome. None of this is part of the package - it exists to stand in
+       * for a host page, and it is deliberately written in the portal's token vocabulary so that
+       * the "inherit the host's tokens" claim is demonstrated rather than asserted.
+       */
+      :root {
+        --bg: #f7f9f9;
+        --surface: #ffffff;
+        --surface-2: #f4f6f7;
+        --ink: #172322;
+        --muted: #526765;
+        --line: #dfe6e6;
+        --line-2: #c6d0d0;
+        --accent: #009688;
+        --accent-ink: #ffffff;
+        --danger: #8c4a3d;
+        --r-12: 12px;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      :root[data-theme="dark"] {
+        --bg: #10161d;
+        --surface: #171f28;
+        --surface-2: #141b23;
+        --ink: #e9eef3;
+        --muted: #8794a1;
+        --line: #263140;
+        --line-2: #2f3b4a;
+        --accent: #4285bd;
+        --accent-ink: #0b1117;
+        --danger: #d9948a;
+      }
+      /* "No host tokens": every --dataset-tree-* falls back to the package's own defaults. */
+      :root[data-tokens="off"] {
+        --bg: #ffffff;
+        --surface: initial;
+        --surface-2: initial;
+        --ink: initial;
+        --muted: initial;
+        --line: initial;
+        --line-2: initial;
+        --accent: initial;
+        --accent-ink: initial;
+        --r-12: initial;
+        --font-mono: initial;
+      }
+      body {
+        margin: 0;
+        padding: 1.5rem;
+        background: var(--bg, #fff);
+        color: var(--ink, #172322);
+        font:
+          15px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      h1 {
+        font-size: 1.1rem;
+        margin: 0 0 0.25rem;
+      }
+      p.lede {
+        margin: 0 0 1.25rem;
+        color: var(--muted, #526765);
+        max-width: 60ch;
+      }
+      .toolbar {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.25rem;
+      }
+      .toolbar button {
+        font: inherit;
+        font-size: 0.85rem;
+        padding: 0.3rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid var(--line-2, #c6d0d0);
+        background: var(--surface, #fff);
+        color: inherit;
+        cursor: pointer;
+      }
+      /* Darkened toward the ink colour so white text clears 4.5:1 in both themes. */
+      .toolbar button[aria-pressed="true"] {
+        background: color-mix(in srgb, var(--accent, #009688) 80%, var(--ink, #172322));
+        border-color: color-mix(in srgb, var(--accent, #009688) 80%, var(--ink, #172322));
+        color: var(--accent-ink, #fff);
+      }
+      .panels {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 1.5rem;
+        align-items: start;
+      }
+      @media (max-width: 900px) {
+        .panels {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .panel > h2 {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted, #526765);
+        margin: 0 0 0.5rem;
+      }
+      .panel > p {
+        margin: 0 0 0.6rem;
+        font-size: 0.8rem;
+        color: var(--muted, #526765);
+      }
+      .inspector {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--line, #c6d0d0);
+        border-left: 3px solid var(--accent, #009688);
+        border-radius: 8px;
+        background: var(--surface-2, #f4f6f7);
+        font-size: 13px;
+      }
+      .inspector p {
+        margin: 0 0 4px;
+      }
+      .inspector code {
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>@freva-org/dataset-tree</h1>
+    <p class="lede">
+      Two independent instances, driven entirely from an in-memory catalog. Nothing on this page
+      makes a network request: the wide tree wraps the snapshot source in an artificial delay and a
+      scripted failure so the loading, error and retry states are reachable by hand.
+    </p>
+
+    <div class="toolbar">
+      <button id="theme" type="button" aria-pressed="false">Dark theme</button>
+      <button id="tokens" type="button" aria-pressed="true">Host tokens on</button>
+      <button id="reload-a" type="button">Reload wide tree</button>
+      <button id="destroy-b" type="button">Destroy narrow tree</button>
+    </div>
+
+    <div class="panels">
+      <section class="panel">
+        <h2>Wide container - slow source, one failing branch</h2>
+        <p>
+          “Scenario Ensemble” fails the first time it is opened and succeeds on Retry. Every other
+          branch takes about 700&nbsp;ms.
+        </p>
+        <div id="tree-a"></div>
+        <!--
+          The consumer's inspector surface, standing in for a portal's overlay layer. It exists so
+          that `Inspect` in this page does something a reader can see; the package opens nothing of
+          its own, and a control with nowhere to go is not drawn at all.
+        -->
+        <div
+          id="inspector"
+          class="inspector"
+          hidden
+          tabindex="-1"
+          role="region"
+          aria-label="Consumer inspector"
+        >
+          <p><strong>The consumer's inspector opened for:</strong></p>
+          <p><code data-inspector-target></code></p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Narrow container - 320px, instant source</h2>
+        <p>A second, entirely separate instance. Expanding one tree does not touch the other.</p>
+        <div id="tree-b"></div>
+      </section>
+    </div>
+
+    <script type="module" src="./playground.js"></script>
+  </body>
+</html>

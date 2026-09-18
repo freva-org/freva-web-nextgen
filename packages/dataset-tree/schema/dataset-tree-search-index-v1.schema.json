@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://freva-org.github.io/schema/dataset-tree-search-index-v1.schema.json",
+  "title": "dataset-tree-search-index-v1",
+  "description": "An OPTIONAL flat search index for @freva-org/dataset-tree. It is not the tree's data source: browsing data comes from a DatasetTreeSource, and this document only decides what a search covers. It exists so that a search over a lazily-listed object store can reach objects nobody has opened, without the component recursively listing a bucket because somebody typed a letter. Closed: an unrecognised property is an error, never a silent drop. Identifiers must be stable and unique within one document; the runtime parser enforces uniqueness, which JSON Schema alone cannot express. The package never generates, fetches or refreshes this file - a consumer produces it however it likes and owns its freshness.",
+  "type": "object",
+  "required": ["schemaVersion", "complete", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Format version. A consumer that does not recognise the value must refuse the document rather than guess."
+    },
+    "generatedAt": {
+      "type": "string",
+      "description": "ISO-8601 instant at which the generator ran. Shown to the reader, because an index is a snapshot of something that moves and a result is worth exactly as much as its age. Optional and never invented."
+    },
+    "source": {
+      "type": "string",
+      "description": "The location this index describes, e.g. an object-store endpoint. Text only; never linkified and never fetched."
+    },
+    "complete": {
+      "type": "boolean",
+      "description": "Whether this index claims to cover the WHOLE archive. Required, and required to be explicit: it decides whether the component tells the reader the search covers everything indexed or keeps a caveat. A generator that cannot honestly claim completeness says false."
+    },
+    "entries": {
+      "type": "array",
+      "description": "Every searchable thing, flat. Flat and not nested: this document is not a second copy of the catalog, it is the projection search reads. A .zarr store belongs here as ONE dataset entry, never as its thousands of chunk objects.",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["id", "kind", "name"],
+      "additionalProperties": false,
+      "description": "One searchable thing. A deliberately narrow projection of a tree node: the three strings search matches on, the two facts a result row shows, and the breadcrumb. Anything else a node can carry is absent on purpose - an index is held in memory and scanned on every keystroke, so a field search does not use is weight with no reader.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable, unique within the document, and NOT derived from array position. The same identity space as a tree node's id, which is what lets a result be deduplicated against a node that is already loaded."
+        },
+        "kind": {
+          "enum": ["collection", "directory", "dataset", "file"],
+          "description": "Decides the result row's icon."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name as it appears in the store. Matched, and shown as the result's identity."
+        },
+        "title": {
+          "type": "string",
+          "description": "A friendlier display name. Matched, and shown beside the name."
+        },
+        "path": {
+          "type": "string",
+          "description": "Full location. Matched - including segment-exactly - and shown as the result's location. Rendered as text; never resolved or fetched."
+        },
+        "size": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Bytes. Rendered in binary units on the result row."
+        },
+        "modifiedAt": {
+          "type": "string",
+          "description": "ISO-8601. Rendered as YYYY-MM-DD HH:MM UTC; an unparseable value is shown verbatim."
+        },
+        "ancestors": {
+          "type": "array",
+          "description": "Root-first breadcrumb context. NOT tree nodes: a result may name something whose branch has never been loaded, and an ancestor written as a full node would invite inserting it into the browsing tree as though it had been fetched.",
+          "items": {
+            "$ref": "#/$defs/ancestor"
+          }
+        }
+      }
+    },
+    "ancestor": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

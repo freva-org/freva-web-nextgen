@@ -76,6 +76,7 @@ going through the release PR.
 packages/
   data-inspector/        # @freva-org/data-inspector
   databrowser/           # @freva-org/databrowser
+  dataset-tree/          # @freva-org/dataset-tree
   ts-oidc-auth-client/   # @freva-org/ts-oidc-auth-client
   your-new-package/      # add future packages here
 ```

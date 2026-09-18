@@ -1,0 +1,70 @@
+{
+  "name": "@freva-org/dataset-tree",
+  "version": "2609.0.0",
+  "description": "Generic, framework-free hierarchical dataset browser - UI, snapshot catalog and optional read-only S3 listing adapter. Zero runtime dependencies.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/dataset-tree"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./snapshot": {
+      "types": "./dist/snapshot.d.ts",
+      "import": "./dist/snapshot.js"
+    },
+    "./s3": {
+      "types": "./dist/s3.d.ts",
+      "import": "./dist/s3.js"
+    },
+    "./search-index": {
+      "types": "./dist/search-index.d.ts",
+      "import": "./dist/search-index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./dataset-tree-catalog-v1.schema.json": "./schema/dataset-tree-catalog-v1.schema.json",
+    "./dataset-tree-search-index-v1.schema.json": "./schema/dataset-tree-search-index-v1.schema.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "pretest": "npm run build",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/tests/**/*.test.js\"",
+    "pretest:browser": "npm run build",
+    "test:browser": "node browser-tests/run.mjs",
+    "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
+    "test:packaging": "node tests/packaging/pack-and-install.mjs",
+    "closure": "node scripts/source-closure.mjs",
+    "playground": "node scripts/playground.mjs",
+    "lint": "eslint src tests scripts browser-tests playground"
+  },
+  "license": "BSD-3-Clause",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^25.9.3",
+    "ajv": "^8.20.0",
+    "axe-core": "^4.12.0",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.56.0",
+    "typescript": "^5.5.4"
+  }
+}
