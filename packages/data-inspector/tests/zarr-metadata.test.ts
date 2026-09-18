@@ -1,4 +1,10 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect, vi, afterEach } from "vitest";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import {
   openDatasetMeta,
   buildXarrayRepr,
@@ -338,6 +344,30 @@ describe("openDatasetMeta (v3)", () => {
 // ── HTML rendering ──────────────────────────────────────────────────────────--
 
 describe("buildXarrayRepr", () => {
+  // A triangle codepoint is whatever the reader's font makes of it, so none may survive: not in
+  // the markup, and not in the stylesheet, where the section markers are `:before` content.
+  it("draws its disclosure markers, rather than typing them", () => {
+    const html = buildXarrayRepr({
+      groups: {
+        g1: { dims: {}, coords: {}, data_vars: {}, attrs: {} },
+      },
+    } as never);
+    for (const glyph of ["\u25b6", "\u25ba", "\u25bc", "\u25bd", "\u25b8"]) {
+      expect(html.includes(glyph), `the repr still contains ${JSON.stringify(glyph)}`).toBe(false);
+    }
+    expect(html).toContain('class="xr-group-marker"');
+
+    // The module's source, not the injected sheet: `cssRules` has been through a CSS parser that
+    // drops what it does not implement, so reading it back could pass because the rule vanished.
+    const source = readFileSync(resolve(__dirname, "../src/zarr-metadata.ts"), "utf8");
+    for (const glyph of ["\u25b6", "\u25ba", "\u25bc", "\u25bd"]) {
+      expect(source.includes(glyph), `the module still contains ${JSON.stringify(glyph)}`).toBe(
+        false,
+      );
+    }
+    expect(source).toContain("--xr-caret");
+  });
+
   it("renders a flat dataset as an xarray.Dataset repr", async () => {
     globalThis.fetch = routeFetch({ zmetadata: { ok: true, body: V2_FLAT } });
     const result = await openDatasetMeta(URL_BASE);
