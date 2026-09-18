@@ -1,5 +1,11 @@
 # @freva-org/data-inspector
 
+## 2609.0.2
+
+### Patch Changes
+
+- b23b24c: Two new entry points, so a consumer chooses whether the custom elements come with it. The first one is /core and the second one is /elements
+
 ## 2609.0.1
 
 ### Patch Changes
