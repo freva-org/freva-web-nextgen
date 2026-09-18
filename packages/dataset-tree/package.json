@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/dataset-tree",
-  "version": "2609.0.0",
+  "version": "2610.0.0",
   "description": "Generic, framework-free hierarchical dataset browser - UI, snapshot catalog and optional read-only S3 listing adapter. Zero runtime dependencies.",
   "type": "module",
   "repository": {
