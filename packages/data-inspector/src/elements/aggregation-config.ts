@@ -254,5 +254,3 @@ export class AggregationConfigElement extends HTMLElement {
       </div>`;
   }
 }
-
-customElements.define("aggregation-config", AggregationConfigElement);

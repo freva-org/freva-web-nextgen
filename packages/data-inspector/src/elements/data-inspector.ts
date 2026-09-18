@@ -930,5 +930,3 @@ export class DataInspectorElement extends HTMLElement {
     }
   }
 }
-
-customElements.define("data-inspector", DataInspectorElement);
