@@ -519,7 +519,6 @@ try {
 
       // Tab to the first row and open it with Enter - no pointer involved.
       await page.keyboard.press("Tab"); // Collapse all
-      await page.keyboard.press("Tab"); // Reload
       await page.keyboard.press("Tab"); // first row
       const key = await page.evaluate(() => document.activeElement?.dataset.dtKey ?? null);
       assert.equal(key, "toggle:pg:reanalysis", `Tab landed on ${key}`);
@@ -606,8 +605,8 @@ try {
   //
   // The unit suite already owns the rule that decides whether it exists. What only a browser can
   // answer is whether it is a real control on the page: reachable by Tab, big enough to hit on a
-  // phone, and sitting beside Copy rather than replacing it.
-  await check("Try in Python sits beside Copy, is reachable, and sends no code", () =>
+  // phone, and sitting in the action row above the snippet rather than inside the card with Copy.
+  await check("Try in Python sits in the action row, is reachable, and sends no code", () =>
     withPage(
       async (page) => {
         await page.goto(base, { waitUntil: "load" });
@@ -625,13 +624,27 @@ try {
         const copyBox = await page.locator(copy).boundingBox();
         assert.ok(copyBox, "Copy disappeared when the run control arrived");
         assert.ok(box.height >= 24, `the run control is only ${box.height}px tall`);
-        assert.ok(box.x > copyBox.x, "the run control took Copy's place in the row");
+
+        // Run is an alternative to Inspect, so it belongs in the panel's action row; Copy acts on
+        // the snippet, so it stays in the card's own title bar, below it.
+        const placed = await page.evaluate(
+          ([t, c]) => ({
+            runInActions: !!document.querySelector(t).closest(".dataset-tree__actions"),
+            runInCard: !!document.querySelector(t).closest(".dataset-tree__codecard"),
+            copyInCard: !!document.querySelector(c).closest(".dataset-tree__codecard"),
+          }),
+          [tryIt, copy],
+        );
+        assert.ok(placed.runInActions, "the run control is not in the panel's action row");
+        assert.ok(!placed.runInCard, "the run control is back inside the code card");
+        assert.ok(placed.copyInCard, "Copy is not in the snippet's own title bar");
+        assert.ok(box.y < copyBox.y, "the run control is not above the snippet it runs");
 
         // Reachable from the keyboard, and activated by the platform's own Enter.
-        await page.focus(copy);
+        await page.focus('#tree-b [data-dt-key="activate:pg:scenarios/ssp126"]');
         await page.keyboard.press("Tab");
         const focused = await page.evaluate(() => document.activeElement?.dataset?.dtAction ?? "");
-        assert.equal(focused, "try-python", `Tab from Copy landed on ${focused}`);
+        assert.equal(focused, "try-python", `Tab from Inspect landed on ${focused}`);
         await page.keyboard.press("Enter");
         const reported = await page.textContent("#inspector [data-inspector-target]");
         assert.match(reported, /^Try in Python -> /, `the press reported: ${reported}`);
