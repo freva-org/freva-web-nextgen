@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://freva-org.github.io/schema/dataset-tree-catalog-v1.schema.json",
+  "title": "dataset-tree-catalog-v1",
+  "description": "A build-time dataset catalog for @freva-org/dataset-tree. Closed: an unrecognised property is an error, never a silent drop. Order is significant and preserved. Identifiers must be stable across builds and unique within one document; the runtime parser enforces uniqueness, which JSON Schema alone cannot express.",
+  "type": "object",
+  "required": ["schemaVersion", "roots"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Format version. A consumer that does not recognise the value must refuse the document rather than guess."
+    },
+    "generatedAt": {
+      "type": "string",
+      "description": "ISO-8601 instant at which the generator that produced this document ran. Shown in the footer. Optional and never invented: a consumer that cannot state one gets a footer with no date rather than a plausible one."
+    },
+    "source": {
+      "type": "string",
+      "description": "The public location this snapshot describes, e.g. an object-store endpoint. Shown in the footer as text; never linkified and never fetched."
+    },
+    "roots": {
+      "type": "array",
+      "description": "Top-level nodes, in the order they should be shown.",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "kind", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable, unique within the document, and NOT derived from array position."
+        },
+        "kind": {
+          "enum": ["collection", "directory", "dataset", "file"],
+          "description": "collection: a top-level grouping. directory: an interior grouping. dataset: the thing a user wants, a leaf that carries detail. file: an ordinary object."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name as it appears in the store."
+        },
+        "title": {
+          "type": "string",
+          "description": "Friendlier display name. Falls back to name."
+        },
+        "path": {
+          "type": "string",
+          "description": "Full location, shown and copyable. Rendered as text; never resolved or fetched."
+        },
+        "description": {
+          "type": "string"
+        },
+        "hasChildren": {
+          "type": "boolean",
+          "description": "Whether the node can be opened. Defaults from `children` when that is present, and from `kind` otherwise."
+        },
+        "size": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Bytes. Rendered in binary units."
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "modifiedAt": {
+          "type": "string",
+          "description": "ISO-8601. Rendered as `YYYY-MM-DD HH:MM UTC`."
+        },
+        "availability": {
+          "enum": ["available", "planned", "restricted", "unavailable"],
+          "description": "Carried for consumers that reason about reachability. It does not decide how anything looks: the row draws `availabilityNote` when there is one, and a lowercase fallback word otherwise, in the row's own colour. The component never probes for this."
+        },
+        "availabilityNote": {
+          "type": "string",
+          "description": "The factual note drawn on the row, e.g. \"available 2027\" or \"no data yet\". Rendered as given: no colour vocabulary, no upper-casing."
+        },
+        "access": {
+          "type": "array",
+          "description": "Ways to reach the data. Only http(s) hrefs become links; anything else is shown as copyable text.",
+          "items": {
+            "$ref": "#/$defs/access"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Free-form source metadata. Carried for consumers and inspectors and NEVER rendered - turning arbitrary keys into visible chips is how a generic model dictates a consumer's visual language. Use `details` to put something on screen.",
+          "additionalProperties": true
+        },
+        "link": {
+          "$ref": "#/$defs/link"
+        },
+        "metrics": {
+          "type": "array",
+          "description": "Compact facts for the row's right edge, e.g. a HEALPix level. At most four are drawn. A source has to ask for these; nothing appears there by default.",
+          "items": {
+            "$ref": "#/$defs/metric"
+          }
+        },
+        "details": {
+          "type": "array",
+          "description": "The rows of the expanded detail panel, named and ordered by the source. The panel renders these and nothing else - it is not a dump of the node.",
+          "items": {
+            "$ref": "#/$defs/detailField"
+          }
+        },
+        "examples": {
+          "type": "array",
+          "description": "Code samples for this node. The component ships none and hard-codes no language: what is here came out of a deployment's own catalogue generator. A build may hash these to register them as runnable; a `digest` is deliberately not a property here, because a digest a catalogue author typed is a digest nobody computed.",
+          "items": {
+            "$ref": "#/$defs/example"
+          }
+        },
+        "inspect": {
+          "type": "string",
+          "description": "An absolute https URL an inspector can open for this node. The inspect control exists only when this is present AND the consumer supplied an inspector, so neither half alone can produce a dead button."
+        },
+        "children": {
+          "type": "array",
+          "description": "Inline children. A node with no `children` key is one whose contents this snapshot does not describe, which is different from one that declares `children: []` and is knowably empty.",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "access": {
+      "type": "object",
+      "required": ["label"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "href": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["id", "label", "language", "code"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable within this node. Never derived from array position: a reordered catalogue must not change which code a button runs."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "description": "e.g. `python`, `shell`, `yaml`. Required, because it is what decides whether a snippet may ever be executed."
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "executable": {
+          "type": "boolean",
+          "description": "Opt in: this snippet is a complete program that may be run as-is. Absent means inert."
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "description": "A project or document page, shown beside a collection's description.",
+      "required": ["href"],
+      "additionalProperties": false,
+      "properties": {
+        "href": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Absolute URL. Rendered only when the scheme is one a browser can safely follow."
+        },
+        "label": {
+          "type": "string",
+          "description": "Accessible name for the link."
+        }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["value"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Optional leading label, rendered lighter than the value."
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "style": {
+          "enum": ["pill", "plain"],
+          "description": "A bordered pill (default) or plain micro-text. There is no colour vocabulary: a metric is a fact, not a status."
+        }
+      }
+    },
+    "detailField": {
+      "type": "object",
+      "required": ["label", "values"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/detailValue"
+          }
+        }
+      }
+    },
+    "detailValue": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "description": "Emphasised after `text`, as in `time 350 640`."
+        }
+      }
+    }
+  }
+}

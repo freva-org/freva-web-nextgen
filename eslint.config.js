@@ -37,6 +37,19 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: { "no-console": "off" },
   },
+
+  {
+    files: ["**/tests/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { "no-console": "off" },
+  },
+  // A package's playground page: plain unbundled browser JavaScript, written the
+  // way a consumer would write it.
+  {
+    files: ["packages/*/playground/**/*.js"],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: { "no-console": "off" },
+  },
   {
     ignores: ["**/dist/**", "**/dist-test/**", "**/node_modules/**", "docs/"],
   },

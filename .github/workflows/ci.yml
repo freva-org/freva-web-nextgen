@@ -122,6 +122,10 @@ jobs:
             dir: databrowser
             pkg: "@freva-org/databrowser"
             engines: chromium
+          - name: dataset-tree
+            dir: dataset-tree
+            pkg: "@freva-org/dataset-tree"
+            engines: chromium
 
     steps:
       - uses: actions/checkout@v4
