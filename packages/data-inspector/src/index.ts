@@ -1,36 +1,15 @@
-// Custom elements - importing registers them via customElements.define()
-export { DataInspectorElement } from "./elements/data-inspector";
-export { AggregationConfigElement } from "./elements/aggregation-config";
-export { ZarrLoadingStepsElement } from "./elements/zarr-loading-steps";
+// The package root: the whole API, and the custom elements registered.
+//
+// The bare import is what registers them, and it has to be a statement rather than
+// a consequence of the re-export below: `export *` is shakeable, so a bundler asked
+// for one named function would drop the registration and a consumer's `<data-inspector>`
+// would never be defined. `sideEffects` in package.json names this entry for the
+// same reason.
+//
+// `./core` is the data side with no DOM requirement; `./elements` is the element
+// classes and their registration.
 
-// Framework-agnostic poller for backend Zarr-conversion status
-export { ZarrPoller } from "./ZarrPoller";
-export type { ZarrPollerOptions } from "./ZarrPoller";
+import "./elements";
 
-// Zarr-store probe - skip server conversion when the URL is already a store
-export { detectZarrStore } from "./detectZarrStore";
-export type { ZarrStoreInfo, DetectZarrStoreOptions } from "./detectZarrStore";
-
-// Client-side Zarr metadata parser + xarray HTML renderer - no server round-trip
-export {
-  openDatasetMeta,
-  buildXarrayRepr,
-  injectXarrayCss,
-  loadZarrMetadataHtml,
-} from "./zarr-metadata";
-export type {
-  ZarrVariable,
-  ZarrDataset,
-  ZarrMetadataResult,
-  ZarrMetadataOptions,
-  InjectCssOptions,
-  LoadMetadataOptions,
-} from "./zarr-metadata";
-
-// Shared constants and types
-export { NcDumpDialogState } from "./types";
-export type {
-  NcDumpDialogStateValue,
-  AggregationConfigValues,
-  ZarrPollerOptions as ZarrPollerOpts,
-} from "./types";
+export * from "./core";
+export * from "./elements";

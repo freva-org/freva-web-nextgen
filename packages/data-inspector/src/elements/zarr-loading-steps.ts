@@ -278,5 +278,3 @@ export class ZarrLoadingStepsElement extends HTMLElement {
     }
   }
 }
-
-customElements.define("zarr-loading-steps", ZarrLoadingStepsElement);

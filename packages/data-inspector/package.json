@@ -19,18 +19,38 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./core": {
+      "import": "./dist/core.mjs",
+      "require": "./dist/core.cjs",
+      "types": "./dist/core.d.ts"
+    },
+    "./elements": {
+      "import": "./dist/elements.mjs",
+      "require": "./dist/elements.cjs",
+      "types": "./dist/elements.d.ts"
+    },
+    "./package.json": "./package.json"
   },
+  "sideEffects": [
+    "./src/index.ts",
+    "./src/elements.ts",
+    "./dist/index.mjs",
+    "./dist/index.cjs",
+    "./dist/elements.mjs",
+    "./dist/elements.cjs"
+  ],
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && DATA_INSPECTOR_ENTRY=core vite build && DATA_INSPECTOR_ENTRY=elements vite build",
     "dev": "vite --config vite.dev.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "lint": "eslint src tests",
+    "pretest": "npm run build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },

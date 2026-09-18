@@ -365,7 +365,7 @@ describe("buildXarrayRepr", () => {
         false,
       );
     }
-    expect(source).toContain("--xr-caret");
+    expect(source).toContain("border-color:transparent transparent transparent");
   });
 
   it("renders a flat dataset as an xarray.Dataset repr", async () => {
