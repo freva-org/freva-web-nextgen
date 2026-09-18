@@ -1,5 +1,11 @@
 # @freva-org/data-inspector
 
+## 2609.0.1
+
+### Patch Changes
+
+- 5dfb641: The metadata view's expand and collapse markers are drawn rather than typed
+
 ## 2609.0.0
 
 ### Major Changes
