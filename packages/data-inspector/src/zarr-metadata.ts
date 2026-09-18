@@ -659,8 +659,8 @@ export function buildXarrayRepr(result: ZarrMetadataResult): string {
     .map(
       ([name, ds]) => `
     <details open style="margin-bottom:10px;border:1px solid var(--xr-border-color);border-radius:4px;overflow:hidden">
-      <summary style="padding:8px 12px;font-weight:600;cursor:pointer;background:var(--xr-background-color-row-odd);list-style:none;display:flex;align-items:center;gap:8px">
-        <span style="font-size:11px;color:var(--xr-font-color2)">\u25b6</span>
+      <summary class="xr-group-summary">
+        <span class="xr-group-marker" aria-hidden="true"></span>
         <span>Group: ${esc(name)}</span>
       </summary>
       <div style="padding:0 12px 8px">${renderDataset(ds)}</div>
@@ -685,6 +685,17 @@ const XR_CSS = `
   --xr-background-color: var(--jp-layout-color0, white);
   --xr-background-color-row-even: var(--jp-layout-color1, white);
   --xr-background-color-row-odd: var(--jp-layout-color2, #eeeeee);
+  /* A right-pointing triangle on a 7x9 box, as a mask: see the note on the section marker. */
+  --xr-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 9'%3E%3Cpath d='M0 0l7 4.5L0 9z' fill='%23000'/%3E%3C/svg%3E");
+}
+
+/* The group card's own disclosure, drawn with the same marker and rotated the same way. */
+.xr-group-summary{padding:8px 12px;font-weight:600;cursor:pointer;background:var(--xr-background-color-row-odd);list-style:none;display:flex;align-items:center;gap:8px}
+.xr-group-summary::-webkit-details-marker{display:none}
+.xr-group-marker{flex:0 0 auto;width:7px;height:9px;background-color:var(--xr-font-color2);-webkit-mask:var(--xr-caret) center/7px 9px no-repeat;mask:var(--xr-caret) center/7px 9px no-repeat;transition:transform .15s ease}
+details[open]>.xr-group-summary>.xr-group-marker{transform:rotate(90deg)}
+@media (prefers-reduced-motion:reduce){
+  .xr-section-summary-in+label:before,.xr-group-marker{transition:none}
 }
 .xr-wrap{display:block!important;min-width:300px;max-width:700px;line-height:1.6;padding-bottom:4px}
 .xr-header{padding-top:6px;padding-bottom:6px;border-bottom:solid 1px var(--xr-border-color);margin-bottom:4px}
@@ -700,9 +711,12 @@ const XR_CSS = `
 .xr-section-summary{grid-column:1;color:var(--xr-font-color2);font-weight:500;white-space:nowrap}
 .xr-section-summary>span{display:inline-block;padding-left:.3em}
 .xr-section-summary-in:disabled+label{color:var(--xr-font-color2)}
-.xr-section-summary-in+label:before{display:inline-block;content:"►";font-size:11px;width:15px;text-align:center}
+/* The marker is a masked SVG, not a triangle codepoint: a glyph is whatever the reader's font
+   makes of it - filled, hollow, resized, or a replacement box - while a mask takes the colour of
+   the text beside it. It rotates when open, so there is one asset rather than two. */
+.xr-section-summary-in+label:before{display:inline-block;content:"";width:15px;height:11px;vertical-align:-1px;background-color:currentColor;-webkit-mask:var(--xr-caret) center/7px 9px no-repeat;mask:var(--xr-caret) center/7px 9px no-repeat;transition:transform .15s ease}
 .xr-section-summary-in:disabled+label:before{color:var(--xr-disabled-color)}
-.xr-section-summary-in:checked+label:before{content:"▼"}
+.xr-section-summary-in:checked+label:before{transform:rotate(90deg)}
 .xr-section-summary-in:checked+label>span{display:none}
 .xr-section-summary,.xr-section-inline-details{padding-top:4px}
 .xr-section-inline-details{grid-column:2/-1}
