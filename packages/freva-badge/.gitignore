@@ -1,0 +1,6 @@
+# The repository ignores `dist/` everywhere, because everywhere else it is a
+# build output. Here it is the source: the badge's runtime is vendored, hand
+# maintained and has no build step, so this package would otherwise ship a
+# package.json with nothing behind it.
+!dist/
+!dist/**

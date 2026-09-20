@@ -1,0 +1,33 @@
+{
+  "name": "@freva-org/freva-badge",
+  "version": "2609.0.0",
+  "description": "The Freva footer badge: a static mark that opens a panel, with a bird that flies in and lands on it.",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "files": [
+    "ASSETS.md",
+    "LICENSE",
+    "LIMITATIONS.md",
+    "MOTION_AUDIT.txt",
+    "ORG_LOGO_SOURCES.md",
+    "PANEL_NOTES.txt",
+    "PERFORMANCE.md",
+    "README.md",
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/freva-badge.js",
+    "./content": "./dist/freva-badge-content.js",
+    "./style.css": "./dist/freva-badge.css",
+    "./assets/*": "./dist/assets/*",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": true,
+  "scripts": {
+    "build": "node -e \"console.log('freva-badge: dist/ is vendored, not built')\"",
+    "test": "node tests/manifest.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
