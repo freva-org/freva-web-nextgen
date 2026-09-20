@@ -4,6 +4,11 @@
   "description": "The Freva footer badge: a static mark that opens a panel, with a bird that flies in and lands on it.",
   "license": "BSD-3-Clause",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/freva-badge"
+  },
   "files": [
     "ASSETS.md",
     "LICENSE",
