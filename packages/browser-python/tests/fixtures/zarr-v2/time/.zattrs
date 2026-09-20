@@ -1,0 +1,7 @@
+{
+  "units": "days since 2000-01-01",
+  "calendar": "standard",
+  "_ARRAY_DIMENSIONS": [
+    "time"
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "The pinned upstream freva-client wheel and the browser build derived from it. Both SHA-256s",
+    "are enforced: a mirror, a re-cut release or a truncated download is refused rather than",
+    "installed. Recorded on first fetch over TLS from PyPI, which is trust-on-first-use provenance",
+    "and is stated as such - PyPI publishes digests, not signatures this command could verify.",
+    "",
+    "ONE WHEEL. The profile installs the derived wheel WITH dependency resolution, so micropip",
+    "fetches freva-client's ordinary dependencies from PyPI itself. Mirroring them here would be a",
+    "second resolver whose answers go stale silently.",
+    "",
+    "BUT THE VERSIONS ARE PINNED, so two deployments built a month apart from the same digest get",
+    "the same interpreter. `runtimePins` gives an `==` to a requirement upstream already declares.",
+    "`transitivePins` ADDS a requirement upstream does not declare, which is the only way to pin a",
+    "dependency of a dependency without mirroring a wheel. Both are written into the derived",
+    "METADATA, so the pin travels with the artefact rather than living in a resolver's memory.",
+    "",
+    "The derived archive is STORED rather than deflated - zlib's output is not stable across",
+    "builds and Node bundles its own, so a deflated wheel's digest matched only on the machine",
+    "that recorded it. See bin/zip.mjs."
+  ],
+  "frevaClient": {
+    "version": "2607.1.0",
+    "localVersion": "browser.1",
+    "source": {
+      "file": "freva_client-2607.1.0-py3-none-any.whl",
+      "sha256": "f8376c81e1458fbf27454c599fefbc2902f36ad13df6265bc8126f64d86ccc74",
+      "url": "https://files.pythonhosted.org/packages/3e/1e/8f143f678759b46d5c4f8aa988e557301707d58fe9adcef64be405d22ec5/freva_client-2607.1.0-py3-none-any.whl"
+    },
+    "derived": {
+      "file": "freva_client-2607.1.0+browser.1-py3-none-any.whl",
+      "sha256": "17f808676b93fd91409c7aa1d668ffe670f9e920116097caa46dddbc36ad1d08"
+    },
+    "runtimePins": {
+      "py-oidc-auth-client": "2603.0.1",
+      "appdirs": "1.4.4",
+      "typer": "0.27.2"
+    },
+    "transitivePins": {
+      "shellingham": "1.5.4",
+      "annotated-doc": "0.0.5"
+    }
+  }
+}

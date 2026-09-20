@@ -150,3 +150,73 @@ jobs:
       # Strict: a browser that will not launch is a failure, never a skip.
       - name: Browser gate
         run: npm run test:browser:strict -w ${{ matrix.pkg }}
+
+  # Out of the matrix above because the browser gate needs
+  # an assembled Pyodide distribution
+  browser-python:
+    name: browser-python
+    runs-on: ubuntu-latest
+
+    env:
+      PKG: "@freva-org/browser-python"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/browser-python/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build -w $PKG
+
+      - name: Runtime manifest id
+        id: runtime
+        run: |
+          echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Pyodide distribution
+        uses: actions/cache@v4
+        with:
+          path: packages/browser-python/.runtime
+          key: pyodide-${{ steps.runtime.outputs.id }}
+
+      - name: Assemble the runtime
+        run: node packages/browser-python/scripts/prepare-runtime.mjs
+
+      # A suite whose wheels are missing exits 3 and is reported as NOT RUN, which
+      # reads like a pass in a summary.
+      - name: The runtime is complete
+        run: node packages/browser-python/scripts/check-runtime.mjs
+
+      - name: Install Playwright engines
+        run: npm exec -w $PKG -- playwright install --with-deps chromium firefox webkit
+
+      - name: Browser gate
+        run: npm run test:browser:strict -w $PKG
+        env:
+          BROWSER_ENGINES: chromium firefox webkit
+
+      # A phone-sized viewport with touch, where the on-screen keyboard is the
+      # only keyboard.
+      - name: Console on a mobile viewport
+        run: node packages/browser-python/browser-tests/console-mobile.mjs
+        env:
+          BROWSER_STRICT: "1"
+
+      # What a consumer actually installs
+      - name: Packaged package
+        run: npm run test:packaging -w $PKG
+
+      - name: Bundle size
+        run: npm run check:bytes -w $PKG
+
+      # Reports the console layer's weight and fails if a jQuery fingerprint ever
+      # appears in the ROOT bundle.
+      - name: Console bundle boundary
+        run: node packages/browser-python/scripts/measure-console.mjs

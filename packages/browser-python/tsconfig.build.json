@@ -1,0 +1,12 @@
+{
+  // The JAVASCRIPT pass. `npm run build` runs this after a declaration-only pass, so `.d.ts`
+  // keeps every word of documentation for consumers while the `.js` a browser downloads carries
+  // none of it. The engine's comments were 54 KiB gzipped - about 47% of what a host served -
+  // and no reader of them was a browser.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "removeComments": true,
+    "declaration": false,
+    "declarationMap": false
+  }
+}

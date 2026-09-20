@@ -1,0 +1,96 @@
+{
+  "name": "@freva-org/browser-python",
+  "version": "2609.0.0",
+  "description": "Framework-independent browser Python engine: Pyodide in a dedicated Web Worker, with an interactive REPL, a browser Fetch filesystem for remote Zarr, and inline Matplotlib output.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/browser-python"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./prepare": {
+      "types": "./bin/prepare.d.mts",
+      "import": "./bin/prepare.mjs"
+    },
+    "./embed": {
+      "types": "./dist/embed/index.d.ts",
+      "import": "./dist/embed/index.js"
+    },
+    "./embed/examples": {
+      "types": "./dist/embed/examples.d.ts",
+      "import": "./dist/embed/examples.js"
+    },
+    "./console": {
+      "types": "./dist/console/index.d.ts",
+      "import": "./dist/console/index.js"
+    },
+    "./console/auto": {
+      "types": "./dist/console/auto.d.ts",
+      "import": "./dist/console/auto.js"
+    },
+    "./console.css": "./dist/console/styles.css",
+    "./worker": {
+      "types": "./dist/worker/browser-python.worker.d.ts",
+      "import": "./dist/worker/browser-python.worker.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./dist/worker/browser-python.worker.js",
+    "./dist/console/auto.js"
+  ],
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/gen-python-sources.mjs && node scripts/gen-console-styles.mjs && node scripts/gen-addon-pins.mjs",
+    "build": "tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.build.json && node scripts/copy-console-css.mjs",
+    "typecheck": "node scripts/gen-python-sources.mjs --check && node scripts/gen-console-styles.mjs --check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "lint": "eslint src tests scripts demo browser-tests bin",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "node browser-tests/run.mjs",
+    "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
+    "test:browser:index": "BROWSER_STRICT=1 BROWSER_PYTHON_PACKAGE_INDEX=1 npm run test:browser",
+    "test:browser:network": "BROWSER_STRICT=1 BROWSER_PYTHON_NETWORK=1 npm run test:browser",
+    "check:bytes": "node scripts/check-bytes.mjs && node scripts/measure-console.mjs && node scripts/check-docs-sizes.mjs",
+    "fixtures:build": "python3 scripts/make-zarr-fixtures.py",
+    "demo": "node scripts/serve-demo.mjs",
+    "prepack": "npm run build && npm run check:bytes",
+    "test:packaging": "node tests/packaging/pack-and-install.mjs",
+    "prepare-runtime": "node bin/freva-browser-python.mjs prepare-runtime",
+    "gen:addons": "node scripts/gen-addon-pins.mjs"
+  },
+  "license": "BSD-3-Clause",
+  "devDependencies": {
+    "@types/jquery": "^3.5.32",
+    "@types/prismjs": "^1.26.5",
+    "@vitest/coverage-v8": "^4.1.8",
+    "happy-dom": "^20.14.0",
+    "playwright": "^1.56.0",
+    "pyodide": "314.0.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "jquery": "3.7.1",
+    "jquery.terminal": "2.47.0",
+    "prismjs": "1.30.0"
+  },
+  "bin": {
+    "freva-browser-python": "./bin/freva-browser-python.mjs"
+  }
+}

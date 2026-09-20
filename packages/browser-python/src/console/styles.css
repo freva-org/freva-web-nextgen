@@ -1,0 +1,814 @@
+/*
+ * The console's default appearance. NEUTRAL on purpose: no branding, just an ordinary Python
+ * console that portals restyle through the tokens below. Every colour is a custom property with a
+ * documented name; jQuery Terminal's own class names are not part of the contract.
+ */
+
+/*
+ * THE HOST IS A COLUMN, and the console fills it. Without a `display` a custom element is
+ * inline-level and `.bp-container` sizes to its own content, leaving a short card at the top of a
+ * tall window. `min-height: 0` lets the transcript scroll rather than push the column taller.
+ */
+:host {
+  /* The public theming contract. Override these, and nothing else. */
+  --bp-console-background: #12131a;
+  --bp-console-foreground: #d8d8d2;
+  --bp-console-muted: #8b8f9a;
+  --bp-console-border: #2a2c36;
+  --bp-console-accent: #8fce76;
+  --bp-console-prompt: #8fce76;
+  --bp-console-error: #ff6b63;
+  --bp-console-result: #d8d8d2;
+  --bp-console-selection: rgba(143, 206, 118, 0.22);
+  --bp-console-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --bp-console-font-size: 0.875rem;
+  /*
+   * A MULTIPLIER A HOST CAN TURN, separate from the size above so a text-size control can change
+   * the type without knowing the console's base, which a theme may already have overridden.
+   * `--bp-console-type-size` is the product and every rule that sizes text reads it. A number,
+   * not a length: `calc()` multiplies, so `1.5` gives type half again as large.
+   */
+  --bp-console-scale: 1;
+  --bp-console-type-size: calc(var(--bp-console-font-size) * var(--bp-console-scale, 1));
+  --bp-console-line-height: 1.55;
+  --bp-console-radius: 0.5rem;
+  --bp-console-padding: 1rem;
+  /*
+   * A FREE-STANDING console's height bounds, and only that. On the host, so they bound the element
+   * a page laid out rather than the surface inside it, and any explicit height beats them. An
+   * embedded host sets both to `0` / `none` and owns the height.
+   */
+  --bp-console-min-height: 20rem;
+  --bp-console-max-height: 70vh;
+  /*
+   * The card's own edge. `0` for a console that IS the surface it sits on - inside a window whose
+   * chrome already draws a border, a second one is a card floating in a frame.
+   */
+  --bp-console-border-width: 1px;
+
+  /* Syntax colours, mapped from this package's own token classes. */
+  --bp-syntax-comment: #7f8a7c;
+  --bp-syntax-keyword: #d69bd6;
+  --bp-syntax-string: #e2a06a;
+  --bp-syntax-number: #a7cf9a;
+  --bp-syntax-function: #e6dfa0;
+  --bp-syntax-class: #66cfb8;
+  --bp-syntax-builtin: #7ab8e8;
+  --bp-syntax-operator: #d8d8d2;
+  --bp-syntax-punctuation: #b9bcc4;
+
+  /*
+   * A COLUMN, so the console fills whatever height the host gave the element. The bounds live on
+   * `:host` because they belong to the ELEMENT a page laid out, and only to a free-standing one -
+   * a definite height, or the two tokens set to `0` and `none`, takes the height back.
+   */
+  display: flex;
+  flex-direction: column;
+  min-height: var(--bp-console-min-height);
+  max-height: var(--bp-console-max-height);
+  contain: layout style;
+}
+
+/*
+ * The light palette. Only the tokens are redefined, never the rules that use them, so an override
+ * of `--bp-console-background` holds in both modes. Contrast is checked, not eyeballed: every
+ * token in both palettes clears WCAG AA (4.5:1) against its own background, the darkest being
+ * light mode's prompt green #1f7a33 at 5.17:1 and dark mode's comment grey #7f8a7c at 5.14:1.
+ */
+.bp-container[data-theme="light"] {
+  --bp-console-background: #fbfaf7;
+  --bp-console-foreground: #22252b;
+  --bp-console-muted: #5c6169;
+  --bp-console-border: #dcdad4;
+  --bp-console-accent: #1f7a33;
+  --bp-console-prompt: #1f7a33;
+  --bp-console-error: #b3231b;
+  --bp-console-result: #22252b;
+  --bp-console-selection: rgba(31, 122, 51, 0.18);
+  --bp-syntax-comment: #5f6b5e;
+  --bp-syntax-keyword: #8a2f8a;
+  --bp-syntax-string: #8a4a12;
+  --bp-syntax-number: #3a6a2a;
+  --bp-syntax-function: #6b5a10;
+  --bp-syntax-class: #0d6f60;
+  --bp-syntax-builtin: #1a5f96;
+  --bp-syntax-operator: #22252b;
+  --bp-syntax-punctuation: #454a52;
+}
+
+@media (prefers-color-scheme: light) {
+  .bp-container[data-theme="auto"] {
+    --bp-console-background: #fbfaf7;
+    --bp-console-foreground: #22252b;
+    --bp-console-muted: #5c6169;
+    --bp-console-border: #dcdad4;
+    --bp-console-accent: #1f7a33;
+    --bp-console-prompt: #1f7a33;
+    --bp-console-error: #b3231b;
+    --bp-console-result: #22252b;
+    --bp-console-selection: rgba(31, 122, 51, 0.18);
+    --bp-syntax-comment: #5f6b5e;
+    --bp-syntax-keyword: #8a2f8a;
+    --bp-syntax-string: #8a4a12;
+    --bp-syntax-number: #3a6a2a;
+    --bp-syntax-function: #6b5a10;
+    --bp-syntax-class: #0d6f60;
+    --bp-syntax-builtin: #1a5f96;
+    --bp-syntax-operator: #22252b;
+    --bp-syntax-punctuation: #454a52;
+  }
+}
+
+.bp-container {
+  display: flex;
+  flex-direction: column;
+  /*
+   * FILLS THE HOST, and is bounded by the host rather than by itself: with the min/max pair here
+   * the console overrules a host that already decided a height - in a 788px window body the
+   * container measures 345, leaving 443 pixels of somebody else's background.
+   */
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bp-console-background);
+  color: var(--bp-console-foreground);
+  border: var(--bp-console-border-width) solid var(--bp-console-border);
+  border-radius: var(--bp-console-radius);
+  font-family: var(--bp-console-font-family);
+  font-size: var(--bp-console-type-size);
+  line-height: var(--bp-console-line-height);
+  overflow: hidden;
+}
+
+/* Toolbar: thin, and text-labelled. No traffic lights. */
+.bp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--bp-console-border);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+/*
+ * `display: flex` beats the user agent's `[hidden] { display: none }`, so `hidden` on a flex
+ * container does nothing: the element reports `hidden === true` and stays 31 pixels tall. Any rule
+ * here that sets `display` on something hideable needs its own opt-out.
+ */
+.bp-toolbar[hidden],
+.bp-button[hidden] {
+  display: none;
+}
+.bp-spacer {
+  flex: 1 1 auto;
+}
+/*
+ * THE TOOLBAR'S status line, and only that one. `bp-status` names two things: this span, reading
+ * "Ready" or the reason a start failed, and a transcript line of `kind: "status"` rendered as
+ * `.bp-line.bp-status`. Unscoped, `flex: 1 1 0`, `nowrap`, `overflow: hidden` and
+ * `text-overflow: ellipsis` clip the transcript line too, so the parent class is in the selector.
+ */
+.bp-toolbar .bp-status {
+  color: var(--bp-console-muted);
+  font-size: 0.8em;
+  /*
+   * Belt to `summarise()`'s braces: whatever a host puts here, the toolbar stays one line tall.
+   * `flex: 1 1 0` and not merely `min-width: 0`, because `flex-wrap: wrap` decides on an item's
+   * BASIS before any shrinking - a long `nowrap` status with `flex-basis: auto` claims a whole
+   * line and pushes the buttons onto a 73px second row where a healthy toolbar is 40px.
+   */
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The state is carried by a WORD, not only by a colour - see the accessibility notes. */
+.bp-toolbar .bp-status[data-state="error"] {
+  color: var(--bp-console-error);
+}
+.bp-toolbar .bp-status[data-state="ready"] {
+  color: var(--bp-console-accent);
+}
+.bp-button {
+  font: inherit;
+  font-size: 0.8em;
+  padding: 0.2rem 0.5rem;
+  color: var(--bp-console-foreground);
+  background: transparent;
+  border: 1px solid var(--bp-console-border);
+  border-radius: calc(var(--bp-console-radius) / 2);
+  cursor: pointer;
+}
+.bp-button:hover {
+  border-color: var(--bp-console-accent);
+  color: var(--bp-console-accent);
+}
+/* Always visible, never `outline: none`: a keyboard-only user must be able to see where they are. */
+.bp-button:focus-visible,
+.bp-transcript:focus-visible {
+  outline: 2px solid var(--bp-console-accent);
+  outline-offset: 2px;
+}
+
+/*
+ * ONE SCROLLER, and this is it. jQuery Terminal's own `.terminal-scroller` has `overflow: auto`,
+ * so two boxes could answer "is the reader at the bottom": autoscroll pins one while the reader
+ * looks at the other, and a fresh prompt lands below the fold. The library's scroller is unbounded
+ * here. `position: relative` because `Jump to latest` is positioned against it.
+ */
+.bp-transcript {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--bp-console-padding);
+}
+/*
+ * The terminal fills the transcript rather than sizing to its own text. `min-height: 100%` and not
+ * `height: 100%`: short output must still paint the whole box with the click target covering all
+ * of it - clicking empty space below the prompt is how everyone focuses a terminal - and long
+ * output must grow past it so the box above can scroll.
+ */
+.bp-terminal {
+  min-height: 100%;
+}
+/*
+ * Sticky rather than fixed: it rides the bottom of the visible transcript without leaving the
+ * scroller's coordinate space, so it needs no measuring and cannot drift on resize. The negative
+ * `margin-top` keeps it from adding height to the document it offers to scroll.
+ */
+.bp-jump {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: block;
+  margin: -2rem auto 0;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--bp-console-border);
+  border-radius: 999px;
+  background: var(--bp-console-background);
+  color: var(--bp-console-foreground);
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
+}
+.bp-jump[hidden] {
+  display: none;
+}
+.bp-jump:hover {
+  border-color: var(--bp-console-accent);
+  color: var(--bp-console-accent);
+}
+.bp-jump:focus-visible {
+  outline: 2px solid var(--bp-console-accent);
+  outline-offset: 2px;
+}
+.bp-terminal .terminal-scroller {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* Transcript lines.
+ *
+ * `!important`, and it is not laziness: these rules lose to the VENDORED sheet above on
+ * specificity, and losing them is what a user sees.
+ *
+ *   .terminal .terminal-output>div:not(.raw) div  { white-space: nowrap }   (0,3,2)
+ *   .terminal-output>:not(.raw) div               { color: var(--color) }   (0,2,1)
+ *   .terminal-output>div div:before               { content: "\200B" }      (0,1,2)
+ *
+ * against `.bp-line` (0,1,0), `.bp-stderr` (0,1,0) and `.bp-stderr::before` (0,1,1). Measured: a
+ * three-line traceback renders 19px tall in #aaa with "! " replaced by a zero-width space.
+ * Out-specifying each by hand comes undone on an upgrade that renumbers a selector. NOT used on
+ * the caret: it stops the blink.
+ */
+.bp-line {
+  white-space: pre-wrap !important;
+  word-break: break-word;
+  /* The vendor pins inner lines to `--terminal-font-size` (12px) and `round(--terminal-line)`,
+     so the console ignored its own font-size and line-height tokens. */
+  font-size: var(--bp-console-type-size) !important;
+  line-height: var(--bp-console-line-height) !important;
+  color: var(--bp-console-foreground) !important;
+}
+.bp-prompt {
+  color: var(--bp-console-prompt) !important;
+  user-select: none;
+}
+.bp-stderr,
+.bp-fatal {
+  color: var(--bp-console-error) !important;
+}
+/*
+ * Not colour alone: an error is marked structurally too, so it survives greyscale and
+ * colour-blindness. A rule in the gutter rather than a "! " prefix, because the prefix is real
+ * text inside the line and a traceback pasted into a bug report would carry it.
+ */
+.bp-stderr,
+.bp-fatal {
+  border-left: 2px solid var(--bp-console-error);
+  padding-left: 0.5rem;
+  margin-left: -0.5rem;
+}
+.bp-stderr::before,
+.bp-fatal::before {
+  content: "" !important;
+}
+.bp-status {
+  color: var(--bp-console-muted) !important;
+}
+.bp-result {
+  color: var(--bp-console-result) !important;
+}
+
+/* Figures */
+.bp-figure {
+  margin: 0.5rem 0;
+  /* A neutral ground behind transparent PNGs: Matplotlib's default figure has none, and a
+     transparent figure on a dark console is an invisible figure. */
+  background: #ffffff;
+  border-radius: calc(var(--bp-console-radius) / 2);
+  padding: 0.25rem;
+  display: inline-block;
+  max-width: 100%;
+}
+.bp-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.bp-figure-download {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.75em;
+  color: var(--bp-console-accent);
+}
+.bp-display-text {
+  margin: 0.25rem 0;
+  white-space: pre-wrap;
+}
+
+/*
+ * A URL a program printed, as something you can open. Underlined AND coloured, because console
+ * output already uses colour to mean something else (stderr is red here) and a link that is only
+ * a different colour is a link nobody sees. `overflow-wrap: anywhere` because a device-code URL
+ * is wider than the console and must wrap rather than push a horizontal scrollbar under the
+ * whole transcript.
+ */
+.bp-link {
+  color: var(--bp-console-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.bp-link:hover,
+.bp-link:focus-visible {
+  text-decoration-thickness: 2px;
+}
+.bp-link:focus-visible {
+  outline: 2px solid var(--bp-console-accent);
+  outline-offset: 2px;
+}
+
+/* History suggestion: muted, and never mistakable for typed source. */
+.bp-suggestion {
+  padding: 0.2rem var(--bp-console-padding);
+  border-top: 1px solid var(--bp-console-border);
+  color: var(--bp-console-muted);
+  font-size: 0.85em;
+}
+.bp-suggestion-text {
+  color: var(--bp-console-muted);
+  font-style: italic;
+}
+.bp-suggestion-hint {
+  opacity: 0.7;
+}
+
+/*
+ * The inline ghost: a history suggestion, at the caret. Muted, not italic and never highlighted,
+ * so it cannot be read as typed source, and it inherits the command line's metrics so it lines up
+ * with the characters it continues. `user-select: none` so dragging across the command line does
+ * not pick up a suggestion nobody accepted. ONE LINE, guaranteed by the console: a multi-line
+ * suffix is flattened to its first line and an ellipsis, so `white-space: pre` is for runs of
+ * spaces, not newlines.
+ */
+.bp-ghost {
+  color: var(--bp-console-muted);
+  opacity: 0.75;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Completion menu: under the command line, the way a shell draws one. */
+.bp-completion {
+  margin: 0.15rem 0 0.25rem;
+  padding: 0.2rem;
+  list-style: none;
+  max-height: 11rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--bp-console-border);
+  border-radius: calc(var(--bp-console-radius) / 2);
+  background: color-mix(in srgb, var(--bp-console-background) 92%, var(--bp-console-foreground) 8%);
+}
+.bp-completion-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+/*
+ * The candidate itself, as ONE flex child. `appendHighlighted` emits a span per token, and a
+ * `space-between` row pushes its children to opposite ends - `abs(` drawn as `abs` at the left
+ * margin and `(` at the right. The wrapper makes the candidate one thing and `N of M` the other.
+ */
+.bp-completion-label {
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* How far down the list you are, on the row you are on. Only drawn when there is more than one. */
+.bp-completion-count {
+  flex: 0 0 auto;
+  color: var(--bp-console-muted);
+  font-size: 0.85em;
+}
+.bp-completion-item[aria-selected="true"] {
+  background: var(--bp-console-selection);
+}
+
+.bp-search {
+  padding: 0.2rem var(--bp-console-padding);
+  border-top: 1px solid var(--bp-console-border);
+  color: var(--bp-console-muted);
+  font-size: 0.85em;
+}
+
+/* Off-screen but reachable by assistive technology. `display: none` would remove it from the
+   accessibility tree, which is the opposite of the intent. */
+.bp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Syntax tokens. This package's names, mapped from Prism's in highlight.ts. */
+.bp-tok-comment {
+  color: var(--bp-syntax-comment);
+  font-style: italic;
+}
+.bp-tok-string {
+  color: var(--bp-syntax-string);
+}
+.bp-tok-keyword {
+  color: var(--bp-syntax-keyword);
+}
+.bp-tok-number {
+  color: var(--bp-syntax-number);
+}
+.bp-tok-function {
+  color: var(--bp-syntax-function);
+}
+.bp-tok-class {
+  color: var(--bp-syntax-class);
+}
+.bp-tok-builtin {
+  color: var(--bp-syntax-builtin);
+}
+.bp-tok-operator {
+  color: var(--bp-syntax-operator);
+}
+.bp-tok-punctuation {
+  color: var(--bp-syntax-punctuation);
+}
+
+/*
+ * The one deviation from the vendor sheet's layout: the touch overlay covers the WHOLE terminal.
+ * `.cmd-editable` receives typing on a phone, and the vendor rule starts it at the command line
+ * (`top: calc(var(--cmd-top) * 1px)`), so a tap higher up lands on nothing and no keyboard
+ * appears. Everything else the library needs comes from the vendored sheet unchanged.
+ */
+.bp-terminal .cmd .cmd-editable,
+.bp-terminal .cmd-editable {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+/* The surface's own elements, restyled to the tokens above.
+ *
+ * The vendored sheet has its own custom-property API - `--color`, `--background`, `--glow` and the
+ * font metrics - which dozens of its rules read, reaching selection, links, the text-shadow glow
+ * and the caret keyframes that a `.bp-*` class never touches.
+ *
+ * `.bp-terminal.terminal` - ONE element, two classes, and NOT `.bp-terminal .terminal`: the
+ * adapter mounts a div with `class="bp-terminal"` and the library adds `terminal` to that SAME
+ * div, so a descendant combinator matches nothing and reaches only `.cmd` - `.bp-line-body`
+ * computing 12px/18.6px in generic `monospace` beside a `.cmd` at 14px/21.7px in `ui-monospace`.
+ *
+ * THE TYPE METRICS REACH THE TERMINAL; THE COLOUR VARIABLES DELIBERATELY DO NOT. The vendored
+ * sheet inverts a selection with `background-color: var(--color)` and `color: var(--background)`;
+ * defined, and with a host that sets `--background: transparent`, the selected text is painted in
+ * transparent ink. So the colours stay on `.cmd`.
+ */
+.bp-terminal.terminal {
+  --font: var(--bp-console-font-family);
+  --terminal-font-size: var(--bp-console-type-size);
+}
+.bp-terminal .cmd {
+  --color: var(--bp-console-foreground);
+  --background: var(--bp-console-background);
+  --link-color: var(--bp-console-accent);
+  --error-color: var(--bp-console-error);
+  --font: var(--bp-console-font-family);
+  --terminal-font-size: var(--bp-console-type-size);
+  /* No CRT glow. It is a text-shadow on every glyph, and it makes a Python traceback look like a
+     1980s prop rather than a terminal. */
+  --glow: 0;
+}
+
+.bp-terminal,
+.bp-terminal.terminal,
+.bp-terminal .cmd {
+  background: transparent !important;
+  color: var(--bp-console-foreground) !important;
+  font-family: var(--bp-console-font-family) !important;
+  font-size: var(--bp-console-type-size) !important;
+  line-height: var(--bp-console-line-height) !important;
+}
+.bp-terminal .cmd .cmd-prompt {
+  color: var(--bp-console-prompt) !important;
+}
+
+/*
+ * Live highlighting on the command line. The token class lands on the library's per-character
+ * wrapper, which holds ONE more span inside it; that inner span paints the glyph, so the colour
+ * must reach it - and the `.cmd` rule above is `!important`, which inheritance cannot beat.
+ */
+.bp-terminal .cmd [data-text].bp-tok-comment,
+.bp-terminal .cmd [data-text].bp-tok-comment span {
+  color: var(--bp-syntax-comment) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-string,
+.bp-terminal .cmd [data-text].bp-tok-string span {
+  color: var(--bp-syntax-string) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-keyword,
+.bp-terminal .cmd [data-text].bp-tok-keyword span {
+  color: var(--bp-syntax-keyword) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-builtin,
+.bp-terminal .cmd [data-text].bp-tok-builtin span {
+  color: var(--bp-syntax-builtin) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-number,
+.bp-terminal .cmd [data-text].bp-tok-number span {
+  color: var(--bp-syntax-number) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-class,
+.bp-terminal .cmd [data-text].bp-tok-class span {
+  color: var(--bp-syntax-class) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-function,
+.bp-terminal .cmd [data-text].bp-tok-function span {
+  color: var(--bp-syntax-function) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-operator,
+.bp-terminal .cmd [data-text].bp-tok-operator span {
+  color: var(--bp-syntax-operator) !important;
+}
+.bp-terminal .cmd [data-text].bp-tok-punctuation,
+.bp-terminal .cmd [data-text].bp-tok-punctuation span {
+  color: var(--bp-syntax-punctuation) !important;
+}
+
+.bp-terminal .cmd [role="presentation"].cmd-cursor-line {
+  position: relative;
+  z-index: 100;
+  cursor: text;
+}
+.bp-terminal .cmd [role="presentation"]:not(.cmd-cursor-line) {
+  overflow: hidden;
+}
+/*
+ * SELECTED TEXT IS SELECTED TEXT, not a blank block. The vendored sheet inverts a selection, with
+ * `!important`:
+ *
+ *   background-color: var(--color, hsla(0,0%,67%,.99)) !important;
+ *   color: var(--background, #000) !important;
+ *
+ * and elsewhere sets `--background: transparent` on `.terminal .terminal-output *`, so the
+ * fallback never applies and the selected text is painted in TRANSPARENT ink. The declarations are
+ * `!important`, so the contest is specificity: the vendor's selectors carry up to six class-level
+ * components (`[data-text]` plus four `:not(.…)`), and each is mirrored here with one more class
+ * in front. Both properties are named - setting only the background leaves the transparent ink.
+ */
+.bp-terminal ::selection,
+.bp-terminal .terminal-output .raw ::selection,
+.bp-terminal .terminal-output .raw div::selection,
+.bp-terminal .terminal-output div div::selection,
+.bp-terminal .terminal-output div div a::selection,
+.bp-terminal .bp-link::selection,
+.bp-terminal .terminal-output span[data-text]:not(.emoji)::selection,
+.bp-terminal
+  .terminal-output
+  span[data-text]:not(.far):not(.fa):not(.fas):not(.emoji)
+  span::selection,
+.bp-terminal .cmd span[data-text]:not(.far):not(.fa):not(.fas):not(.emoji) span::selection {
+  background-color: var(--bp-console-selection) !important;
+  color: var(--bp-console-foreground) !important;
+}
+
+/*
+ * No cursor blink and no spinner for anyone who asked for less motion: a blinking caret is a
+ * repeating animation on a permanent element, which is what that preference is about.
+ *
+ * The vendor paints the caret by animating `background-color` and `color` on a span two levels
+ * inside `.cmd-cursor` with the `terminal-blink` keyframes. Forcing those two with `!important`
+ * outranks the animation, leaving it attached, running and unable to paint - a solid block while
+ * `animationName` still reports `terminal-blink`, which is why the caret suite samples the colour
+ * over a blink cycle instead. So the keyframes are fed, not overridden; they read the vendor's own
+ * custom properties:
+ *
+ *   0% - 50%    background: var(--original-color)   color: var(--background)
+ *   50.1% - end background: var(--background)       color: var(--original-color)
+ */
+.bp-terminal .cmd {
+  --original-color: var(--bp-console-foreground);
+}
+
+/*
+ * The steady caret, for when the terminal is NOT focused and the vendor has dropped `.cmd-blink`.
+ * `!important`, and `:not(.cmd-blink)` is what makes that safe. The rule to beat is
+ *
+ *   .cmd span[data-text]:not(.emoji):not(.fa):not(.fas):not(.far) span { background-color: inherit }
+ *
+ * whose four `:not()`s put it at (0,6,2), above anything this file can reach by counting
+ * selectors, and the parent it inherits from resolves to `transparent` so the caret disappears.
+ * The `:not(.cmd-blink)` guarantees no animation is running here, which is the entire reason
+ * `!important` is allowed: on the blinking caret it would freeze the animation. Do not lift this
+ * rule out of its `:not()`.
+ */
+.bp-terminal .cmd .cmd-cursor:not(.cmd-blink) > span[data-text] span {
+  background-color: var(--bp-console-foreground) !important;
+  color: var(--bp-console-background) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * A STEADY caret, not no caret. The animation is the only thing that paints the caret's
+   * background, so switching it off alone leaves an invisible cursor for anyone who asked their
+   * system for less motion.
+   */
+  .bp-terminal .cmd .cmd-cursor.cmd-blink > span[data-text] span,
+  .bp-terminal .cmd .cmd-cursor > span[data-text] span {
+    animation: none !important;
+    /* Safe here for the same reason as above, from the other direction: the animation is switched
+       off in this very rule, so there is nothing left for `!important` to freeze. Without it the
+       vendor's (0,6,2) `background-color: inherit` wins and the reduced-motion caret is invisible. */
+    background-color: var(--bp-console-foreground) !important;
+    color: var(--bp-console-background) !important;
+  }
+  .bp-terminal .cmd .cmd-cursor,
+  .bp-terminal .cmd .cmd-cursor-line {
+    animation: none !important;
+  }
+}
+
+/* The file panel.
+ * Below the transcript and above the prompt's helpers, because it is about what the session
+ * PRODUCED rather than what is being typed. It sizes to its content and caps itself, so a run that
+ * writes twenty files scrolls the list rather than swallowing the console.
+ */
+.bp-files {
+  flex: 0 0 auto;
+  max-height: 40%;
+  overflow: auto;
+  border-top: 1px solid var(--bp-console-border);
+  padding: calc(var(--bp-console-padding) / 1.5) var(--bp-console-padding);
+  font-size: 0.85em;
+}
+.bp-files-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+.bp-files-title {
+  font-weight: 600;
+}
+.bp-files-note {
+  color: var(--bp-console-muted);
+}
+.bp-files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.bp-file {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bp-file-name {
+  overflow-wrap: anywhere;
+}
+.bp-file-meta {
+  color: var(--bp-console-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22ch;
+}
+/* A failed artifact is named as one. It stays visible so it can be deleted, and reads as a
+   problem rather than as a file that is merely a bit different. */
+.bp-file[data-state="failed"] .bp-file-name {
+  text-decoration: line-through;
+}
+.bp-file[data-state="failed"] .bp-file-meta {
+  color: #d97757;
+}
+.bp-file-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+.bp-file-button-armed {
+  border-color: #d97757;
+  color: #d97757;
+}
+.bp-file-preview {
+  grid-column: 1 / -1;
+  border: 1px solid var(--bp-console-border);
+  border-radius: calc(var(--bp-console-radius) / 2);
+  padding: 0.4rem;
+  color: var(--bp-console-muted);
+}
+.bp-file-preview-text {
+  margin: 0;
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre;
+  color: var(--bp-console-foreground);
+}
+.bp-file-preview-media {
+  display: block;
+  max-width: 100%;
+  max-height: 14rem;
+}
+
+/* Narrow layouts: the toolbar wraps, the padding tightens, nothing is hidden. */
+
+@media (max-width: 480px) {
+  .bp-container {
+    --bp-console-padding: 0.6rem;
+    --bp-console-font-size: 0.8125rem;
+  }
+}
+
+/* On a phone the three actions get their own row rather than squeezing the filename to nothing. */
+@media (max-width: 480px) {
+  .bp-file {
+    grid-template-columns: 1fr auto;
+  }
+  .bp-file-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+/*
+ * While the reader is parked away from the bottom.
+ *
+ * The command line's textarea is a FOCUSED element inside the transcript's scroller, and a browser
+ * keeps a focused caret in view - so appending output above it scrolls a reader who had scrolled
+ * up back to the end. Taking it out of the scroller's overflow leaves nothing to bring into view.
+ * ONLY WHILE PARKED: unconditionally out of the flow, a click on the transcript focuses an element
+ * at the viewport origin and the page jumps. The TOUCH overlay is excluded - there the focused
+ * element is what a virtual keyboard scrolls to, which is how a phone types into a hidden prompt.
+ */
+.bp-terminal[data-bp-parked] .cmd-clipboard {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

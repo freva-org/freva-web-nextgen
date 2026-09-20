@@ -1,0 +1,70 @@
+---
+/**
+ * Consuming the engine from Astro - the framework this repository already uses.
+ *
+ * The interesting line is the LAST one in the script: the engine is created once and hung on
+ * `window`, because a page may have several components that want Python and starting an
+ * interpreter per component would download the runtime per component. The engine is a state
+ * machine with listeners, not a component, precisely so this works.
+ *
+ * Nothing here is Astro-specific beyond the file extension. The same twelve lines work in a React
+ * effect, a Vue `onMounted`, a Svelte `onMount`, or a plain `<script type="module">`.
+ */
+interface Props {
+  profile?: "minimal" | "xarray-zarr";
+}
+const { profile = "minimal" } = Astro.props;
+---
+
+<div class="python-console" data-profile={profile}>
+  <div data-status>idle</div>
+  <pre data-output></pre>
+  <input data-input placeholder=">>>" />
+</div>
+
+<script>
+  import { createBrowserPython } from "@freva-org/browser-python";
+  import type { BrowserPython } from "@freva-org/browser-python";
+
+  /**
+   * One engine per page, shared by every island that wants it.
+   *
+   * Astro hydrates each island separately, so two consoles on one page run this script twice. A
+   * module-level singleton is what keeps that to one worker and one 20 MB download.
+   */
+  declare global {
+    interface Window {
+      __frevaPython?: BrowserPython;
+    }
+  }
+
+  function enginefor(profile: "minimal" | "xarray-zarr"): BrowserPython {
+    window.__frevaPython ??= createBrowserPython({ profile });
+    return window.__frevaPython;
+  }
+
+  for (const root of document.querySelectorAll<HTMLElement>(".python-console")) {
+    const profile = (root.dataset.profile ?? "minimal") as "minimal" | "xarray-zarr";
+    const python = enginefor(profile);
+    const status = root.querySelector<HTMLElement>("[data-status]")!;
+    const output = root.querySelector<HTMLElement>("[data-output]")!;
+    const input = root.querySelector<HTMLInputElement>("[data-input]")!;
+
+    python.onStatus((event) => {
+      status.textContent = event.detail ? `${event.state} - ${event.detail}` : event.state;
+    });
+    python.onOutput((event) => {
+      if (event.type === "display") return; // this example does not render figures
+      // textContent, never innerHTML: this is text the visitor's own Python produced.
+      output.append(document.createTextNode(event.text));
+    });
+
+    input.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter") return;
+      const line = input.value;
+      input.value = "";
+      await python.start(); // idempotent - the first Enter pays for the download, the rest do not
+      await python.push(line);
+    });
+  }
+</script>

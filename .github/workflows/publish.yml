@@ -1,10 +1,14 @@
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
-# Two pushes must not race each other into the registry.
+  workflow_dispatch:
+
+# Two runs must not race each other into the registry.
 concurrency:
   group: publish
   cancel-in-progress: false
@@ -13,13 +17,30 @@ jobs:
   release:
     name: version or publish
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     permissions:
+      actions: read
       contents: write
       pull-requests: write
       id-token: write # OIDC token for npm trusted publishing
 
     steps:
+      # `main`, not the verified SHA: changesets pushes a version commit and opens a PR, and it
+      # needs a branch to do that on. The check below is what keeps the two honest.
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Require a successful CI run for this exact commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_RUN_JSON: ${{ toJSON(github.event.workflow_run) }}
+        run: |
+          VERIFY_SHA="$(git rev-parse HEAD)" node scripts/require-ci-success.mjs
+
       - name: Create freva-bot app token
         id: app-token
         if: ${{ vars.FREVA_BOT_APP_ID != '' }}
@@ -88,6 +109,14 @@ jobs:
       - name: Test
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: npm test
+
+      - name: Packaged package
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: npm run test:packaging -w @freva-org/browser-python
+
+      - name: Bundle size
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: npm run check:bytes -w @freva-org/browser-python
 
       - name: Publish
         id: publish
