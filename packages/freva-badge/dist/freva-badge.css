@@ -1,0 +1,294 @@
+/* Freva badge
+   The badge takes only two things from the page it is dropped into: the height
+   of the footer it sits in, and the page shadow colour. Every other colour here
+   belongs to the mark and must not move with the host theme. */
+.fb{--fb-ftr-h:46px;--fb-shadow:rgba(0,0,0,.55);
+  /* LOCAL (portal integration): two lengths a host sets, both with the
+     package's own value as the default.
+     `--fb-inset` is the page's left gutter, so the mark lines up with the
+     content column instead of with a number this file guessed.
+     `--fb-pop-drop` is how far the open panel sits *into* the footer rather
+     than clear above it. */
+  --fb-inset:16px;--fb-pop-drop:0px;
+  /* Where the disc's left edge sits inside the 158x63 mark box, measured from
+     the artwork's own alpha. Published because a host that wants to line the
+     *disc* up with something - a header logo, a content column - has to know
+     how far into its box the disc starts, and guessing that number in the host
+     is how it goes stale the next time the artwork changes. */
+  --fb-disc-x:49.6px;
+  /* LOCAL (portal integration): the mark's own typography, stated rather than inherited. Scoping
+     the sheet under `.fb` stops the badge reaching the host; this stops the host reaching the
+     badge. Every text size inside the panel is a fraction of `--pop-w`, so a host body font with
+     different metrics rewraps the headline and pushes the organisation strip out of the circle.
+     This is the stack the panel was drawn against, and the one the package's own demo page sets. */
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+    "Helvetica Neue",Arial,sans-serif;
+  font-size:15px;line-height:1.55;font-weight:400;font-style:normal;
+  letter-spacing:normal;word-spacing:normal;text-transform:none;text-align:start;
+  text-indent:0;white-space:normal;font-variant:normal;color:#e9eef3;
+  -webkit-font-smoothing:antialiased}
+/* Inheritance loses to a bare type selector, so the family has to be restated on the elements a
+   host stylesheet can actually name. `inherit` takes it from the rule above and imposes nothing
+   the badge's own class rules do not already say - those carry two classes and still win. The
+   panel's headline is an `<h2>`, which is how a portal's display face reaches the mark. */
+.fb h1,.fb h2,.fb h3,.fb h4,.fb h5,.fb h6,
+.fb p,.fb a,.fb button,.fb span,.fb div,.fb b,.fb em,.fb strong{font-family:inherit}
+:root[data-mode="light"] .fb{--fb-shadow:rgba(20,40,60,.28)}
+@media (prefers-color-scheme:light){
+  :root:not([data-mode="dark"]):not([data-mode="light"]) .fb{--fb-shadow:rgba(20,40,60,.28)}
+}
+/* The static mark shown before - and instead of - the footer story sheet. */
+.fb .badge__still{position:absolute;inset:0;width:158px;height:63px;
+  background-repeat:no-repeat;background-size:100% 100%}
+.fb .badge__frames{opacity:0;transition:opacity .12s linear}
+.fb .badge__frames.is-ready{opacity:1}
+
+/* the badge in the footer */
+.fb .badge{position:fixed;left:var(--fb-inset);bottom:0;height:var(--fb-ftr-h);z-index:16;
+  display:flex;align-items:center;background:none;border:0;
+  padding:0 12px 0 118px;
+  color:#fff;cursor:pointer;font:inherit;text-align:left}
+.fb .badge:focus-visible{outline:2px solid #fff;outline-offset:2px;border-radius:6px}
+/* LOCAL (portal integration): `--fb-mark-lift` is how far the mark floats above the page's
+   bottom edge. The 20px default leaves the bird hovering with daylight under its feet on a slim
+   chrome bar. The disc's own artwork has about 3px of clear space below it inside the 158x63 box,
+   so a lift of -3px is what puts it on the ground. */
+.fb .badge__mark{position:absolute;left:0;bottom:var(--fb-mark-lift,20px);
+  width:158px;height:63px;pointer-events:none;
+  transition:opacity .18s ease}
+/* LOCAL (portal integration): the disc is part of the button. The mark stands taller than the
+   bar the button lives in, so without this most of the bird sits outside the button's own box and
+   a click on its head reaches the page behind - opening the badge from the wordmark but not from
+   the logo, which is the half people aim at. This is the disc's rectangle exactly, measured from
+   the artwork's alpha, so the clickable area is the mark and not the transparent box around it. */
+.fb .badge__mark::after{content:"";position:absolute;
+  left:var(--fb-disc-x);bottom:3.1px;width:57px;height:58px;
+  pointer-events:auto;cursor:pointer}
+/* The host's animated mark, laid over the disc's place in that box, measured from the still's own
+   alpha inside the 158x63 box: the disc runs x 49.6-106.6 and stands 3.1px clear of the bottom
+   edge. Matching those puts the two marks' feet in the same place, so swapping between them -
+   which happens every time the story ends - moves nothing. */
+.fb .badge__live{position:absolute;left:var(--fb-disc-x);bottom:3.1px;width:57px;height:58px;
+  background-repeat:no-repeat;background-size:100% 100%;display:none}
+/* While the popup is open the popup IS the mark; a second little one below it
+   is just clutter. It comes straight back when the popup closes. */
+.fb .badge--away .badge__mark{opacity:0}
+.fb .badge__frames{position:absolute;inset:0;width:158px;height:63px}
+.fb .badge__frames{background-repeat:no-repeat}
+/* The story bird walks to x=136 inside the 158px mark box and the wordmark starts at 118, so the
+   two overlap while the story runs. The mark is positioned and the label was not, which put the
+   bird in front and let the wordmark show through its feathers. */
+.fb .badge__lab{display:block;line-height:1.15;position:relative;z-index:1}
+.fb .badge__pow{display:block;font-size:9.5px;letter-spacing:.19em;opacity:.9}
+.fb .badge__name{display:block;font-size:17px;font-weight:700;letter-spacing:.01em}
+
+/* the popup: the mark itself */
+/* The outer box carries the geometry and never transforms — everything the
+   bird is positioned against is measured off it, and a rect read mid-animation
+   from a scaled element would put the perch in the wrong place. The inner layer
+   does the moving. */
+.fb .pop{display:block;position:fixed;left:calc(var(--fb-inset) - 6px);
+  bottom:calc(var(--fb-ftr-h) + 8px - var(--fb-pop-drop));
+  width:var(--pop-w);height:calc(var(--pop-w)*1.025);
+  --pop-w:min(360px,calc(100vw - 20px));z-index:18;pointer-events:none}
+.fb .pop[hidden]{display:none}
+/* LOCAL (portal integration): the wrapper is a bare box, said out loud. `.pop` is a common class
+   name and a host that ships its own popovers styles it - the Data Browser gives its own `.pop` a
+   page-coloured card. Scoping under `.fb` raises specificity only for properties the badge
+   declares, so every property it *doesn't* declare is a hole a host can paint through: `display:
+   none` hides the panel outright, `background` prints a pale card over the footer behind the disc.
+   Every one of them is declared here, once. */
+.fb .pop,.fb .pop__in{background:none;border:0;border-radius:0;box-shadow:none;
+  margin:0;padding:0;outline:0;min-width:0;min-height:0;max-width:none;max-height:none;
+  backdrop-filter:none;clip-path:none;mask:none;overflow:visible}
+.fb .pop__in{position:absolute;inset:0;pointer-events:auto;
+  transform:scale(.58);transform-origin:23% 100%;opacity:0;
+  /* eased at both ends and given time to do it: the popup should look like it
+     is growing out of the badge, not snapping open */
+  transition:transform .72s cubic-bezier(.42,.03,.24,1),opacity .42s ease}
+.fb .pop.is-open .pop__in{transform:scale(1);opacity:1}
+/* There is deliberately no scrim. Opening the panel changes nothing behind it: the page keeps its
+   colours, the header and footer keep theirs, and the only thing that moves is the mark growing
+   into the panel. Dimming the whole portal makes a credit line read like a modal. */
+.fb .pop__svg{position:absolute;inset:0;width:100%;height:100%;
+  filter:drop-shadow(0 14px 30px var(--fb-shadow))}
+/* panel content
+   The panel does not grow; the copy is short so the type can be big: two headline lines, one
+   subline, the strip, the address. Every size is a fraction of --pop-w, so the whole card scales
+   as one object. */
+.fb .pop__body{position:absolute;display:flex;flex-direction:column;color:#eaf6ff}
+/* The copy hangs left of the block it lives in, out where the disc is widest,
+   so the headline clears the cyan pieces with air to spare. The strip and the
+   pill below it stay put, because down there the disc has closed back in. */
+.fb .pop__kicker, .fb .pop__head, .fb .pop__sub{max-width:calc(var(--pop-w)*.53);
+  margin-left:calc(var(--pop-w)*-.022)}
+.fb .pop__kicker{display:block;margin-bottom:calc(var(--pop-w)*.018);
+  font:800 calc(var(--pop-w)*.046)/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.01em;color:#8ed0f0}
+.fb .pop__head{margin:0 0 0 calc(var(--pop-w)*-.022);font-size:calc(var(--pop-w)*.058);line-height:1.1;
+  font-weight:800;letter-spacing:-.02em;color:#fff}
+.fb .pop__head b{display:block;font-weight:800}
+.fb .pop__head em{font-style:normal;color:#7fd0f2}
+.fb .pop__head b{min-height:1.1em}
+.fb .pop__sub{margin:calc(var(--pop-w)*.026) 0 0 calc(var(--pop-w)*-.022);
+  font-size:calc(var(--pop-w)*.0345);line-height:1.36;font-weight:500;color:#c9e2f5}
+/* The subline and everything below it wait for the headline to finish, then
+   arrive together rather than being typed out one slow character at a time. */
+.fb .pop__sub, .fb .pop-meta{opacity:0;transform:translateY(6px);
+  transition:opacity .5s ease,transform .5s cubic-bezier(.2,.8,.3,1)}
+.fb .pop__body.is-told .pop__sub{opacity:1;transform:none}
+.fb .pop__body.is-told .pop-meta{opacity:1;transform:none;transition-delay:.12s}
+.fb .caret{display:inline-block;width:.46em;height:.92em;vertical-align:-.1em;background:#8ed0f0;
+  animation:blink 1s steps(1,end) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* Freva owns only the inherited mark, so its proof points and contact stay
+   inside the panel rather than changing the surrounding enterprise portal. */
+.fb .pop-meta{margin-top:auto}
+.fb .pop-meta__label{display:block;color:#8ed0f0;
+  font:800 calc(var(--pop-w)*.0255)/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.15em;text-transform:uppercase}
+.fb .pop-meta__viewport{overflow:hidden;margin:calc(var(--pop-w)*.014) 0 calc(var(--pop-w)*.020);
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.fb .pop-meta__track{display:flex;width:max-content;animation:pop-org-scroll 30s linear infinite;
+  will-change:transform}
+.fb .pop-meta__group{display:flex;align-items:center;gap:calc(var(--pop-w)*.018);
+  padding-right:calc(var(--pop-w)*.018)}
+/* LOCAL (portal integration): each chip carries a mark slot, filled by assets/orgs/<key>.svg. The
+   slot is a white tile rather than a translucent one - most of these logos are dark navy or black,
+   and 20% white over a dark blue panel shows nothing. The tile is larger for the same reason, and
+   the whole strip is taller to hold it. A chip is an anchor when the organisation has a home. */
+.fb .org{display:inline-flex;align-items:center;gap:calc(var(--pop-w)*.021);
+  padding:calc(var(--pop-w)*.012) calc(var(--pop-w)*.030) calc(var(--pop-w)*.012)
+          calc(var(--pop-w)*.012);
+  border-radius:calc(var(--pop-w)*.032);background:rgba(255,255,255,.10);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.20);white-space:nowrap;
+  text-decoration:none;color:inherit;
+  transition:background .16s ease,box-shadow .16s ease}
+.fb a.org:hover,.fb a.org:focus-visible{background:rgba(255,255,255,.18);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.42)}
+.fb a.org:focus-visible{outline:2px solid #7fd0f2;outline-offset:2px}
+.fb .org__mark{position:relative;display:block;flex:none;overflow:hidden;
+  width:calc(var(--pop-w)*.084);height:calc(var(--pop-w)*.084);
+  padding:calc(var(--pop-w)*.004);box-sizing:border-box;
+  border-radius:calc(var(--pop-w)*.020);background:#fff;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.32)}
+/* Nobody's logo is invented: with no file the slot stays a deliberate box. */
+.fb .org__mark--empty{background:rgba(255,255,255,.20)}
+.fb .org__mark img{display:block;width:100%;height:100%;object-fit:contain}
+.fb .org__name{font-size:calc(var(--pop-w)*.0305);line-height:1;font-weight:750;color:#fff}
+.fb .pop-meta__viewport:hover .pop-meta__track{animation-play-state:paused}
+@keyframes pop-org-scroll{to{transform:translateX(-50%)}}
+
+/* The address is the one thing a reader might act on, so it is a control, not
+   a footnote: full-width, brand cyan, and it says what it does. */
+.fb .pop-mail{display:flex;align-items:center;justify-content:center;
+  max-width:calc(var(--pop-w)*.62);margin-inline:auto;gap:calc(var(--pop-w)*.02);
+  padding:calc(var(--pop-w)*.021) calc(var(--pop-w)*.03);
+  border-radius:999px;background:#5cbadf;color:#06304f;text-decoration:none;
+  box-shadow:0 calc(var(--pop-w)*.006) calc(var(--pop-w)*.02) rgba(0,0,0,.28);
+  transition:background .18s ease,transform .18s ease,box-shadow .18s ease}
+.fb .pop-mail svg{width:calc(var(--pop-w)*.042);height:calc(var(--pop-w)*.042);flex:none;
+  fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.fb .pop-mail__addr{font-size:calc(var(--pop-w)*.0345);line-height:1;font-weight:800;
+  letter-spacing:-.005em}
+.fb .pop-mail__go{margin-left:calc(var(--pop-w)*.012);font-size:calc(var(--pop-w)*.038);line-height:1;font-weight:800;
+  transition:transform .18s ease}
+.fb .pop-mail:hover, .fb .pop-mail:focus-visible{background:#fff;transform:translateY(-1px);
+  box-shadow:0 calc(var(--pop-w)*.01) calc(var(--pop-w)*.028) rgba(0,0,0,.34)}
+.fb .pop-mail:hover .pop-mail__go{transform:translateX(3px)}
+.fb .pop-mail:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.fb .pop-mail:active{transform:translateY(0)}
+
+/* The two cyan pieces are real, keyboard-accessible controls. Pointing at one
+   turns it over to a deep-blue face carrying the destination; on touch, where
+   there is no hover, the first tap turns it and the second opens it. */
+.fb .logo-tile{position:absolute;z-index:3;border:0;padding:0;background:none;color:#062f4b;
+  cursor:pointer;perspective:700px;text-decoration:none;-webkit-tap-highlight-color:transparent}
+.fb .logo-tile__inner{position:absolute;inset:0;display:block;transform-style:preserve-3d;
+  transition:transform .5s cubic-bezier(.2,.8,.25,1)}
+.fb .logo-tile__face{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;gap:calc(var(--pop-w)*.009);
+  padding:calc(var(--pop-w)*.028);overflow:hidden;backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;background:rgba(255,255,255,.06);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
+.fb .logo-tile--docs .logo-tile__face{clip-path:polygon(0 0,47% 0,81% 2%,98% 7%,100% 14%,100% 100%,0 100%)}
+.fb .logo-tile--api .logo-tile__face{clip-path:polygon(0 0,97% 0,99% 3%,100% 28%,100% 64%,98% 100%,0 100%)}
+.fb .logo-tile__face--back{transform:rotateY(180deg);background:#083c67;color:#fff;
+  box-shadow:inset 0 0 0 1px rgba(124,208,242,.5)}
+.fb .logo-tile__icon{width:calc(var(--pop-w)*.058);height:calc(var(--pop-w)*.058);
+  display:grid;place-items:center;flex:none}
+.fb .logo-tile__icon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
+.fb .logo-tile__title{display:block;max-width:100%;font-size:calc(var(--pop-w)*.0285);
+  line-height:1.14;font-weight:850;letter-spacing:.025em;text-transform:uppercase}
+.fb .logo-tile__copy{display:block;max-width:100%;font-size:calc(var(--pop-w)*.0245);
+  line-height:1.22;font-weight:600;color:#bfe2f6}
+.fb .logo-tile__cta{display:inline-flex;align-items:center;gap:.3em;
+  font-size:calc(var(--pop-w)*.026);line-height:1;font-weight:850;color:#7fd0f2}
+.fb .logo-tile.is-flipped .logo-tile__inner{transform:rotateY(180deg)}
+.fb .logo-tile:focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media (hover:hover){
+  .fb .logo-tile:hover .logo-tile__inner{transform:rotateY(180deg)}
+}
+.fb .pop.is-open .logo-tile--docs .logo-tile__inner{animation:tile-cue 1s ease 1.05s 1}
+@keyframes tile-cue{0%,100%{transform:none}46%{transform:rotateY(-16deg)}}
+/* An animation outranks a declared transform, so a pointer arriving while the cue plays would be
+   ignored until it had finished and the tile would need a second hover. Flipping cancels it. */
+.fb .pop .logo-tile.is-flipped .logo-tile__inner{animation:none}
+@media (hover:hover){
+  .fb .pop .logo-tile:hover .logo-tile__inner{animation:none}
+}
+
+/* The amber quarter is the close control, and it stays a quarter of the mark:
+   no button pasted on top of it. The cross is drawn in the mark's own deep
+   blue, and pointing at the quarter lights it and turns the cross a quarter
+   turn - the same gesture the shape itself is making. */
+.fb .pop__close{position:absolute;background:none;border:0;padding:0;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;isolation:isolate}
+.fb .pop__close svg{position:absolute;inset:0;display:block;width:100%;height:100%;overflow:visible;z-index:0}
+.fb .pop__close .wedge{fill:transparent;transition:fill .2s ease}
+.fb .pop__close-x{position:absolute;left:42%;top:57%;z-index:1;
+  width:calc(var(--pop-w)*.072);height:calc(var(--pop-w)*.072);
+  transform:translate(-50%,-50%);transition:transform .28s cubic-bezier(.3,.8,.3,1)}
+.fb .pop__close-x::before, .fb .pop__close-x::after{content:"";position:absolute;
+  left:12%;right:12%;top:calc(50% - var(--pop-w)*.0075);height:calc(var(--pop-w)*.015);
+  border-radius:calc(var(--pop-w)*.015);background:#0a487e;
+  transition:background .2s ease}
+.fb .pop__close-x::before{transform:rotate(45deg)}
+.fb .pop__close-x::after{transform:rotate(-45deg)}
+.fb .pop__close-ring{position:absolute;left:42%;top:57%;z-index:1;
+  width:calc(var(--pop-w)*.116);height:calc(var(--pop-w)*.116);
+  transform:translate(-50%,-50%) scale(.5);border-radius:50%;
+  border:calc(var(--pop-w)*.008) solid #0a487e;opacity:0;
+  transition:transform .28s cubic-bezier(.3,.8,.3,1),opacity .2s ease}
+.fb .pop__close:hover .wedge, .fb .pop__close:focus-visible .wedge{fill:#ffc457}
+.fb .pop__close:hover .pop__close-x, .fb .pop__close:focus-visible .pop__close-x{
+  transform:translate(-50%,-50%) rotate(90deg) scale(1.06)}
+.fb .pop__close:hover .pop__close-ring, .fb .pop__close:focus-visible .pop__close-ring{
+  transform:translate(-50%,-50%) scale(1);opacity:.9}
+.fb .pop__close:active .pop__close-x{transform:translate(-50%,-50%) rotate(90deg) scale(.92)}
+.fb .pop__close:focus-visible{outline:none}
+.fb .pop.is-open .pop__close .pop__close-x{animation:close-cue 1.1s ease 1.35s 1}
+@keyframes close-cue{0%,100%{transform:translate(-50%,-50%) rotate(0)}
+  50%{transform:translate(-50%,-50%) rotate(90deg)}}
+
+/* the moving bird */
+.fb .bird-canvas{position:fixed;inset:0;z-index:19;pointer-events:none;display:none;
+  filter:drop-shadow(0 4px 6px rgba(0,0,0,.32))}
+/* A separate layer lets loose feathers finish their fall after the bird has
+   gone. It is earlier in document order, so the bird always stays in front. */
+.fb .feather-canvas{position:fixed;inset:0;z-index:19;pointer-events:none;display:none;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.22))}
+
+
+@media (prefers-reduced-motion:reduce){
+  .fb .pop{transition:none}
+  .fb .caret{animation:none}
+  .fb .pop-meta__track{animation:none;transform:none}
+  .fb .pop__sub, .fb .pop-meta{opacity:1;transform:none;transition:none}
+  .fb .pop-meta__group[aria-hidden="true"]{display:none}
+  .fb .logo-tile__inner{transition:none!important;animation:none!important}
+  .fb .pop__close-x, .fb .pop__close-ring{transition:none!important;animation:none!important}
+}
