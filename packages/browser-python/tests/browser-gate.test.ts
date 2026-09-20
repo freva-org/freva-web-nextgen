@@ -12,6 +12,7 @@
 import { execFileSync, execFileSync as run } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import { report } from "../browser-tests/harness.mjs";
 import { NETWORK_SUITES, PACKAGE_INDEX_SUITES, SUITES } from "../browser-tests/suite-list.mjs";
@@ -270,13 +271,14 @@ describe("the gate's own result does not depend on dist/ or .runtime/", () => {
     const { code, output } = rerunSelf({
       BROWSER_PYTHON_RUNTIME_DIR: "/definitely/missing/runtime",
     });
-    expect(code, output.slice(-1500)).toBe(0);
+    const plainOutput = stripVTControlCharacters(output);
+    expect(code, plainOutput.slice(-1500)).toBe(0);
     // Proof the child really RAN the suites rather than collecting nothing: vitest exits 0 for
     // an empty selection too, which would make this assertion vacuous.
-    const ran = /Tests\s+(\d+) passed/.exec(output);
-    expect(ran, `no test count in:\n${output.slice(-1200)}`).not.toBeNull();
+    const ran = /Tests\s+(\d+) passed/.exec(plainOutput);
+    expect(ran, `no test count in:\n${plainOutput.slice(-1200)}`).not.toBeNull();
     expect(Number(ran?.[1] ?? 0)).toBeGreaterThan(50);
-    expect(output).toMatch(/Test Files\s+1 passed/);
+    expect(plainOutput).toMatch(/Test Files\s+1 passed/);
   });
 
   it("reads no built or assembled file itself", () => {
