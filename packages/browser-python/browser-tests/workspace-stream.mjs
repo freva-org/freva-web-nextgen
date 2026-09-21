@@ -54,11 +54,11 @@ with open("export.bin", "rb") as fh:
 print(json.dumps({"size": target * MiB, "sha256": rolling.hex()}))
 `;
 
-// Chrome for Testing disables the Performance Manager instrumentation in headless mode. The suite
-// refuses to turn a missing measurement into a pass, so enable the feature backing the API here.
+// Performance Manager instrumentation is a Blink runtime feature that Chrome for Testing does not
+// enable by default. The suite refuses to turn a missing measurement into a pass, so enable it.
 const inMemoryMeasuredBrowser = (body) =>
   inBrowser(body, {
-    chromiumArgs: ["--enable-features=PerformanceManagerInstrumentation"],
+    chromiumArgs: ["--enable-blink-features=PerformanceManagerInstrumentation"],
   });
 
 const result = await inMemoryMeasuredBrowser(async (page) => {

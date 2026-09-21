@@ -1540,18 +1540,23 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
   // out of the listener so the selection test happens after the click has settled, rather than
   // when the browser may not have finalised it.
 
-  /**
-   * Is a selection standing inside this console? `ShadowRoot.getSelection` is Chrome's and the
-   * only way to see a selection made INSIDE a shadow root there, where `document.getSelection`
-   * reports it collapsed. Everywhere else the document's selection is the right answer.
-   */
+  /** Is either selection owner reporting selected text inside this console? */
   #selectionHeld(): boolean {
-    const shadowSelection = (this.#root as ShadowRoot & { getSelection?: () => Selection | null })
-      .getSelection;
-    const selection = shadowSelection
-      ? shadowSelection.call(this.#root)
-      : this.ownerDocument.getSelection();
-    return Boolean(selection && !selection.isCollapsed && selection.toString().trim() !== "");
+    const getShadowSelection = (
+      this.#root as ShadowRoot & { getSelection?: () => Selection | null }
+    ).getSelection;
+    // Chrome keeps a shadow-tree selection on the root while the document reports it collapsed.
+    // WebKit can expose the same root method but return an empty selection while the useful one is
+    // owned by the document. Feature detection therefore cannot choose between the APIs: accept a
+    // non-empty answer from either, or focusing the command line will collapse WebKit's drag.
+    const selections = [
+      getShadowSelection?.call(this.#root) ?? null,
+      this.ownerDocument.getSelection(),
+    ];
+    return selections.some(
+      (selection) =>
+        selection !== null && !selection.isCollapsed && selection.toString().trim() !== "",
+    );
   }
 
   #focusFromPointer(): void {

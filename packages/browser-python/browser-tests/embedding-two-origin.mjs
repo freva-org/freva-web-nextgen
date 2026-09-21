@@ -344,11 +344,11 @@ const PORTAL_JS = (playgroundOrigin) => `
   window.__portalReady = true;
 `;
 
-// Chrome for Testing disables the Performance Manager instrumentation in headless mode. Keep the
-// negative control meaningful by enabling the feature instead of accepting a null reading.
+// Performance Manager instrumentation is a Blink runtime feature that Chrome for Testing does not
+// enable by default. Keep the negative control meaningful instead of accepting a null reading.
 const inMemoryMeasuredBrowser = (body) =>
   inBrowser(body, {
-    chromiumArgs: ["--enable-features=PerformanceManagerInstrumentation"],
+    chromiumArgs: ["--enable-blink-features=PerformanceManagerInstrumentation"],
   });
 
 const result = await inMemoryMeasuredBrowser(async (page) => {

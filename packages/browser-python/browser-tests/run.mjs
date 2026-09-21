@@ -37,9 +37,19 @@ if (process.env.BROWSER_PYTHON_PACKAGE_INDEX === "1" || process.env.BROWSER_PYTH
 const INCOMPLETE = EXIT_NOT_RUN;
 
 const CONSOLE_ENGINES = (process.env.BROWSER_ENGINES ?? "chromium").split(/[\s,]+/).filter(Boolean);
+const configuredTimeout = Number(process.env.BROWSER_SUITE_TIMEOUT_MS ?? 15 * 60_000);
+if (!Number.isSafeInteger(configuredTimeout) || configuredTimeout <= 0) {
+  console.error(
+    "BROWSER_SUITE_TIMEOUT_MS must be a positive integer number of milliseconds; received " +
+      JSON.stringify(process.env.BROWSER_SUITE_TIMEOUT_MS),
+  );
+  process.exit(2);
+}
+const SUITE_TIMEOUT_MS = configuredTimeout;
 
 let failed = 0;
 const incomplete = [];
+const timedOut = [];
 
 const runs = SUITES.flatMap((suite) =>
   crossBrowser.has(suite)
@@ -47,17 +57,41 @@ const runs = SUITES.flatMap((suite) =>
     : [{ suite, engine: null }],
 );
 for (const { suite, engine } of runs) {
+  const label = engine ? `${suite} (${engine})` : suite;
+  const started = Date.now();
+  // Suites report only when they finish. Name the child BEFORE starting it, otherwise a hung
+  // suite leaves CI pointing at the preceding suite's successful report.
+  console.log(`\n--- starting ${label} ---`);
   const r = spawnSync(process.execPath, [path.join(HERE, suite)], {
     stdio: "inherit",
     env: engine ? { ...process.env, BROWSER_ENGINE: engine } : process.env,
+    // A page.evaluate() waits for its returned Promise without a Playwright timeout. If a Worker
+    // or browser process wedges, the child can therefore live until the CI provider cancels the
+    // whole job. Bound the PROCESS as the final line of supervision and carry on with later suites.
+    timeout: SUITE_TIMEOUT_MS,
   });
-  if (r.status === INCOMPLETE) incomplete.push(suite);
-  else if (r.status !== 0) failed++;
+  const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+  if (r.error?.code === "ETIMEDOUT") {
+    console.log(
+      `--- TIMEOUT ${label} after ${elapsed}s ` +
+        `(limit ${Math.round(SUITE_TIMEOUT_MS / 1000)}s) ---`,
+    );
+    timedOut.push(label);
+    failed++;
+  } else if (r.error) {
+    console.log(`--- FAILED TO RUN ${label} after ${elapsed}s: ${r.error.message} ---`);
+    failed++;
+  } else {
+    console.log(`--- finished ${label} in ${elapsed}s ---`);
+    if (r.status === INCOMPLETE) incomplete.push(suite);
+    else if (r.status !== 0) failed++;
+  }
 }
 
 const ran = runs.length - incomplete.length;
 if (failed === 0) console.log(`\nAll ${ran} runnable browser suites pass.`);
 else console.log(`\n${failed} of ${ran} runnable browser suites FAILED.`);
+if (timedOut.length) console.log(`Timed out: ${timedOut.join(", ")}.`);
 
 // Under BROWSER_STRICT=1, "did not run" is a FAILURE. Exit 3 exists so a workstation without the
 // scientific wheels can still run the console suites; that is wrong for a gate, where the whole

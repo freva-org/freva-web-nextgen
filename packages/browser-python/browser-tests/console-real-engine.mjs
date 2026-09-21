@@ -336,7 +336,7 @@ const result = await inBrowser(async (browser) => {
     }, PROGRAM);
     await browser.evaluate(() => window.__c.focusInput());
     await browser.waitForTimeout(150);
-    await browser.keyboard.press("Control+V");
+    await browser.keyboard.press("ControlOrMeta+V");
     // Polled, not slept on: the block is compiled and run in the worker, and how long that takes
     // depends on what else the interpreter has already loaded.
     await browser

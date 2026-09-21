@@ -36,7 +36,10 @@ async function scripted(size = 10) {
   cleanups.push(() => host.stop());
 
   let challenge = "";
-  const ports: MessagePort[] = [];
+  let resolveDownloadPort!: (port: MessagePort) => void;
+  const downloadPort = new Promise<MessagePort>((resolve) => {
+    resolveDownloadPort = resolve;
+  });
   playground.addEventListener("message", (event) => {
     const data = event.data as { kind?: string; challenge?: string };
     if (data?.kind === "hail") {
@@ -78,11 +81,11 @@ async function scripted(size = 10) {
     if (data?.kind === "download") {
       const port = event.ports[0];
       port.start?.();
-      ports.push(port);
+      resolveDownloadPort(port);
     }
   });
   await settle(10);
-  return { host, ports, portal, playground };
+  return { host, downloadPort, portal, playground };
 }
 
 describe("a slow destination is not child silence", () => {
@@ -111,8 +114,7 @@ describe("a slow destination is not child silence", () => {
 
     const promise = fixture.host.download("ten.bin", () => sink, { inactivityMs: 30 });
     promise.catch(() => undefined);
-    await settle(8);
-    const port = fixture.ports.at(-1)!;
+    const port = await fixture.downloadPort;
     port.postMessage({ kind: "chunk", bytes: new ArrayBuffer(10) });
 
     // The child then behaves perfectly: it waits for the ack before finishing.
@@ -150,8 +152,7 @@ describe("a slow destination is not child silence", () => {
     };
     const promise = fixture.host.download("ten.bin", () => sink, { inactivityMs: 30 });
     promise.catch(() => undefined);
-    await settle(8);
-    const port = fixture.ports.at(-1)!;
+    const port = await fixture.downloadPort;
     port.postMessage({ kind: "chunk", bytes: new ArrayBuffer(10) });
     port.onmessage = (event) => {
       if ((event.data as { kind?: string })?.kind === "ack") {
@@ -183,8 +184,7 @@ describe("the silent-peer bound is still real", () => {
     };
     const promise = fixture.host.download("ten.bin", () => sink, { inactivityMs: 80 });
     promise.catch(() => undefined);
-    await settle(8);
-    const port = fixture.ports.at(-1)!;
+    const port = await fixture.downloadPort;
     port.postMessage({ kind: "chunk", bytes: new ArrayBuffer(10) });
     // …and then nothing: no second chunk, no done, no error.
     await expect(promise).rejects.toThrow(/no response|does not notify/i);
@@ -217,8 +217,8 @@ describe("cancellation during a write has a defined ordering", () => {
       inactivityMs: 5_000,
     });
     promise.catch(() => undefined);
-    await settle(8);
-    fixture.ports.at(-1)!.postMessage({ kind: "chunk", bytes: new ArrayBuffer(10) });
+    const port = await fixture.downloadPort;
+    port.postMessage({ kind: "chunk", bytes: new ArrayBuffer(10) });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(order).toEqual(["write:start"]);
     controller.abort(new Error("cancelled mid-write"));

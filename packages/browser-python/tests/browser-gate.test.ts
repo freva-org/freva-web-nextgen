@@ -92,6 +92,42 @@ describe("report() is the single authority on what a pass is", () => {
   });
 });
 
+describe("browser input and feature flags are portable", () => {
+  it("lets Playwright resolve the host platform's native paste modifier", () => {
+    for (const suite of ["console-paste-and-caret.mjs", "console-real-engine.mjs"]) {
+      const source = readFileSync(`${BROWSER_TESTS}/${suite}`, "utf8");
+      expect(source, `${suite} must use Playwright's platform-aware paste shortcut`).toMatch(
+        /keyboard\.press\("ControlOrMeta\+V"\)/,
+      );
+      expect(source).not.toMatch(/keyboard\.press\("Control\+V"\)/);
+    }
+  });
+
+  it("enables memory instrumentation as a Blink runtime feature", () => {
+    for (const suite of ["workspace-stream.mjs", "embedding-two-origin.mjs"]) {
+      const source = readFileSync(`${BROWSER_TESTS}/${suite}`, "utf8");
+      expect(source).toContain("--enable-blink-features=PerformanceManagerInstrumentation");
+      expect(source).not.toContain("--enable-features=PerformanceManagerInstrumentation");
+    }
+  });
+});
+
+describe("the aggregate runner supervises every browser-suite process", () => {
+  const source = readFileSync(`${BROWSER_TESTS}/run.mjs`, "utf8");
+
+  it("names a suite before the blocking child process starts", () => {
+    expect(source).toMatch(
+      /console\.log\(`\\n--- starting \$\{label\} ---`\);[\s\S]{0,300}spawnSync\(/,
+    );
+  });
+
+  it("puts a finite, configurable timeout around each child", () => {
+    expect(source).toContain("BROWSER_SUITE_TIMEOUT_MS");
+    expect(source).toMatch(/spawnSync\([\s\S]{0,500}timeout: SUITE_TIMEOUT_MS/);
+    expect(source).toMatch(/TIMEOUT \$\{label\}/);
+  });
+});
+
 // The structural half. `report()` cannot be fail-open, but a suite can route around it by
 // exiting 0 itself or writing its own copy of the prerequisite guard with a laxer exit code. Nine
 // suites had hand-written copies, three with hard-coded package lists that could drift from

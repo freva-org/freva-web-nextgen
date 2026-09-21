@@ -115,16 +115,24 @@ const result = await inBrowser(
       await page.mouse.move(ex, ey, { steps: 12 });
       await page.mouse.up();
       await page.waitForTimeout(150);
-      const selected = await page.evaluate(() => {
+      const selection = await page.evaluate(() => {
         const root = window.__el.shadowRoot;
-        // Selection ownership at a shadow boundary differs between engines. Ask both APIs and use
-        // the non-empty one instead of assuming that the mere presence of getSelection is enough.
-        return root.getSelection?.()?.toString() || document.getSelection()?.toString() || "";
+        // Selection ownership at a shadow boundary differs between engines. Keep both answers in
+        // the failure detail: an empty ShadowRoot answer must not hide a useful document answer.
+        return {
+          shadow: root.getSelection?.()?.toString() ?? "",
+          document: document.getSelection()?.toString() ?? "",
+        };
       });
+      const selected = selection.shadow || selection.document;
       checks.push({
         name: "dragging across the transcript still selects text (focus does not collapse it)",
         pass: selected.trim().length > 0,
-        detail: JSON.stringify({ selected: selected.slice(0, 40) }),
+        detail: JSON.stringify({
+          selected: selected.slice(0, 40),
+          shadow: selection.shadow.slice(0, 40),
+          document: selection.document.slice(0, 40),
+        }),
       });
 
       // and typing works again after

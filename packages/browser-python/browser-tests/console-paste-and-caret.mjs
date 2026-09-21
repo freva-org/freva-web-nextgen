@@ -79,7 +79,7 @@ const result = await inBrowser(
         const source = "import numpy as np\nnp.arange(5)";
         await page.evaluate((s) => navigator.clipboard.writeText(s), source);
         await focusByPointer();
-        await page.keyboard.press("Control+V");
+        await page.keyboard.press("ControlOrMeta+V");
         await page.waitForTimeout(300);
         await page.keyboard.press("Enter");
         await page.waitForTimeout(400);
@@ -111,7 +111,7 @@ const result = await inBrowser(
           "def f():\n    return 1\n\nf()",
         );
         await focusByPointer();
-        await page.keyboard.press("Control+V");
+        await page.keyboard.press("ControlOrMeta+V");
         await page.waitForTimeout(300);
         await page.keyboard.press("Enter");
         await page.waitForTimeout(500);
