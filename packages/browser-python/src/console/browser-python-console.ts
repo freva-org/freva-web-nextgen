@@ -576,13 +576,42 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
     // marks itself enabled - a console that looks normal, takes a click and drops every
     // keystroke, and that a suite calling `focus()` directly never catches.
     //
-    // On `click`, not `mousedown`, and only when the selection is empty, so a drag-selection
-    // survives and copying keeps working; `preventDefault` is deliberately not called. CAPTURE
-    // phase, because the library calls `stopPropagation` on clicks inside the terminal.
-    // DEFERRED, because its own click handling ends by putting focus where it thinks it belongs.
+    // WebKit does not expose a shadow-tree selection through either selection API reliably. Track
+    // a real drag independently, so the terminal library cannot collapse it on mouseup merely
+    // because JavaScript cannot inspect it. Ordinary clicks still focus the command line.
+    let dragOrigin: { x: number; y: number } | null = null;
+    let dragged = false;
+    let suppressClickFocus = false;
+    this.#terminalHost.addEventListener(
+      "mousedown",
+      (event) => {
+        if (event.button !== 0) return;
+        dragOrigin = { x: event.clientX, y: event.clientY };
+        dragged = false;
+      },
+      true,
+    );
+    this.#terminalHost.addEventListener(
+      "mousemove",
+      (event) => {
+        if (dragOrigin === null || (event.buttons & 1) === 0) return;
+        const dx = event.clientX - dragOrigin.x;
+        const dy = event.clientY - dragOrigin.y;
+        if (dx * dx + dy * dy >= 25) dragged = true;
+      },
+      true,
+    );
+
+    // On `click`, not `mousedown`, and only when the gesture was not a drag and the selection is
+    // empty, so copying keeps working. CAPTURE phase, because the library calls stopPropagation
+    // inside the terminal. DEFERRED, because its click handling ends by moving focus.
     this.#terminalHost.addEventListener(
       "click",
       () => {
+        if (suppressClickFocus) {
+          suppressClickFocus = false;
+          return;
+        }
         setTimeout(() => this.#focusFromPointer(), 0);
       },
       true,
@@ -594,12 +623,21 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
     // Chrome reports the document's selection collapsed while the real one lives in the shadow
     // tree, so the library concludes "nothing selected", focuses its hidden clipboard textarea
     // and scrolls to the bottom. It cannot be told about the shadow selection and must not be
-    // patched, so the release is kept from it: CAPTURE on the host, only while a selection
-    // stands, so click-to-focus still works.
+    // patched, so the release is kept from it: CAPTURE on the host, when either an inspectable
+    // selection stands OR the pointer actually travelled far enough to be a drag.
     this.#terminalHost.addEventListener(
       "mouseup",
       (event) => {
-        if (this.#selectionHeld()) event.stopPropagation();
+        const preserveSelection = dragged || this.#selectionHeld();
+        dragOrigin = null;
+        dragged = false;
+        if (!preserveSelection) return;
+        suppressClickFocus = true;
+        // If this engine emits no click after a drag, do not suppress the next real click.
+        setTimeout(() => {
+          suppressClickFocus = false;
+        }, 0);
+        event.stopPropagation();
       },
       true,
     );

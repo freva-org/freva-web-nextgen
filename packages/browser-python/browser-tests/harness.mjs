@@ -434,11 +434,19 @@ export function fixturePage({
       // cluster including this page's workers, and waits for a garbage collection, so it is called
       // at one point: awaiting it inside write() stops the transfer with half the file delivered.
       const measureMemory = async () => {
-        if (typeof performance.measureUserAgentSpecificMemory !== "function") return null;
-        if (!self.crossOriginIsolated) return null;
+        if (typeof performance.measureUserAgentSpecificMemory !== "function") {
+          state.memoryUnavailable = "performance.measureUserAgentSpecificMemory is not a function";
+          return null;
+        }
+        if (!self.crossOriginIsolated) {
+          state.memoryUnavailable = "the page is not cross-origin isolated";
+          return null;
+        }
         try {
           return (await performance.measureUserAgentSpecificMemory()).bytes;
-        } catch {
+        } catch (error) {
+          // Escaped twice because this code lives in the fixture page's template literal.
+          state.memoryUnavailable = String(error?.message ?? error).split("\\n")[0];
           return null;
         }
       };
@@ -510,14 +518,18 @@ export function isStrict() {
 
 /** Run `fn(page)` in Chromium. A missing engine is a skip, or a failure under BROWSER_STRICT=1. */
 export async function inBrowser(fn, options = {}) {
-  const { browserName = "chromium", chromiumArgs = [], viewport } = options;
+  const { browserName = "chromium", fullBrowser = false, viewport } = options;
   const playwright = await import("playwright");
   const override = process.env.PLAYWRIGHT_CHROMIUM_PATH;
   let browser;
   try {
     browser = await playwright[browserName].launch({
       ...(override && browserName === "chromium" ? { executablePath: override } : {}),
-      args: browserName === "chromium" ? ["--no-sandbox", ...chromiumArgs] : [],
+      // Playwright's default headless Chromium is chrome-headless-shell. The two memory suites
+      // need the full browser because the shell exposes measureUserAgentSpecificMemory() but
+      // rejects the call. `channel: "chromium"` opts into the full Playwright Chromium binary.
+      ...(fullBrowser && !override && browserName === "chromium" ? { channel: "chromium" } : {}),
+      args: browserName === "chromium" ? ["--no-sandbox"] : [],
     });
   } catch (e) {
     return {
@@ -587,6 +599,11 @@ export async function inBrowser(fn, options = {}) {
     await context.close();
     await browser.close();
   }
+}
+
+/** Run a Chromium-only measurement suite in full Chromium, not chrome-headless-shell. */
+export async function inFullBrowser(fn, options = {}) {
+  return await inBrowser(fn, { ...options, fullBrowser: true });
 }
 
 export function report(title, result) {

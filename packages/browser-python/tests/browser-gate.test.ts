@@ -101,14 +101,33 @@ describe("browser input and feature flags are portable", () => {
       );
       expect(source).not.toMatch(/keyboard\.press\("Control\+V"\)/);
     }
+    const pasteSuite = readFileSync(`${BROWSER_TESTS}/console-paste-and-caret.mjs`, "utf8");
+    expect(pasteSuite).toContain('keyboard.press("ControlOrMeta+C")');
+    expect(pasteSuite).not.toContain("grantPermissions");
+    expect(pasteSuite).not.toContain("clipboardAvailable");
   });
 
-  it("enables memory instrumentation as a Blink runtime feature", () => {
+  it("runs memory measurements in full Chromium rather than forcing a crashing Blink flag", () => {
+    const harness = readFileSync(`${BROWSER_TESTS}/harness.mjs`, "utf8");
+    expect(harness).toContain('channel: "chromium"');
+    expect(harness).toContain("export async function inFullBrowser");
     for (const suite of ["workspace-stream.mjs", "embedding-two-origin.mjs"]) {
       const source = readFileSync(`${BROWSER_TESTS}/${suite}`, "utf8");
-      expect(source).toContain("--enable-blink-features=PerformanceManagerInstrumentation");
-      expect(source).not.toContain("--enable-features=PerformanceManagerInstrumentation");
+      expect(source).toContain("inFullBrowser");
+      expect(source).not.toContain("PerformanceManagerInstrumentation");
     }
+  });
+
+  it("does not turn WebKit's hidden selection into a passing skip", () => {
+    const source = readFileSync(`${BROWSER_TESTS}/console-pointer.mjs`, "utf8");
+    const component = readFileSync(
+      fileURLToPath(new URL("../src/console/browser-python-console.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(source).toContain('keyboard.press("ControlOrMeta+C")');
+    expect(source).toContain("copiedFromLine");
+    expect(source).not.toMatch(/WebKit[\s\S]{0,300}pass:\s*true/);
+    expect(component).toContain("const preserveSelection = dragged || this.#selectionHeld()");
   });
 });
 

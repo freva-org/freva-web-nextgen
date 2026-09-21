@@ -105,7 +105,12 @@ const result = await inBrowser(
         const el = window.__el.shadowRoot.querySelector(".bp-line-body");
         if (!el) return null;
         const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y + r.height / 2, right: r.x + r.width };
+        return {
+          x: r.x,
+          y: r.y + r.height / 2,
+          right: r.x + r.width,
+          text: el.textContent ?? "",
+        };
       });
       if (!line) throw new Error("no output line to select");
       const [sx, sy] = [line.x + 4, line.y];
@@ -113,25 +118,52 @@ const result = await inBrowser(
       await page.mouse.move(sx, sy);
       await page.mouse.down();
       await page.mouse.move(ex, ey, { steps: 12 });
+      const readSelection = () =>
+        page.evaluate(() => {
+          const root = window.__el.shadowRoot;
+          return {
+            shadow: root.getSelection?.()?.toString() ?? "",
+            document: document.getSelection()?.toString() ?? "",
+          };
+        });
+      const duringDrag = await readSelection();
       await page.mouse.up();
       await page.waitForTimeout(150);
-      const selection = await page.evaluate(() => {
-        const root = window.__el.shadowRoot;
-        // Selection ownership at a shadow boundary differs between engines. Keep both answers in
-        // the failure detail: an empty ShadowRoot answer must not hide a useful document answer.
-        return {
-          shadow: root.getSelection?.()?.toString() ?? "",
-          document: document.getSelection()?.toString() ?? "",
-        };
+      const afterMouseup = await readSelection();
+
+      // WebKit may draw a real shadow-tree selection while exposing it through neither selection
+      // API. Prove the user-visible outcome instead: copy with a trusted shortcut and paste into a
+      // plain textarea. This is an assertion, not a platform skip.
+      await page.keyboard.press("ControlOrMeta+C");
+      await page.evaluate(() => {
+        const probe = document.createElement("textarea");
+        probe.id = "bp-selection-copy-probe";
+        document.body.append(probe);
+        probe.focus();
       });
-      const selected = selection.shadow || selection.document;
+      await page.keyboard.press("ControlOrMeta+V");
+      await page.waitForTimeout(100);
+      const copied = await page.evaluate(() => {
+        const probe = document.querySelector("#bp-selection-copy-probe");
+        const value = probe?.value ?? "";
+        probe?.remove();
+        return value;
+      });
+      const selected = afterMouseup.shadow || afterMouseup.document;
+      const normalise = (value) => value.replace(/\s+/g, " ").trim();
+      const copiedText = normalise(copied);
+      const expectedText = normalise(line.text);
+      const copiedFromLine = copiedText.length > 0 && expectedText.includes(copiedText);
       checks.push({
         name: "dragging across the transcript still selects text (focus does not collapse it)",
-        pass: selected.trim().length > 0,
+        pass: selected.trim().length > 0 || copiedFromLine,
         detail: JSON.stringify({
           selected: selected.slice(0, 40),
-          shadow: selection.shadow.slice(0, 40),
-          document: selection.document.slice(0, 40),
+          duringShadow: duringDrag.shadow.slice(0, 40),
+          duringDocument: duringDrag.document.slice(0, 40),
+          afterShadow: afterMouseup.shadow.slice(0, 40),
+          afterDocument: afterMouseup.document.slice(0, 40),
+          copied: copied.slice(0, 40),
         }),
       });
 

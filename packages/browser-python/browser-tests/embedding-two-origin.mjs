@@ -15,7 +15,7 @@
 // Not covered: `showSaveFilePicker()` opens a native dialog no automation can answer, so a sink
 // is injected through the same parameter the default picker goes through, and the picker's
 // presence in the parent and refusal in the child are asserted separately.
-import { inBrowser, report, requireDist, serve } from "./harness.mjs";
+import { inFullBrowser, report, requireDist, serve } from "./harness.mjs";
 import { contentSecurityPolicy } from "../dist/csp.js";
 
 requireDist();
@@ -344,14 +344,10 @@ const PORTAL_JS = (playgroundOrigin) => `
   window.__portalReady = true;
 `;
 
-// Performance Manager instrumentation is a Blink runtime feature that Chrome for Testing does not
-// enable by default. Keep the negative control meaningful instead of accepting a null reading.
-const inMemoryMeasuredBrowser = (body) =>
-  inBrowser(body, {
-    chromiumArgs: ["--enable-blink-features=PerformanceManagerInstrumentation"],
-  });
-
-const result = await inMemoryMeasuredBrowser(async (page) => {
+// The memory assertions require full Chromium. Enabling the internal Blink feature in
+// chrome-headless-shell crashes the target on CI before the transfer starts.
+let measureUnavailable = null;
+const result = await inFullBrowser(async (page) => {
   const checks = [];
   const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
 
@@ -705,8 +701,9 @@ const result = await inMemoryMeasuredBrowser(async (page) => {
       before !== null && during !== null
         ? `growth ${((during - before) / 1024 / 1024).toFixed(1)} MiB across ${BIG_MIB} MiB ` +
             `(isolated: ${await page.evaluate(() => crossOriginIsolated)})`
-        : "performance.measureUserAgentSpecificMemory() returned nothing - the portal is not " +
-            `cross-origin isolated (${await page.evaluate(() => crossOriginIsolated)})`,
+        : `performance.measureUserAgentSpecificMemory() gave nothing: ${
+            measureUnavailable ?? "no reason recorded"
+          } (isolated: ${await page.evaluate(() => crossOriginIsolated)})`,
     );
     const boundedDigest = await page.evaluate(() => window.__portal.state.digest);
 
@@ -921,16 +918,21 @@ const result = await inMemoryMeasuredBrowser(async (page) => {
 
 /** Real memory, when the page is cross-origin isolated enough to be allowed to ask. */
 async function measure(page) {
-  return await page.evaluate(async () => {
+  const outcome = await page.evaluate(async () => {
     const api = performance.measureUserAgentSpecificMemory;
-    if (typeof api !== "function") return null;
+    if (typeof api !== "function") return { why: "not a function on this engine" };
     try {
       const r = await performance.measureUserAgentSpecificMemory();
-      return r.bytes;
-    } catch {
-      return null;
+      return { bytes: r.bytes };
+    } catch (error) {
+      return { why: String(error?.message ?? error).split("\n")[0] };
     }
   });
+  if (outcome.why !== undefined) {
+    measureUnavailable = outcome.why;
+    return null;
+  }
+  return outcome.bytes;
 }
 
 process.exit(report("two-origin embedding and the parent-mediated download bridge", result));

@@ -17,7 +17,14 @@
  *
  * The digest is a rolling SHA-256 computed identically in Python and in the sink.
  */
-import { bundleConsole, fixturePage, inBrowser, report, requireDist, serve } from "./harness.mjs";
+import {
+  bundleConsole,
+  fixturePage,
+  inFullBrowser,
+  report,
+  requireDist,
+  serve,
+} from "./harness.mjs";
 
 requireDist();
 bundleConsole();
@@ -54,14 +61,9 @@ with open("export.bin", "rb") as fh:
 print(json.dumps({"size": target * MiB, "sha256": rolling.hex()}))
 `;
 
-// Performance Manager instrumentation is a Blink runtime feature that Chrome for Testing does not
-// enable by default. The suite refuses to turn a missing measurement into a pass, so enable it.
-const inMemoryMeasuredBrowser = (body) =>
-  inBrowser(body, {
-    chromiumArgs: ["--enable-blink-features=PerformanceManagerInstrumentation"],
-  });
-
-const result = await inMemoryMeasuredBrowser(async (page) => {
+// The full browser supports the memory API; forcing its internal Blink feature in headless-shell
+// crashes the target on CI before this suite reaches the transfer.
+const result = await inFullBrowser(async (page) => {
   // Cross-origin isolated ON PURPOSE: `performance.measureUserAgentSpecificMemory()` refuses to
   // answer without it, and that call is the only honest way to see ArrayBuffer memory from inside
   // a browser. The engine needs nothing from these headers - everything it loads is same-origin -
@@ -133,8 +135,8 @@ const result = await inMemoryMeasuredBrowser(async (page) => {
       ok(
         "the browser reported its own memory use during the transfer",
         false,
-        "performance.measureUserAgentSpecificMemory() was unavailable - the page must be " +
-          "cross-origin isolated, and the engine must support it (Chromium does).",
+        streamed.memoryUnavailable ??
+          "performance.measureUserAgentSpecificMemory() returned no value",
       );
     }
     ok(
