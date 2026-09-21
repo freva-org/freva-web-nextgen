@@ -15,7 +15,7 @@ import {
   type ArtifactSink,
   type ArtifactStreamOptions,
 } from "./artifact-stream.js";
-import { supportsOptional } from "./addons.js";
+import { supportsOptional } from "./addon-capabilities.js";
 import {
   PROTOCOL_VERSION,
   createIdFactory,

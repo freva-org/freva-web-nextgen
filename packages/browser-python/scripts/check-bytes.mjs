@@ -18,27 +18,36 @@ const PKG = fileURLToPath(new URL("..", import.meta.url));
 const DIST = join(PKG, "dist");
 
 /**
- * The ceiling on the emitted engine files, gzipped: `dist/` minus the console.
+ * The ceiling on the emitted engine files, gzipped: `dist/` minus the optional console and embed
+ * entry points.
  *
- * 70 KiB against a measurement of about 65.7 KiB - roughly four kilobytes of headroom, close
- * enough that the next few have to be argued for, in another paragraph here. `npm run build`
+ * 83 KiB against a measurement of about 78.7 KiB - roughly 4.3 KiB of headroom, close enough
+ * that the next few have to be argued for, in another paragraph here. `npm run build`
  * emits declarations and JavaScript in separate passes, so `.d.ts` keeps every word of
- * documentation and the `.js` a browser downloads carries none of it - about 54 KiB gzipped of
- * the engine. The budget follows a measurement down as well as up, because a ceiling 54 KiB
- * above the floor is a fail-open gate wearing a number.
+ * documentation and the `.js` a browser downloads carries none of it. Before that split, comments
+ * alone added about 54 KiB gzip to the engine. The budget follows a measurement down as well as up,
+ * because a ceiling far above the floor is a fail-open gate wearing a number.
  *
- * The most recent growth is the curated add-ons, 4,658 gzipped bytes in three files:
+ * The former documented 64.2 KiB measurement did not include the final browser-native remote-data
+ * implementation. Its Python helpers are deliberately source embedded in the worker (rather than
+ * fetched as fragile sidecar files): `browser_http.py` and `browser_s3.py` account for roughly
+ * 17.7 KiB of the generated module after gzip. That is application code, not a bundled Pyodide
+ * runtime.
  *
- *     worker/addon-pins.generated.js   2,276 B gz   the pinned artefacts and their digests
- *     worker/addons.js                 1,864 B gz   fetch, verify, install, stage, activate
- *     addons.js                          448 B gz   the catalogue a build tool validates against
+ * The curated add-ons currently take another 5,595 gzipped bytes in four implementation/data
+ * files (the emitted type-only module is not counted in this explanation):
+ *
+ *     addon-capabilities.js              179 B gz   the main-thread optionality check
+ *     worker/addon-pins.generated.js   2,293 B gz   the pinned artefacts and their digests
+ *     worker/addons.js                 2,582 B gz   fetch, verify, install, stage, activate
+ *     addons.js                          541 B gz   the catalogue a build tool validates against
  *
  * The pin table is worth defending, because the obvious saving is to stop shipping it and that
  * saving is the feature: a digest a running interpreter checks an artefact against has to travel
  * with the CODE, or whoever can replace a wheel can replace the digest. The rest is the
  * installer, and a good part of its bytes are its messages, deliberately.
  */
-const BUDGET_BYTES = 70 * 1024;
+const BUDGET_BYTES = 83 * 1024;
 
 /** Extensions that must never appear in the tarball. Each one is a runtime asset. */
 const FORBIDDEN = new Set([".wasm", ".whl", ".zip", ".so", ".a", ".bc"]);
@@ -117,9 +126,9 @@ let failed = false;
 if (gzipped > BUDGET_BYTES) {
   console.error(
     `The HEADLESS engine is over budget by ${gzipped - BUDGET_BYTES} B gzipped.\n` +
-      `Something large was pulled into the module graph - most likely a static import of a\n` +
-      `runtime that is supposed to be fetched at run time. See pyodide-runtime.ts, where the\n` +
-      `import is dynamic and by URL for exactly this reason.`,
+      `Inspect the per-file measurements above. If the growth is intentional, document it beside\n` +
+      `BUDGET_BYTES and move the ceiling with only modest headroom. Also check pyodide-runtime.ts:\n` +
+      `Pyodide must remain a dynamic import by URL rather than a static dependency.`,
   );
   failed = true;
 }

@@ -19,6 +19,10 @@ function render() {
   const raw = readFileSync(PINS, "utf8");
   const pins = JSON.parse(raw);
   const ids = Object.keys(pins.addons).sort();
+  const optionalIds = ids.filter((id) => {
+    const pin = pins.addons[id];
+    return pin.wheels.length === 0 && pin.runtimePackages.length === 0;
+  });
   const body = JSON.stringify(pins.addons, null, 2)
     .split("\n")
     .map((line) => (line ? `  ${line}` : line))
@@ -30,6 +34,9 @@ function render() {
     "",
     "/** Every curated add-on, in the order the registry offers them. */",
     `export const ADDON_IDS = ${JSON.stringify(ids)} as const;`,
+    "",
+    "/** Add-ons whose preparation cannot partly mutate the interpreter before failing. */",
+    `export const OPTIONAL_ADDON_IDS = ${JSON.stringify(optionalIds)} as const;`,
     "",
     "/** The pinned artefacts, with the digests a running interpreter checks against. */",
     `export const ADDON_PINS: AddonPins =\n${body} as unknown as AddonPins;`,

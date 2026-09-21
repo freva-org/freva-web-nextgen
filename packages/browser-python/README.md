@@ -64,18 +64,19 @@ Nothing is fetched until `start()`.
 
 | what                                   | on the wire                                               | when                                 |
 | -------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
-| this package, engine only              | <!-- size:root-entry-gz --> 6.6 KiB gzipped               | with your bundle                     |
-| this package, with the console         | <!-- size:console-entry-gz --> 127.7 KiB gzipped          | with your bundle, `/console` only    |
+| this package, engine only              | <!-- size:root-entry-gz --> 7.0 KiB gzipped               | with your bundle                     |
+| this package, with the console         | <!-- size:console-entry-gz --> 123.9 KiB gzipped          | with your bundle, `/console` only    |
 | Pyodide runtime + stdlib               | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
 | xarray, zarr, fsspec, numcodecs, numpy | 9.6 MB, 17 wheels                                         | first `start()`, `xarray-zarr` only  |
 | the derived Freva wheel + PyPI deps    | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
 | matplotlib                             | ~5 MB                                                     | the first `import matplotlib`        |
 | dataset chunks                         | as much as you ask for                                    | when you read data                   |
 
-The emitted engine files — everything in `dist/` except the console — are
+The emitted headless-engine files — everything in `dist/` except the console and optional embed
+bridge — are
 
-<!-- size:engine-dist-gz --> 64.2 KiB gzipped against a budget of
-<!-- size:engine-budget-gz --> 70.0 KiB. None of the runtime is in your bundle: it is a dynamic
+<!-- size:engine-dist-gz --> 78.7 KiB gzipped against a budget of
+<!-- size:engine-budget-gz --> 83.0 KiB. None of the runtime is in your bundle: it is a dynamic
 
 import by URL, and `npm run check:bytes` fails the build if that stops being true, or if the
 published tarball ever contains a `.wasm`, `.whl` or stdlib zip. `scripts/check-docs-sizes.mjs`
@@ -437,15 +438,15 @@ incomplete, state persists between lines, and top-level `await` works.
 |                       | `@freva-org/browser-python`             | `@freva-org/browser-python/console`          |
 | --------------------- | --------------------------------------- | -------------------------------------------- |
 | What you get          | engine, events, `push()`                | the above plus a rendered console            |
-| Bundled, gzipped      | <!-- size:root-entry-gz --> **6.6 KiB** | <!-- size:console-entry-gz --> **127.7 KiB** |
+| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **123.9 KiB** |
 | Touches `document`    | no                                      | yes, on `connectedCallback`                  |
 | Safe to import in SSR | yes                                     | `/console` yes, `/console/auto` no           |
 | jQuery in the bundle  | never (asserted by a test)              | yes, as a private instance                   |
 
-The console layer over the headless engine is <!-- size:console-layer-gz --> 121.1 KiB gzipped, of
+The console layer over the headless engine is <!-- size:console-layer-gz --> 116.9 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
-a target — 124 KiB for the layer, 8 KiB for the root entry — and fails if it finds a jQuery
-fingerprint in the root bundle.
+a target — 124 KiB for the layer, 8 KiB for the root entry — and fails if it finds a jQuery or
+worker-only add-on pin fingerprint in the root bundle.
 
 ### Attributes, properties, methods
 

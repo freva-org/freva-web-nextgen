@@ -5,6 +5,9 @@ import type { AddonPins } from './addon-types.js';
 /** Every curated add-on, in the order the registry offers them. */
 export const ADDON_IDS = ["cartopy-natural-earth-110m","dask"] as const;
 
+/** Add-ons whose preparation cannot partly mutate the interpreter before failing. */
+export const OPTIONAL_ADDON_IDS = ["cartopy-natural-earth-110m"] as const;
+
 /** The pinned artefacts, with the digests a running interpreter checks against. */
 export const ADDON_PINS: AddonPins =
   {

@@ -123,6 +123,19 @@ try {
     `\n  root entry contains no jQuery: ${leaked.length === 0 ? "confirmed" : `FAILED (${leaked.join(", ")})`}`,
   );
   if (leaked.length > 0) process.exitCode = 1;
+
+  // `createBrowserPython` needs one generated boolean about optional add-ons, not the Worker's
+  // complete supply-chain manifest. Importing `supportsOptional` through the public catalogue once
+  // pulled every wheel URL and digest into the application bundle. Keep that architectural
+  // boundary explicit even while the bundle remains below its broad size ceiling.
+  const WORKER_PIN_FINGERPRINTS = ["files.pythonhosted.org", "natural-earth-vector"];
+  const leakedPins = WORKER_PIN_FINGERPRINTS.filter((f) => engine.text.includes(f));
+  console.log(
+    `  root entry contains no worker-only add-on pins: ${
+      leakedPins.length === 0 ? "confirmed" : `FAILED (${leakedPins.join(", ")})`
+    }`,
+  );
+  if (leakedPins.length > 0) process.exitCode = 1;
   // The same numbers as data, for `scripts/check-docs-sizes.mjs`. Documentation that repeats a
   // measurement has to be checked against it, and that needs the measurement in a readable form.
   if (process.argv.includes("--json")) {

@@ -7,7 +7,10 @@
  */
 
 import { ADDON_IDS, ADDON_PINS } from "./worker/addon-pins.generated.js";
+import { supportsOptional } from "./addon-capabilities.js";
 import type { BrowserPythonAddon, BrowserPythonProfile } from "./types.js";
+
+export { supportsOptional } from "./addon-capabilities.js";
 
 /** What a build tool needs to validate a configuration, and no more. */
 export interface AddonDescription {
@@ -48,11 +51,6 @@ export const ADDONS: readonly BrowserPythonAddon[] = ADDON_IDS as readonly Brows
  * wheels mean two intermediate states holding some of Dask's dependency closure and not Dask. So
  * `dask` is required or absent. `false` for an unknown id.
  */
-export function supportsOptional(id: string): boolean {
-  const pin = ADDON_PINS[id as BrowserPythonAddon];
-  return Boolean(pin) && pin.wheels.length === 0 && pin.runtimePackages.length === 0;
-}
-
 export const ADDON_CATALOGUE: Readonly<Record<BrowserPythonAddon, AddonDescription>> =
   Object.freeze(
     Object.fromEntries(
