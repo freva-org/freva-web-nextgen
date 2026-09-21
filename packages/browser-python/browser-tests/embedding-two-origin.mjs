@@ -344,7 +344,14 @@ const PORTAL_JS = (playgroundOrigin) => `
   window.__portalReady = true;
 `;
 
-const result = await inBrowser(async (page) => {
+// Chrome for Testing disables the Performance Manager instrumentation in headless mode. Keep the
+// negative control meaningful by enabling the feature instead of accepting a null reading.
+const inMemoryMeasuredBrowser = (body) =>
+  inBrowser(body, {
+    chromiumArgs: ["--enable-features=PerformanceManagerInstrumentation"],
+  });
+
+const result = await inMemoryMeasuredBrowser(async (page) => {
   const checks = [];
   const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
 

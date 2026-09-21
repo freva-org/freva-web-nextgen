@@ -104,9 +104,11 @@ const result = await inBrowser(async (page) => {
       `'${origin}/b/gr%C3%BCn.json'`,
     );
 
-    // The read, through the mapping, against a real server. `.zgroup` is the smallest committed
-    // fixture object and exists in both store formats.
-    const body = await value("fs.cat_file('s3://waterpark/zarr-v2/.zgroup').decode()");
+    // The read, through the mapping, against a real server. This filesystem is async-only in
+    // Emscripten, so exercise the same `_` coroutines Zarr awaits; fsspec's public sync wrappers
+    // require the background IO thread the browser deliberately does not have. `.zgroup` is the
+    // smallest committed fixture object and exists in both store formats.
+    const body = await value("(await fs._cat_file('s3://waterpark/zarr-v2/.zgroup')).decode()");
     checks.push({
       name: "a mapped key is actually fetched, and the bytes come back",
       pass: typeof body === "string" && body.includes("zarr_format"),
@@ -114,7 +116,7 @@ const result = await inBrowser(async (page) => {
     });
     check(
       "a missing key is missing, not an opaque failure",
-      await value("fs.exists('s3://waterpark/zarr-v2/definitely-not-here')"),
+      await value("await fs._exists('s3://waterpark/zarr-v2/definitely-not-here')"),
       "False",
     );
 
@@ -167,10 +169,14 @@ const result = await inBrowser(async (page) => {
     );
     await raises(
       "listing is refused, and names consolidated metadata",
-      "fs.ls('s3://waterpark/zarr-v2')\n",
+      "await fs._ls('s3://waterpark/zarr-v2')\n",
       "consolidated metadata",
     );
-    await raises("writing is refused", "fs.pipe_file('s3://waterpark/x', b'y')\n", "read-only");
+    await raises(
+      "writing is refused",
+      "await fs._pipe_file('s3://waterpark/x', b'y')\n",
+      "read-only",
+    );
 
     return checks;
   } finally {

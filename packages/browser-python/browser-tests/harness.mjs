@@ -510,14 +510,14 @@ export function isStrict() {
 
 /** Run `fn(page)` in Chromium. A missing engine is a skip, or a failure under BROWSER_STRICT=1. */
 export async function inBrowser(fn, options = {}) {
-  const { browserName = "chromium", viewport } = options;
+  const { browserName = "chromium", chromiumArgs = [], viewport } = options;
   const playwright = await import("playwright");
   const override = process.env.PLAYWRIGHT_CHROMIUM_PATH;
   let browser;
   try {
     browser = await playwright[browserName].launch({
       ...(override && browserName === "chromium" ? { executablePath: override } : {}),
-      args: browserName === "chromium" ? ["--no-sandbox"] : [],
+      args: browserName === "chromium" ? ["--no-sandbox", ...chromiumArgs] : [],
     });
   } catch (e) {
     return {

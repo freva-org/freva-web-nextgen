@@ -54,7 +54,14 @@ with open("export.bin", "rb") as fh:
 print(json.dumps({"size": target * MiB, "sha256": rolling.hex()}))
 `;
 
-const result = await inBrowser(async (page) => {
+// Chrome for Testing disables the Performance Manager instrumentation in headless mode. The suite
+// refuses to turn a missing measurement into a pass, so enable the feature backing the API here.
+const inMemoryMeasuredBrowser = (body) =>
+  inBrowser(body, {
+    chromiumArgs: ["--enable-features=PerformanceManagerInstrumentation"],
+  });
+
+const result = await inMemoryMeasuredBrowser(async (page) => {
   // Cross-origin isolated ON PURPOSE: `performance.measureUserAgentSpecificMemory()` refuses to
   // answer without it, and that call is the only honest way to see ArrayBuffer memory from inside
   // a browser. The engine needs nothing from these headers - everything it loads is same-origin -

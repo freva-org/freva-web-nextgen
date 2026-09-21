@@ -117,8 +117,9 @@ const result = await inBrowser(
       await page.waitForTimeout(150);
       const selected = await page.evaluate(() => {
         const root = window.__el.shadowRoot;
-        const sel = root.getSelection ? root.getSelection() : document.getSelection();
-        return sel ? sel.toString() : "";
+        // Selection ownership at a shadow boundary differs between engines. Ask both APIs and use
+        // the non-empty one instead of assuming that the mere presence of getSelection is enough.
+        return root.getSelection?.()?.toString() || document.getSelection()?.toString() || "";
       });
       checks.push({
         name: "dragging across the transcript still selects text (focus does not collapse it)",
