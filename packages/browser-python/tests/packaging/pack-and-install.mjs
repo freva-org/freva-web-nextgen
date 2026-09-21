@@ -221,7 +221,7 @@ try {
     embedExports.host === "function" &&
       embedExports.playground === "function" &&
       embedExports.accepted === "function" &&
-      embedExports.version === 2 &&
+      embedExports.version === 3 &&
       embedExports.channel === "freva-python-embed",
     JSON.stringify(embedExports),
   );
