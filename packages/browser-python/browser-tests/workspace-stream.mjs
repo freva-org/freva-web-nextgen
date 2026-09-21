@@ -31,6 +31,11 @@ bundleConsole();
 
 /** Big enough to need many chunks and to be absurd as a Blob; small enough to run in CI. */
 const MIB = Number(process.env.STREAM_MIB ?? 96);
+/** The browser memory API is experimental and has no deadline of its own. It must be shorter than
+ * the process-level suite timeout so a stalled measurement becomes a named, retryable failure. */
+const MEMORY_PROBE_TIMEOUT_MS = 60_000;
+
+const phase = (name) => console.log(`[workspace-stream] phase: ${name}`);
 
 /**
  * Write a file of known content, and hash it THE SAME WAY the sink does. A rolling hash rather
@@ -78,13 +83,17 @@ const result = await inFullBrowser(async (page) => {
     assetHeaders: { "cross-origin-embedder-policy": "require-corp" },
   });
   const checks = [];
-  const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
+  const ok = (name, pass, detail, meta = {}) =>
+    checks.push({ name, pass, detail: String(detail ?? ""), ...meta });
   try {
+    phase("open the isolated fixture");
     await page.goto(server.url);
     await page.waitForFunction(() => window.__py !== undefined, null, { timeout: 20000 });
+    phase("start the Python runtime");
     await page.evaluate(() => window.__py.start());
     await page.waitForFunction(() => window.__py.state() === "ready", null, { timeout: 240000 });
 
+    phase(`write and hash ${MIB} MiB in Python`);
     const written = await page.evaluate(async (code) => {
       window.__py.drain();
       const r = await window.__py.run(code);
@@ -102,6 +111,7 @@ const result = await inFullBrowser(async (page) => {
     );
 
     // ------ the whole file, streamed
+    phase("stream with bounded browser-memory measurements");
     const streamed = await page.evaluate(
       (options) => window.__py.streamArtifact("export.bin", options),
       {
@@ -109,6 +119,7 @@ const result = await inFullBrowser(async (page) => {
         windowChunks: 2,
         // Stop in the middle and ask the browser how much memory is in use. See the harness.
         measureAtBytes: Math.floor((MIB * 1024 * 1024) / 2),
+        memoryTimeoutMs: MEMORY_PROBE_TIMEOUT_MS,
       },
     );
 
@@ -137,6 +148,7 @@ const result = await inFullBrowser(async (page) => {
         false,
         streamed.memoryUnavailable ??
           "performance.measureUserAgentSpecificMemory() returned no value",
+        streamed.memoryTimedOut ? { retryable: true } : {},
       );
     }
     ok(
@@ -189,28 +201,40 @@ const result = await inFullBrowser(async (page) => {
     // one chunk or all of them. The same transfer runs again with a sink that keeps every chunk,
     // and the measurement has to SEE that.
     if (streamed.memoryDuring != null) {
+      phase("run the retaining-memory negative control");
       const retaining = await page.evaluate(
         (options) => window.__py.streamArtifact("export.bin", options),
         {
           chunkBytes: 4 * 1024 * 1024,
           windowChunks: 2,
           measureAtBytes: Math.floor((MIB * 1024 * 1024) / 2),
+          memoryTimeoutMs: MEMORY_PROBE_TIMEOUT_MS,
           retainChunks: true,
         },
       );
-      const retainedGrowth = retaining.memoryDuring - retaining.memoryBefore;
-      const honestGrowth = streamed.memoryDuring - streamed.memoryBefore;
-      ok(
-        "…and the measurement is capable of failing: a sink that keeps every chunk shows it",
-        retainedGrowth > honestGrowth + 16 * 1024 * 1024,
-        JSON.stringify({
-          honestGrowthMiB: +(honestGrowth / 1048576).toFixed(1),
-          retainingGrowthMiB: +(retainedGrowth / 1048576).toFixed(1),
-          retainedChunks: retaining.retainedChunks,
-        }),
-      );
+      if (retaining.memoryTimedOut) {
+        ok(
+          "the retaining-memory negative control completed its browser measurement",
+          false,
+          retaining.memoryUnavailable,
+          { retryable: true },
+        );
+      } else {
+        const retainedGrowth = retaining.memoryDuring - retaining.memoryBefore;
+        const honestGrowth = streamed.memoryDuring - streamed.memoryBefore;
+        ok(
+          "…and the measurement is capable of failing: a sink that keeps every chunk shows it",
+          retainedGrowth > honestGrowth + 16 * 1024 * 1024,
+          JSON.stringify({
+            honestGrowthMiB: +(honestGrowth / 1048576).toFixed(1),
+            retainingGrowthMiB: +(retainedGrowth / 1048576).toFixed(1),
+            retainedChunks: retaining.retainedChunks,
+          }),
+        );
+      }
     }
 
+    phase("run transfer ownership, cancellation and lease checks");
     // OWNERSHIP: once a destination is passed in, the engine closes or aborts it. The console
     // calls `createWritable()` and hands the result over, so an engine that could fail before
     // adopting it would leave the caller holding an open handle on the user's disk. Asked for a
@@ -380,7 +404,10 @@ const result = await inFullBrowser(async (page) => {
 
     return checks;
   } catch (error) {
-    ok("the suite ran to the end", false, String(error?.message ?? error).split("\n")[0]);
+    const detail = String(error?.message ?? error).split("\n")[0];
+    ok("the suite ran to the end", false, detail, {
+      retryable: /Target crashed|Page crashed|browser has been closed/i.test(detail),
+    });
     return checks;
   } finally {
     await server.close();

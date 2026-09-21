@@ -288,7 +288,11 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
     mount.addEventListener(
       "paste",
       (event: ClipboardEvent) => {
-        const pasted = event.clipboardData?.getData("text") ?? "";
+        // `text/plain` is the clipboard's canonical text type. Keep the standard legacy `text`
+        // alias as a fallback for older integrations, while synthetic events can expose only the
+        // canonical spelling.
+        const pasted =
+          event.clipboardData?.getData("text/plain") || event.clipboardData?.getData("text") || "";
         if (!pasted.includes("\n")) return;
         event.preventDefault();
         event.stopPropagation();

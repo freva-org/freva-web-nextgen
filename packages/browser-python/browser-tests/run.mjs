@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { EXIT_NOT_RUN } from "./harness.mjs";
+import { EXIT_NOT_RUN, EXIT_RETRYABLE } from "./harness.mjs";
 import {
   CROSS_BROWSER,
   NETWORK_SUITES,
@@ -28,6 +28,19 @@ if (process.env.BROWSER_PYTHON_NETWORK === "1") SUITES.push(...NETWORK_SUITES);
 if (process.env.BROWSER_PYTHON_PACKAGE_INDEX === "1" || process.env.BROWSER_PYTHON_NETWORK === "1")
   SUITES.push(...PACKAGE_INDEX_SUITES);
 
+// A named subset keeps the same process supervision as the full gate. Running a suite module
+// directly is useful while debugging, but it loses the parent watchdog precisely when a wedged
+// browser is the thing under investigation.
+const requestedSuites = [...new Set(process.argv.slice(2))];
+if (requestedSuites.length > 0) {
+  const unknown = requestedSuites.filter((suite) => !SUITES.includes(suite));
+  if (unknown.length > 0) {
+    console.error(`Unknown or disabled browser suite(s): ${unknown.join(", ")}.`);
+    process.exit(2);
+  }
+  SUITES.splice(0, SUITES.length, ...requestedSuites);
+}
+
 /**
  * Exit code 3 means "the runtime this suite needs is not assembled" - a distinct outcome from both
  * pass and fail, reported as its own line. Collapsing it into "pass" is how a run announces that
@@ -46,10 +59,26 @@ if (!Number.isSafeInteger(configuredTimeout) || configuredTimeout <= 0) {
   process.exit(2);
 }
 const SUITE_TIMEOUT_MS = configuredTimeout;
+const configuredRetries = Number(process.env.BROWSER_RETRY_COUNT ?? 1);
+if (!Number.isSafeInteger(configuredRetries) || configuredRetries < 0) {
+  console.error(
+    "BROWSER_RETRY_COUNT must be a non-negative integer; received " +
+      JSON.stringify(process.env.BROWSER_RETRY_COUNT),
+  );
+  process.exit(2);
+}
+const MAX_RETRIES = configuredRetries;
+
+// Retrying arbitrary failures hides regressions. This one suite depends on Chromium's
+// implementation-defined memory measurement, and marks only a measurement timeout or target
+// crash with EXIT_RETRYABLE. A process-level timeout is included because a totally wedged renderer
+// cannot run the page-side deadline. Every retry starts a new Node and browser process.
+const RETRYABLE_SUITES = new Set(["workspace-stream.mjs"]);
 
 let failed = 0;
 const incomplete = [];
 const timedOut = [];
+const recoveredOnRetry = [];
 
 const runs = SUITES.flatMap((suite) =>
   crossBrowser.has(suite)
@@ -58,19 +87,41 @@ const runs = SUITES.flatMap((suite) =>
 );
 for (const { suite, engine } of runs) {
   const label = engine ? `${suite} (${engine})` : suite;
-  const started = Date.now();
-  // Suites report only when they finish. Name the child BEFORE starting it, otherwise a hung
-  // suite leaves CI pointing at the preceding suite's successful report.
-  console.log(`\n--- starting ${label} ---`);
-  const r = spawnSync(process.execPath, [path.join(HERE, suite)], {
-    stdio: "inherit",
-    env: engine ? { ...process.env, BROWSER_ENGINE: engine } : process.env,
-    // A page.evaluate() waits for its returned Promise without a Playwright timeout. If a Worker
-    // or browser process wedges, the child can therefore live until the CI provider cancels the
-    // whole job. Bound the PROCESS as the final line of supervision and carry on with later suites.
-    timeout: SUITE_TIMEOUT_MS,
-  });
-  const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+  let attempt = 0;
+  let r;
+  let elapsed;
+  let didTimeOut;
+  while (true) {
+    attempt += 1;
+    const started = Date.now();
+    // Suites report only when they finish. Name the child BEFORE starting it, otherwise a hung
+    // suite leaves CI pointing at the preceding suite's successful report.
+    console.log(`\n--- starting ${label} ---`);
+    if (attempt > 1) console.log(`--- retry attempt ${attempt} in a fresh browser process ---`);
+    r = spawnSync(process.execPath, [path.join(HERE, suite)], {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        ...(engine ? { BROWSER_ENGINE: engine } : {}),
+        BROWSER_RETRY_ATTEMPT: String(attempt),
+      },
+      // A page.evaluate() waits for its returned Promise without a Playwright timeout. If a Worker
+      // or browser process wedges, the child can therefore live until the CI provider cancels the
+      // whole job. Bound the PROCESS as the final line of supervision and carry on with later suites.
+      timeout: SUITE_TIMEOUT_MS,
+    });
+    elapsed = ((Date.now() - started) / 1000).toFixed(1);
+    didTimeOut = r.error?.code === "ETIMEDOUT";
+    const classifiedRetry = r.status === EXIT_RETRYABLE;
+    const mayRetry =
+      RETRYABLE_SUITES.has(suite) && attempt <= MAX_RETRIES && (didTimeOut || classifiedRetry);
+    if (!mayRetry) break;
+    const reason = didTimeOut
+      ? `the process timed out after ${elapsed}s`
+      : `the suite reported exit ${EXIT_RETRYABLE}`;
+    console.log(`--- RETRY ${label}: ${reason}; discarding it and starting fresh ---`);
+  }
+
   if (r.error?.code === "ETIMEDOUT") {
     console.log(
       `--- TIMEOUT ${label} after ${elapsed}s ` +
@@ -85,6 +136,7 @@ for (const { suite, engine } of runs) {
     console.log(`--- finished ${label} in ${elapsed}s ---`);
     if (r.status === INCOMPLETE) incomplete.push(suite);
     else if (r.status !== 0) failed++;
+    else if (attempt > 1) recoveredOnRetry.push(`${label} (attempt ${attempt})`);
   }
 }
 
@@ -92,6 +144,8 @@ const ran = runs.length - incomplete.length;
 if (failed === 0) console.log(`\nAll ${ran} runnable browser suites pass.`);
 else console.log(`\n${failed} of ${ran} runnable browser suites FAILED.`);
 if (timedOut.length) console.log(`Timed out: ${timedOut.join(", ")}.`);
+if (recoveredOnRetry.length)
+  console.log(`Passed on a fresh-process retry: ${recoveredOnRetry.join(", ")}.`);
 
 // Under BROWSER_STRICT=1, "did not run" is a FAILURE. Exit 3 exists so a workstation without the
 // scientific wheels can still run the console suites; that is wrong for a gate, where the whole

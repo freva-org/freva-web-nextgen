@@ -8,10 +8,13 @@ export interface SuiteCheck {
   name: string;
   pass: boolean;
   detail?: string;
+  /** Only transient browser-runtime failures may request a fresh-process retry. */
+  retryable?: boolean;
 }
 export interface SuiteResult {
   status?: "pass" | "fail" | "skipped";
   detail?: string;
+  retryable?: boolean;
   checks?: SuiteCheck[];
 }
 /** Print a suite's checks and return the process exit code: 0 only for a real pass. */
@@ -20,6 +23,7 @@ export declare function isStrict(): boolean;
 /** Exit codes whose MEANINGS are the contract `run.mjs` and CI read. See the harness source. */
 export declare const EXIT_NOT_BUILT: number;
 export declare const EXIT_NOT_RUN: number;
+export declare const EXIT_RETRYABLE: number;
 /** The one way a suite says its wheels are absent: prints the reason and exits `EXIT_NOT_RUN`. */
 export declare function requireRuntimeFor(title: string, suite: string): void;
 

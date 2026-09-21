@@ -66,6 +66,8 @@
     "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
     "test:browser:index": "BROWSER_STRICT=1 BROWSER_PYTHON_PACKAGE_INDEX=1 npm run test:browser",
     "test:browser:network": "BROWSER_STRICT=1 BROWSER_PYTHON_NETWORK=1 npm run test:browser",
+    "test:browser:paste": "node browser-tests/run.mjs console-paste-and-caret.mjs",
+    "test:browser:zarr": "node browser-tests/run.mjs zarr.mjs",
     "check:bytes": "node scripts/check-bytes.mjs && node scripts/measure-console.mjs && node scripts/check-docs-sizes.mjs",
     "fixtures:build": "python3 scripts/make-zarr-fixtures.py",
     "demo": "node scripts/serve-demo.mjs",

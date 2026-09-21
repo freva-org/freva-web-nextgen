@@ -13,10 +13,11 @@
 // hand, and `.cmd-cursor` had no paint, no inversion and no `terminal-blink` keyframes. "Typing
 // works" is not "the cursor is visible", and this file asserts the second thing.
 //
-// No Clipboard API permission is needed. The suite puts text in the browser clipboard the same
-// way a person does: focus and select a real textarea, press the native copy shortcut, focus the
-// console, and press the native paste shortcut. That keeps this a real paste test in every engine
-// instead of silently dropping the assertion where Playwright cannot grant clipboard permissions.
+// There are two deliberately separate layers. Every engine receives a ClipboardEvent carrying a
+// real DataTransfer at the terminal's actual input, which exercises this component's paste-event
+// path without depending on an automation runner's OS clipboard. Chromium additionally exercises
+// the browser clipboard end to end; Playwright cannot grant that permission in Firefox or WebKit,
+// so the cross-engine assertion must not pretend a keyboard shortcut populated their clipboard.
 import { consolePage } from "./console-fixture.mjs";
 import { bundleConsole, inBrowser, report, requireDist, serve } from "./harness.mjs";
 
@@ -33,6 +34,11 @@ const result = await inBrowser(
     const server = await serve(consolePage());
     const checks = [];
     try {
+      if (browserName === "chromium") {
+        await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+          origin: server.url,
+        });
+      }
       await page.emulateMedia({ reducedMotion: "no-preference" });
       await page.goto(server.url);
       await page.waitForFunction(() => window.__ready === true, null, { timeout: 20000 });
@@ -48,37 +54,68 @@ const result = await inBrowser(
         await page.waitForTimeout(200);
       };
 
-      /** Put text on the native clipboard through trusted keyboard input, in every engine. */
-      const copyFromTextarea = async (source) => {
-        await page.evaluate((text) => {
-          const probe = document.createElement("textarea");
-          probe.id = "bp-clipboard-source";
-          probe.value = text;
-          probe.setAttribute("aria-label", "clipboard test source");
-          Object.assign(probe.style, {
-            position: "fixed",
-            left: "0",
-            top: "0",
-            width: "2px",
-            height: "2px",
-            opacity: "0.01",
+      /** Dispatch the browser event the component owns, at the real terminal input. */
+      const dispatchPaste = async (source) => {
+        await focusByPointer();
+        return page.evaluate((text) => {
+          const root = window.__el.shadowRoot;
+          const target = root.querySelector(".cmd-clipboard, .cmd-editable");
+          if (!(target instanceof HTMLElement)) throw new Error("terminal paste target not found");
+          const clipboardData = new DataTransfer();
+          clipboardData.setData("text/plain", text);
+          let event = new ClipboardEvent("paste", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            clipboardData,
           });
-          document.body.append(probe);
-          probe.focus();
-          probe.select();
+          let injectedClipboardData = false;
+          // Firefox may construct the synthetic ClipboardEvent while discarding the supplied
+          // DataTransfer. That says nothing about a real user paste, but it made this component
+          // test wait 30 seconds for text the event did not carry. Give the synthetic event the
+          // same readable clipboardData contract explicitly; Chromium's separate trusted-paste
+          // check below still covers the real OS/browser integration.
+          if (event.clipboardData?.getData("text/plain") !== text) {
+            event = new Event("paste", {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+            });
+            Object.defineProperty(event, "clipboardData", {
+              configurable: false,
+              enumerable: true,
+              value: clipboardData,
+            });
+            injectedClipboardData = true;
+          }
+          const dispatchReturned = target.dispatchEvent(event);
+          return {
+            clipboardText: event.clipboardData?.getData("text/plain") ?? "",
+            defaultPrevented: event.defaultPrevented,
+            dispatchReturned,
+            injectedClipboardData,
+          };
         }, source);
-        await page.keyboard.press("ControlOrMeta+C");
-        await page.evaluate(() => document.querySelector("#bp-clipboard-source")?.remove());
       };
 
-      // paste
+      // The component-level path, in Chromium, Firefox and WebKit.
       const source = "import numpy as np\nnp.arange(5)";
-      await copyFromTextarea(source);
-      await focusByPointer();
-      await page.keyboard.press("ControlOrMeta+V");
-      await page.waitForTimeout(300);
-      await page.keyboard.press("Enter");
-      await page.waitForTimeout(400);
+      const pasteEvent = await dispatchPaste(source);
+      if (
+        pasteEvent.clipboardText !== source ||
+        !pasteEvent.defaultPrevented ||
+        pasteEvent.dispatchReturned
+      ) {
+        checks.push({
+          name: "the synthetic paste reached the component with readable text",
+          pass: false,
+          detail: JSON.stringify(pasteEvent),
+        });
+        return checks;
+      }
+      await page.waitForFunction((text) => window.__c.mock.pushes.includes(text), source, {
+        timeout: 5000,
+      });
       const pasted = await page.evaluate(() => [...window.__c.mock.pushes]);
       // ONE source string, newlines intact. The surface library submits a paste a line at a
       // time, as though each line had been typed and entered - that is the REPL protocol, and it
@@ -97,25 +134,55 @@ const result = await inBrowser(
         pass: submitted.length === 1,
         detail: JSON.stringify(pasted),
       });
+      checks.push({
+        name: "the console owns and cancels the multi-line paste before the vendor can split it",
+        pass:
+          pasteEvent.clipboardText === source &&
+          pasteEvent.defaultPrevented &&
+          pasteEvent.dispatchReturned === false,
+        detail: JSON.stringify(pasteEvent),
+      });
 
       // Blank lines close blocks in Python; a paste that drops them changes the program.
       await page.evaluate(() => {
         window.__c.mock.pushes.length = 0;
       });
-      await copyFromTextarea("def f():\n    return 1\n\nf()");
-      await focusByPointer();
-      await page.keyboard.press("ControlOrMeta+V");
-      await page.waitForTimeout(300);
-      await page.keyboard.press("Enter");
-      await page.waitForTimeout(500);
+      const blockSource = "def f():\n    return 1\n\nf()";
+      await dispatchPaste(blockSource);
+      await page.waitForFunction((text) => window.__c.mock.pushes.includes(text), blockSource, {
+        timeout: 5000,
+      });
       const block = await page.evaluate(() => [...window.__c.mock.pushes]);
       checks.push({
         name: "the blank line inside the block survives the paste, byte for byte",
         pass:
-          JSON.stringify(block.filter((entry) => entry !== "")) ===
-          JSON.stringify(["def f():\n    return 1\n\nf()"]),
+          JSON.stringify(block.filter((entry) => entry !== "")) === JSON.stringify([blockSource]),
         detail: JSON.stringify(block),
       });
+
+      // Browser/OS clipboard integration is a separate Chromium check. Unlike the synthetic
+      // event above, this proves Playwright's trusted paste shortcut reaches the same input path.
+      if (browserName === "chromium") {
+        await page.evaluate(() => {
+          window.__c.mock.pushes.length = 0;
+        });
+        const realClipboardSource = "values = [1, 2]\nsum(values)";
+        await page.evaluate((text) => navigator.clipboard.writeText(text), realClipboardSource);
+        await focusByPointer();
+        await page.keyboard.press("ControlOrMeta+V");
+        await page.waitForFunction(
+          (text) => window.__c.mock.pushes.includes(text),
+          realClipboardSource,
+        );
+        const realClipboardPushes = await page.evaluate(() => [...window.__c.mock.pushes]);
+        checks.push({
+          name: "Chromium's real clipboard and trusted paste shortcut reach the console",
+          pass:
+            JSON.stringify(realClipboardPushes.filter((entry) => entry !== "")) ===
+            JSON.stringify([realClipboardSource]),
+          detail: JSON.stringify(realClipboardPushes),
+        });
+      }
 
       // the caret
       await focusByPointer();

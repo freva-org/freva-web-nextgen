@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
-import { report } from "../browser-tests/harness.mjs";
+import { EXIT_RETRYABLE, report } from "../browser-tests/harness.mjs";
 import { NETWORK_SUITES, PACKAGE_INDEX_SUITES, SUITES } from "../browser-tests/suite-list.mjs";
 import {
   SUITE_OPTIONAL_PACKAGES,
@@ -90,6 +90,16 @@ describe("report() is the single authority on what a pass is", () => {
   it("keeps an explicit skip a skip, which is how a missing browser is reported", () => {
     expect(report("skip", { status: "skipped", detail: "no browser", checks: [] })).toBe(0);
   });
+
+  it("gives a narrowly classified transient browser failure its own exit code", () => {
+    expect(
+      report("retryable", {
+        status: "fail",
+        retryable: true,
+        checks: [{ name: "memory probe", pass: false }],
+      }),
+    ).toBe(EXIT_RETRYABLE);
+  });
 });
 
 describe("browser input and feature flags are portable", () => {
@@ -102,9 +112,19 @@ describe("browser input and feature flags are portable", () => {
       expect(source).not.toMatch(/keyboard\.press\("Control\+V"\)/);
     }
     const pasteSuite = readFileSync(`${BROWSER_TESTS}/console-paste-and-caret.mjs`, "utf8");
-    expect(pasteSuite).toContain('keyboard.press("ControlOrMeta+C")');
-    expect(pasteSuite).not.toContain("grantPermissions");
-    expect(pasteSuite).not.toContain("clipboardAvailable");
+    const adapter = readFileSync(
+      fileURLToPath(new URL("../src/console/adapters/jquery-terminal-adapter.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(pasteSuite).toContain('new ClipboardEvent("paste"');
+    expect(pasteSuite).toContain("new DataTransfer()");
+    expect(pasteSuite).toContain('Object.defineProperty(event, "clipboardData"');
+    expect(pasteSuite).toContain("timeout: 5000");
+    expect(adapter).toContain('getData("text/plain")');
+    expect(pasteSuite).toContain('browserName === "chromium"');
+    expect(pasteSuite).toContain("grantPermissions");
+    expect(pasteSuite).toContain("navigator.clipboard.writeText");
+    expect(pasteSuite).not.toContain("copyFromTextarea");
   });
 
   it("runs memory measurements in full Chromium rather than forcing a crashing Blink flag", () => {
@@ -118,14 +138,42 @@ describe("browser input and feature flags are portable", () => {
     }
   });
 
+  it("bounds the implementation-defined memory probe before the process-level timeout", () => {
+    const harness = readFileSync(`${BROWSER_TESTS}/harness.mjs`, "utf8");
+    const suite = readFileSync(`${BROWSER_TESTS}/workspace-stream.mjs`, "utf8");
+    expect(harness).toContain("MemoryMeasurementTimeout");
+    expect(harness).toContain("Promise.race");
+    expect(harness).toContain("memoryProbeStopped = true");
+    expect(suite).toContain("MEMORY_PROBE_TIMEOUT_MS");
+    expect(suite).toContain("memoryTimeoutMs: MEMORY_PROBE_TIMEOUT_MS");
+    expect(suite).toContain("[workspace-stream] phase:");
+    expect(suite).toContain("{ retryable: true }");
+  });
+
+  it("gives the Zarr suite named phase deadlines and forceable fixture cleanup", () => {
+    const harness = readFileSync(`${BROWSER_TESTS}/harness.mjs`, "utf8");
+    const suite = readFileSync(`${BROWSER_TESTS}/zarr.mjs`, "utf8");
+    const packageJson = JSON.parse(
+      readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+    );
+    expect(suite).toContain("ZARR_START_TIMEOUT_MS");
+    expect(suite).toContain("ZARR_PHASE_TIMEOUT_MS");
+    expect(suite).toContain("[zarr] starting:");
+    expect(suite).toContain("lastExchanges");
+    expect(harness).toContain("server.closeAllConnections?.()");
+    expect(packageJson.scripts["test:browser:paste"]).toContain("console-paste-and-caret.mjs");
+    expect(packageJson.scripts["test:browser:zarr"]).toContain("zarr.mjs");
+  });
+
   it("does not turn WebKit's hidden selection into a passing skip", () => {
     const source = readFileSync(`${BROWSER_TESTS}/console-pointer.mjs`, "utf8");
     const component = readFileSync(
       fileURLToPath(new URL("../src/console/browser-python-console.ts", import.meta.url)),
       "utf8",
     );
-    expect(source).toContain('keyboard.press("ControlOrMeta+C")');
-    expect(source).toContain("copiedFromLine");
+    expect(source).toContain('"selectstart"');
+    expect(source).toContain("mouseupsPastConsole");
+    expect(source).not.toContain("bp-selection-copy-probe");
     expect(source).not.toMatch(/WebKit[\s\S]{0,300}pass:\s*true/);
     expect(component).toContain("const preserveSelection = dragged || this.#selectionHeld()");
   });
@@ -142,8 +190,16 @@ describe("the aggregate runner supervises every browser-suite process", () => {
 
   it("puts a finite, configurable timeout around each child", () => {
     expect(source).toContain("BROWSER_SUITE_TIMEOUT_MS");
-    expect(source).toMatch(/spawnSync\([\s\S]{0,500}timeout: SUITE_TIMEOUT_MS/);
+    expect(source).toMatch(/spawnSync\([\s\S]{0,900}timeout: SUITE_TIMEOUT_MS/);
     expect(source).toMatch(/TIMEOUT \$\{label\}/);
+  });
+
+  it("retries only classified workspace-memory failures in a fresh process", () => {
+    expect(source).toContain('new Set(["workspace-stream.mjs"])');
+    expect(source).toContain("r.status === EXIT_RETRYABLE");
+    expect(source).toContain("BROWSER_RETRY_COUNT");
+    expect(source).toContain("fresh browser process");
+    expect(source).toMatch(/RETRYABLE_SUITES\.has\(suite\)[\s\S]{0,160}classifiedRetry/);
   });
 });
 

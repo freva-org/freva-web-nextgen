@@ -25,6 +25,31 @@ requireDist();
 
 requireRuntimeFor("remote Zarr", "zarr.mjs");
 
+const timeoutFromEnv = (name, fallback) => {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive whole number of milliseconds.`);
+  }
+  return value;
+};
+
+// Test-only watchdogs. They never enter the built package or the user's Python transcript.
+// Startup has its own 180-second engine timeout, so its outer diagnostic deadline is slightly
+// longer. Every operation after that is against a tiny same-origin fixture and should settle well
+// before the shorter deadline.
+const START_TIMEOUT_MS = timeoutFromEnv("ZARR_START_TIMEOUT_MS", 210_000);
+const PHASE_TIMEOUT_MS = timeoutFromEnv("ZARR_PHASE_TIMEOUT_MS", 60_000);
+
+class ZarrPhaseTimeout extends Error {
+  constructor(phase, timeoutMs) {
+    super(`Zarr phase ${JSON.stringify(phase)} did not settle within ${timeoutMs}ms.`);
+    this.name = "ZarrPhaseTimeout";
+    this.phase = phase;
+  }
+}
+
+const short = (source) => String(source).replace(/\s+/g, " ").trim().slice(0, 90);
+
 const result = await inBrowser(async (page) => {
   const server = await serve(fixturePage({ profile: "xarray-zarr" }), {
     // The same fixtures under a bucket-shaped root, so the s3 check below exercises the path-style
@@ -32,10 +57,38 @@ const result = await inBrowser(async (page) => {
     roots: { "/waterpark/": FIXTURES },
   });
   const checks = [];
+  let currentPhase = "create fixture";
+  const phase = async (name, work, timeoutMs = PHASE_TIMEOUT_MS) => {
+    currentPhase = name;
+    const started = Date.now();
+    console.log(`[zarr] starting: ${name}`);
+    let timer;
+    try {
+      const value = await Promise.race([
+        Promise.resolve().then(work),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new ZarrPhaseTimeout(name, timeoutMs)), timeoutMs);
+        }),
+      ]);
+      console.log(`[zarr] finished: ${name} (${Date.now() - started}ms)`);
+      return value;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+
   try {
-    await page.goto(server.url);
-    await page.waitForFunction(() => window.__ready === true, null, { timeout: 30000 });
-    const ready = await page.evaluate(() => window.__py.start());
+    await phase("open fixture page", () => page.goto(server.url), 30_000);
+    await phase(
+      "wait for fixture module",
+      () => page.waitForFunction(() => window.__ready === true, null, { timeout: 30_000 }),
+      35_000,
+    );
+    const ready = await phase(
+      "start xarray-zarr profile",
+      () => page.evaluate(() => window.__py.start()),
+      START_TIMEOUT_MS,
+    );
     checks.push({
       name: "the scientific profile reports the versions it actually loaded",
       pass: Boolean(ready.packages.xarray && ready.packages.zarr && ready.packages.fsspec),
@@ -43,12 +96,16 @@ const result = await inBrowser(async (page) => {
     });
 
     const value = async (expression) => {
-      const r = await page.evaluate((e) => window.__py.push(e), expression);
+      const r = await phase(`evaluate: ${short(expression)}`, () =>
+        page.evaluate((e) => window.__py.push(e), expression),
+      );
       if (r.error) throw new Error(r.error);
       return r.result;
     };
     const run = async (code) => {
-      const r = await page.evaluate((c) => window.__py.run(c), code);
+      const r = await phase(`run: ${short(code)}`, () =>
+        page.evaluate((c) => window.__py.run(c), code),
+      );
       if (r.error) throw new Error(r.error);
       return r;
     };
@@ -76,16 +133,18 @@ const result = await inBrowser(async (page) => {
       ["v2", "zarr-v2"],
       ["v3", "zarr-v3"],
     ]) {
-      const opened = await page.evaluate(
-        async ({ dir }) => {
-          const url = new URL(`/fixtures/${dir}/`, location.href).href;
-          const r = await window.__py.run(
-            `import xarray as xr\n` +
-              `ds_${dir.replace("-", "_")} = xr.open_zarr(${JSON.stringify(url)}, consolidated=True, chunks=None)\n`,
-          );
-          return r;
-        },
-        { dir },
+      const opened = await phase(`open Zarr ${format} fixture`, () =>
+        page.evaluate(
+          async ({ dir }) => {
+            const url = new URL(`/fixtures/${dir}/`, location.href).href;
+            const r = await window.__py.run(
+              `import xarray as xr\n` +
+                `ds_${dir.replace("-", "_")} = xr.open_zarr(${JSON.stringify(url)}, consolidated=True, chunks=None)\n`,
+            );
+            return r;
+          },
+          { dir },
+        ),
       );
       const name = dir.replace("-", "_");
       checks.push({
@@ -161,19 +220,21 @@ const result = await inBrowser(async (page) => {
     // THE WATERPARK CALL, through s3://. Same store, same arguments, reached by the mapping
     // instead of by an absolute URL - so a store a catalogue names as `s3://bucket/key` opens
     // without s3fs, which cannot run here at all.
-    const s3Open = await page.evaluate(
-      async ({ origin }) => {
-        return window.__py.run(
-          `import xarray as xr\n` +
-            `ds_s3 = xr.open_zarr(\n` +
-            `    "s3://waterpark/zarr-v2",\n` +
-            `    consolidated=True,\n` +
-            `    chunks=None,\n` +
-            `    storage_options={"anon": True, "endpoint_url": ${JSON.stringify(origin)}},\n` +
-            `)\n`,
-        );
-      },
-      { origin: server.url.replace(/\/$/, "") },
+    const s3Open = await phase("open the Zarr v2 fixture through s3 mapping", () =>
+      page.evaluate(
+        async ({ origin }) => {
+          return window.__py.run(
+            `import xarray as xr\n` +
+              `ds_s3 = xr.open_zarr(\n` +
+              `    "s3://waterpark/zarr-v2",\n` +
+              `    consolidated=True,\n` +
+              `    chunks=None,\n` +
+              `    storage_options={"anon": True, "endpoint_url": ${JSON.stringify(origin)}},\n` +
+              `)\n`,
+          );
+        },
+        { origin: server.url.replace(/\/$/, "") },
+      ),
     );
     checks.push({
       name: "s3://bucket/key opens with anon=True and an endpoint_url, no s3fs",
@@ -196,15 +257,17 @@ const result = await inBrowser(async (page) => {
     }
 
     // Listing is refused rather than faked. A silent `[]` would read as "this prefix is empty".
-    const listing = await page.evaluate(async () => {
-      const url = new URL("/fixtures/zarr-v2/", location.href).href;
-      return window.__py.run(
-        `fs = fsspec.filesystem("https")\n` +
-          `import asyncio\n` +
-          `try:\n    await fs._ls(${JSON.stringify(url)})\n    _ls_outcome = "returned"\n` +
-          `except NotImplementedError as exc:\n    _ls_outcome = "refused"\n`,
-      );
-    });
+    const listing = await phase("refuse HTTP listing", () =>
+      page.evaluate(async () => {
+        const url = new URL("/fixtures/zarr-v2/", location.href).href;
+        return window.__py.run(
+          `fs = fsspec.filesystem("https")\n` +
+            `import asyncio\n` +
+            `try:\n    await fs._ls(${JSON.stringify(url)})\n    _ls_outcome = "returned"\n` +
+            `except NotImplementedError as exc:\n    _ls_outcome = "refused"\n`,
+        );
+      }),
+    );
     checks.push({
       name: "listing is REFUSED over plain HTTP, not faked as empty",
       pass: !listing.error && (await value("_ls_outcome")) === "'refused'",
@@ -212,18 +275,57 @@ const result = await inBrowser(async (page) => {
     });
 
     // A missing key is FileNotFoundError, which is what a Zarr probe expects.
-    const missing = await page.evaluate(async () => {
-      const url = new URL("/fixtures/zarr-v2/definitely-not-here", location.href).href;
-      return window.__py.run(
-        `try:\n    await fs._cat_file(${JSON.stringify(url)})\n    _missing = "returned"\n` +
-          `except FileNotFoundError:\n    _missing = "FileNotFoundError"\n`,
-      );
-    });
+    const missing = await phase("probe a missing Zarr key", () =>
+      page.evaluate(async () => {
+        const url = new URL("/fixtures/zarr-v2/definitely-not-here", location.href).href;
+        return window.__py.run(
+          `try:\n    await fs._cat_file(${JSON.stringify(url)})\n    _missing = "returned"\n` +
+            `except FileNotFoundError:\n    _missing = "FileNotFoundError"\n`,
+        );
+      }),
+    );
     checks.push({
       name: "a missing key raises FileNotFoundError, so Zarr's probes behave",
       pass: !missing.error && (await value("_missing")) === "'FileNotFoundError'",
     });
 
+    return checks;
+  } catch (error) {
+    const engine = await Promise.race([
+      page
+        .evaluate(() => ({
+          state: window.__py?.state?.() ?? null,
+          statuses: window.__py?.statuses?.slice(-5) ?? [],
+        }))
+        .catch((snapshotError) => ({
+          snapshotError: String(snapshotError?.message ?? snapshotError),
+        })),
+      new Promise((resolve) =>
+        setTimeout(
+          () => resolve({ snapshotError: "engine snapshot did not settle within 2s" }),
+          2000,
+        ),
+      ),
+    ]);
+    checks.push({
+      name: `the Zarr phase completed: ${currentPhase}`,
+      pass: false,
+      detail: JSON.stringify({
+        error: String(error?.message ?? error).split("\n")[0],
+        engine,
+        lastRequests: server.requests.slice(-12),
+        lastExchanges: server.exchanges.slice(-12),
+      }),
+    });
+    if (error instanceof ZarrPhaseTimeout) {
+      // End the operation whose Promise lost the race. This is test cleanup, not a user-facing
+      // execution timeout: terminating the worker is the only reliable way to stop arbitrary
+      // Python, and the engine's normal teardown below remains idempotent.
+      await Promise.race([
+        page.evaluate(() => window.__py?.dispose()).catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    }
     return checks;
   } finally {
     await server.close();

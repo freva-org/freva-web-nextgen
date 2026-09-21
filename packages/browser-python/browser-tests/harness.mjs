@@ -94,6 +94,9 @@ const TYPES = {
  */
 export const EXIT_NOT_BUILT = 2;
 export const EXIT_NOT_RUN = 3;
+/** A suite failed for a narrowly classified browser-runtime reason and may be retried once in a
+ * fresh process. Ordinary assertion failures remain exit 1 and are never retried. */
+export const EXIT_RETRYABLE = 75;
 
 /** The package must be BUILT: these suites measure the shipped artifact, not the sources. */
 export function requireDist() {
@@ -310,7 +313,15 @@ export async function serve(html, options = {}) {
     url: `http://127.0.0.1:${port}/`,
     requests,
     exchanges,
-    close: () => new Promise((r) => server.close(r)),
+    close: () =>
+      new Promise((resolve) => {
+        // `server.close()` waits for existing connections. That is normally desirable and exactly
+        // wrong after a browser-operation watchdog fired: the request being diagnosed may be the
+        // connection that never ends. Stop accepting first, then end fixture connections so test
+        // cleanup cannot reproduce the hang it just detected.
+        server.close(() => resolve());
+        server.closeAllConnections?.();
+      }),
   };
 }
 
@@ -426,6 +437,8 @@ export function fixturePage({
       const retained = [];
       const controller = new AbortController();
       if (options.cancelAfterBytes !== undefined) state.cancelAt = options.cancelAfterBytes;
+      const memoryTimeoutMs = options.memoryTimeoutMs ?? 60_000;
+      let memoryProbeStopped = false;
 
       // A REAL memory reading, taken while the transfer is stopped in the middle of it.
       // performance.measureUserAgentSpecificMemory() is the only instrument in a browser that
@@ -433,7 +446,8 @@ export function fixturePage({
       // Uint8Array moves it by nothing. It needs cross-origin isolation, covers the whole agent
       // cluster including this page's workers, and waits for a garbage collection, so it is called
       // at one point: awaiting it inside write() stops the transfer with half the file delivered.
-      const measureMemory = async () => {
+      const measureMemory = async (phase) => {
+        if (memoryProbeStopped) return null;
         if (typeof performance.measureUserAgentSpecificMemory !== "function") {
           state.memoryUnavailable = "performance.measureUserAgentSpecificMemory is not a function";
           return null;
@@ -442,15 +456,38 @@ export function fixturePage({
           state.memoryUnavailable = "the page is not cross-origin isolated";
           return null;
         }
+        let timer;
         try {
-          return (await performance.measureUserAgentSpecificMemory()).bytes;
+          const measurement = await Promise.race([
+            performance.measureUserAgentSpecificMemory(),
+            new Promise((_, reject) => {
+              timer = setTimeout(() => {
+                const error = new Error(
+                  "MemoryMeasurementTimeout: " + phase + " exceeded " + memoryTimeoutMs + " ms",
+                );
+                error.name = "MemoryMeasurementTimeout";
+                reject(error);
+              }, memoryTimeoutMs);
+            }),
+          ]);
+          return measurement.bytes;
         } catch (error) {
           // Escaped twice because this code lives in the fixture page's template literal.
           state.memoryUnavailable = String(error?.message ?? error).split("\\n")[0];
+          if (error?.name === "MemoryMeasurementTimeout") {
+            state.memoryTimedOut = true;
+            state.memoryTimeoutPhase = phase;
+            // Do not queue more measurements behind one the browser never settled. The original
+            // promise is confined to this page and is discarded when the suite closes it.
+            memoryProbeStopped = true;
+          }
           return null;
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
         }
       };
-      if (options.measureAtBytes !== undefined) state.memoryBefore = await measureMemory();
+      if (options.measureAtBytes !== undefined)
+        state.memoryBefore = await measureMemory("before transfer");
 
       const sink = {
         async write(chunk) {
@@ -474,7 +511,7 @@ export function fixturePage({
             state.memoryDuring === undefined &&
             state.bytes >= options.measureAtBytes
           ) {
-            state.memoryDuring = await measureMemory();
+            state.memoryDuring = await measureMemory("during transfer");
             state.measuredAtBytes = state.bytes;
           }
           state.live = 0;
@@ -501,7 +538,8 @@ export function fixturePage({
       } catch (error) {
         state.error = { name: error?.name ?? "Error", message: String(error?.message ?? error) };
       }
-      if (options.measureAtBytes !== undefined) state.memoryAfter = await measureMemory();
+      if (options.measureAtBytes !== undefined)
+        state.memoryAfter = await measureMemory("after transfer");
       state.retainedChunks = retained.length;
       state.sha256 = [...rolling].map((b) => b.toString(16).padStart(2, "0")).join("");
       return state;
@@ -591,13 +629,27 @@ export async function inBrowser(fn, options = {}) {
     return {
       status: checks.length > 0 && checks.every((c) => c.pass) ? "pass" : "fail",
       ...(checks.length === 0 ? { detail: "the suite body returned no checks" } : {}),
+      ...(checks.some((c) => c.retryable === true) ? { retryable: true } : {}),
       checks,
     };
   } catch (e) {
     return { status: "fail", detail: e.stack ?? e.message, checks: [] };
   } finally {
-    await context.close();
-    await browser.close();
+    const close = async (operation) => {
+      try {
+        await operation();
+      } catch (error) {
+        const message = String(error?.message ?? error);
+        // A process watchdog or renderer crash can remove the context before this finally block.
+        // Closing something already gone is successful cleanup, not a second test failure. Keep
+        // every other Playwright close error visible.
+        if (!/Failed to find context|Target .* closed|browser has been closed/i.test(message)) {
+          throw error;
+        }
+      }
+    };
+    await close(() => context.close());
+    await close(() => browser.close());
   }
 }
 
@@ -636,6 +688,10 @@ export function report(title, result) {
   if (failed > 0) problems.push(`${failed} of ${checks.length} checks failed`);
   if (problems.length > 0) {
     console.log(`  NOT A PASS: ${problems.join("; ")}.`);
+    if (result.retryable === true) {
+      console.log("  RETRYABLE: the aggregate runner may repeat this suite in a fresh process.");
+      return EXIT_RETRYABLE;
+    }
     return 1;
   }
   return 0;
