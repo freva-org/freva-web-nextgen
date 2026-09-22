@@ -22,6 +22,7 @@ import {
   requireRuntimeFor,
   serve,
 } from "./harness.mjs";
+import { cleanupChecks, createPhases, phaseFailureCheck, withDeadline } from "./deadline.mjs";
 
 requireDist();
 requireRuntimeFor("curated add-ons", "addons.mjs");
@@ -105,6 +106,12 @@ const result = await inBrowser(async (page) => {
     return started;
   };
   const run = (code) => page.evaluate((c) => window.__py.run(c), code);
+  const phases = createPhases("addons", { onDeadline: () => page.context().close() });
+  const phase = (name, ms, work) => phases.run(name, ms, work);
+  const finish = async () => {
+    checks.push(...(await cleanupChecks(phases)));
+    return { checks, notApplicable };
+  };
   const value = async (expression) => {
     const r = await page.evaluate((e) => window.__py.push(e), expression);
     if (r.error) throw new Error(r.error);
@@ -113,7 +120,7 @@ const result = await inBrowser(async (page) => {
 
   try {
     // 1. Dask, end to end
-    {
+    await phase("Dask add-on, end to end", 360_000, async () => {
       const server = await open(
         { profile: "xarray-zarr", addons: ["dask"], addonBaseURL: "/addons/" },
         { "/addons/": ADDONS },
@@ -252,10 +259,10 @@ const result = await inBrowser(async (page) => {
           pass: (await value("'pyodide_http' in __import__('sys').modules")) === "False",
         });
       }
-    }
+    });
 
     // 2. Cartopy, offline
-    {
+    await phase("Cartopy add-on, offline", 360_000, async () => {
       const server = await open(
         { profile: "minimal", addons: ["cartopy-natural-earth-110m"], addonBaseURL: "/addons/" },
         { "/addons/": ADDONS },
@@ -350,10 +357,10 @@ const result = await inBrowser(async (page) => {
           }),
         });
       }
-    }
+    });
 
     // 3. Refusals, before Ready
-    {
+    await phase("refusal: tampered wheel", 180_000, async () => {
       const dir = tampered((at) => {
         const file = join(at, ...DASK_WHEEL.split("/"));
         const bytes = readFileSync(file);
@@ -373,8 +380,8 @@ const result = await inBrowser(async (page) => {
           /expected sha256/i.test(started.error ?? ""),
         detail: JSON.stringify((started.error ?? "").split("\n").slice(0, 3)),
       });
-    }
-    {
+    });
+    await phase("refusal: corrupt Natural Earth file", 180_000, async () => {
       const dir = tampered((at) => {
         writeFileSync(join(at, ...COASTLINE.split("/")), "not a shapefile");
       });
@@ -388,8 +395,8 @@ const result = await inBrowser(async (page) => {
         pass: !started.info && /not the artefact this build pinned/i.test(started.error ?? ""),
         detail: JSON.stringify((started.error ?? "").split("\n").slice(0, 2)),
       });
-    }
-    {
+    });
+    await phase("refusal: missing add-on directory", 180_000, async () => {
       const server = await open(
         { profile: "xarray-zarr", addons: ["dask"], addonBaseURL: "/nowhere/" },
         { "/addons/": ADDONS },
@@ -411,8 +418,8 @@ const result = await inBrowser(async (page) => {
           /Restarting requests the same URL and gets the same answer/.test(message),
         detail: JSON.stringify(message.split("\n").slice(0, 2)),
       });
-    }
-    {
+    });
+    await phase("refusal: add-on the profile cannot carry", 180_000, async () => {
       const server = await open(
         { profile: "minimal", addons: ["dask"], addonBaseURL: "/addons/" },
         { "/addons/": ADDONS },
@@ -423,10 +430,10 @@ const result = await inBrowser(async (page) => {
         pass: !started.info && /does not work with the 'minimal' profile/.test(started.error ?? ""),
         detail: JSON.stringify((started.error ?? "").split("\n").slice(0, 2)),
       });
-    }
+    });
 
     // 4. Absence
-    {
+    await phase("absence: no add-ons configured", 240_000, async () => {
       const server = await open({ profile: "xarray-zarr" }, { "/addons/": ADDONS });
       const outside = external(page, server);
       const started = await ready(server);
@@ -459,11 +466,16 @@ const result = await inBrowser(async (page) => {
           "__import__('importlib.util', fromlist=['x']).find_spec('dask') is None",
         ),
       });
-    }
+    });
 
-    return { checks, notApplicable };
+    return await finish();
+  } catch (error) {
+    checks.push(phaseFailureCheck(error));
+    return await finish();
   } finally {
-    for (const server of servers) await server.close();
+    for (const server of servers) {
+      await withDeadline(server.close(), 10_000, "closing a fixture server").catch(() => {});
+    }
   }
 });
 

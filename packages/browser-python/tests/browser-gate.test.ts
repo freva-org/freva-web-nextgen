@@ -868,6 +868,28 @@ describe("WebKit fixes stay capability-driven and narrow", () => {
     expect(source).not.toMatch(/await (server|allowed|blocked)\.close\(\);/);
   });
 
+  it("the add-ons suite runs every section as a named phase with a deadline", () => {
+    const source = read("addons.mjs");
+    expect(source).toContain(
+      'createPhases("addons", { onDeadline: () => page.context().close() })',
+    );
+    for (const phase of [
+      "Dask add-on, end to end",
+      "Cartopy add-on, offline",
+      "refusal: tampered wheel",
+      "refusal: corrupt Natural Earth file",
+      "refusal: missing add-on directory",
+      "refusal: add-on the profile cannot carry",
+      "absence: no add-ons configured",
+    ]) {
+      expect(source, phase).toContain(`await phase("${phase}"`);
+    }
+    // A deadline keeps the checks already made, and names the phase.
+    expect(source).toContain("checks.push(phaseFailureCheck(error));");
+    expect(source).toContain("checks.push(...(await cleanupChecks(phases)));");
+    expect(source).not.toMatch(/await server\.close\(\);/);
+  });
+
   it("the Waterpark suite runs every step as a named phase with a deadline", () => {
     const source = read("embedding-waterpark.mjs");
     expect(source).toContain('createPhases("embedding-waterpark"');
