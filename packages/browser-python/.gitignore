@@ -2,6 +2,7 @@
 dist/
 .measure/
 .testbundle/
-.out/
 .addons/
 .build-stamp.json
+# Console state captures from scripts/console-screenshots.mjs, for review by eye.
+screenshots/

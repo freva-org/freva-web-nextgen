@@ -19,8 +19,6 @@ packages/browser-python/.runtime/
 # Scratch bundles written by the browser suites and the size measurement.
 packages/browser-python/.testbundle/
 packages/browser-python/.measure/
-# The hand-off build written by the bundling step: tarball, standalone bundle, demo page.
-packages/browser-python/.out/
 # Console state captures, written by scripts/console-screenshots.mjs for review by eye.
 packages/browser-python/screenshots/
 # The prepared curated add-on directory: pinned third-party artefacts, not this project's source.
