@@ -15,16 +15,18 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky",
+    "prepare": "husky || echo \"husky not installed - git hooks were not set up. That is expected for a build-only or --omit=dev install; run npm ci at the repo root to get them.\"",
     "changeset": "changeset",
-    "version-packages": "changeset version"
+    "version-packages": "changeset version",
+    "stac:prepare": "npm run prepare:upstream -w @freva-org/stac-browser --",
+    "stac:cache-key": "npm run cache-key -w @freva-org/stac-browser --"
   },
   "lint-staged": {
-    "*.{ts,tsx,js}": [
+    "!(packages/stac-browser/.upstream/**)*.{ts,tsx,js,mjs,cjs}": [
       "eslint --fix",
       "prettier --write"
     ],
-    "*.{json,md,yml,yaml}": [
+    "!(packages/stac-browser/.upstream/**)*.{json,md,yml,yaml}": [
       "prettier --write"
     ]
   },

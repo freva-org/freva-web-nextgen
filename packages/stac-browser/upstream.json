@@ -1,0 +1,184 @@
+{
+  "$comment": "THE authoritative STAC Browser recipe, and the pin every script and test reads. Freva owns this centrally: no deployment forks it, copies its patches or keeps its own upstream pin. A deployment decides only whether the closed 'stac-browser' component is enabled and which STAC API it points at. Everything about HOW the application is constructed - revision, patches, toolchain, build settings, and the shape of the result - is recorded here and nowhere else. Changing any value is a reviewed source change; see UPSTREAM.md.",
+  "schemaVersion": 1,
+  "kind": "stac-browser-recipe",
+  "recipeVersion": "2609.3.0",
+  "name": "@radiantearth/stac-browser",
+  "repository": "https://github.com/radiantearth/stac-browser.git",
+  "tag": "v5.0.0",
+  "commit": "ae1956e8cb2067ce27938b3ae70c00515ac0ff33",
+  "license": "ISC",
+  "licenseFile": "LICENSE",
+  "buildMode": "minimal",
+  "config": {
+    "pathPrefix": "/stac/",
+    "historyMode": "hash",
+    "catalogTitle": "STAC Browser"
+  },
+  "lockfile": "package-lock.json",
+  "lockfileDigest": "sha256:5985fa481e9e0da6caa9bd76e6e0a83b444468c2ea0591b535d16ce8aba2cc36",
+  "licenseDigest": "sha256:1e8db07d8b22c7259397a6395be7c939bf02b178c601ae4326efa13d929bca86",
+  "noticeFile": "THIRD_PARTY_NOTICES.md",
+  "toolchain": {
+    "$comment": "The versions the recorded output was produced with. Preparation refuses a major mismatch rather than producing a differently-bundled artifact under the same digests. These are also inputs to the cache key.",
+    "node": "24",
+    "nodeRange": ">=22 <25",
+    "npm": ">=10"
+  },
+  "patches": {
+    "$comment": "Ordered by filename, applied in that order, from a clean checkout of the pinned commit. Every entry carries a digest, an owner and the condition under which it can be dropped, because a patch nobody can justify is a patch nobody will remove.",
+    "directory": "patches",
+    "series": [
+      {
+        "name": "0001-mount-into-the-portal-host-element.patch",
+        "digest": "sha256:9ba41efed23399dd6ad8e0c88c689492e661c90632bcfe3054da3771d7eac044",
+        "files": ["src/init.js"],
+        "owner": "freva-data-portal maintainers",
+        "why": "Upstream mounts on <body> because upstream owns the document. The portal hosts the application inside its own shell.",
+        "changes": "app.mount('body') becomes a mount into #stac-browser-mount, failing closed when the element is absent and releasing any prior instance.",
+        "affects": "integration",
+        "requiredBy": "browser-tests/run.mjs - the STAC route keeps the portal header, navigation and footer",
+        "removableWhen": "upstream accepts a configurable mount target"
+      },
+      {
+        "name": "0002-expose-init-for-re-entry.patch",
+        "digest": "sha256:5d3bd8d40329cc02c5ae69779d0f235412717d9eae26a79d1c214d34454b74e5",
+        "files": ["src/main.js"],
+        "owner": "freva-data-portal maintainers",
+        "why": "An ES module is evaluated once per document, so upstream's bare init() at the bottom of main.js runs on the first visit only.",
+        "changes": "Publishes window.STAC_BROWSER_INIT so the portal can re-mount on every later entry to the route.",
+        "affects": "integration",
+        "requiredBy": "browser-tests/run.mjs - leaving and re-entering the STAC route re-mounts the application",
+        "removableWhen": "upstream exports its initializer, or the portal stops using a client-side route for STAC"
+      },
+      {
+        "name": "0003-follow-the-host-theme.patch",
+        "digest": "sha256:cf490a322f0f79b2471ddbac2731373e2d50c630df316f0d5c5c9646b6696f9c",
+        "files": ["src/StacBrowser.vue"],
+        "owner": "freva-data-portal maintainers",
+        "why": "Two theme controls on one page is a defect, and writing data-bs-theme from outside repaints only the application's shell - its maps, code blocks and tables stay behind.",
+        "changes": "Scopes the colour attribute to the mount, assigns STAC's own reactive colorMode from the portal's data-theme so its watcher commits to the store, and hides upstream's own toggle while the sync is active.",
+        "affects": "rendering",
+        "requiredBy": "browser-tests/run.mjs - flipping the portal theme repaints the embedded application",
+        "removableWhen": "upstream supports an externally driven colour mode that reaches the store"
+      },
+      {
+        "name": "0004-do-not-scroll-lock-the-host-document.patch",
+        "digest": "sha256:c4552ae0fe9d1d73aa73a1972de425956e87099d6ecb2f04f6e78fa727122f29",
+        "files": ["src/components/Sidebar.vue"],
+        "owner": "freva-data-portal maintainers",
+        "why": "The Browse drawer sets overflow:hidden on the host document, which freezes the whole portal, not just the embed.",
+        "changes": "Adds body-scrolling to the offcanvas and namespaces the body class it does set.",
+        "affects": "integration",
+        "requiredBy": "browser-tests/run.mjs - the portal still scrolls while the STAC drawer is open",
+        "removableWhen": "upstream's offcanvas stops locking the document, or the embed moves to its own scroll container"
+      },
+      {
+        "name": "0005-open-the-validation-report-in-a-new-tab.patch",
+        "digest": "sha256:72e7cd838e807c059eba6ad92193cdb0fe93aa68ac318b6094c1141f75379cc0",
+        "files": ["src/components/Validation.vue"],
+        "owner": "freva-data-portal maintainers",
+        "why": "The Source valid/invalid tick links to a route of the embedded application. Following it in place replaces the portal's own page with the report: the visitor loses the shell, and the back button lands them somewhere they did not come from.",
+        "changes": "Keeps the tick and its verdict; resolves the validation route to an absolute URL and opens it with target=_blank and rel=noopener noreferrer instead of an in-place router navigation.",
+        "affects": "integration",
+        "requiredBy": "browser-tests/run.mjs - the validation control leaves the portal page standing",
+        "removableWhen": "upstream offers a way to open its own routes in a new context, or the report becomes a portal route of its own"
+      },
+      {
+        "name": "0006-teleport-the-example-code-modal-into-the-embed.patch",
+        "digest": "sha256:0bcc56b0222832d61e1e1b5d1cbb05f2dcac614997a4f8bd751f732181ea2f0b",
+        "files": ["src/components/SearchFilter.vue"],
+        "owner": "freva-data-portal maintainers",
+        "why": "The search 'example code' modal teleports to document.body by default, which puts it outside #stac-browser - outside everything the containment pass scoped, so it is unstyled and it escapes the mount the embed is supposed to stay inside.",
+        "changes": "Adds teleport-to=\"#stac-browser\" to the modal, which is the same mechanism upstream already uses for its own offcanvas.",
+        "affects": "integration",
+        "requiredBy": "browser-tests/run.mjs - nothing the embed opens renders outside its mount",
+        "removableWhen": "upstream teleports its modals into its own root by default"
+      },
+      {
+        "name": "0007-open-the-catalogue-description-expanded.patch",
+        "digest": "sha256:64567f9f827e5b8d16b45a26b7a4ee0fbdb6108b81b21860963f34d9da3c02ad",
+        "files": ["src/components/ReadMore.vue"],
+        "owner": "freva-data-portal maintainers",
+        "why": "On a landing page the catalogue description IS the content, and opening it clamped to three lines with a 'Read more' reads as a broken paragraph rather than as a summary.",
+        "changes": "Defaults ReadMore to expanded and sets the measured height on mount. The toggle still collapses and re-expands.",
+        "affects": "rendering",
+        "requiredBy": "browser-tests/run.mjs - the description renders in full on load",
+        "removableWhen": "upstream exposes an initial-expansion prop"
+      },
+      {
+        "name": "0008-ask-before-fetching-a-third-party-basemap.patch",
+        "digest": "sha256:300de3057acf09e85dcc4493b28386fa6e51b4383d972f7df7f5a39b3580a8f6",
+        "files": ["basemaps.config.js"],
+        "owner": "freva-data-portal maintainers",
+        "why": "Upstream's basemap table fetches tiles from openstreetmap.org and usgs.gov on every document with a footprint. The portal publishes a self-contained artifact under default-src 'none', so those requests were refused and the map drew blank: a broken feature and a console full of violations on every collection and item page.",
+        "changes": "Filters the configured layers to origins the deployment listed in allowedBasemapOrigins, read from the runtime configuration. The default is the empty list, so no third-party request is made unless a deployment asked for one; the same statement puts the origin into the artifact's img-src, and upstream's own attribution metadata rides along with the layer.",
+        "affects": "rendering",
+        "requiredBy": "browser-tests/run.mjs - an item with a footprint makes no third-party request and raises no CSP violation",
+        "removableWhen": "upstream makes the basemap set a runtime option, or the portal decides to allow third-party tiles unconditionally"
+      },
+      {
+        "name": "0009-place-the-portal-introduction-in-the-catalogue-column.patch",
+        "digest": "sha256:4506ab27bcfea05644eb51f9eaee17bd75a02c943f756643764f8ff3bd4f59e6",
+        "files": ["widgets.config.js", "src/components/Providers.vue"],
+        "owner": "freva-data-portal maintainers",
+        "why": "A portal that embeds a catalogue has something to say about it, and upstream renders a description from the STAC document alone. Rendered through the portal's own pipeline it cannot be a `description` - that field is CommonMark rendered with safe:true - so without a placement it can only be stacked above the application, where it reads as a separate page with the catalogue's toolbar and title beneath it.",
+        "changes": "Adds a widget on upstream's own `view-catalog-meta-start` hook that moves the portal's already-rendered introduction fragment into the top of `section.intro` - the item the metadata row shares with the providers - and puts it back when the view is torn down. Also renders a `logo` on a provider when the host has put one there, and keeps such a provider in the simple list.",
+        "affects": "presentation",
+        "requiredBy": "browser-tests/run.mjs - the catalogue introduction is rendered inside the catalogue's own column",
+        "removableWhen": "upstream renders host-supplied HTML in the catalogue view, or the portal stops introducing the catalogues it embeds"
+      }
+    ]
+  },
+  "patchedTree": {
+    "$comment": "The complete set of paths the preparation is allowed to have modified after applying the series. Anything else dirty in the checkout - a repository-wide formatter, a stray edit, a partially applied patch - stops the build. index.html is listed because the runtime-config markers are uncommented rather than patched.",
+    "files": [
+      "basemaps.config.js",
+      "index.html",
+      "src/StacBrowser.vue",
+      "src/components/ReadMore.vue",
+      "src/components/SearchFilter.vue",
+      "src/components/Sidebar.vue",
+      "src/components/Validation.vue",
+      "src/init.js",
+      "src/components/Providers.vue",
+      "src/main.js",
+      "widgets.config.js"
+    ],
+    "indexHtmlAllowedDiff": ["<!--RC", "RC-->"]
+  },
+  "build": {
+    "$comment": "Upstream's own no-sourcemap build, with runtime configuration enabled. DYNAMIC_CONFIG makes assets document-relative; historyMode 'hash' keeps a deep link surviving a reload on a plain static server with no rewrite rules and unable to collide with the portal shell's own history fallback.",
+    "mode": "minimal",
+    "script": "build:minimal",
+    "install": "npm ci --no-audit --no-fund",
+    "env": {
+      "DYNAMIC_CONFIG": "true",
+      "NODE_ENV": "production",
+      "SB_pathPrefix": "/stac/",
+      "SB_historyMode": "hash",
+      "SB_catalogTitle": "STAC Browser"
+    }
+  },
+  "output": {
+    "$comment": "The shape the prepared tree must have. These are assertions about the result, not instructions for producing it: a build that stops emitting a module entry, or starts emitting a service worker, has changed in a way the adapter cannot absorb silently.",
+    "$serviceWorker": "sw.js is upstream's StreamSaver worker and is part of the download feature, so it is prepared rather than forbidden. It is recorded here because a service worker that calls clients.claim() on the portal's own origin is a wider scope than the embed, and that is a live review question listed in the handoff - not something this refactor decided.",
+    "mountId": "stac-browser-mount",
+    "entryPattern": "^assets/index-[A-Za-z0-9_-]+\\.js$",
+    "stylePattern": "^assets/index-[A-Za-z0-9_-]+\\.css$",
+    "minStyles": 1,
+    "requiredFiles": ["LICENSES/stac-browser-ISC.txt", "THIRD_PARTY_NOTICES.md"],
+    "forbiddenFiles": ["index.html", "runtime-config.js", "mockServiceWorker.js"],
+    "minFiles": 100
+  },
+  "adapterContract": {
+    "$comment": "The reviewed upstream option surface the closed portal adapter is permitted to drive, for exactly this pin. Recorded here so that moving the pin forces the contract to be re-stated and the option list re-read.",
+    "file": "adapter-contract.json",
+    "schemaVersion": 1
+  },
+  "expected": {
+    "$comment": "The tree digest a verified preparation from these inputs produces on the recorded toolchain. It is an expectation, not a gate: upstream's bundler is not byte-reproducible across every environment, so preparation reports a mismatch loudly and the portal build still verifies the manifest it was actually given. A mismatch means 'find out why before shipping', not 'stop'.",
+    "materialsTreeDigest": "sha256:d857436e0964a3c825010909c735f4bc727cdfe55437070caec121165910093d",
+    "fileCount": 657
+  }
+}

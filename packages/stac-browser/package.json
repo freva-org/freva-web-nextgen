@@ -1,0 +1,37 @@
+{
+  "name": "@freva-org/stac-browser",
+  "private": true,
+  "version": "2608.0.0",
+  "description": "Private workspace holding Freva's centrally owned recipe for building Radiant Earth's STAC Browser into materials an enabled portal can embed. Never published, and never run unless a deployment enables the stac-browser component.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/stac-browser"
+  },
+  "license": "BSD-3-Clause",
+  "scripts": {
+    "prepare:upstream": "node scripts/prepare.mjs",
+    "cache-key": "node scripts/prepare.mjs --cache-key",
+    "build": "node -e \"console.log('stac-browser: nothing to build by default; run prepare:upstream, which fetches and builds upstream')\"",
+    "build:upstream": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
+    "prepare:materials": "node scripts/prepare-materials.mjs"
+  },
+  "$scriptsComment": "There is deliberately no script named exactly 'prepare'. npm runs 'prepare' for every workspace during 'npm ci' and 'npm install', so that name would fetch and compile a third-party application - and install its ~800 dependencies - on every ordinary bootstrap, which is the one thing this workspace exists to avoid. tests/no-install-hooks.test.mjs enforces it.",
+  "files": [
+    "scripts",
+    "patches",
+    "tests",
+    "upstream.json",
+    "adapter-contract.json",
+    "LICENSE",
+    "LICENSES",
+    "THIRD_PARTY_NOTICES.md",
+    "UPSTREAM.md",
+    "PATCH_PROVENANCE.md",
+    ".nvmrc"
+  ],
+  "$filesComment": "An allow-list, not an ignore-list. This workspace is private and is never published, but a private flag is one boolean away from being wrong, and what would then be published is a compiled third-party application plus its upstream checkout. What is listed here is the RECIPE: the pin, the reviewed patch series, the scripts and the licence evidence. dist/, materials/ and .upstream/ are absent by construction rather than by .gitignore."
+}

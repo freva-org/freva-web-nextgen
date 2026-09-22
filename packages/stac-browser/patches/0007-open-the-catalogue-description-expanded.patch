@@ -1,0 +1,27 @@
+diff --git a/src/components/ReadMore.vue b/src/components/ReadMore.vue
+index 3843319..24a1e7a 100644
+--- a/src/components/ReadMore.vue
++++ b/src/components/ReadMore.vue
+@@ -34,7 +34,7 @@ export default defineComponent({
+   data() {
+     return {
+       readmore: false,
+-      expanded: false,
++      expanded: true,
+       inMaxRange: false
+     };
+   },
+@@ -66,6 +66,13 @@ export default defineComponent({
+ 
+       this.$refs.to.style.setProperty("--lineHeight", lh + "px");
+       this.$refs.ht.style.setProperty("--lineHeight", lh + "px");
++
++      // Freva embed: start expanded. A catalogue description that opens clamped to three lines
++      // reads as a broken paragraph on a landing page, where the description IS the content. The
++      // toggle still works both ways, so a reader can still collapse it.
++      if (this.expanded && !this.inMaxRange) {
++        this.$refs.to.style.setProperty("max-height", this.$refs.to.scrollHeight + "px");
++      }
+     });
+   },
+   methods: {

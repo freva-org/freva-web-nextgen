@@ -1,0 +1,37 @@
+diff --git a/src/init.js b/src/init.js
+index 2d44994..41837fd 100644
+--- a/src/init.js
++++ b/src/init.js
+@@ -46,6 +46,31 @@ export default function init() {
+     app.use(router);
+     app.use(store);
+ 
+-    return app.mount("body");
++    // Freva embed: mount into the portal's host element rather than <body>.
++    //
++    // Upstream mounts on <body> because upstream owns the document. Inside the
++    // portal it does not: the shell's header, footer and router are siblings of
++    // this application, and mounting on <body> would replace them.
++    //
++    // Fail closed rather than fall back to <body>: if the host element is
++    // missing the portal has a bug, and taking the page over would hide it.
++    const target = document.getElementById("stac-browser-mount");
++    if (!target) {
++      return null;
++    }
++    // Re-entering the route evaluates nothing new - the module is already in
++    // memory - so a previous instance must be released here, not leaked.
++    if (window.__FREVA_STAC_APP__) {
++      try {
++        window.__FREVA_STAC_APP__.unmount();
++      } catch (error) {
++        // An app that cannot be unmounted must not block the new one.
++      }
++      window.__FREVA_STAC_APP__ = null;
++      target.replaceChildren();
++    }
++    const mounted = app.mount(target);
++    window.__FREVA_STAC_APP__ = app;
++    return mounted;
+   });
+ }

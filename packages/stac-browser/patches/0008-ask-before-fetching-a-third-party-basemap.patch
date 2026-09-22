@@ -1,0 +1,57 @@
+diff --git a/basemaps.config.js b/basemaps.config.js
+index 9c2402b..4b43d46 100644
+--- a/basemaps.config.js
++++ b/basemaps.config.js
+@@ -62,6 +62,44 @@ const BASEMAPS = {
+   ],
+ };
+ 
++/**
++ * Freva embed: a basemap layer is a third-party request, so a deployment has to ask for it.
++ *
++ * Every layer above is fetched from somebody else's server - openstreetmap.org, usgs.gov - once per
++ * tile, from the visitor's browser, on every document that has a footprint. The portal that hosts
++ * this application publishes a self-contained artifact under `default-src 'none'`, so those
++ * requests were refused by the browser and the map drew blank: a broken feature and a console full
++ * of policy violations, on every collection and item page.
++ *
++ * The layers are not removed, because the answer is not "never" - it is "not unless this deployment
++ * said so". `allowedBasemapOrigins` is a list of origins the portal's configuration states, and the
++ * same statement is what puts those origins into the artifact's `img-src`. Default is the empty
++ * list: no third-party request, and a map that shows the footprint over blank ground.
++ *
++ * Attribution rides along with each layer, so a deployment that enables OpenStreetMap gets the
++ * attribution OpenStreetMap's tile policy requires, from upstream's own metadata.
++ *
++ * @returns {Array.<String>} origins this deployment has allowed basemap tiles to be fetched from
++ */
++function allowedBasemapOrigins() {
++  const config = typeof window !== 'undefined' ? window.STAC_BROWSER_CONFIG : null;
++  const allowed = config && config.allowedBasemapOrigins;
++  return Array.isArray(allowed) ? allowed : [];
++}
++
++function isAllowed(layer, allowed) {
++  if (allowed.length === 0 || !layer || typeof layer.url !== 'string') {
++    return false;
++  }
++  try {
++    // The template placeholders ({z}/{x}/{y}) are not valid URL characters everywhere, but they
++    // never appear in the origin, which is the only part being compared.
++    return allowed.includes(new URL(layer.url).origin);
++  } catch (error) {
++    return false;
++  }
++}
++
+ /**
+  * 
+  * @param {Object} stac The STAC object
+@@ -96,5 +134,6 @@ export default function configureBasemap(stac, i18n, store) {
+     }
+     layers = layers.concat(maps);
+   }
+-  return layers;
++  const allowed = allowedBasemapOrigins();
++  return layers.filter(layer => isAllowed(layer, allowed));
+ };

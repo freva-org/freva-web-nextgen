@@ -1,0 +1,25 @@
+diff --git a/src/components/Sidebar.vue b/src/components/Sidebar.vue
+index 4f8dc12..5b6c0fe 100644
+--- a/src/components/Sidebar.vue
++++ b/src/components/Sidebar.vue
+@@ -2,6 +2,7 @@
+   <b-offcanvas
+     initial-animation id="sidebar" :model-value="modelValue" @update:model-value="emit"
+     :title="$t('browse')" teleport-to="#stac-browser" footer-class="offcanvas-footer"
++    body-scrolling
+   >
+     <template #default>
+       <Loading v-if="loading" />
+@@ -58,10 +59,10 @@ export default {
+         }
+ 
+         if (visible) {
+-          document.body.classList.add("sidebar");
++          document.body.classList.add("stac-browser-sidebar");
+         }
+         else {
+-          document.body.classList.remove("sidebar");
++          document.body.classList.remove("stac-browser-sidebar");
+         }
+       }
+     },

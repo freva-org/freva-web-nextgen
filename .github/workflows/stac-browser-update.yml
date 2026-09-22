@@ -1,0 +1,263 @@
+name: Check STAC Browser releases
+
+on:
+  schedule:
+    - cron: "0 3 * * 5"
+  workflow_dispatch: {}
+  # Every change to the recipe - the bot's own bump PRs included - is built before it can merge.
+  pull_request:
+    paths:
+      - "packages/stac-browser/upstream.json"
+      - "packages/stac-browser/adapter-contract.json"
+      - "packages/stac-browser/patches/**"
+      - "packages/stac-browser/scripts/**"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: stac-browser-${{ github.event_name == 'pull_request' && github.ref || 'reconcile' }}
+  cancel-in-progress: true
+
+jobs:
+  candidate-check:
+    name: stac-browser (build at the pin)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/stac-browser/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build STAC Browser at the pinned release
+        run: npm run stac:prepare -- --out "$RUNNER_TEMP/materials"
+
+  reconcile:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/stac-browser/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # A PR opened with GITHUB_TOKEN triggers no workflows, so its checks never run and
+      # auto-merge never fires. The app token is what makes the green path land on its own.
+      - name: Create freva-bot app token
+        id: app-token
+        if: ${{ vars.FREVA_BOT_APP_ID != '' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FREVA_BOT_APP_ID }}
+          private-key: ${{ secrets.FREVA_BOT_PRIVATE_KEY }}
+
+      - name: Pick token
+        id: tok
+        run: |
+          if [ -n "${{ steps.app-token.outputs.token }}" ]; then
+            echo "token=${{ steps.app-token.outputs.token }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "token=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The recipe pins a stable release (tests/upstream-pin.test.mjs), so this follows
+      # upstream's newest vX.Y.Z tag rather than main. Release candidates are skipped: `sort -V`
+      # would otherwise put v5.1.0-rc.1 after v5.1.0. `^{}` peels an annotated tag to its commit.
+      - name: Resolve current pin and upstream's newest release
+        id: resolve
+        run: |
+          set -euo pipefail
+          PIN=packages/stac-browser/upstream.json
+          REPO=$(node -p "require('./$PIN').repository")
+          OLD=$(node -p "require('./$PIN').commit")
+          OLD_TAG=$(node -p "require('./$PIN').tag")
+          TAG=$(git ls-remote --tags --refs "$REPO" 'v*' | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          NEW=$(git ls-remote "$REPO" "refs/tags/$TAG^{}" | cut -f1)
+          [ -n "$NEW" ] || NEW=$(git ls-remote "$REPO" "refs/tags/$TAG" | cut -f1)
+          {
+            echo "repo=$REPO"
+            echo "old=$OLD"
+            echo "old_tag=$OLD_TAG"
+            echo "new=$NEW"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$OLD" = "$NEW" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already pinned to upstream's newest release $TAG ($NEW); nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Pin $OLD_TAG ($OLD) -> $TAG ($NEW)"
+          fi
+
+      - name: Update the pin
+        id: pin
+        if: steps.resolve.outputs.changed == 'true'
+        run: >-
+          node packages/stac-browser/scripts/pin.mjs
+          --commit "${{ steps.resolve.outputs.new }}"
+          --tag "${{ steps.resolve.outputs.tag }}"
+
+      - name: Try to build at the new upstream release
+        id: build
+        if: steps.resolve.outputs.changed == 'true'
+        run: |
+          set -o pipefail
+          if npm run stac:prepare -- --out "$RUNNER_TEMP/materials" 2>&1 | tee "$RUNNER_TEMP/build.log"; then
+            node packages/stac-browser/scripts/pin.mjs --materials "$RUNNER_TEMP/materials"
+            echo "green=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "green=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the PR body
+        id: body
+        if: steps.resolve.outputs.changed == 'true'
+        run: |
+          OLD='${{ steps.resolve.outputs.old }}'
+          NEW='${{ steps.resolve.outputs.new }}'
+          OLD_TAG='${{ steps.resolve.outputs.old_tag }}'
+          TAG='${{ steps.resolve.outputs.tag }}'
+          SCB="$RUNNER_TEMP/stac-browser"
+          # History only, no file contents: enough for the commit list and the changed paths.
+          git init -q "$SCB"
+          git -C "$SCB" remote add origin '${{ steps.resolve.outputs.repo }}'
+          git -C "$SCB" fetch -q --filter=blob:none origin "$NEW" 2>/dev/null || true
+          git -C "$SCB" fetch -q --filter=blob:none origin "$OLD" 2>/dev/null || true
+          # The files our patches touch, from the recipe, plus the two upstream documents the
+          # adapter contract was reviewed against.
+          WATCHED=$(node -p "[...new Set([...require('./packages/stac-browser/upstream.json').patches.series.flatMap((p) => p.files), 'docs/options.md', 'config.schema.json'])].join('\n')")
+          {
+            short() { git -C "$SCB" rev-parse --short "$1" 2>/dev/null || echo "${1:0:7}"; }
+            SHORT_NEW=$(short "$NEW"); SHORT_OLD=$(short "$OLD")
+            SUBJECT=$(git -C "$SCB" log -1 --format='%s' "$NEW" 2>/dev/null || echo "$TAG")
+            echo "Bumps the pinned [STAC Browser](https://github.com/radiantearth/stac-browser) release that \`npm run stac:prepare\` builds."
+            echo ""
+            echo "**Upstream bump:** \`$OLD_TAG\` (\`$SHORT_OLD\`) to \`$TAG\` (\`$SHORT_NEW\`)"
+            echo ""
+            if git -C "$SCB" rev-parse -q --verify "$OLD^{commit}" >/dev/null 2>&1; then
+              N=$(git -C "$SCB" log --no-merges --oneline "$OLD..$NEW" | wc -l | tr -d ' ')
+              echo "**$N upstream commit(s):**"
+              echo ""
+              # --max-count, not `| head`: under the runner's pipefail, head closing the pipe
+              # early kills the step with SIGPIPE once there are more than 50 commits.
+              git -C "$SCB" log --no-merges --date=short --max-count=50 \
+                --pretty='- `%h` %s _(%cd)_' "$OLD..$NEW"
+              if [ "$N" -gt 50 ]; then echo "- _… and $((N - 50)) more_"; fi
+              echo ""
+              # Flag changes to files our patches / adapter contract depend on.
+              HITS=$(git -C "$SCB" diff --name-only "$OLD..$NEW" | grep -Fx -f <(echo "$WATCHED") || true)
+              if [ -n "$HITS" ]; then
+                echo "> ⚠️ **Touches files our patches depend on:**"
+                echo "$HITS" | sed 's/^/> - `/; s/$/`/'
+                echo ">"
+                if [ "${{ steps.build.outputs.green }}" = "true" ]; then
+                  echo "> IMPORTANT: The build passed, so the patches still applied"
+                else
+                  echo "> IMPORTANT: Start here, the build did not pass"
+                fi
+              else
+                echo "_None of the patched files changed in this range._"
+              fi
+            else
+              echo "_Previous pin \`$OLD\` isn't reachable in upstream history (force-push?); commit list unavailable._"
+            fi
+            echo ""
+            if [ "${{ steps.pin.outputs.lockfile }}" = "changed" ]; then
+              echo "📦 Upstream's \`package-lock.json\` changed; the new digest is recorded in \`upstream.json\`."
+              echo ""
+            fi
+            if [ "${{ steps.pin.outputs.licence }}" = "changed" ]; then
+              echo "⚖️ **Upstream's LICENSE changed.** The recipe keeps the reviewed digest, so preparation refuses until someone has read it."
+              echo ""
+            fi
+            if [ "${{ steps.build.outputs.green }}" = "true" ]; then
+              echo "---"
+              echo "🕊️ \`npm run stac:prepare\` built cleanly at the new release; this lands once CI is green."
+            else
+              echo "---"
+              echo "### 🫤🥊 Build failed at the new upstream release"
+              echo ""
+              echo "\`main\` still pins the last green release (\`$OLD_TAG\`, \`$SHORT_OLD\`). This **draft** PR pins the new one so a maintainer can fix it forward"
+              echo ""
+              echo "<details><summary>Last lines of the build log</summary>"
+              echo ""
+              echo '```'
+              tail -n 60 "$RUNNER_TEMP/build.log"
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+          } > "$RUNNER_TEMP/pr-body.md"
+          echo "path=$RUNNER_TEMP/pr-body.md" >> "$GITHUB_OUTPUT"
+          echo "short_new=$SHORT_NEW" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
+          echo "count=${N:-?}" >> "$GITHUB_OUTPUT"
+
+      - name: Open / update green PR
+        id: green-pr
+        if: steps.resolve.outputs.changed == 'true' && steps.build.outputs.green == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ steps.tok.outputs.token }}
+          add-paths: |
+            packages/stac-browser/upstream.json
+            packages/stac-browser/adapter-contract.json
+            README.md
+          branch: bump-stac-browser/${{ steps.resolve.outputs.new }}
+          delete-branch: true
+          base: main
+          commit-message: "stac-browser: bump pin to ${{ steps.resolve.outputs.tag }} (${{ steps.resolve.outputs.new }})"
+          committer: "freva-bot <freva-bot@users.noreply.github.com>"
+          author: "freva-bot <freva-bot@users.noreply.github.com>"
+          title: "⬆️ Bump STAC Browser to ${{ steps.resolve.outputs.tag }} (${{ steps.body.outputs.short_new }})"
+          body-path: ${{ steps.body.outputs.path }}
+          reviewers: "tropicrainforest"
+          labels: |
+            stac-browser
+
+      - name: Enable auto-merge on the green PR
+        if: steps.green-pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+        run: |
+          gh pr merge --auto --squash \
+            "${{ steps.green-pr.outputs.pull-request-number }}" || \
+            echo "::warning::could not enable auto-merge (check branch protection / repo settings)"
+
+      - name: Open / update red draft PR
+        id: red-pr
+        if: steps.resolve.outputs.changed == 'true' && steps.build.outputs.green == 'false'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ steps.tok.outputs.token }}
+          add-paths: |
+            packages/stac-browser/upstream.json
+            packages/stac-browser/adapter-contract.json
+            README.md
+          branch: stac-browser-candidate/${{ steps.resolve.outputs.new }}
+          delete-branch: false
+          base: main
+          draft: true
+          commit-message: "stac-browser: candidate pin ${{ steps.resolve.outputs.tag }} (build red)"
+          committer: "freva-bot <freva-bot@users.noreply.github.com>"
+          author: "freva-bot <freva-bot@users.noreply.github.com>"
+          title: "🚨 STAC Browser Build failed: Can't bump to ${{ steps.resolve.outputs.tag }} (${{ steps.body.outputs.short_new }})"
+          body-path: ${{ steps.body.outputs.path }}
+          reviewers: "tropicrainforest"
+          labels: |
+            stac-browser
