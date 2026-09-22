@@ -207,6 +207,15 @@ jobs:
       - name: The runtime is complete
         run: node packages/browser-python/scripts/check-runtime.mjs
 
+      - name: Cache the prepared add-ons
+        uses: actions/cache@v4
+        with:
+          path: packages/browser-python/.addons
+          key: addons-${{ hashFiles('packages/browser-python/bin/freva-addons.json') }}
+
+      - name: Prepare the add-ons
+        run: node packages/browser-python/bin/freva-browser-python.mjs prepare-addons --out packages/browser-python/.addons
+
       - name: Install Playwright ${{ matrix.engine }}
         run: npm exec -w $PKG -- playwright install --with-deps ${{ matrix.engine }}
 
