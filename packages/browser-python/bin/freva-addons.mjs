@@ -111,10 +111,41 @@ export function verifyAddons(dir, ids) {
   return problems;
 }
 
-async function fetchPinned(artifact) {
-  const response = await fetch(artifact.url, { redirect: "follow" });
-  if (!response.ok) throw new Error(`${artifact.url} responded ${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
+/**
+ * How many times a pinned artefact is fetched before the failure is reported, and the pause before
+ * each retry. A download from a public index fails now and then for reasons that have nothing to
+ * do with the artefact - a reset connection, a 503 from a CDN edge - and one such blip used to fail
+ * a whole CI job. Retrying is safe because nothing is trusted on arrival: every attempt is checked
+ * against the pinned SHA-256, and a mismatch, a 404 or any other client error is never retried.
+ */
+export const FETCH_ATTEMPTS = 4;
+export const FETCH_BACKOFF_MS = [1_000, 3_000, 9_000];
+
+/** A failure worth another attempt: the network, a timeout, a 408, a 429, or a server error. */
+export function transientFetchFailure(error) {
+  if (error?.status !== undefined) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  // `fetch` rejects with a TypeError ("fetch failed") for DNS, reset and refused connections.
+  return error?.name === "TypeError" || error?.name === "AbortError" || error?.transient === true;
+}
+
+async function fetchOnce(artifact, fetchImpl) {
+  const response = await fetchImpl(artifact.url, { redirect: "follow" });
+  if (!response.ok) {
+    const error = new Error(`${artifact.url} responded ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  let bytes;
+  try {
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch (cause) {
+    // The body broke off part way: the same kind of blip as a failed connection.
+    const error = new Error(`${artifact.url}: the download broke off (${cause?.message ?? cause})`);
+    error.transient = true;
+    throw error;
+  }
   const digest = sha256(bytes);
   if (digest !== artifact.sha256) {
     throw new Error(
@@ -123,6 +154,25 @@ async function fetchPinned(artifact) {
     );
   }
   return bytes;
+}
+
+export async function fetchPinned(
+  artifact,
+  { fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {} } = {},
+) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fetchOnce(artifact, fetchImpl);
+    } catch (error) {
+      if (attempt >= FETCH_ATTEMPTS || !transientFetchFailure(error)) {
+        if (attempt > 1) error.message += ` (after ${attempt} attempts)`;
+        throw error;
+      }
+      const wait = FETCH_BACKOFF_MS[Math.min(attempt - 1, FETCH_BACKOFF_MS.length - 1)];
+      log(`    ${artifact.path}: ${error.message}; retrying in ${wait / 1000} s`);
+      await sleep(wait);
+    }
+  }
 }
 
 export async function prepareAddons(args, { fail, log = console.log }) {
@@ -162,7 +212,7 @@ export async function prepareAddons(args, { fail, log = console.log }) {
     const written = [];
     for (const artifact of planned) {
       log(`  fetching ${artifact.path}`);
-      const bytes = await fetchPinned(artifact);
+      const bytes = await fetchPinned(artifact, { log });
       const file = join(staging, ...artifact.path.split("/"));
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, bytes);

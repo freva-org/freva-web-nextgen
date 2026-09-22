@@ -39,3 +39,14 @@ export declare function prepareAddons(
   args: Record<string, unknown>,
   hooks: { fail: (message: string) => void; log?: (message: string) => void },
 ): Promise<void>;
+export declare const FETCH_ATTEMPTS: number;
+export declare const FETCH_BACKOFF_MS: readonly number[];
+export declare function transientFetchFailure(error: unknown): boolean;
+export declare function fetchPinned(
+  artifact: Pick<AddonArtifactPlan, "path" | "sha256" | "url">,
+  options?: {
+    fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
+    sleep?: (ms: number) => Promise<void>;
+    log?: (message: string) => void;
+  },
+): Promise<Buffer>;
