@@ -868,6 +868,25 @@ describe("WebKit fixes stay capability-driven and narrow", () => {
     expect(source).not.toMatch(/await (server|allowed|blocked)\.close\(\);/);
   });
 
+  it("the Waterpark suite runs every step as a named phase with a deadline", () => {
+    const source = read("embedding-waterpark.mjs");
+    expect(source).toContain('createPhases("embedding-waterpark"');
+    expect(source).toContain("onDeadline: () => page.context().close()");
+    for (const phase of [
+      "portal and iframe navigation",
+      "Python startup in the frame",
+      "workspace, or its documented fallback",
+      "stylesheet and policy violations",
+      "refused-frame negative control",
+    ]) {
+      expect(source, phase).toContain(`"${phase}"`);
+    }
+    expect(source).toContain("checks.push(phaseFailureCheck(error));");
+    expect(source).toContain("checks.push(...(await cleanupChecks(phases)));");
+    // The server closes within a bound, so a held connection cannot hold the process.
+    expect(source).not.toMatch(/await server\.close\(\);/);
+  });
+
   it("the Waterpark negative control reads the refused frame from INSIDE, never via the parent", () => {
     const source = code(read("embedding-waterpark.mjs"));
     expect(source).not.toMatch(/\.contentDocument/);

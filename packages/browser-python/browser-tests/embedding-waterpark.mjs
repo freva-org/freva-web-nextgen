@@ -34,7 +34,7 @@ import {
   serve,
 } from "./harness.mjs";
 import { contentSecurityPolicy } from "../dist/csp.js";
-import { withDeadline } from "./deadline.mjs";
+import { cleanupChecks, createPhases, phaseFailureCheck, withDeadline } from "./deadline.mjs";
 
 requireDist();
 bundleConsole();
@@ -186,6 +186,14 @@ const result = await inBrowser(async (page) => {
   });
   const checks = [];
   const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
+  const phases = createPhases("embedding-waterpark", {
+    onDeadline: () => page.context().close(),
+  });
+  const run = (name, ms, work) => phases.run(name, ms, work);
+  const finish = async () => {
+    checks.push(...(await cleanupChecks(phases)));
+    return { checks, notApplicable };
+  };
 
   try {
     // the headers, before anything runs on them
@@ -206,142 +214,147 @@ const result = await inBrowser(async (page) => {
     );
 
     // the embedded arrangement
-    await page.goto(`${server.url}shell.html`, { waitUntil: "load" });
-    const frame = page.frame({ url: (u) => u.href === server.url || u.href === `${server.url}` });
-    const consoleFrame =
-      frame ?? page.frames().find((f) => f !== page.mainFrame() && f.url().startsWith(server.url));
-    ok(
-      "the console page loads inside the portal's iframe",
-      Boolean(consoleFrame),
-      page.frames().length + " frames",
-    );
-    if (!consoleFrame) throw new Error("the console frame never appeared");
-
-    await consoleFrame.waitForFunction(() => window.__ready === true, null, { timeout: 60_000 });
-    ok(
-      "…and it really is framed, not merely open",
-      await consoleFrame.evaluate(() => window.__csp.framed()),
-      "window.parent !== window",
-    );
-
-    const started = await consoleFrame.evaluate(async () => {
-      await window.__csp.start();
-      return true;
+    const consoleFrame = await run("portal and iframe navigation", 90_000, async () => {
+      await page.goto(`${server.url}shell.html`, { waitUntil: "load" });
+      const frame = page.frame({ url: (u) => u.href === server.url || u.href === `${server.url}` });
+      const found =
+        frame ??
+        page.frames().find((f) => f !== page.mainFrame() && f.url().startsWith(server.url));
+      ok(
+        "the console page loads inside the portal's iframe",
+        Boolean(found),
+        page.frames().length + " frames",
+      );
+      if (!found) return null;
+      await found.waitForFunction(() => window.__ready === true, null, { timeout: 60_000 });
+      ok(
+        "…and it really is framed, not merely open",
+        await found.evaluate(() => window.__csp.framed()),
+        "window.parent !== window",
+      );
+      return found;
     });
+    if (!consoleFrame) return await finish();
+
+    const started = await run("Python startup in the frame", 240_000, () =>
+      consoleFrame.evaluate(async () => {
+        await window.__csp.start();
+        return true;
+      }),
+    );
     ok("a module Worker and a WebAssembly interpreter start while embedded", started, "ready");
 
     // The file half needs the disk-backed workspace, which the WORKER reports on. Without it the
     // embedding is still checked - Python runs, the policy holds, the framing grant works - and the
     // files are reported as not applicable rather than skipped silently.
-    const embeddedWorkspace = await consoleFrame.evaluate(() => window.__csp.engine.workspace);
-    if (embeddedWorkspace?.available !== true) {
-      const printed = await consoleFrame.evaluate(async () => {
-        const r = await window.__csp.run("print(6 * 7)");
-        return { error: r.error ?? null };
-      });
-      ok("…Python runs inside the frame", printed.error === null, JSON.stringify(printed));
-      const probed = await probeWorkerCapabilities(consoleFrame);
-      ok(
-        "the frame's missing workspace is the browser's answer, not the package's failure",
-        probed.opfsUsable === false,
-        JSON.stringify({ workspace: embeddedWorkspace, probe: probed }),
-      );
-      capabilityAbsent(
-        checks,
-        notApplicable,
-        "sync-access-handles",
-        "OPFS files, blob: previews and the real download from inside the frame",
-        `this ${ENGINE} context's worker cannot back /workspace with OPFS ` +
-          `(${embeddedWorkspace?.reason ?? "unknown"}${probed.opfsError ? `; ${probed.opfsError}` : ""})`,
-      );
-    } else {
-      const ran = await consoleFrame.evaluate(async () => {
-        const r = await window.__csp.run(
-          "with open('embedded.csv','w') as fh:\n    fh.write('a,b\\n1,2\\n')\n",
+    await run("workspace, or its documented fallback", 120_000, async () => {
+      const embeddedWorkspace = await consoleFrame.evaluate(() => window.__csp.engine.workspace);
+      if (embeddedWorkspace?.available !== true) {
+        const printed = await consoleFrame.evaluate(async () => {
+          const r = await window.__csp.run("print(6 * 7)");
+          return { error: r.error ?? null };
+        });
+        ok("…Python runs inside the frame", printed.error === null, JSON.stringify(printed));
+        const probed = await probeWorkerCapabilities(consoleFrame);
+        ok(
+          "the frame's missing workspace is the browser's answer, not the package's failure",
+          probed.opfsUsable === false,
+          JSON.stringify({ workspace: embeddedWorkspace, probe: probed }),
         );
-        return {
-          error: r.error?.message ?? null,
-          names: (await window.__csp.artifacts()).map((a) => a.name),
-        };
-      });
-      ok(
-        "…Python runs and the OPFS workspace works from inside the frame",
-        ran.error === null && ran.names.join(",") === "embedded.csv",
-        JSON.stringify(ran),
-      );
-      ok(
-        "…and an artifact's bytes read back exactly",
-        (await consoleFrame.evaluate(() => window.__csp.readArtifact("embedded.csv"))) ===
-          "a,b\n1,2\n",
-        "round-tripped",
-      );
-
-      // A blob: URL the browser actually has to fetch: a 1x1 PNG written by Python, read back as a
-      // Blob, turned into a blob: URL and assigned to an `<img>` that is waited on.
-      // `img-src 'self' data: blob:` is what permits this; without the grant the load fails and
-      // `securitypolicyviolation` fires, and both are checked.
-      const rendered = await consoleFrame.evaluate(async () => {
-        await window.__csp.run(
-          "import base64\n" +
-            "png = base64.b64decode(\n" +
-            "    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='\n" +
-            ")\n" +
-            "with open('dot.png', 'wb') as fh:\n" +
-            "    fh.write(png)\n",
+        capabilityAbsent(
+          checks,
+          notApplicable,
+          "sync-access-handles",
+          "OPFS files, blob: previews and the real download from inside the frame",
+          `this ${ENGINE} context's worker cannot back /workspace with OPFS ` +
+            `(${embeddedWorkspace?.reason ?? "unknown"}${probed.opfsError ? `; ${probed.opfsError}` : ""})`,
         );
-        return await window.__csp.renderPng("dot.png");
-      });
-      ok(
-        "a blob: URL the browser must FETCH renders in an <img> under this policy",
-        rendered.loaded === true && rendered.width === 1 && rendered.height === 1,
-        JSON.stringify(rendered),
-      );
-      ok(
-        "…and rendering it violated nothing",
-        (await consoleFrame.evaluate(() => window.__csp.violations())).length === 0,
-        JSON.stringify(await consoleFrame.evaluate(() => window.__csp.violations())),
-      );
+      } else {
+        const ran = await consoleFrame.evaluate(async () => {
+          const r = await window.__csp.run(
+            "with open('embedded.csv','w') as fh:\n    fh.write('a,b\\n1,2\\n')\n",
+          );
+          return {
+            error: r.error?.message ?? null,
+            names: (await window.__csp.artifacts()).map((a) => a.name),
+          };
+        });
+        ok(
+          "…Python runs and the OPFS workspace works from inside the frame",
+          ran.error === null && ran.names.join(",") === "embedded.csv",
+          JSON.stringify(ran),
+        );
+        ok(
+          "…and an artifact's bytes read back exactly",
+          (await consoleFrame.evaluate(() => window.__csp.readArtifact("embedded.csv"))) ===
+            "a,b\n1,2\n",
+          "round-tripped",
+        );
 
-      // The small-file download, as a real `download` event from the browser, with the saved file
-      // compared BYTE FOR BYTE against what Python wrote. An anchor that was clicked and a URL that
-      // was created prove nothing about whether anything was ever saved.
-      const downloadDir = mkdtempSync(join(tmpdir(), "waterpark-download-"));
-      let saved = null;
-      try {
-        const [download] = await Promise.all([
-          page.waitForEvent("download", { timeout: 30_000 }),
-          consoleFrame.evaluate(() => window.__csp.downloadArtifact("embedded.csv")),
-        ]);
-        const target = join(downloadDir, "saved.csv");
-        await download.saveAs(target);
-        saved = {
-          name: download.suggestedFilename(),
-          bytes: readFileSync(target, "utf8"),
-        };
-      } catch (error) {
-        saved = { error: String(error?.message ?? error).split("\n")[0] };
+        const rendered = await consoleFrame.evaluate(async () => {
+          await window.__csp.run(
+            "import base64\n" +
+              "png = base64.b64decode(\n" +
+              "    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='\n" +
+              ")\n" +
+              "with open('dot.png', 'wb') as fh:\n" +
+              "    fh.write(png)\n",
+          );
+          return await window.__csp.renderPng("dot.png");
+        });
+        ok(
+          "a blob: URL the browser must FETCH renders in an <img> under this policy",
+          rendered.loaded === true && rendered.width === 1 && rendered.height === 1,
+          JSON.stringify(rendered),
+        );
+        ok(
+          "…and rendering it violated nothing",
+          (await consoleFrame.evaluate(() => window.__csp.violations())).length === 0,
+          JSON.stringify(await consoleFrame.evaluate(() => window.__csp.violations())),
+        );
+
+        const downloadDir = mkdtempSync(join(tmpdir(), "waterpark-download-"));
+        let saved = null;
+        try {
+          const [download] = await Promise.all([
+            page.waitForEvent("download", { timeout: 30_000 }),
+            consoleFrame.evaluate(() => window.__csp.downloadArtifact("embedded.csv")),
+          ]);
+          const target = join(downloadDir, "saved.csv");
+          await download.saveAs(target);
+          saved = {
+            name: download.suggestedFilename(),
+            bytes: readFileSync(target, "utf8"),
+          };
+        } catch (error) {
+          saved = { error: String(error?.message ?? error).split("\n")[0] };
+        }
+        ok(
+          "a small artifact downloads through a real browser download, with the exact bytes",
+          saved?.bytes === "a,b\n1,2\n" && saved?.name === "embedded.csv",
+          JSON.stringify(saved),
+        );
+        rmSync(downloadDir, { recursive: true, force: true });
       }
+    });
+
+    await run("stylesheet and policy violations", 30_000, async () => {
+      const styled = await consoleFrame.evaluate(() => window.__csp.styled());
       ok(
-        "a small artifact downloads through a real browser download, with the exact bytes",
-        saved?.bytes === "a,b\n1,2\n" && saved?.name === "embedded.csv",
-        JSON.stringify(saved),
+        "the console's stylesheet applied under the embedded policy",
+        styled.adopted >= 1 &&
+          styled.background !== null &&
+          styled.background !== "rgba(0, 0, 0, 0)",
+        JSON.stringify(styled),
       );
-      rmSync(downloadDir, { recursive: true, force: true });
-    }
 
-    const styled = await consoleFrame.evaluate(() => window.__csp.styled());
-    ok(
-      "the console's stylesheet applied under the embedded policy",
-      styled.adopted >= 1 && styled.background !== null && styled.background !== "rgba(0, 0, 0, 0)",
-      JSON.stringify(styled),
-    );
-
-    const violations = await consoleFrame.evaluate(() => window.__csp.violations());
-    ok(
-      "nothing was blocked: no securitypolicyviolation in the embedded document",
-      violations.length === 0,
-      JSON.stringify(violations),
-    );
+      const violations = await consoleFrame.evaluate(() => window.__csp.violations());
+      ok(
+        "nothing was blocked: no securitypolicyviolation in the embedded document",
+        violations.length === 0,
+        JSON.stringify(violations),
+      );
+    });
 
     // The grant is real, proved by the page without it: same origin, same shell, same iframe, and
     // only `frame-ancestors 'none'` differs. If this one framed too, `frame-ancestors 'self'`
@@ -352,28 +365,37 @@ const result = await inBrowser(async (page) => {
     // and WebKit reports that attempt as a page error ("Blocked a frame ... sandboxed and lacks
     // the allow-same-origin flag") - an error this check would have caused, not observed. The
     // shared `pageerror` guard stays exactly as strict as it was.
-    await page.goto(`${server.url}shell-strict.html`, { waitUntil: "load" });
-    const strictChild = page.frames().find((f) => f !== page.mainFrame()) ?? null;
-    const strictProbe = strictChild
-      ? await withDeadline(
-          strictChild.evaluate(() => ({
-            here: document.getElementById("here") !== null,
-            url: location.href,
-          })),
-          10_000,
-          "reading the refused frame from inside",
-        ).catch((error) => ({ here: false, error: String(error?.message ?? error).split("\n")[0] }))
-      : { here: false, error: "no child frame" };
-    const strictFramed = strictProbe.here === true;
-    ok(
-      "a page WITHOUT the framing grant is refused in the same iframe, so the grant is doing work",
-      strictChild !== null && strictFramed === false,
-      `frame-ancestors 'none' page reachable: ${strictFramed} ${JSON.stringify(strictProbe)}`,
-    );
+    await run("refused-frame negative control", 60_000, async () => {
+      await page.goto(`${server.url}shell-strict.html`, { waitUntil: "load" });
+      const strictChild = page.frames().find((f) => f !== page.mainFrame()) ?? null;
+      const strictProbe = strictChild
+        ? await withDeadline(
+            strictChild.evaluate(() => ({
+              here: document.getElementById("here") !== null,
+              url: location.href,
+            })),
+            10_000,
+            "reading the refused frame from inside",
+          ).catch((error) => ({
+            here: false,
+            error: String(error?.message ?? error).split("\n")[0],
+          }))
+        : { here: false, error: "no child frame" };
+      const strictFramed = strictProbe.here === true;
+      ok(
+        "a page WITHOUT the framing grant is refused in the same iframe, so the grant is doing work",
+        strictChild !== null && strictFramed === false,
+        `frame-ancestors 'none' page reachable: ${strictFramed} ${JSON.stringify(strictProbe)}`,
+      );
+    });
 
-    return { checks, notApplicable };
+    return await finish();
+  } catch (error) {
+    // A deadline names its phase; the checks established before it are kept.
+    checks.push(phaseFailureCheck(error));
+    return await finish();
   } finally {
-    await server.close();
+    await withDeadline(server.close(), 10_000, "closing the fixture server").catch(() => {});
   }
 });
 
