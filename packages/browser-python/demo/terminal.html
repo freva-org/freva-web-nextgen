@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>browser-python - one terminal</title>
+    <!--
+      ONE console, and almost no page around it.
+
+      `index.html` demonstrates the API: two consoles, a shared engine, four live controls. That is
+      the right page for showing what the component can do and the wrong one for judging how it
+      LOOKS - a second, differently-themed terminal directly below the first is a comparison the eye
+      cannot switch off, and the row of selects above it sets the visual tone before the console
+      gets a word in.
+
+      So: this page is the console, on a plain ground, at a realistic width. Nothing here overrides
+      a single `--bp-*` token. What you see is what the package ships.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f4f4f1;
+        --ink: #33363d;
+        --ink-quiet: #6c717a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #0a0b0e;
+          --ink: #c3c6cc;
+          --ink-quiet: #838892;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 40px 24px 64px;
+        background: var(--page);
+        color: var(--ink);
+        font:
+          14px/1.6 system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-quiet);
+        margin: 0 0 14px;
+      }
+      .hint {
+        margin: 18px 0 0;
+        color: var(--ink-quiet);
+        font-size: 13px;
+      }
+      .hint code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: color-mix(in srgb, var(--ink) 10%, transparent);
+        padding: 1px 5px;
+        border-radius: 3px;
+        white-space: nowrap;
+      }
+      /* The unregistered-element fallback, kept from index.html: a custom element whose script
+         never ran is an unknown tag with no height and no error, so the page would look fine with
+         a hole where the console should be. */
+      freva-python-console:not(:defined) {
+        display: block;
+        min-height: 320px;
+        border: 1px dashed #b44;
+        border-radius: 8px;
+      }
+      freva-python-console:not(:defined)::before {
+        content: "The console did not load. Run: npm run build && node scripts/serve-demo.mjs";
+        display: block;
+        padding: 16px;
+        color: #a33;
+        font:
+          13px/1.6 ui-monospace,
+          Menlo,
+          monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Python 3 · in this browser</h1>
+
+      <freva-python-console id="console" theme="auto"></freva-python-console>
+
+      <p class="hint">
+        <code>value = 40</code> then <code>value + 2</code> · a <code>def</code> over several lines,
+        ended with a blank one · <code>json.dum</code> then Tab · <kbd>↑</kbd> for history ·
+        <code>import matplotlib.pyplot as plt; plt.plot([1,4,9]); plt.show()</code>
+      </p>
+
+      <p class="hint">
+        Write a file and it appears under the transcript, ready to preview or download:
+        <code>open("notes.csv", "w").write("a,b\n1,2\n")</code>
+      </p>
+    </main>
+
+    <script type="module" src="./terminal.js"></script>
+  </body>
+</html>

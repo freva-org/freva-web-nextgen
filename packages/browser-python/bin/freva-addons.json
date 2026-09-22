@@ -1,0 +1,131 @@
+{
+  "$comment": "Curated browser add-ons, pinned. THIS FILE IS THE AUTHORITY - not a manifest lying in a served directory, which whoever can replace a wheel can also replace. `scripts/gen-addon-pins.mjs` compiles it into src/worker/addon-pins.generated.ts, so the digest a running interpreter checks against is one it shipped with. `bin/freva-browser-python.mjs prepare-addons` downloads exactly these artefacts, refuses any whose digest does not match, and writes a MANIFEST.json beside them.",
+  "schemaVersion": 1,
+  "addons": {
+    "dask": {
+      "title": "Dask arrays, on one synchronous scheduler",
+      "profiles": ["xarray-zarr", "freva-client"],
+      "runtimePackages": ["toolz", "cloudpickle", "click", "packaging", "pyyaml", "fsspec"],
+      "wheels": [
+        {
+          "name": "locket",
+          "version": "1.0.0",
+          "file": "locket-1.0.0-py2.py3-none-any.whl",
+          "sha256": "b6c819a722f7b6bd955b80781788e4a66a55628b858d347536b7e81325a3a5e3",
+          "bytes": 4398,
+          "url": "https://files.pythonhosted.org/packages/db/bc/83e112abc66cd466c6b83f99118035867cecd41802f8d044638aa78a106e/locket-1.0.0-py2.py3-none-any.whl"
+        },
+        {
+          "name": "partd",
+          "version": "1.4.2",
+          "file": "partd-1.4.2-py3-none-any.whl",
+          "sha256": "978e4ac767ec4ba5b86c6eaa52e5a2a3bc748a2ca839e8cc798f1cc6ce6efb0f",
+          "bytes": 18905,
+          "url": "https://files.pythonhosted.org/packages/71/e7/40fb618334dcdf7c5a316c0e7343c5cd82d3d866edc100d98e29bc945ecd/partd-1.4.2-py3-none-any.whl"
+        },
+        {
+          "name": "dask",
+          "version": "2026.8.0",
+          "file": "dask-2026.8.0-py3-none-any.whl",
+          "sha256": "ccc0c83a189b0398602435189771d28dad7b5773b6089bb8dce14ae732dd782c",
+          "bytes": 1492182,
+          "url": "https://files.pythonhosted.org/packages/f8/3a/4fc99e788bcfa1b3b3f21abf57da45898d807d007e7f6fd1c7300904eb70/dask-2026.8.0-py3-none-any.whl"
+        }
+      ],
+      "data": [],
+      "reports": ["dask"],
+      "note": "Dask is NOT in Pyodide 314.0.6's package index, but it publishes a pure-Python wheel and so do its two missing dependencies. `click`, `cloudpickle`, `fsspec`, `packaging`, `pyyaml` and `toolz` come from the pinned runtime's own lock and are loaded with `loadPackage`; only `dask`, `partd` and `locket` are mirrored. `tlz`, which `dask.utils` imports, ships inside the `toolz` wheel. Every install is `micropip.install(url, deps=False)` against an explicit URL, so resolution never reaches PyPI."
+    },
+    "cartopy-natural-earth-110m": {
+      "title": "Cartopy coastlines and country borders, offline",
+      "profiles": ["minimal", "xarray-zarr", "freva-client"],
+      "runtimePackages": [],
+      "wheels": [],
+      "data": [
+        {
+          "path": "shapefiles/natural_earth/physical/ne_110m_coastline.shp",
+          "sha256": "a1f8285d0e0a4858392cd78fc74fa3ee4cd9088947cf6e3693729dc852d70b60",
+          "bytes": 89652,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_physical/ne_110m_coastline.shp"
+        },
+        {
+          "path": "shapefiles/natural_earth/physical/ne_110m_coastline.shx",
+          "sha256": "53d8c141edfb7e05c59feecc7bb64b0e22bc2e282dfa1024d20ae54c3ef7b01e",
+          "bytes": 1172,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_physical/ne_110m_coastline.shx"
+        },
+        {
+          "path": "shapefiles/natural_earth/physical/ne_110m_coastline.dbf",
+          "sha256": "ac7e59083a862bafc20b86d73595fdf2a7c0693a411cf3ba91910a5de9df9bc3",
+          "bytes": 3747,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_physical/ne_110m_coastline.dbf"
+        },
+        {
+          "path": "shapefiles/natural_earth/physical/ne_110m_coastline.prj",
+          "sha256": "3259f0e55290a82b1350646f604e8a7ee1e2136c0320a40fad838ab40819fff8",
+          "bytes": 147,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_physical/ne_110m_coastline.prj"
+        },
+        {
+          "path": "shapefiles/natural_earth/physical/ne_110m_coastline.cpg",
+          "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824",
+          "bytes": 5,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_physical/ne_110m_coastline.cpg"
+        },
+        {
+          "path": "shapefiles/natural_earth/cultural/ne_110m_admin_0_boundary_lines_land.shp",
+          "sha256": "d19f784f92626816c064f878571f61bc43ec7bfc407666ce6a450d6e757afff0",
+          "bytes": 68372,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_cultural/ne_110m_admin_0_boundary_lines_land.shp"
+        },
+        {
+          "path": "shapefiles/natural_earth/cultural/ne_110m_admin_0_boundary_lines_land.shx",
+          "sha256": "849899c47c51c6edd04750307b21cb109ae4c7e8ca3c5fee8606f8646dbe2787",
+          "bytes": 2748,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_cultural/ne_110m_admin_0_boundary_lines_land.shx"
+        },
+        {
+          "path": "shapefiles/natural_earth/cultural/ne_110m_admin_0_boundary_lines_land.dbf",
+          "sha256": "373d7a150b9f8dcb6ec918b52eea0f0361ad40ef433602a1b9f59b4de668daec",
+          "bytes": 483250,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_cultural/ne_110m_admin_0_boundary_lines_land.dbf"
+        },
+        {
+          "path": "shapefiles/natural_earth/cultural/ne_110m_admin_0_boundary_lines_land.prj",
+          "sha256": "3259f0e55290a82b1350646f604e8a7ee1e2136c0320a40fad838ab40819fff8",
+          "bytes": 147,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_cultural/ne_110m_admin_0_boundary_lines_land.prj"
+        },
+        {
+          "path": "shapefiles/natural_earth/cultural/ne_110m_admin_0_boundary_lines_land.cpg",
+          "sha256": "3ad3031f5503a4404af825262ee8232cc04d4ea6683d42c5dd0a2f2a27ac9824",
+          "bytes": 5,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/110m_cultural/ne_110m_admin_0_boundary_lines_land.cpg"
+        },
+        {
+          "path": "LICENSE.md",
+          "sha256": "2631b5b39b6d1acc56de75235109b5af2dbb4b0ac5a127b6f06185977247fd4b",
+          "bytes": 4636,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/LICENSE.md"
+        },
+        {
+          "path": "VERSION",
+          "sha256": "0c9a9d43610d66f4cc3f42da08cae044483de25894a9daf9dc6a76ff75ca9327",
+          "bytes": 6,
+          "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/VERSION"
+        }
+      ],
+      "reports": [],
+      "dataset": {
+        "name": "Natural Earth vector",
+        "release": "5.1.2",
+        "tag": "v5.1.2",
+        "source": "https://github.com/nvkelso/natural-earth-vector",
+        "home": "https://www.naturalearthdata.com/",
+        "licence": "Public domain - see https://www.naturalearthdata.com/about/terms-of-use/ and the LICENSE.md staged beside the data.",
+        "attribution": "Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com."
+      },
+      "note": "Cartopy 0.25.0 IS in the pinned runtime's lock, with shapely, pyshp, pyproj, matplotlib and scipy; it is loaded lazily on import like any other. What is missing is only the data, which Cartopy otherwise fetches through `urllib` at figure-render time - and there is no socket in a Worker. These are the two 110m feature sets `ax.coastlines()` and `feature.BORDERS` ask for, staged under Cartopy's own layout and pointed at with CARTOPY_DATA_DIR, which is read at import and needs no Cartopy import to set."
+    }
+  }
+}

@@ -1,0 +1,8 @@
+.runtime/
+dist/
+.measure/
+.testbundle/
+.addons/
+.build-stamp.json
+# Console state captures from scripts/console-screenshots.mjs, for review by eye.
+screenshots/

@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "SHA-256 of the official release tarball at https://github.com/pyodide/pyodide/releases.",
+    "Recorded on first fetch over TLS from that origin, and thereafter enforced: the digest pins",
+    "the artifact against a mirror, a re-cut release or a truncated download. It is trust-on-first-",
+    "use provenance, not an independent attestation - Pyodide does not publish a signed checksum",
+    "file - and it is recorded here so that every later run is verified rather than trusting.",
+    "To add a version: run `prepare-runtime --version X --print-digest` and paste the result.",
+    "",
+    "`core` is the SHA-256 of each essential asset AS EXTRACTED FROM THE VERIFIED RELEASE",
+    "ARCHIVE above. It is the anchor a warm cache is checked against: a stamp written into a",
+    "cache directory is written by the same process that wrote the files beside it, so it",
+    "cannot vouch for them. These values can, because they come from an artifact whose own",
+    "digest is pinned. A --sha256 passed on the command line for an unrecorded version has no",
+    "such anchor and stays trust-on-first-use; the verifier says which case it is in."
+  ],
+  "314.0.6": {
+    "sha256": "fd25b21567f83f83b0b8bb1780a5458c6d4dd10bb07a22004424194022037f00",
+    "recorded": "2026-09-05",
+    "core": {
+      "pyodide.mjs": "69e3f6ccec3e14b465df60be577ca62f536251406b9a00cce019eac5252a2495",
+      "pyodide.asm.wasm": "3a0a00dfeaa348ac20f9ef09904233d32d33f644339662d4af368f8a2010f37a",
+      "pyodide.asm.mjs": "2ac5eba365ec12839c75c03b39b3be1dd63b798852cc460b014b52238be042f7",
+      "python_stdlib.zip": "80c5be6babfe03297069703410c3c29404dcf2525d2b128746bae5536f94831f",
+      "pyodide-lock.json": "3fdaef09e9e365c85e002737720f8d0ab8f278c1c244a2dde6a37663cf488ad4"
+    },
+    "coreDerivedFrom": "pyodide-314.0.6.tar.bz2 (sha256 fd25b21567f83f83b0b8bb1780a5458c6d4dd10bb07a22004424194022037f00)"
+  }
+}

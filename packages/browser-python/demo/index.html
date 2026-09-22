@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@freva-org/browser-python demo</title>
+    <!--
+      The console component, demonstrated. Deliberately NOT branded: the page chrome is a few lines
+      of plain CSS, and every colour the console itself uses comes from the documented tokens. What
+      Freva and Waterpark will do is replace those tokens; what they should not have to do is edit
+      anything inside the package.
+    -->
+    <style>
+      body {
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+        margin: 0;
+        padding: 20px;
+        max-width: 980px;
+      }
+      h1 {
+        font-size: 1.3rem;
+        margin: 0 0 4px;
+      }
+      p.lede {
+        color: #555;
+        margin: 0 0 16px;
+      }
+      .controls {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+        align-items: center;
+      }
+      .controls label {
+        font-size: 13px;
+      }
+      code {
+        background: #f1f1ee;
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+      section {
+        margin-top: 28px;
+      }
+      h2 {
+        font-size: 1rem;
+        margin-bottom: 6px;
+      }
+      ul {
+        margin-top: 4px;
+      }
+
+      /*
+       * The theming example. Nine custom properties, no package internals, no jQuery Terminal class
+       * names - this is the whole of what a consumer needs in order to restyle the console.
+       */
+      #themed {
+        --bp-console-background: #1b1725;
+        --bp-console-foreground: #efeaf6;
+        --bp-console-border: #3a2f4d;
+        --bp-console-accent: #c4a7e7;
+        --bp-console-prompt: #c4a7e7;
+        --bp-console-error: #ff8a8a;
+        --bp-console-radius: 0.25rem;
+        --bp-console-min-height: 12rem;
+        --bp-syntax-keyword: #ffa4d8;
+        --bp-syntax-string: #a9e39a;
+      }
+      /*
+       * The unregistered-element fallback.
+       *
+       * A custom element whose script never ran is an unknown tag: display inline, no children, no
+       * height, no error. The page renders perfectly around a hole where the console should be,
+       * which is exactly how this demo once shipped looking like it had no console at all. `:defined`
+       * lets the page show a box and a message until the element upgrades, and nothing afterwards.
+       */
+      freva-python-console:not(:defined) {
+        display: block;
+        min-height: 220px;
+        border: 1px dashed #b44;
+        border-radius: 8px;
+        background: #fff6f6;
+      }
+      freva-python-console:not(:defined)::before {
+        content: "The console component did not load. See the message above, or the browser console.";
+        display: block;
+        padding: 16px;
+        color: #a33;
+        font:
+          13px/1.6 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      #load-error {
+        margin: 16px 0;
+        padding: 12px 14px;
+        border: 1px solid #d99;
+        border-left: 4px solid #c44;
+        border-radius: 6px;
+        background: #fff6f6;
+        color: #7a2020;
+        font-size: 14px;
+      }
+      #load-error code {
+        background: #0000000d;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>browser-python console</h1>
+    <p class="lede">
+      Python runs in a Web Worker in this tab. No server, no kernel. Press Enter to run.
+    </p>
+
+    <div class="controls">
+      <label>
+        Theme
+        <select id="theme">
+          <option value="auto" selected>auto</option>
+          <option value="dark">dark</option>
+          <option value="light">light</option>
+        </select>
+      </label>
+      <label>
+        History
+        <select id="persistence">
+          <option value="local" selected>local (survives the tab)</option>
+          <option value="session">session</option>
+          <option value="memory">memory only</option>
+          <option value="none">disabled</option>
+        </select>
+      </label>
+      <label>
+        Profile
+        <select id="profile">
+          <option value="minimal" selected>minimal</option>
+          <option value="xarray-zarr">xarray + zarr</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="live-highlight" checked /> live syntax highlighting</label>
+    </div>
+
+    <div id="load-error" hidden></div>
+
+    <freva-python-console id="console" theme="auto"></freva-python-console>
+
+    <section>
+      <h2>Try</h2>
+      <ul>
+        <li>State: <code>value = 40</code> then <code>value + 2</code></li>
+        <li>Multi-line: <code>def double(v):</code> … <code> return v * 2</code> … blank line</li>
+        <li>Top-level await: <code>import asyncio; await asyncio.sleep(0)</code></li>
+        <li>Completion: type <code>json.dum</code> and press Tab</li>
+        <li>History: press <kbd>↑</kbd>, or <kbd>Ctrl</kbd>+<kbd>R</kbd> to search</li>
+        <li>Plot: <code>import matplotlib.pyplot as plt; plt.plot([1,4,9]); plt.show()</code></li>
+        <li>
+          Remote Zarr (needs the <em>xarray + zarr</em> profile):
+          <code>import xarray as xr; ds = xr.open_zarr(URL, consolidated=True, chunks=None)</code>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Themed with nine custom properties</h2>
+      <p class="lede">
+        The same component. Only <code>--bp-console-*</code> and <code>--bp-syntax-*</code> were set
+        - no package internals were touched.
+      </p>
+      <freva-python-console id="themed" theme="dark" hide-toolbar></freva-python-console>
+    </section>
+
+    <!--
+      Loaded BEFORE main.js, and not a module, so it runs even if the module graph fails to load.
+      A failed `<script type="module">` is silent: no dialog, no visible change, just a line in a
+      console nobody has open. This turns that into a sentence on the page saying which command was
+      not run.
+    -->
+    <script>
+      window.addEventListener("DOMContentLoaded", () => {
+        setTimeout(() => {
+          if (customElements.get("freva-python-console")) return;
+          const box = document.getElementById("load-error");
+          box.hidden = false;
+          box.innerHTML =
+            "<strong>The console did not load.</strong> The demo needs the package built and the " +
+            "console bundled:<br><br><code>npm run build</code><br><code>node scripts/serve-demo.mjs</code>" +
+            "<br><br>Restarting the demo server does both. If it persists, check the browser console " +
+            "for the file that 404'd.";
+        }, 1500);
+      });
+    </script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

@@ -3,3 +3,23 @@ node_modules/
 *.lock
 package-lock.json
 dist-test/
+
+# Generated from packages/browser-python/src/python/*.py by a build step that also verifies the
+# file is in sync. Reformatting it here would make `--check` and the generator disagree forever.
+packages/browser-python/src/worker/python-sources.generated.ts
+# And for the add-on pins, generated from bin/freva-addons.json: the file is a digest table,
+# `gen-addon-pins.mjs --check` is what gates it, and a formatter rewriting it would make that
+# gate fail for a reason that has nothing to do with the pins.
+packages/browser-python/src/worker/addon-pins.generated.ts
+# Same arrangement for the console stylesheet: generated from src/console/styles.css, and
+# `gen-console-styles.mjs --check` compares it byte for byte.
+packages/browser-python/src/console/styles.generated.ts
+# The pinned Pyodide distribution, vendored locally for tests and the demo.
+packages/browser-python/.runtime/
+# Scratch bundles written by the browser suites and the size measurement.
+packages/browser-python/.testbundle/
+packages/browser-python/.measure/
+# Console state captures, written by scripts/console-screenshots.mjs for review by eye.
+packages/browser-python/screenshots/
+# The prepared curated add-on directory: pinned third-party artefacts, not this project's source.
+packages/browser-python/.addons/

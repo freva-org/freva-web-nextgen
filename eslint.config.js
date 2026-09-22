@@ -39,18 +39,30 @@ export default tseslint.config(
   },
 
   {
-    files: ["**/tests/**/*.mjs"],
+    files: ["**/tests/**/*.mjs", "**/bin/*.mjs"],
     languageOptions: { globals: { ...globals.node } },
     rules: { "no-console": "off" },
   },
-  // A package's playground page: plain unbundled browser JavaScript, written the
-  // way a consumer would write it.
+  // A package's playground page
   {
-    files: ["packages/*/playground/**/*.js"],
+    files: [
+      "packages/*/playground/**/*.js",
+      // Deliberately plain, unbundled browser JavaScript
+      "packages/*/demo/**/*.js",
+    ],
     languageOptions: { globals: { ...globals.browser } },
     rules: { "no-console": "off" },
   },
   {
-    ignores: ["**/dist/**", "**/dist-test/**", "**/node_modules/**", "docs/"],
+    ignores: [
+      "**/dist/**",
+      "**/dist-test/**",
+      "**/node_modules/**",
+      "docs/",
+      // browser-python's bundling gate writes a bundle here.
+      "packages/browser-python/.testbundle/**",
+      // The pinned Pyodide distribution, assembled locally for the browser suites and the demo.
+      "packages/browser-python/.runtime/**",
+    ],
   },
 );

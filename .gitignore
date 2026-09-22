@@ -128,3 +128,11 @@ logs/
 .netlify
 # Compiled test output (databrowser)
 dist-test/
+
+# an abbreviated binary diff cannot be applied.
+__pycache__/
+*.py[cod]
+
+packages/browser-python/.runtime/
+
+packages/browser-python/.freva-wheels/

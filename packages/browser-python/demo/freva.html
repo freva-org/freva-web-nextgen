@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>browser-python - the Freva client</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f4f4f1;
+        --ink: #33363d;
+        --ink-quiet: #6c717a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #0a0b0e;
+          --ink: #c3c6cc;
+          --ink-quiet: #838892;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 40px 24px 64px;
+        background: var(--page);
+        color: var(--ink);
+        font:
+          14px/1.6 system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-quiet);
+        margin: 0 0 14px;
+      }
+      pre {
+        margin: 18px 0 0;
+        padding: 12px 14px;
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--ink) 8%, transparent);
+        font:
+          12px/1.65 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        overflow-x: auto;
+      }
+      .note {
+        margin: 16px 0 0;
+        color: var(--ink-quiet);
+        font-size: 13px;
+      }
+      .note strong {
+        color: var(--ink);
+      }
+      freva-python-console:not(:defined) {
+        display: block;
+        min-height: 320px;
+        border: 1px dashed #b44;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Freva client · in this browser</h1>
+
+      <freva-python-console id="console" theme="auto" profile="freva-client"></freva-python-console>
+
+      <p class="note">
+        <strong>Nothing to install.</strong> <code>freva_client</code> is already imported-ready
+        when the prompt appears. Do <em>not</em> run <code>micropip.install("freva-client")</code> -
+        that fetches the unmodified PyPI wheel, which requires <code>intake-esm</code>, which pins
+        <code>polars&lt;1.33</code> against the runtime's 1.33.1. That is the conflict this profile
+        exists to avoid.
+      </p>
+
+      <pre>
+from freva_client import authenticate, databrowser
+
+token = await authenticate(host="https://eve.dkrz.de", timeout=180)
+
+db = databrowser(host="https://eve.dkrz.de")
+print(len(db))</pre
+      >
+
+      <p class="note">
+        <code>authenticate</code> is awaitable here on purpose - the device flow is network work,
+        and blocking on it would freeze the page's only thread. A live host must permit this origin;
+        browser Python cannot bypass CORS. <code>db.intake_catalogue()</code> will tell you why it
+        is not available.
+      </p>
+    </main>
+
+    <script type="module" src="./freva.js"></script>
+  </body>
+</html>

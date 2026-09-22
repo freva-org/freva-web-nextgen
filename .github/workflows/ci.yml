@@ -6,6 +6,7 @@ on:
 
 jobs:
   ci:
+    name: checks (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -44,6 +45,7 @@ jobs:
   # A hand-bumped version would be released by the next push to main without ever
   # going through the version PR. Skipped for the changesets bot's own branch.
   changeset-required:
+    name: changeset
     if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
     runs-on: ubuntu-latest
 
@@ -73,6 +75,7 @@ jobs:
   # Auth gates that need no browser. Out of the matrix: the mutation gate rewrites
   # src/ in place, so two runs must not share a checkout.
   auth-gates:
+    name: auth (bytes & mutations)
     runs-on: ubuntu-latest
 
     env:
@@ -107,7 +110,7 @@ jobs:
   # package is one list entry. `fail-fast: false` - a WebKit failure in the auth
   # client says nothing about databrowser layout.
   browser-gates:
-    name: browser (${{ matrix.name }})
+    name: playwright (${{ matrix.name }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -150,3 +153,91 @@ jobs:
       # Strict: a browser that will not launch is a failure, never a skip.
       - name: Browser gate
         run: npm run test:browser:strict -w ${{ matrix.pkg }}
+
+  browser-python:
+    name: browser-python (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: chromium
+            script: test:browser:chromium
+          - engine: firefox
+            script: test:browser:firefox:ci
+          - engine: webkit
+            script: test:browser:webkit
+
+    env:
+      PKG: "@freva-org/browser-python"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/browser-python/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build -w $PKG
+
+      - name: Runtime manifest id
+        id: runtime
+        run: |
+          echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Pyodide distribution
+        uses: actions/cache@v4
+        with:
+          path: packages/browser-python/.runtime
+          key: pyodide-${{ steps.runtime.outputs.id }}
+
+      - name: Assemble the runtime
+        run: node packages/browser-python/scripts/prepare-runtime.mjs
+
+      # A suite whose wheels are missing exits 3 and is reported as NOT RUN, which
+      # reads like a pass in a summary.
+      - name: The runtime is complete
+        run: node packages/browser-python/scripts/check-runtime.mjs
+
+      - name: Install Playwright ${{ matrix.engine }}
+        run: npm exec -w $PKG -- playwright install --with-deps ${{ matrix.engine }}
+
+      # Strict: a browser that will not launch is a failure, never a skip.
+      - name: Browser suites in ${{ matrix.engine }}
+        run: npm run ${{ matrix.script }} -w $PKG
+
+  # What a consumer installs, and what it weighs. No browser and no runtime.
+  browser-python-package:
+    name: browser-python (package)
+    runs-on: ubuntu-latest
+
+    env:
+      PKG: "@freva-org/browser-python"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/browser-python/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build -w $PKG
+
+      # Packs, installs elsewhere and imports from there; then the size budget, the
+      # console layer's weight (no jQuery in the ROOT bundle) and the README figures.
+      - name: Package and size
+        run: npm run check:package -w $PKG
