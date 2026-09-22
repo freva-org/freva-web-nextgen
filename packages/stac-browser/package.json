@@ -1,7 +1,7 @@
 {
   "name": "@freva-org/stac-browser",
   "private": true,
-  "version": "2608.0.0",
+  "version": "2609.0.0",
   "description": "Private workspace holding Freva's centrally owned recipe for building Radiant Earth's STAC Browser into materials an enabled portal can embed. Never published, and never run unless a deployment enables the stac-browser component.",
   "type": "module",
   "repository": {
