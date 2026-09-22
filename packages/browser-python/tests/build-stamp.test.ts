@@ -96,8 +96,10 @@ describe("every documented browser command builds first, through ONE mechanism",
     expect(browserScripts.map(([name]) => name)).toEqual(
       expect.arrayContaining([
         "test:browser",
-        "test:browser:firefox-full",
-        "test:browser:webkit-full",
+        "test:browser:chromium",
+        "test:browser:firefox",
+        "test:browser:firefox:ci",
+        "test:browser:webkit",
         "test:browser:zarr",
         "test:browser:paste",
       ]),

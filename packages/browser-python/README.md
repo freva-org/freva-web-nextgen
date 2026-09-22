@@ -697,9 +697,15 @@ in it.
 
 ## Browser support, and what does not work
 
-Chromium is the CI gate. Firefox and WebKit run the same real-interpreter suites through
-`npm run test:browser:firefox-full` and `npm run test:browser:webkit-full`: each suite asks the
-worker what the engine has, exercises the feature where it exists.
+Every browser suite runs in every engine: `npm run test:browser:chromium`,
+`npm run test:browser:firefox` and `npm run test:browser:webkit`. Chromium is the reference
+engine and must provide every capability; in Firefox and WebKit each suite asks the worker what
+the engine has, exercises the feature where it exists, and reports it not applicable, with the
+reason, where it does not. CI runs one job per engine. Playwright's Firefox runs WebAssembly
+several times slower than the other engines, so to keep that job short CI alone leaves out of it
+the few suites that test only Python, Node or the files they produce (`ENGINE_INDEPENDENT` in
+`browser-tests/suite-list.mjs`, each with its reason) through `test:browser:firefox:ci`; the
+Chromium and WebKit jobs run them, and the Firefox summary lists them.
 Requirements: WebAssembly, module Workers, and - for remote Zarr - JSPI. An environment that cannot run the
 engine reports `BrowserPythonError` with a `reason` (`no-worker`, `no-webassembly`,
 `runtime-unreachable`); a missing workspace reports `workspace.available: false` with a reason
@@ -724,9 +730,12 @@ Consequences of running CPython in a browser sandbox, not defects:
 npm run build                          # generates the Python string modules, then tsc
 npm test                               # unit tests (no browser, no interpreter)
 node scripts/prepare-runtime.mjs       # assemble .runtime/ (needs the Pyodide CDN once)
-npm run test:browser                   # real Chromium, real interpreter
-npm run test:browser:firefox-full      # every suite in Firefox, capability-aware, strict
-npm run test:browser:webkit-full       # every suite in WebKit, capability-aware, strict
+npm run test:browser                   # quick local run: console suites + the rest in Chromium
+npm run test:browser:chromium          # every suite in Chromium, every capability required
+npm run test:browser:firefox           # every suite in Firefox, capability-aware, strict
+npm run test:browser:webkit            # every suite in WebKit, capability-aware, strict
+npm run test:browser:firefox:ci        # Firefox as CI runs it: engine-independent suites left out
+npm run check:package                  # test:packaging + check:bytes, as CI runs them
 npm run test:packaging                 # pack, install elsewhere, import from there
 npm run check:bytes                    # the size gate
 node scripts/measure-console.mjs       # console weight, and no jQuery in the root bundle

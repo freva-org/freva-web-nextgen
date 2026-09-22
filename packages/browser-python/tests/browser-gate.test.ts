@@ -25,6 +25,7 @@ import {
   CATEGORIES,
   CROSS_BROWSER,
   DEFAULT_GATE_REQUIRES,
+  ENGINE_INDEPENDENT,
   NETWORK_SUITES,
   PACKAGE_INDEX_SUITES,
   SUITES,
@@ -315,11 +316,65 @@ describe("every suite has an explicit engine classification", () => {
     },
   );
 
-  it("REQUIRES every capability in the Chromium default gate, and none in an engine-full run", () => {
+  it("leaves engine-independent suites out of Firefox and WebKit only when asked, never Chromium", () => {
+    const names = Object.keys(ENGINE_INDEPENDENT);
+    // Each one is a real default suite, with a reason that names what covers the engine part.
+    for (const suite of names) {
+      expect(all).toContain(suite);
+      expect(ENGINE_INDEPENDENT[suite]!.length).toBeGreaterThan(20);
+    }
+    // The suites that test what DOES differ between engines are never on the list.
+    for (const kept of [
+      "zarr.mjs",
+      "workspace-errors.mjs",
+      "workspace-stream.mjs",
+      "workspace-lifecycle.mjs",
+      "persistence-restart.mjs",
+      "csp.mjs",
+      "embedding-two-origin.mjs",
+      "embedding-waterpark.mjs",
+      "capability-fallbacks.mjs",
+      "console-real-engine.mjs",
+      ...CROSS_BROWSER,
+    ]) {
+      expect(names).not.toContain(kept);
+    }
+    for (const engine of ["firefox", "webkit"]) {
+      const skipping = planFor(engine, all, { skipEngineIndependent: true });
+      expect(skipping.coveredElsewhere.map((c) => c.suite).sort()).toEqual([...names].sort());
+      for (const suite of names) expect(skipping.run).not.toContain(suite);
+      // Nothing is lost: every suite is run, withheld or covered elsewhere.
+      const accounted = [
+        ...skipping.run,
+        ...skipping.withheld.map((w) => w.suite),
+        ...skipping.coveredElsewhere.map((c) => c.suite),
+      ].sort();
+      expect(accounted).toEqual([...all].sort());
+      // Without the flag, they run.
+      expect(planFor(engine, all).coveredElsewhere).toEqual([]);
+    }
+    // Chromium runs them whatever it is asked, and the runner refuses the flag there.
+    const reference = planFor("chromium", all, { skipEngineIndependent: true });
+    expect(reference.coveredElsewhere).toEqual([]);
+    for (const suite of names) expect(reference.run).toContain(suite);
+    const runner = readFileSync(`${BROWSER_TESTS}/run.mjs`, "utf8");
+    expect(runner).toContain(
+      'if (skipEngineIndependent && (fullEngine === null || fullEngine === "chromium")) {',
+    );
+  });
+
+  it("REQUIRES every capability in Chromium - default gate and engine-full - and none elsewhere", () => {
     const runner = readFileSync(`${BROWSER_TESTS}/run.mjs`, "utf8");
     expect([...DEFAULT_GATE_REQUIRES].sort()).toEqual(Object.keys(CAPABILITIES).sort());
     expect(runner).toMatch(/\{ suite, engine: "chromium", requires: DEFAULT_GATE_REQUIRES \}/);
-    expect(runner).toMatch(/plan\.run\.map\(\(suite\) => \(\{ suite, engine: fullEngine \}\)\)/);
+    // `--engine chromium` is the reference run CI uses, so it requires them too; Firefox and
+    // WebKit get no requirement and report an absent capability as not applicable.
+    expect(runner).toContain(
+      'const requires = fullEngine === "chromium" ? { requires: DEFAULT_GATE_REQUIRES } : {};',
+    );
+    expect(runner).toMatch(
+      /plan\.run\.map\(\(suite\) => \(\{ suite, engine: fullEngine, \.\.\.requires \}\)\)/,
+    );
     expect(runner).toContain('BROWSER_REQUIRED_CAPABILITIES: (requires ?? []).join(",")');
   });
 
@@ -355,11 +410,21 @@ describe("every suite has an explicit engine classification", () => {
     const pkg = JSON.parse(
       readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
     );
-    for (const engine of ["firefox", "webkit"]) {
-      const script = pkg.scripts[`test:browser:${engine}-full`];
+    for (const engine of ["chromium", "firefox", "webkit"]) {
+      const script = pkg.scripts[`test:browser:${engine}`];
       expect(script).toContain("BROWSER_STRICT=1");
       expect(script).toContain(`browser-tests/run.mjs --engine ${engine}`);
     }
+    // Every engine script runs EVERY suite. Only Firefox's `:ci` variant - the slow job - leaves
+    // the engine-independent ones to the Chromium job; Chromium and WebKit have none.
+    for (const engine of ["chromium", "firefox", "webkit"]) {
+      expect(pkg.scripts[`test:browser:${engine}`]).not.toContain("--skip-engine-independent");
+    }
+    expect(pkg.scripts["test:browser:chromium:ci"]).toBeUndefined();
+    expect(pkg.scripts["test:browser:webkit:ci"]).toBeUndefined();
+    const ci = pkg.scripts["test:browser:firefox:ci"];
+    expect(ci).toContain("BROWSER_STRICT=1");
+    expect(ci).toContain("browser-tests/run.mjs --engine firefox --skip-engine-independent");
   });
 
   it("routes the selected engine into every launch the harness makes", () => {

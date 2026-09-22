@@ -170,20 +170,46 @@ export const CROSS_BROWSER = Object.freeze(
 );
 
 /**
- * The suites an engine-specific FULL run executes in `engine`, and the ones it deliberately does
- * not, each with the reason. Only `chromium` suites are withheld from other engines; a
- * `capability` suite always runs and decides for itself from what the worker reports.
+ * Suites whose behaviour does not depend on the browser engine: what they test is Python, Node or
+ * the files they produce, and the engine only hosts the interpreter. They run in full in the
+ * Chromium run - the reference engine - and a Firefox or WebKit run may leave them out with
+ * `--skip-engine-independent`, which CI does to keep those jobs short (Playwright's Firefox runs
+ * WebAssembly ~5x slower). Each entry says why, and why what IS engine-specific about it is
+ * covered by another suite that still runs everywhere.
  */
-export function planFor(engine, suites) {
+export const ENGINE_INDEPENDENT = Object.freeze({
+  "addons.mjs":
+    "add-on wheels, digest pinning and staged Cartopy data are Python and file checks; " +
+    "remote Zarr through JSPI is covered by zarr.mjs",
+  "workspace.mjs":
+    "the file formats are written by Python libraries; the engine's OPFS workspace is covered by " +
+    "workspace-errors, workspace-stream and workspace-lifecycle",
+  "bundled-consumer.mjs":
+    "the Vite build runs in Node; starting an interpreter is covered by every other suite",
+  "micropip.mjs": "installing a wheel is Python; fetching one is covered by the adapter suites",
+  "matplotlib.mjs": "figure rendering is Python; displaying one is covered by display.mjs",
+});
+
+/**
+ * The suites an engine-specific FULL run executes in `engine`, and the ones it does not, each with
+ * the reason. `chromium` suites are withheld from other engines. With `skipEngineIndependent` a
+ * NON-Chromium run also leaves out the ENGINE_INDEPENDENT suites, reported as covered by the
+ * Chromium run; Chromium, the reference engine, always runs everything. A `capability` suite
+ * always runs and decides for itself from what the worker reports.
+ */
+export function planFor(engine, suites, { skipEngineIndependent = false } = {}) {
   const run = [];
   const withheld = [];
+  const coveredElsewhere = [];
   for (const suite of suites) {
     const entry = SUITE_CLASSES[suite];
     if (entry?.category === "chromium" && engine !== "chromium") {
       withheld.push({ suite, reason: entry.reason ?? "Chromium-specific" });
+    } else if (skipEngineIndependent && engine !== "chromium" && ENGINE_INDEPENDENT[suite]) {
+      coveredElsewhere.push({ suite, reason: ENGINE_INDEPENDENT[suite] });
     } else {
       run.push(suite);
     }
   }
-  return { run, withheld };
+  return { run, withheld, coveredElsewhere };
 }

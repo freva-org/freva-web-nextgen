@@ -16,8 +16,15 @@ export interface SuiteClass {
 export declare const SUITE_CLASSES: Readonly<Record<string, SuiteClass>>;
 export declare const CATEGORIES: readonly string[];
 export declare const CAPABILITIES: Readonly<Record<string, string>>;
+/** Suites that test nothing engine-specific, each with the reason. */
+export declare const ENGINE_INDEPENDENT: Readonly<Record<string, string>>;
 export declare function planFor(
   engine: string,
   suites: readonly string[],
-): { run: string[]; withheld: { suite: string; reason: string }[] };
+  options?: { skipEngineIndependent?: boolean },
+): {
+  run: string[];
+  withheld: { suite: string; reason: string }[];
+  coveredElsewhere: { suite: string; reason: string }[];
+};
 export declare const DEFAULT_GATE_REQUIRES: readonly string[];

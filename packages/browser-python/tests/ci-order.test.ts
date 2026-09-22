@@ -31,11 +31,30 @@ describe("the browser-python CI job", () => {
     expect(workflow).toBeTruthy();
   });
 
-  it("assembles and VERIFIES the runtime before the browser gate", () => {
-    const job = workflow!.slice(workflow!.indexOf("  browser-python:"));
+  /** The browser job only: from its key to the next job's. */
+  const browserJob = () => {
+    const start = workflow!.indexOf("  browser-python:");
+    const end = workflow!.indexOf("  browser-python-package:");
+    return workflow!.slice(start, end === -1 ? undefined : end);
+  };
+  /** The packaging job only. */
+  const packageJob = () => workflow!.slice(workflow!.indexOf("  browser-python-package:"));
+
+  it("runs one job per engine, strict, through the npm scripts", () => {
+    const job = browserJob();
+    // Chromium and WebKit run everything; only the slow Firefox job runs its `:ci` variant.
+    expect(job).toMatch(/engine: chromium\s+script: test:browser:chromium\n/);
+    expect(job).toMatch(/engine: firefox\s+script: test:browser:firefox:ci\n/);
+    expect(job).toMatch(/engine: webkit\s+script: test:browser:webkit\n/);
+    expect(job).toContain("npm run ${{ matrix.script }}");
+    expect(job).toMatch(/fail-fast: false/);
+  });
+
+  it("assembles and VERIFIES the runtime before the browser suites", () => {
+    const job = browserJob();
     const prepare = at(job, "scripts/prepare-runtime.mjs");
     const check = at(job, "scripts/check-runtime.mjs");
-    const gate = at(job, "test:browser:strict");
+    const gate = at(job, "npm run ${{ matrix.script }}");
     expect(prepare).toBeLessThan(check);
     // The check must come BEFORE the gate. A suite whose wheels are missing exits 3 and is
     // printed as NOT RUN, which reads like a pass in a summary; failing on an incomplete runtime
@@ -43,10 +62,16 @@ describe("the browser-python CI job", () => {
     expect(check).toBeLessThan(gate);
   });
 
-  it("runs the packaging and byte gates after the build", () => {
-    const job = workflow!.slice(workflow!.indexOf("  browser-python:"));
-    expect(at(job, "npm run build")).toBeLessThan(at(job, "test:packaging"));
-    expect(at(job, "npm run build")).toBeLessThan(at(job, "check:bytes"));
+  it("runs the packaging and byte gates, after the build, in a job of their own", () => {
+    const job = packageJob();
+    expect(job).toContain("check:package");
+    expect(at(job, "npm run build")).toBeLessThan(at(job, "check:package"));
+    // ...and `check:package` really is both gates.
+    const pkg = JSON.parse(
+      readFileSync(join(ROOT, "packages/browser-python/package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+    expect(pkg.scripts["check:package"]).toContain("test:packaging");
+    expect(pkg.scripts["check:package"]).toContain("check:bytes");
   });
 });
 

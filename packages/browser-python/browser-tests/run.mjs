@@ -12,6 +12,9 @@
  *    portable and capability suites all run; a capability suite asks the worker what it has and
  *    reports NOT APPLICABLE with the reason when the feature cannot exist there. Only a suite
  *    classified `chromium` in `suite-list.mjs` is withheld, and the summary names it and why.
+ *    `--engine chromium` is the exception to "not applicable": Chromium is the reference engine,
+ *    and every capability is REQUIRED there. CI runs one engine-full job per engine
+ *    (`npm run test:browser:chromium|firefox|webkit`).
  *
  * Suite names given after the options select a subset, under the same supervision.
  */
@@ -49,6 +52,7 @@ if (process.env.BROWSER_PYTHON_PACKAGE_INDEX === "1" || process.env.BROWSER_PYTH
 const args = process.argv.slice(2);
 let fullEngine = null;
 let build = true;
+let skipEngineIndependent = false;
 const requestedSuites = [];
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
@@ -56,6 +60,10 @@ for (let i = 0; i < args.length; i += 1) {
     fullEngine = args[++i] ?? "";
   } else if (arg.startsWith("--engine=")) {
     fullEngine = arg.slice("--engine=".length);
+  } else if (arg === "--skip-engine-independent") {
+    // For a Firefox or WebKit run whose Chromium counterpart runs everything: see
+    // ENGINE_INDEPENDENT in suite-list.mjs.
+    skipEngineIndependent = true;
   } else if (arg === "--no-build") {
     // For a CI step that built immediately before. The freshness check below still runs.
     build = false;
@@ -65,6 +73,11 @@ for (let i = 0; i < args.length; i += 1) {
   } else {
     requestedSuites.push(arg);
   }
+}
+if (skipEngineIndependent && (fullEngine === null || fullEngine === "chromium")) {
+  // Chromium is where those suites are covered; leaving them out there would cover them nowhere.
+  console.error("--skip-engine-independent needs --engine firefox or --engine webkit.");
+  process.exit(2);
 }
 if (fullEngine !== null && !ENGINES.includes(fullEngine)) {
   console.error(
@@ -160,10 +173,21 @@ const RETRYABLE_ENGINES = new Set(["chromium"]);
 let runs;
 /** Suites a full run deliberately does not execute here, each with its reason. */
 let withheld = [];
+/** Engine-independent suites a `--skip-engine-independent` run leaves to the Chromium run. */
+let coveredElsewhere = [];
 if (fullEngine !== null) {
-  const plan = planFor(fullEngine, SUITES);
-  runs = plan.run.map((suite) => ({ suite, engine: fullEngine }));
+  const plan = planFor(fullEngine, SUITES, { skipEngineIndependent });
+  // CHROMIUM IS THE REFERENCE ENGINE: every capability the suites know about exists there, so a
+  // Chromium run REQUIRES them all - losing one is a failure, not "not applicable". This makes
+  // `--engine chromium` the same gate the default run applies to its Chromium half, with the
+  // console suites included. Firefox and WebKit report a missing capability as not applicable.
+  const requires = fullEngine === "chromium" ? { requires: DEFAULT_GATE_REQUIRES } : {};
+  runs = plan.run.map((suite) => ({ suite, engine: fullEngine, ...requires }));
   withheld = plan.withheld.map(({ suite, reason }) => ({
+    label: `${suite} (${fullEngine})`,
+    reason,
+  }));
+  coveredElsewhere = plan.coveredElsewhere.map(({ suite, reason }) => ({
     label: `${suite} (${fullEngine})`,
     reason,
   }));
@@ -293,6 +317,9 @@ if (fullEngine !== null) {
   console.log(
     `\nFull ${fullEngine} run: ${runs.length} suite(s)` +
       (withheld.length ? `, ${withheld.length} withheld as Chromium-specific` : "") +
+      (coveredElsewhere.length
+        ? `, ${coveredElsewhere.length} engine-independent left to the Chromium run`
+        : "") +
       ".",
   );
 }
@@ -407,6 +434,12 @@ for (const t of timedOut) {
 console.log(`not applicable  ${notApplicable.length + withheld.length}`);
 for (const n of notApplicable) console.log(`  n/a   ${n.label} - ${n.reason}`);
 for (const w of withheld) console.log(`  n/a   ${w.label} - withheld: ${w.reason}`);
+if (coveredElsewhere.length > 0) {
+  // Not "not applicable": these CAN run here and pass (`test:browser:<engine>:all`); they are left
+  // out of this run because nothing in them depends on the engine.
+  console.log(`covered by the Chromium run  ${coveredElsewhere.length}`);
+  for (const c of coveredElsewhere) console.log(`  --    ${c.label} - ${c.reason}`);
+}
 if (partlyNotApplicable.length > 0) {
   console.log(`parts not applicable inside suites  ${partlyNotApplicable.length}`);
   for (const p of partlyNotApplicable) console.log(`  n/a   ${p.label}: ${p.name} - ${p.reason}`);
