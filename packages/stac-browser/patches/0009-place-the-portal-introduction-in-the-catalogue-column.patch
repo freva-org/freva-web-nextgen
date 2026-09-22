@@ -1,0 +1,141 @@
+diff --git a/src/components/Providers.vue b/src/components/Providers.vue
+index 03d748c..4332a87 100644
+--- a/src/components/Providers.vue
++++ b/src/components/Providers.vue
+@@ -6,6 +6,7 @@
+         v-for="(provider, key) in providers" :key="key" :href="provider.url" :disabled="!provider.url"
+         target="_blank" rel="noopener noreferrer" variant="provider" class="provider"
+       >
++        <img v-if="provider.logo" class="provider-logo" :src="provider.logo" alt="" loading="lazy">
+         <span class="title">{{ provider.name }}</span>
+         <ProviderRoles :roles="provider.roles" />
+       </b-list-group-item>
+@@ -42,10 +43,50 @@ export default {
+     isSimple() {
+       // We can show the providers much simpler if there are no additional information
+       return !this.providers.find(provider => {
+-        const keys = ['url', 'name', 'roles'];
++        // `logo` is a host-supplied mark for the institution, not additional STAC metadata: a
++        // provider that carries one is still a simple provider and still belongs in the flat list.
++        const keys = ['url', 'name', 'roles', 'logo'];
+         return Object.keys(provider).filter(key => !keys.includes(key)).length > 0;
+       });
+     }
+   }
+ };
+ </script>
++
++<style lang="scss" scoped>
++/*
++ * A provider's mark, beside its name.
++ *
++ * STAC has no logo field, so this renders only when the host has put one on the provider object.
++ * Sized in `em` and capped, because what arrives is somebody's institutional logo at whatever
++ * aspect ratio it happens to have, and a row of provider names is not the place to discover that
++ * one of them is a wide wordmark.
++ */
++.provider-logo {
++  flex: 0 0 auto;
++  width: auto;
++  height: 1.35em;
++  max-width: 5em;
++  margin-right: 0.5em;
++  vertical-align: -0.3em;
++  object-fit: contain;
++}
++
++/*
++ * The name stays beside the mark.
++ *
++ * The row is `justify-content: space-between` and used to hold exactly two children - the title
++ * and the roles badge - so the title sat against the left edge because there was nothing to its
++ * left. Adding a logo made the title the MIDDLE item, and space-between distributes middle items
++ * into the leftover space: measured across five providers, the same logo edge at 847px and titles
++ * starting at 859, 978, 1016, 1048 and 1074 - drifting further right the shorter the name.
++ *
++ * Taking the free space as a margin pins the title to the mark and leaves the badge where it was.
++ * With no logo the row is unchanged: space-between had already put the title first, and a margin
++ * that absorbs the free space there absorbs nothing.
++ */
++.title {
++  margin-right: auto;
++  min-width: 0;
++}
++</style>
+diff --git a/widgets.config.js b/widgets.config.js
+index 6458d26..55a1119 100644
+--- a/widgets.config.js
++++ b/widgets.config.js
+@@ -1,3 +1,70 @@
+-import { defineAsyncComponent } from 'vue';
++import { h, nextTick } from 'vue';
+ 
+-export default {};
++/**
++ * The host portal's own introduction to this catalogue, in the catalogue's own column.
++ *
++ * The portal renders an introduction for the root of the catalogue it embeds - a paragraph or two
++ * of prose, usually a figure - through its OWN content pipeline: its Markdown dialect, its
++ * sanitizer, its content-hashed asset URLs. That rendered fragment cannot be handed to STAC
++ * Browser as `description`, because a description is CommonMark rendered here with `safe: true`,
++ * which would strip it; and it must not be re-rendered by CommonMark either, because the pipeline
++ * that produced it is what resolved its image to a real URL in the built artifact.
++ *
++ * So the fragment stays in the host document, where the portal wrote it, and this widget brings it
++ * INTO the view - specifically, to the top of `section.intro`, which is where this view puts what
++ * the catalogue SAYS about itself. Not into the widget's own place in the column: above `xl` the
++ * metadata column is a flex row whose `> section` children share it, so a fragment in a wrapper of
++ * its own is a third item that takes a line to itself and pushes the providers under it. Inside
++ * `section.intro` it shares that item with the keywords and the links, and the providers keep the
++ * other half of the row - which is the composition this replaces.
++ *
++ * The node is moved, not copied, and moved back when the view goes away, so there is only ever one
++ * of it and the host document is left as it was found.
++ *
++ * It lives here, in this file, rather than in `src/widgets/` as an ordinary component: preparation
++ * resets the checkout's TRACKED files between runs, so a patch that adds a file leaves that file
++ * behind and fails to apply the second time. Every patch in this series changes tracked files only.
++ */
++const PortalIntro = {
++  name: 'PortalIntro',
++  data() {
++    return {
++      // Where the node was taken from, so it can be put back exactly there.
++      taken: null
++    };
++  },
++  mounted() {
++    // After the view has finished rendering: `section.intro` is a later sibling of this widget's
++    // own hook, so it does not exist yet when this component mounts.
++    nextTick(() => {
++      const node = document.querySelector('[data-portal-stac-intro]');
++      if (!node || !this.$el || !this.$el.parentNode) {
++        return;
++      }
++      const view = this.$el.closest('.cc') || this.$el.parentNode;
++      const host = view.querySelector('section.intro') || this.$el;
++      if (host.contains(node)) {
++        return;
++      }
++      this.taken = { node, parent: node.parentNode, next: node.nextSibling };
++      host.insertBefore(node, host.firstChild);
++    });
++  },
++  beforeUnmount() {
++    const taken = this.taken;
++    this.taken = null;
++    if (!taken || !taken.parent || !taken.parent.isConnected) {
++      return;
++    }
++    taken.parent.insertBefore(taken.node, taken.next);
++  },
++  render() {
++    return h('div', { class: 'portal-intro' });
++  }
++};
++
++export default {
++  // Registered unconditionally: it shows nothing when the portal supplied no introduction, and
++  // which views it is visible on is the portal's decision, made in the portal's own stylesheet.
++  'view-catalog-meta-start': [{ id: 'PortalIntro', component: PortalIntro }]
++};

@@ -79,6 +79,7 @@ packages/
   databrowser/           # @freva-org/databrowser
   dataset-tree/          # @freva-org/dataset-tree
   freva-badge/           # @freva-org/freva-badge
+  stac-browser/          # @freva-org/stac-browser (private)
   ts-oidc-auth-client/   # @freva-org/ts-oidc-auth-client
   your-new-package/      # add future packages here
 ```

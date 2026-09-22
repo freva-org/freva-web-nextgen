@@ -1,0 +1,33 @@
+diff --git a/src/components/Validation.vue b/src/components/Validation.vue
+index 0b8b765..c6d0f1c 100644
+--- a/src/components/Validation.vue
++++ b/src/components/Validation.vue
+@@ -1,8 +1,8 @@
+ <template>
+   <div class="valid">
+     <b-spinner v-if="working" :label="$t('source.validating')" small />
+-    <b-button v-else-if="valid === true" variant="success" :size="size" :to="validationLink"><b-icon-check /> {{ $t('checkbox.true') }}</b-button>
+-    <b-button v-else-if="valid === false" variant="danger" :size="size" :to="validationLink"><b-icon-x /> {{ $t('checkbox.false') }}</b-button>
++    <b-button v-else-if="valid === true" variant="success" :size="size" :href="validationHref" target="_blank" rel="noopener noreferrer"><b-icon-check /> {{ $t('checkbox.true') }}</b-button>
++    <b-button v-else-if="valid === false" variant="danger" :size="size" :href="validationHref" target="_blank" rel="noopener noreferrer"><b-icon-x /> {{ $t('checkbox.false') }}</b-button>
+     <template v-else>{{ $t('source.validationNA') }}</template>
+   </div>
+ </template>
+@@ -39,6 +39,17 @@ export default {
+       else {
+         return null;
+       }
++    },
++    // Freva embed: the validation report is a route of the embedded application, and following it
++    // in place replaces the portal's own page with it - the visitor loses the portal shell and
++    // the back button lands them somewhere they did not come from. Resolved to an absolute URL
++    // and opened in a new tab, the tick stays a tick and the report is a report.
++    validationHref() {
++      if (!this.validationLink || !this.$router) {
++        return null;
++      }
++      const href = this.$router.resolve(this.validationLink).href;
++      return new URL(href, window.location.href).toString();
+     }
+   },
+   async created() {

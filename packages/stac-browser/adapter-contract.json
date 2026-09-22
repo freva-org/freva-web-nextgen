@@ -1,0 +1,37 @@
+{
+  "$comment": "The reviewed surface of upstream STAC Browser that the closed portal adapter is permitted to drive, for exactly the pin recorded below. It exists so that upgrading upstream cannot silently change what the adapter means: the pin here must be re-stated, which forces the option list to be re-read. See packages/stac-browser/UPSTREAM.md section 'Upgrading'.",
+  "schemaVersion": 1,
+  "upstream": {
+    "tag": "v5.0.0",
+    "commit": "ae1956e8cb2067ce27938b3ae70c00515ac0ff33"
+  },
+  "reviewedOn": "2026-08-18",
+  "settable": [
+    "allowExternalAccess",
+    "allowedDomains",
+    "catalogImage",
+    "catalogTitle",
+    "catalogUrl",
+    "footerLinks",
+    "historyMode",
+    "pathPrefix",
+    "showKeywordsInItemCards",
+    "showThumbnailsAsAssets"
+  ],
+  "required": [
+    "allowExternalAccess",
+    "allowedDomains",
+    "catalogTitle",
+    "catalogUrl",
+    "historyMode",
+    "pathPrefix"
+  ],
+  "derived": {
+    "$comment": "Values the consumer may never state, whatever upstream calls them. A schema field for any of these would be a configuration surface that the framework has to keep meaning the same thing across an upgrade.",
+    "historyMode": "fixed to 'hash' so a reload of a deep link lands on the generated route with no host SPA fallback",
+    "pathPrefix": "derived from the canonical base path and the component route",
+    "catalogUrl": "taken from the referenced stac service, not from component options",
+    "allowedDomains": "always empty; external access is a portal access decision, not an upstream allowlist"
+  },
+  "namedTransforms": ["canonicalizeAdvertisedRoot", "hideRelations", "projectRootPresentation"]
+}

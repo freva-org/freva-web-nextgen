@@ -23,3 +23,7 @@ packages/browser-python/.measure/
 packages/browser-python/screenshots/
 # The prepared curated add-on directory: pinned third-party artefacts, not this project's source.
 packages/browser-python/.addons/
+# A fetched third-party checkout; not ours to format.
+packages/stac-browser/.upstream/
+# Prepared third-party STAC materials.
+packages/stac-browser/materials/

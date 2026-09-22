@@ -1,0 +1,3 @@
+# The pinned upstream checkout is fetched by scripts/prepare.mjs.
+.upstream/
+dist/

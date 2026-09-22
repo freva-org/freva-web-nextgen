@@ -1,0 +1,67 @@
+diff --git a/src/StacBrowser.vue b/src/StacBrowser.vue
+index d06959a..2f03d04 100644
+--- a/src/StacBrowser.vue
++++ b/src/StacBrowser.vue
+@@ -39,7 +39,7 @@
+                 @set-locale="locale => switchLocale({locale, userSelected: true})"
+               />
+               <b-button
+-                v-if="!enforcedColorModeFromVueX || enforcedColorModeFromVueX === 'auto'"
++                v-if="(!enforcedColorModeFromVueX || enforcedColorModeFromVueX === 'auto') && !hostColorSync"
+                 variant="header"
+                 @click="toggleColorMode"
+               >
+@@ -167,6 +167,8 @@ export default defineComponent({
+   data() {
+     return {
+       colorMode: null,
++      // Freva embed: true while the host page owns light/dark.
++      hostColorSync: false,
+       sidebar: null,
+       error: null,
+       onDataLoaded: null,
+@@ -390,12 +392,43 @@ export default defineComponent({
+       }
+     }
+   },
++  beforeUnmount() {
++    // Freva embed: stop watching the host's theme on teardown.
++    if (this._frevaColorObserver) {
++      this._frevaColorObserver.disconnect();
++      this._frevaColorObserver = null;
++    }
++  },
++
+   async created() {
+     this.colorMode = useColorMode({
+-      selector: 'body',
++      // Freva embed: the colour attribute belongs on this application's own
++      // root, not on the document body, which the portal shell owns.
++      selector: '#stac-browser-mount',
+       initialValue: this.enforcedColorModeFromVueX
+     });
+ 
++    // Freva embed: follow the portal's light/dark instead of the operating
++    // system's. Assigning `colorMode` rather than writing the attribute is the
++    // point: the watcher above commits it to the store, so every component that
++    // reads the mode - maps, code blocks, tables - changes with it.
++    if (document.getElementById('stac-browser-mount')) {
++      this.hostColorSync = true;
++      const readHost = () =>
++        document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
++      this.colorMode = readHost();
++      this._frevaColorObserver = new MutationObserver(() => {
++        const mode = readHost();
++        if (mode !== this.colorMode) {
++          this.colorMode = mode;
++        }
++      });
++      this._frevaColorObserver.observe(document.documentElement, {
++        attributes: true,
++        attributeFilter: ['data-theme']
++      });
++    }
++
+     await updateExternals(this.localeFromVueX, this.fallbackLocaleFromVueX);
+     await this.$router.isReady();
+     await this.detectLocale();

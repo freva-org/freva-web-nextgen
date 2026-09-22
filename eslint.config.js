@@ -63,6 +63,9 @@ export default tseslint.config(
       "packages/browser-python/.testbundle/**",
       // The pinned Pyodide distribution, assembled locally for the browser suites and the demo.
       "packages/browser-python/.runtime/**",
+      // A fetched third-party checkout and the prepared STAC tree: neither is ours to lint.
+      "packages/stac-browser/.upstream/**",
+      "packages/stac-browser/materials/**",
     ],
   },
 );
