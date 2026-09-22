@@ -78,7 +78,7 @@ Nothing is fetched until `start()`.
 The emitted headless-engine files - everything in `dist/` except the console and optional embed
 bridge - are
 
-<!-- size:engine-dist-gz --> 78.7 KiB gzipped against a budget of
+<!-- size:engine-dist-gz --> 80.4 KiB gzipped against a budget of
 <!-- size:engine-budget-gz --> 83.0 KiB. None of the runtime is in your bundle: it is a dynamic
 
 import by URL, and `npm run check:bytes` fails the build if that stops being true, or if the

@@ -220,3 +220,57 @@ jobs:
       # appears in the ROOT bundle.
       - name: Console bundle boundary
         run: node packages/browser-python/scripts/measure-console.mjs
+
+  # EVERY suite in one engine, not only the console suites the gate above runs in
+  # Firefox and WebKit. A capability the engine lacks (OPFS in WebKit, memory
+  # measurement outside Chromium) is reported NOT APPLICABLE with its reason, never
+  # skipped by name. Firefox is slow for a reason outside this package: Playwright's
+  # Firefox runs WebAssembly in its baseline tier only (see
+  # browser-tests/diagnose-firefox-wasm.mjs), so a full run takes ~25 minutes.
+  browser-python-full:
+    name: browser-python (${{ matrix.engine }}, every suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [firefox, webkit]
+
+    env:
+      PKG: "@freva-org/browser-python"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/browser-python/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Runtime manifest id
+        id: runtime
+        run: |
+          echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Pyodide distribution
+        uses: actions/cache@v4
+        with:
+          path: packages/browser-python/.runtime
+          key: pyodide-${{ steps.runtime.outputs.id }}
+
+      - name: Assemble the runtime
+        run: node packages/browser-python/scripts/prepare-runtime.mjs
+
+      - name: The runtime is complete
+        run: node packages/browser-python/scripts/check-runtime.mjs
+
+      - name: Install Playwright engine
+        run: npm exec -w $PKG -- playwright install --with-deps ${{ matrix.engine }}
+
+      # The script builds first and checks the build stamp, so dist cannot be stale.
+      - name: Every suite in ${{ matrix.engine }}
+        run: npm run test:browser:${{ matrix.engine }}-full -w $PKG
