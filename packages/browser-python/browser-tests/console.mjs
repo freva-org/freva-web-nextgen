@@ -47,6 +47,14 @@ const result = await inBrowser(
     try {
       await page.goto(server.url);
       await page.waitForFunction(() => window.__ready === true, null, { timeout: 20000 });
+      await page.evaluate(() => {
+        window.__until = async (condition, ms = 5000) => {
+          const started = performance.now();
+          while (!condition() && performance.now() - started < ms) {
+            await new Promise((r) => setTimeout(r, 16));
+          }
+        };
+      });
 
       // mount and boundary
 
@@ -134,7 +142,7 @@ const result = await inBrowser(
         mock.emit({ type: "stdout", executionId: "x1", text: "printed\n" });
         mock.emit({ type: "stderr", executionId: "x1", text: "warned\n" });
         mock.emit({ type: "result", executionId: "x1", text: "'value'" });
-        await new Promise((r) => setTimeout(r, 80));
+        await window.__until(() => window.__c.lines().length >= 3);
         return window.__c.lines();
       });
       checks.push({
@@ -157,7 +165,9 @@ const result = await inBrowser(
           executionId: "s",
           text: '<a href="javascript:alert(1)">click</a>\n',
         });
-        await new Promise((r) => setTimeout(r, 80));
+        await window.__until(() =>
+          (window.__c.q(".bp-transcript")?.textContent ?? "").includes("<a href="),
+        );
         const transcript = window.__c.q(".bp-transcript");
         return {
           text: transcript.textContent,
@@ -200,7 +210,7 @@ const result = await inBrowser(
           encoding: "utf8",
           data: "<script>window.__pwned = true</script>",
         });
-        await new Promise((r) => setTimeout(r, 60));
+        await window.__until(() => window.__c.text().includes("no renderer"));
         return {
           pwned: Boolean(window.__pwned),
           scripts: window.__c.q(".bp-transcript").querySelectorAll("script").length,
@@ -225,7 +235,7 @@ const result = await inBrowser(
           data: png,
           metadata: { figure: 1 },
         });
-        await new Promise((r) => setTimeout(r, 60));
+        await window.__until(() => Boolean(window.__c.q(".bp-figure img")));
         const image = window.__c.q(".bp-figure img");
         return {
           present: Boolean(image),
@@ -387,14 +397,16 @@ const result = await inBrowser(
         element.clear();
         mock.pushes.length = 0;
         window.__c.mock.emit({ type: "stdout", text: "something to clear\n", executionId: "x" });
-        await new Promise((r) => setTimeout(r, 60));
+        await window.__until(() => window.__c.root().querySelectorAll(".bp-line").length > 0);
         const before = window.__c.root().querySelectorAll(".bp-line").length;
         window.__c.focusInput();
         return { before };
       });
       await page.keyboard.type("clear", { delay: 1 });
       await page.keyboard.press("Enter");
-      await page.waitForTimeout(80);
+      await page.evaluate(() =>
+        window.__until(() => window.__c.root().querySelectorAll(".bp-line").length === 0),
+      );
       const cleared = await page.evaluate(() => ({
         lines: window.__c.root().querySelectorAll(".bp-line").length,
         pushed: window.__c.mock.pushes.length,
