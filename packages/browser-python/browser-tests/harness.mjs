@@ -22,6 +22,12 @@ import {
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SUITE_REQUIREMENTS } from "./suite-requirements.mjs";
+import { checkStamp } from "../scripts/build-stamp.mjs";
+import { withDeadline } from "./deadline.mjs";
+import { workspaceAbsenceConsistent } from "./workspace-reasons.mjs";
+
+/** How long any one teardown step - dispose, context close, browser close - may take. */
+export const TEARDOWN_MS = 15_000;
 
 export const HERE = fileURLToPath(new URL(".", import.meta.url));
 export const PKG = resolve(HERE, "..");
@@ -37,6 +43,13 @@ export const RUNTIME_DIR = process.env.BROWSER_PYTHON_RUNTIME_DIR
   : join(PKG, ".runtime");
 export const FIXTURES = join(PKG, "tests", "fixtures");
 export const TEST_BUNDLE = join(PKG, ".testbundle");
+/**
+ * Worker entry points that REMOVE a capability before the real worker module evaluates, so the
+ * fallback a browser without it takes is exercised in every engine - including one that has the
+ * capability. They go through the public `workerURL` option; nothing in the package knows about
+ * them. See `test-worker/`.
+ */
+export const TEST_WORKERS = join(HERE, "test-worker");
 
 /**
  * Where the derived Freva wheel is built for the suites that need it. Git-ignored, and NOT under
@@ -97,8 +110,39 @@ export const EXIT_NOT_RUN = 3;
 /** A suite failed for a narrowly classified browser-runtime reason and may be retried once in a
  * fresh process. Ordinary assertion failures remain exit 1 and are never retried. */
 export const EXIT_RETRYABLE = 75;
+/**
+ * The feature a suite exists to exercise needs a capability THIS ENGINE's worker does not have -
+ * detected at run time, never inferred from the browser's name. Not a pass: `run.mjs` lists it
+ * separately with the reason, and the checks the suite could still make about the documented
+ * fallback must all have passed for this code to be returned at all.
+ */
+export const EXIT_NOT_APPLICABLE = 4;
 
-/** The package must be BUILT: these suites measure the shipped artifact, not the sources. */
+/** The Playwright engines a suite may be asked to run in. */
+export const ENGINES = Object.freeze(["chromium", "firefox", "webkit"]);
+
+/**
+ * THE ENGINE THIS PROCESS RUNS IN, chosen once by `run.mjs` (or by whoever invokes a suite
+ * directly) through `BROWSER_ENGINE`. Every launch in the harness defaults to it, so a suite that
+ * never names a browser runs in the one the runner selected instead of quietly in Chromium - the
+ * gap that let `BROWSER_ENGINES=firefox,webkit` exercise seven mock-console suites and nothing else.
+ */
+export const ENGINE = (() => {
+  const requested = process.env.BROWSER_ENGINE ?? "chromium";
+  if (!ENGINES.includes(requested)) {
+    console.error(
+      `BROWSER_ENGINE must be one of ${ENGINES.join(", ")}; received ${JSON.stringify(requested)}.`,
+    );
+    process.exit(EXIT_NOT_BUILT);
+  }
+  return requested;
+})();
+
+/**
+ * The package must be BUILT, and built from THESE sources: the suites measure the shipped
+ * artifact, and a `dist/` left over from an earlier checkout tests yesterday's worker with today's
+ * suites. Freshness is a content digest (`scripts/build-stamp.mjs`), never a modification time.
+ */
 export function requireDist() {
   if (!existsSync(join(DIST, "index.js"))) {
     console.error("dist/ not found - run `npm run build` first.");
@@ -106,6 +150,11 @@ export function requireDist() {
   }
   if (!existsSync(join(DIST, "worker", "browser-python.worker.js"))) {
     console.error("dist/worker/browser-python.worker.js not found - the worker was not emitted.");
+    process.exit(EXIT_NOT_BUILT);
+  }
+  const fresh = checkStamp(PKG);
+  if (!fresh.ok) {
+    console.error(fresh.reason);
     process.exit(EXIT_NOT_BUILT);
   }
 }
@@ -202,6 +251,7 @@ export async function serve(html, options = {}) {
     "/runtime/": RUNTIME_DIR,
     "/fixtures/": FIXTURES,
     "/bundle/": TEST_BUNDLE,
+    "/test-worker/": TEST_WORKERS,
     ...(options.roots ?? {}),
   };
   /**
@@ -335,6 +385,7 @@ export function fixturePage({
   wheelhouseURL,
   persistCredentials,
   workspaceMaxFiles,
+  workerURL,
 } = {}) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>browser-python</title></head>
 <body>
@@ -354,6 +405,7 @@ export function fixturePage({
     ${wheelhouseURL ? `wheelhouseURL: new URL(${JSON.stringify(wheelhouseURL)}, location.href).href,` : ""}
     ${persistCredentials ? "persistCredentials: true," : ""}
     ${workspaceMaxFiles !== undefined ? `workspaceMaxFiles: ${JSON.stringify(workspaceMaxFiles)},` : ""}
+    ${workerURL ? `workerURL: new URL(${JSON.stringify(workerURL)}, location.href),` : ""}
   });
   const artifactEvents = [];
   python.onOutput((event) => events.push(event));
@@ -554,21 +606,48 @@ export function isStrict() {
   return process.env.BROWSER_STRICT === "1";
 }
 
-/** Run `fn(page)` in Chromium. A missing engine is a skip, or a failure under BROWSER_STRICT=1. */
-export async function inBrowser(fn, options = {}) {
-  const { browserName = "chromium", fullBrowser = false, viewport } = options;
-  const playwright = await import("playwright");
+/**
+ * Launch options for `browserName`, shared by `inBrowser` and `launchPersistent` so a persistent
+ * profile is launched exactly as an ordinary one is. The Chromium-only parts are keyed on the
+ * ENGINE being launched, because they are Chromium's own command line: they select nothing about
+ * what is tested.
+ */
+function launchOptions(browserName, { fullBrowser = false } = {}) {
   const override = process.env.PLAYWRIGHT_CHROMIUM_PATH;
+  return {
+    ...(override && browserName === "chromium" ? { executablePath: override } : {}),
+    // Playwright's default headless Chromium is chrome-headless-shell. The two memory suites
+    // need the full browser because the shell exposes measureUserAgentSpecificMemory() but
+    // rejects the call. `channel: "chromium"` opts into the full Playwright Chromium binary.
+    ...(fullBrowser && !override && browserName === "chromium" ? { channel: "chromium" } : {}),
+    args: browserName === "chromium" ? ["--no-sandbox"] : [],
+  };
+}
+
+/**
+ * A persistent profile in the SELECTED engine, for the suites that restart a real browser over one
+ * profile directory. Playwright supports `launchPersistentContext` in all three engines; what
+ * each one then keeps across the restart is what those suites measure.
+ */
+export async function launchPersistent(profileDir, options = {}) {
+  const { browserName = ENGINE, ...contextOptions } = options;
+  const playwright = await import("playwright");
+  return await playwright[browserName].launchPersistentContext(profileDir, {
+    ...launchOptions(browserName),
+    ...contextOptions,
+  });
+}
+
+/**
+ * Run `fn(page)` in the selected engine - `BROWSER_ENGINE`, Chromium when unset. A missing engine
+ * is NOT RUN, or a failure under BROWSER_STRICT=1; never a pass.
+ */
+export async function inBrowser(fn, options = {}) {
+  const { browserName = ENGINE, fullBrowser = false, viewport } = options;
+  const playwright = await import("playwright");
   let browser;
   try {
-    browser = await playwright[browserName].launch({
-      ...(override && browserName === "chromium" ? { executablePath: override } : {}),
-      // Playwright's default headless Chromium is chrome-headless-shell. The two memory suites
-      // need the full browser because the shell exposes measureUserAgentSpecificMemory() but
-      // rejects the call. `channel: "chromium"` opts into the full Playwright Chromium binary.
-      ...(fullBrowser && !override && browserName === "chromium" ? { channel: "chromium" } : {}),
-      args: browserName === "chromium" ? ["--no-sandbox"] : [],
-    });
+    browser = await playwright[browserName].launch(launchOptions(browserName, { fullBrowser }));
   } catch (e) {
     return {
       status: isStrict() ? "fail" : "skipped",
@@ -591,30 +670,38 @@ export async function inBrowser(fn, options = {}) {
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  let outcome;
   try {
-    const checks = await fn(page);
+    const returned = await fn(page);
+    const checks = Array.isArray(returned) ? returned : (returned?.checks ?? []);
     // DISPOSE BEFORE CLOSING THE TAB. Closing the page tears the Worker down whatever state it was
     // in, so a suite that walks away proves the engine works and never that it stops working
     // cleanly. `dispose()` terminates the Worker, rejects everything in flight and releases the
     // workspace's locks, and a fault there - a throw, a lock left held, a state that is not
     // `disposed` - is otherwise invisible. Run on every engine the fixture exposed, and TWICE.
-    const teardown = await page
-      .evaluate(async () => {
-        const engines = [
-          window.__py?.engine,
-          window.__csp?.engine,
-          window.__c?.element?.engine,
-        ].filter((e) => e && typeof e.dispose === "function");
-        const states = [];
-        for (const engine of engines) {
-          await engine.dispose();
-          await engine.dispose(); // terminal and idempotent, or this is where it says so
-          states.push(engine.state ?? null);
-        }
-        return { engines: engines.length, states };
-      })
-      .catch((error) => ({ error: String(error?.message ?? error).split("\n")[0] }));
-    if (teardown?.error !== undefined || (teardown?.engines ?? 0) > 0) {
+    // BOUNDED: a wedged page must not hold the process. SKIPPED when a phase deadline already
+    // closed the page, which the suite reported as the failure it is.
+    const teardown = page.isClosed()
+      ? null
+      : await withDeadline(
+          page.evaluate(async () => {
+            const engines = [
+              window.__py?.engine,
+              window.__csp?.engine,
+              window.__c?.element?.engine,
+            ].filter((e) => e && typeof e.dispose === "function");
+            const states = [];
+            for (const engine of engines) {
+              await engine.dispose();
+              await engine.dispose(); // terminal and idempotent, or this is where it says so
+              states.push(engine.state ?? null);
+            }
+            return { engines: engines.length, states };
+          }),
+          TEARDOWN_MS,
+          "dispose() at teardown",
+        ).catch((error) => ({ error: String(error?.message ?? error).split("\n")[0] }));
+    if (teardown && (teardown.error !== undefined || (teardown.engines ?? 0) > 0)) {
       checks.push({
         name: "dispose() at teardown is clean, terminal and idempotent",
         pass:
@@ -626,30 +713,79 @@ export async function inBrowser(fn, options = {}) {
     if (errors.length) checks.push({ name: "no page errors", pass: false, detail: errors[0] });
     // `checks.length > 0` for the same reason `report` insists on it: a body that returned before
     // asserting anything has proved nothing, and `[].every(...)` says otherwise.
-    return {
-      status: checks.length > 0 && checks.every((c) => c.pass) ? "pass" : "fail",
+    // A suite body may return an ARRAY of checks, or an object carrying them along with what it
+    // found not applicable here. Either way the verdict is computed below, never taken on trust.
+    const notApplicable = Array.isArray(returned) ? [] : (returned?.notApplicable ?? []);
+    const unavailable = Array.isArray(returned) ? undefined : returned?.unavailable;
+    const passing = checks.length > 0 && checks.every((c) => c.pass);
+    outcome = {
+      status: !passing ? "fail" : unavailable ? "not-applicable" : "pass",
+      ...(unavailable ? { reason: unavailable } : {}),
       ...(checks.length === 0 ? { detail: "the suite body returned no checks" } : {}),
       ...(checks.some((c) => c.retryable === true) ? { retryable: true } : {}),
+      ...(notApplicable.length > 0 ? { notApplicable } : {}),
       checks,
     };
   } catch (e) {
-    return { status: "fail", detail: e.stack ?? e.message, checks: [] };
+    outcome = { status: "fail", detail: e.stack ?? e.message, checks: [] };
   } finally {
-    const close = async (operation) => {
+    // BOUNDED, both of them: a browser whose close never returns would otherwise hold this process
+    // until the runner's watchdog, and the suite's result with it. A close that does not finish is
+    // a named failure; the process then exits, and Playwright kills what it launched on exit.
+    const close = async (what, operation) => {
       try {
-        await operation();
+        await withDeadline(operation(), TEARDOWN_MS, what);
       } catch (error) {
         const message = String(error?.message ?? error);
-        // A process watchdog or renderer crash can remove the context before this finally block.
-        // Closing something already gone is successful cleanup, not a second test failure. Keep
-        // every other Playwright close error visible.
-        if (!/Failed to find context|Target .* closed|browser has been closed/i.test(message)) {
-          throw error;
+        // A process watchdog, renderer crash or phase deadline can remove the context before this
+        // finally block. Closing something already gone is successful cleanup, not a second test
+        // failure. Keep every other close error - including a deadline - visible.
+        if (/Failed to find context|Target .* closed|browser has been closed/i.test(message))
+          return;
+        const failure = {
+          name: `${what} finished within ${TEARDOWN_MS} ms`,
+          pass: false,
+          detail: message,
+        };
+        if (outcome) {
+          outcome.checks.push(failure);
+          outcome.status = "fail";
         }
       }
     };
-    await close(() => context.close());
-    await close(() => browser.close());
+    await close("context.close()", () => context.close());
+    await close("browser.close()", () => browser.close());
+  }
+  return outcome;
+}
+
+/**
+ * Stop every engine a fixture page exposes, BOUNDED: a bounded `dispose()` first, which rejects
+ * whatever the engine had in flight - so a pending `page.evaluate()` settles instead of living on;
+ * and if the page itself does not answer, its browser context is closed. What a phase deadline
+ * calls, and what a section's cleanup calls. Never throws.
+ */
+export async function terminateEngines(page) {
+  if (page.isClosed()) return;
+  try {
+    await withDeadline(
+      page.evaluate(() => {
+        for (const engine of [
+          window.__py?.engine,
+          window.__csp?.engine,
+          window.__c?.element?.engine,
+        ]) {
+          if (engine && typeof engine.dispose === "function") engine.dispose();
+        }
+        return true;
+      }),
+      5_000,
+      "disposing the page's engines",
+    );
+  } catch {
+    await withDeadline(page.context().close(), TEARDOWN_MS, "closing the browser context").catch(
+      () => undefined,
+    );
   }
 }
 
@@ -658,17 +794,37 @@ export async function inFullBrowser(fn, options = {}) {
   return await inBrowser(fn, { ...options, fullBrowser: true });
 }
 
+/**
+ * Hand the runner a machine-readable account of this suite, when it asked for one. The exit code
+ * stays the contract; this carries the REASONS a summary needs - what was not applicable here and
+ * why - which an exit code cannot.
+ */
+function recordOutcome(outcome) {
+  const file = process.env.BROWSER_RESULT_FILE;
+  if (!file) return;
+  try {
+    writeFileSync(file, JSON.stringify(outcome));
+  } catch (error) {
+    console.log(`  (could not write the result file: ${String(error?.message ?? error)})`);
+  }
+}
+
 export function report(title, result) {
-  console.log(`\n=== ${title} ===`);
+  console.log(`\n=== ${title}${title.includes(ENGINE) ? "" : ` [${ENGINE}]`} ===`);
   const checks = result.checks ?? [];
+  const notApplicable = result.notApplicable ?? [];
   if (result.status === "skipped") {
-    console.log(`  SKIPPED  ${result.detail ?? ""}`);
-    return 0;
+    // NOT RUN, never a pass. Under BROWSER_STRICT=1 `inBrowser` reports a missing engine as a
+    // failure instead; without it the runner lists this line under "did not run".
+    console.log(`  NOT RUN  ${result.detail ?? ""}`);
+    recordOutcome({ outcome: "not-run", reason: result.detail ?? "skipped" });
+    return EXIT_NOT_RUN;
   }
   for (const c of checks) {
     console.log(`  ${c.pass ? "pass" : "FAIL"}  ${c.name}${c.detail ? `  - ${c.detail}` : ""}`);
   }
   if (result.detail) console.log(`  FAIL  ${result.detail}`);
+  for (const n of notApplicable) console.log(`  n/a   ${n.name}  - ${n.reason}`);
   const failed = checks.filter((c) => !c.pass).length;
   console.log(`  ${checks.length - failed}/${checks.length} checks pass`);
 
@@ -681,18 +837,196 @@ export function report(title, result) {
   //   - A FAILING CHECK fails the suite regardless of the status handed in.
   //   - An explicit `status` other than "pass" is honoured even when every check passed, because a
   //     teardown that threw after the last assertion is a failure no check will record.
+  //
+  // NOT APPLICABLE is a fourth outcome, and it is not a pass either. It needs a stated reason, at
+  // least one executed check (the one that established the capability is absent, at minimum), and
+  // every check it did make passing: a suite that found the feature unavailable and then got the
+  // documented fallback WRONG has failed, whatever it was unable to test.
+  const applicable = result.status === "not-applicable";
   const problems = [];
-  if (result.status !== "pass")
+  if (result.status !== "pass" && !applicable)
     problems.push(`the suite reported status ${result.status ?? "none"}`);
+  if (applicable && !result.reason) problems.push("not applicable, but no reason was given");
   if (checks.length === 0) problems.push("no checks ran at all, which is not a pass");
   if (failed > 0) problems.push(`${failed} of ${checks.length} checks failed`);
+  const summary = {
+    checks: checks.length,
+    failed,
+    ...(notApplicable.length > 0 ? { notApplicable } : {}),
+  };
   if (problems.length > 0) {
     console.log(`  NOT A PASS: ${problems.join("; ")}.`);
+    const lastFailure = checks.find((c) => !c.pass);
+    recordOutcome({
+      outcome: "fail",
+      reason: problems.join("; "),
+      ...(lastFailure ? { firstFailure: lastFailure.name } : {}),
+      ...summary,
+    });
     if (result.retryable === true) {
       console.log("  RETRYABLE: the aggregate runner may repeat this suite in a fresh process.");
       return EXIT_RETRYABLE;
     }
     return 1;
   }
+  if (applicable) {
+    console.log(`  NOT APPLICABLE in ${ENGINE}: ${result.reason}`);
+    recordOutcome({ outcome: "not-applicable", reason: result.reason, ...summary });
+    return EXIT_NOT_APPLICABLE;
+  }
+  recordOutcome({ outcome: "pass", ...summary });
   return 0;
 }
+
+/**
+ * The capabilities a started engine reports, read from its `ready` payload - which the WORKER
+ * computed, in the browser actually running the test. A suite branches on these, never on
+ * `ENGINE`: Playwright's WebKit is not a Safari release, and a Firefox build can differ from the
+ * one on a visitor's desk.
+ */
+export function capabilitiesOf(ready) {
+  return {
+    jspi: ready?.jspi === true,
+    workspace: ready?.workspace?.available === true,
+    workspaceReason: ready?.workspace?.reason ?? null,
+    workspaceDetail: ready?.workspace?.detail ?? null,
+  };
+}
+
+/**
+ * Capabilities THIS RUN requires, from `BROWSER_REQUIRED_CAPABILITIES` (comma-separated names from
+ * `CAPABILITIES` in suite-list.mjs). The default gate sets it: it is the Chromium baseline, which
+ * has always asserted these, so a Chromium that loses one must FAIL rather than turn quietly into
+ * "not applicable". An engine-full run sets nothing and lets every capability be detected.
+ */
+export const REQUIRED_CAPABILITIES = new Set(
+  (process.env.BROWSER_REQUIRED_CAPABILITIES ?? "").split(/[\s,]+/).filter(Boolean),
+);
+
+/**
+ * Record that `capability` is absent for the part `name`: a not-applicable part, or - when this
+ * run requires the capability - a failing check. Returns whether it was recorded as not applicable.
+ */
+export function capabilityAbsent(checks, notApplicable, capability, name, reason) {
+  if (REQUIRED_CAPABILITIES.has(capability)) {
+    checks.push({
+      name: `${name}: ${capability} is required in this run, and is missing`,
+      pass: false,
+      detail: reason,
+    });
+    return false;
+  }
+  notApplicable.push({ name, reason });
+  return true;
+}
+
+/**
+ * The same for a whole suite: the reason to report it not applicable, or `undefined` after
+ * recording a failing check when this run requires the capability.
+ */
+export function unavailableUnlessRequired(checks, capability, reason) {
+  if (!REQUIRED_CAPABILITIES.has(capability)) return reason;
+  checks.push({
+    name: `${capability} is required in this run, and is missing`,
+    pass: false,
+    detail: reason,
+  });
+  return undefined;
+}
+
+export { WORKSPACE_CAPABILITY_REASONS } from "./workspace-reasons.mjs";
+
+/**
+ * What a `__py` fixture page must still do when its worker reported no disk-backed workspace, and
+ * the reason to report. Used by the suites whose feature IS the workspace, so each one exercises
+ * the documented fallback before calling itself not applicable:
+ *
+ *  - the interpreter started and `ready.workspace` says why. A missing API is a capability reason;
+ *    `open-failed` counts only when an INDEPENDENT probe worker could not use OPFS in this context
+ *    either - otherwise the package failed where the browser would have let it work, and that fails;
+ *  - Python still writes and reads files, in memory;
+ *  - asking for downloads is refused with that same sentence, not answered with an empty list.
+ */
+export async function workspaceFallbackChecks(page, status, probe) {
+  const worker = probe ?? (await probeWorkerCapabilities(page));
+  const checks = [];
+  // The reason must be the first prerequisite an independent worker in this context lacks, with
+  // the sentence that belongs to it: `no-opfs` in WebKit, `no-sync-access-handles` where OPFS
+  // exists without sync handles, `open-failed` only where the probe could not use OPFS either.
+  const consistent = workspaceAbsenceConsistent(status, worker);
+  checks.push({
+    name: "no disk-backed workspace here: start() succeeds and ready.workspace gives the real reason",
+    pass: consistent.ok,
+    detail: JSON.stringify({
+      status,
+      probe: worker,
+      ...(consistent.ok ? {} : { why: consistent.why }),
+    }),
+  });
+  checks.push({
+    name: "…and an independent worker could not use OPFS here either, so the package is not at fault",
+    pass: worker.opfsUsable === false,
+    detail: JSON.stringify(worker),
+  });
+  const files = await page.evaluate(async () => {
+    window.__py.drain();
+    const r = await window.__py.run(
+      "with open('fallback.txt', 'w') as f:\n    f.write('kept')\nprint(open('fallback.txt').read())\n",
+    );
+    return { error: r.error ?? null, stdout: window.__py.text("stdout") };
+  });
+  checks.push({
+    name: "…Python still writes and reads files, in memory",
+    pass: files.error === null && files.stdout === "kept\n",
+    detail: JSON.stringify(files),
+  });
+  const listing = await page.evaluate(async () => {
+    try {
+      return { artifacts: await window.__py.artifacts() };
+    } catch (error) {
+      return { error: String(error?.message ?? error) };
+    }
+  });
+  checks.push({
+    name: "…and downloads are refused with that same reason, not an empty list",
+    pass: typeof listing.error === "string" && listing.error === status?.detail,
+    detail: JSON.stringify(listing),
+  });
+  const reason = unavailableUnlessRequired(
+    checks,
+    "sync-access-handles",
+    `this ${ENGINE} context's worker cannot back /workspace with OPFS ` +
+      `(${status?.reason ?? "unknown"}${worker.opfsError ? `; ${worker.opfsError}` : ""}): ` +
+      `${status?.detail ?? "no detail"}`,
+  );
+  return { checks, reason };
+}
+
+/**
+ * Ask a dedicated Worker on the current page what it has, for suites that must decide BEFORE an
+ * engine starts - two tabs racing to start, a probe worker of their own. The same questions the
+ * package's worker asks (`supportsJspi`, `probeWorkspaceSupport`), asked in the same kind of
+ * context, because a capability can differ between a document and a worker.
+ */
+export async function probeWorkerCapabilities(page) {
+  // `page` may be a Frame: the question is about THAT document's context. The probe is a real file
+  // under /test-worker/, which every harness server serves - see test-worker/probe-capabilities.mjs.
+  return await page.evaluate(async () => {
+    const worker = new Worker(new URL("/test-worker/probe-capabilities.mjs", location.href), {
+      type: "module",
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        worker.onmessage = (event) => resolve(event.data);
+        worker.onerror = (event) => reject(new Error(`probe worker failed: ${event.message}`));
+        setTimeout(() => reject(new Error("probe worker did not answer within 10s")), 10_000);
+      });
+    } finally {
+      worker.terminate();
+    }
+  });
+}
+
+/** The fixed sentence a remote read without JSPI must produce - see `_freva_bridge.py`. */
+export const NO_JSPI_REMOTE_MESSAGE =
+  "Remote dataset access requires WebAssembly JSPI (stack switching), which this browser does not provide";

@@ -14,6 +14,7 @@ import {
   requireRuntimeFor,
   serve,
 } from "./harness.mjs";
+import { jsonFromPythonRepr, pythonJsonExpression } from "./py-json.mjs";
 
 requireDist();
 
@@ -270,9 +271,9 @@ except OSError as exc:
     seen["ranged_hidden"] = str(exc)[:120]
 _gz = json.dumps(seen)
 `);
-    // `value()` hands back a Python repr; for a str of JSON that is the JSON in single quotes.
-    const repr = await value("_gz");
-    const gzResult = JSON.parse(repr.slice(1, -1));
+    // Base64 across the boundary, never a Python repr parsed as JSON - see py-json.mjs. The
+    // refusal messages below carry quotes, which is exactly what broke the old slicing in Firefox.
+    const gzResult = jsonFromPythonRepr(await value(pythonJsonExpression("json.loads(_gz)")));
     checks.push({
       name: "a cross-origin gzip response decodes to its full length, not to Content-Length",
       pass: gzResult.decoded === GZIP_BODY.length && gzResult.parsed === 2,
@@ -310,6 +311,19 @@ _gz = json.dumps(seen)
     const probe = await serve("", {
       handle: (req, res, url) => {
         if (!url.pathname.startsWith("/probe/")) return false;
+        // A CORS preflight is answered, not recorded: whether an engine treats a single
+        // `Range: bytes=a-b` as a safelisted header (and skips the preflight) is the engine's
+        // business, and what these servers exist to test is the RESPONSE the adapter then reads.
+        if (req.method === "OPTIONS") {
+          res.writeHead(204, {
+            "access-control-allow-origin": "*",
+            "access-control-allow-methods": "GET, HEAD",
+            "access-control-allow-headers": "range",
+            "access-control-max-age": "600",
+          });
+          res.end();
+          return true;
+        }
         probeSeen.push({
           method: req.method,
           path: url.pathname,
@@ -363,7 +377,7 @@ out["ignores_range"] = list(await bh.head("${probeOrigin}/probe/ignores-range"))
 out["missing"] = list(await bh.head("${probeOrigin}/probe/nothing-here"))
 _probe = json.dumps(out)
 `);
-      const probed = JSON.parse((await value("_probe")).slice(1, -1));
+      const probed = jsonFromPythonRepr(await value(pythonJsonExpression("json.loads(_probe)")));
       checks.push({
         name: "a real server that refuses HEAD is probed with Range: bytes=0-0",
         pass:
@@ -402,6 +416,19 @@ _probe = json.dumps(out)
     const refuser = await serve("", {
       handle: (req, res, url) => {
         if (!url.pathname.startsWith("/refuse/")) return false;
+        // A CORS preflight is answered, not recorded: whether an engine treats a single
+        // `Range: bytes=a-b` as a safelisted header (and skips the preflight) is the engine's
+        // business, and what these servers exist to test is the RESPONSE the adapter then reads.
+        if (req.method === "OPTIONS") {
+          res.writeHead(204, {
+            "access-control-allow-origin": "*",
+            "access-control-allow-methods": "GET, HEAD",
+            "access-control-allow-headers": "range",
+            "access-control-max-age": "600",
+          });
+          res.end();
+          return true;
+        }
         refuseSeen.push({ path: url.pathname, range: req.headers.range ?? null });
         const cors = {
           "access-control-allow-origin": "*",
@@ -452,7 +479,7 @@ out["busy"] = await _try("/refuse/busy", 0, 16)
 out["negative_total_head"] = list(await bh.head("${refuseOrigin}/refuse/negative-total"))
 _refuse = json.dumps(out)
 `);
-      const refused = JSON.parse((await value("_refuse")).slice(1, -1));
+      const refused = jsonFromPythonRepr(await value(pythonJsonExpression("json.loads(_refuse)")));
       checks.push({
         name: "a real range-ignoring 200 is refused rather than downloaded",
         pass: /ignored the Range header/.test(refused.ignores_range ?? ""),

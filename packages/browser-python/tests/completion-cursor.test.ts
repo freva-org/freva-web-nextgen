@@ -39,6 +39,7 @@ function fakeBridge(reply: { matches: string[]; start: number }) {
   const heads: string[] = [];
   const bridge = {
     make_console: () => true,
+    set_jspi: (available: boolean) => available,
     console_push: () => undefined,
     run_future: async () => undefined,
     run_source: () => undefined,

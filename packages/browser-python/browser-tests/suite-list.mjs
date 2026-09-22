@@ -32,6 +32,7 @@ export const SUITES = [
   "addons.mjs", // curated add-ons: mirrored Dask wheels and offline Natural Earth data
   "matplotlib.mjs", // needs the matplotlib wheel
   "micropip.mjs", // needs the micropip wheel; installs a local fixture wheel, never PyPI
+  "capability-fallbacks.mjs", // no JSPI, no sync access handles: the fallbacks, in every engine
 ];
 
 /**
@@ -67,17 +68,122 @@ export const PACKAGE_INDEX_SUITES = [
 export const NETWORK_SUITES = ["cmip6.mjs", "freva-live.mjs"];
 
 /**
- * The console suites run in every engine that is installed; the Pyodide ones do not. `console.mjs`
- * uses a mock engine precisely so it can afford three browsers, and the engine's own JSPI
- * requirements make Firefox and WebKit a separate question that the engine phase owns.
+ * WHAT EACH SUITE NEEDS FROM A BROWSER ENGINE, as data. Four categories:
+ *
+ *  - `console`: the component against a MOCK engine. Cheap, so the default gate runs these in every
+ *    engine listed in `BROWSER_ENGINES`.
+ *  - `portable`: a real interpreter, and nothing an engine may lack. Runs in the selected engine.
+ *  - `capability`: a real interpreter, plus a capability an engine may or may not have
+ *    (`capabilities` names it). The suite runs everywhere, asks the WORKER what it has, exercises
+ *    the feature when it is there and the documented fallback when it is not - reporting the
+ *    latter as NOT APPLICABLE with the reason, never as a pass. A suite that uses a capability
+ *    for PART of its checks is `portable`, and reports those parts as not applicable instead.
+ *  - `chromium`: exercises something only Chromium provides, with `reason` saying what. None of
+ *    the default suites is in this category any more; it exists so a future one has to say why.
+ *
+ * `tests/browser-gate.test.ts` fails if a suite the runner can run has no entry here, if an entry
+ * names a suite the runner does not know, or if a category or capability is not one of these.
  */
-export const CROSS_BROWSER = Object.freeze([
-  "console.mjs",
-  "console-keyboard.mjs",
-  "console-mobile.mjs",
+export const CAPABILITIES = Object.freeze({
+  jspi:
+    "WebAssembly JSPI (stack switching): a synchronous Python call waiting on an asynchronous " +
+    "fetch, which is how a remote Zarr store is read",
+  "sync-access-handles":
+    "OPFS synchronous access handles in a dedicated Worker, which back the disk-based /workspace",
+  // Parts of suites, not whole features:
+  "memory-measurement":
+    "performance.measureUserAgentSpecificMemory(), the only in-page view of ArrayBuffer memory",
+  "save-file-picker": "window.showSaveFilePicker(), the native save dialog",
+  "transferable-streams": "a WritableStream that can be transferred through postMessage",
+  "user-activation": "navigator.userActivation, which makes user activation observable",
+  "worker-request-observation":
+    "automation that reports a dedicated Worker's requests, so a no-external-fetch claim can fail",
+});
+
+/**
+ * THE DEFAULT GATE IS THE CHROMIUM BASELINE, and it has always asserted every one of these. In it
+ * they are REQUIRED (`BROWSER_REQUIRED_CAPABILITIES`): a Chromium that loses one must fail the
+ * gate, not turn quietly into "not applicable". An engine-full run requires none of them and lets
+ * each suite detect what the worker has.
+ */
+export const DEFAULT_GATE_REQUIRES = Object.freeze(Object.keys(CAPABILITIES));
+
+/** @type {Readonly<Record<string, {category: string, capabilities?: readonly string[], reason?: string}>>} */
+export const SUITE_CLASSES = Object.freeze({
+  // console - a mock engine, every engine
+  "console.mjs": { category: "console" },
+  "console-keyboard.mjs": { category: "console" },
+  "console-mobile.mjs": { category: "console" },
   // Focus-after-click is exactly the kind of thing each engine gets subtly wrong on its own.
-  "console-pointer.mjs",
-  "console-lifecycle.mjs",
-  "console-paste-and-caret.mjs",
-  "console-files.mjs",
-]);
+  "console-pointer.mjs": { category: "console" },
+  "console-lifecycle.mjs": { category: "console" },
+  "console-paste-and-caret.mjs": { category: "console" },
+  "console-files.mjs": { category: "console" },
+
+  // portable - the real interpreter
+  "console-real-engine.mjs": { category: "portable" },
+  "repl.mjs": { category: "portable" },
+  "display.mjs": { category: "portable" },
+  "http-adapter.mjs": { category: "portable" }, // awaited reads only: no JSPI involved
+  "fsspec-adapter.mjs": { category: "portable" }, // awaited reads only
+  "s3-adapter.mjs": { category: "portable" }, // awaited reads only
+  "matplotlib.mjs": { category: "portable" },
+  "micropip.mjs": { category: "portable" },
+  "csp.mjs": { category: "portable" },
+  "bundled-consumer.mjs": { category: "portable" },
+  "capability-fallbacks.mjs": { category: "portable" }, // removes the capabilities itself
+  // Portable with capability-dependent PARTS, reported as not applicable where absent: the OPFS
+  // file inside the frame; and for two origins the workspace-backed downloads, the native picker,
+  // transferable streams, `navigator.userActivation` and Chromium's memory API. The framing,
+  // policies, handshake and the four bounded operations run everywhere.
+  "embedding-waterpark.mjs": { category: "portable" },
+  "embedding-two-origin.mjs": { category: "portable" },
+  // Dask over a remote Zarr fixture needs JSPI; the Natural Earth half does not.
+  "addons.mjs": { category: "portable" },
+  // Chromium's memory instrumentation is a part; the transfer itself needs the workspace.
+  "workspace-stream.mjs": { category: "capability", capabilities: ["sync-access-handles"] },
+
+  // capability - the feature IS the capability
+  "zarr.mjs": { category: "capability", capabilities: ["jspi"] },
+  "workspace.mjs": { category: "capability", capabilities: ["sync-access-handles"] },
+  "workspace-errors.mjs": { category: "capability", capabilities: ["sync-access-handles"] },
+  "workspace-lifecycle.mjs": { category: "capability", capabilities: ["sync-access-handles"] },
+  "persistence-restart.mjs": { category: "capability", capabilities: ["sync-access-handles"] },
+
+  // opt-in: a public package index
+  "freva-client.mjs": { category: "portable" },
+  "freva-auth.mjs": { category: "portable" },
+  "freva-persistence-restart.mjs": { category: "portable" },
+  "csp-package-index.mjs": { category: "portable" },
+  // opt-in: live third-party services
+  "cmip6.mjs": { category: "capability", capabilities: ["jspi"] },
+  "freva-live.mjs": { category: "portable" },
+});
+
+export const CATEGORIES = Object.freeze(["console", "portable", "capability", "chromium"]);
+
+/** The suites the DEFAULT gate runs in every engine of `BROWSER_ENGINES`: the console ones. */
+export const CROSS_BROWSER = Object.freeze(
+  Object.entries(SUITE_CLASSES)
+    .filter(([, c]) => c.category === "console")
+    .map(([suite]) => suite),
+);
+
+/**
+ * The suites an engine-specific FULL run executes in `engine`, and the ones it deliberately does
+ * not, each with the reason. Only `chromium` suites are withheld from other engines; a
+ * `capability` suite always runs and decides for itself from what the worker reports.
+ */
+export function planFor(engine, suites) {
+  const run = [];
+  const withheld = [];
+  for (const suite of suites) {
+    const entry = SUITE_CLASSES[suite];
+    if (entry?.category === "chromium" && engine !== "chromium") {
+      withheld.push({ suite, reason: entry.reason ?? "Chromium-specific" });
+    } else {
+      run.push(suite);
+    }
+  }
+  return { run, withheld };
+}

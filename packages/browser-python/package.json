@@ -57,7 +57,7 @@
   ],
   "scripts": {
     "prebuild": "node scripts/gen-python-sources.mjs && node scripts/gen-console-styles.mjs && node scripts/gen-addon-pins.mjs",
-    "build": "tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.build.json && node scripts/copy-console-css.mjs",
+    "build": "tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.build.json && node scripts/copy-console-css.mjs && node scripts/build-stamp.mjs write",
     "typecheck": "node scripts/gen-python-sources.mjs --check && node scripts/gen-console-styles.mjs --check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "lint": "eslint src tests scripts demo browser-tests bin",
     "test": "vitest run",
@@ -68,6 +68,8 @@
     "test:browser:network": "BROWSER_STRICT=1 BROWSER_PYTHON_NETWORK=1 npm run test:browser",
     "test:browser:paste": "node browser-tests/run.mjs console-paste-and-caret.mjs",
     "test:browser:zarr": "node browser-tests/run.mjs zarr.mjs",
+    "test:browser:firefox-full": "BROWSER_STRICT=1 node browser-tests/run.mjs --engine firefox",
+    "test:browser:webkit-full": "BROWSER_STRICT=1 node browser-tests/run.mjs --engine webkit",
     "check:bytes": "node scripts/check-bytes.mjs && node scripts/measure-console.mjs && node scripts/check-docs-sizes.mjs",
     "fixtures:build": "python3 scripts/make-zarr-fixtures.py",
     "demo": "node scripts/serve-demo.mjs",

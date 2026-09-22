@@ -277,7 +277,10 @@ async function handleInit(request: Extract<WorkerRequest, { kind: "init" }>): Pr
     }
 
     output.status("loading", "starting the console");
-    const console_ = new Repl(pyodide, output);
+    // JSPI is detected HERE, in the worker that will run the code, and never inferred from a
+    // browser's name: the answer is what `ready.jspi` reports and what the REPL uses to decide how
+    // to enter Python. Its absence is not announced at startup - see `_freva_bridge.set_jspi`.
+    const console_ = new Repl(pyodide, output, { jspi: supportsJspi() });
     repl = console_;
     await console_.start();
 
@@ -288,17 +291,12 @@ async function handleInit(request: Extract<WorkerRequest, { kind: "init" }>): Pr
     if (PROFILE_PACKAGES[request.profile].includes("fsspec")) {
       output.status("loading", "registering the browser filesystem");
       repl.installBrowserHttp();
-      // Said once, here, and only for the profiles it can affect. Stack switching is what lets a
-      // synchronous Zarr decode call an asynchronous fetch underneath. Without it the interpreter
-      // still starts and local Python is unaffected, but opening a remote dataset fails deep inside
-      // a codec. Refusing to start would take away everything that does work.
-      if (!supportsJspi()) {
-        output.stderr(
-          "[browser-python] this browser has no WebAssembly stack switching (JSPI), which " +
-            "reading a REMOTE dataset needs. Local Python and the /workspace files are " +
-            "unaffected; opening a remote Zarr store or an HTTP-backed file may fail.\n",
-        );
-      }
+      // NOTHING is said here about JSPI. Stack switching is what lets a synchronous Zarr read call
+      // an asynchronous fetch underneath, and without it everything else - local Python, NumPy,
+      // xarray on local data, /workspace - works unchanged. A warning at every startup told the
+      // people who never open a remote store about a problem they do not have, and told the ones
+      // who do before they had done anything. The interpreter says it once, at the moment a
+      // remote read actually needs it: see `_freva_bridge._needs_jspi`.
     }
 
     // CARTOPY'S DOWNLOADS, armed for EVERY profile that could plot, `minimal` included. Independent

@@ -4,3 +4,4 @@ dist/
 .testbundle/
 .out/
 .addons/
+.build-stamp.json

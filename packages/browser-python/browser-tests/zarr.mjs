@@ -9,12 +9,17 @@
  * ignore red CI.
  */
 import {
+  ENGINE,
+  NO_JSPI_REMOTE_MESSAGE,
+  capabilitiesOf,
   fixturePage,
+  unavailableUnlessRequired,
   inBrowser,
   report,
   requireDist,
   requireRuntimeFor,
   serve,
+  terminateEngines,
 } from "./harness.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +55,17 @@ class ZarrPhaseTimeout extends Error {
 
 const short = (source) => String(source).replace(/\s+/g, " ").trim().slice(0, 90);
 
+/** Anything the old per-startup and per-command stack-switching warnings would have said. */
+const MENTIONS_STACK_SWITCHING = /stack switching|JSPI|callPromising/i;
+
+/** The concise error a remote read without JSPI must produce, and nothing noisier. */
+const isConciseNoJspi = (error) =>
+  typeof error === "string" &&
+  error.includes(NO_JSPI_REMOTE_MESSAGE) &&
+  error.includes("https://webkit.org/blog/18325/webkit-features-for-safari-27-0/") &&
+  !error.includes("Traceback") &&
+  error.split("\n").length <= 4;
+
 const result = await inBrowser(async (page) => {
   const server = await serve(fixturePage({ profile: "xarray-zarr" }), {
     // The same fixtures under a bucket-shaped root, so the s3 check below exercises the path-style
@@ -57,6 +73,7 @@ const result = await inBrowser(async (page) => {
     roots: { "/waterpark/": FIXTURES },
   });
   const checks = [];
+  let unavailable;
   let currentPhase = "create fixture";
   const phase = async (name, work, timeoutMs = PHASE_TIMEOUT_MS) => {
     currentPhase = name;
@@ -94,6 +111,16 @@ const result = await inBrowser(async (page) => {
       pass: Boolean(ready.packages.xarray && ready.packages.zarr && ready.packages.fsspec),
       detail: JSON.stringify(ready.packages),
     });
+    // What the WORKER found, in the engine actually running this: never the browser's name.
+    const capabilities = capabilitiesOf(ready);
+    const startupStderr = await page.evaluate(() =>
+      window.__py.events.filter((e) => e.type === "stderr").map((e) => e.text),
+    );
+    checks.push({
+      name: "startup says nothing about stack switching, whichever way the engine answers",
+      pass: !startupStderr.some((t) => MENTIONS_STACK_SWITCHING.test(t)),
+      detail: JSON.stringify({ jspi: capabilities.jspi, startupStderr }),
+    });
 
     const value = async (expression) => {
       const r = await phase(`evaluate: ${short(expression)}`, () =>
@@ -129,10 +156,46 @@ const result = await inBrowser(async (page) => {
         "'https://h/a/b'",
     });
 
-    for (const [format, dir] of [
-      ["v2", "zarr-v2"],
-      ["v3", "zarr-v3"],
-    ]) {
+    if (!capabilities.jspi) {
+      // THE FEATURE CANNOT EXIST HERE, and that is reported as what it is - not a pass. What is
+      // still checked is what a reader of this engine gets instead: one concise error at the
+      // moment a remote store is opened, and an interpreter that carries on.
+      unavailable = unavailableUnlessRequired(
+        checks,
+        "jspi",
+        `this ${ENGINE} build's worker has no WebAssembly.Suspending (JSPI), which synchronous ` +
+          "remote Zarr reads need",
+      );
+      const refused = await phase("open Zarr v2 fixture without JSPI", () =>
+        page.evaluate(async () => {
+          window.__py.drain();
+          const url = new URL("/fixtures/zarr-v2/", location.href).href;
+          const r = await window.__py.run(
+            `import xarray as xr\nxr.open_zarr(${JSON.stringify(url)}, consolidated=True, chunks=None)\n`,
+          );
+          const stderr = window.__py.drain().filter((e) => e.type === "stderr");
+          return { error: r.error ?? null, stderr: stderr.map((e) => e.text) };
+        }),
+      );
+      checks.push({
+        name: "without JSPI, opening a remote store fails with the one concise JSPI message",
+        pass: isConciseNoJspi(refused.error),
+        detail: JSON.stringify(refused.error),
+      });
+      checks.push({
+        name: "…once, with no display-capture warning after it",
+        pass:
+          refused.stderr.length === 1 && !refused.stderr.some((t) => /display capture/i.test(t)),
+        detail: JSON.stringify(refused.stderr),
+      });
+    }
+
+    for (const [format, dir] of capabilities.jspi
+      ? [
+          ["v2", "zarr-v2"],
+          ["v3", "zarr-v3"],
+        ]
+      : []) {
       const opened = await phase(`open Zarr ${format} fixture`, () =>
         page.evaluate(
           async ({ dir }) => {
@@ -199,64 +262,69 @@ const result = await inBrowser(async (page) => {
     // look for; the range machinery is exercised by `browser-tests/http-adapter.mjs` and
     // `fsspec-adapter.mjs`, against recorded headers. So this asserts the property that matters
     // here: each key fetched once, nothing outside the store touched, every response a 200.
-    const fixtureCalls = server.exchanges.filter((e) => e.path.startsWith("/fixtures/"));
-    const chunkCalls = fixtureCalls.filter((e) => /\/(sfcWind|time|lat|lon)\//.test(e.path));
-    checks.push({
-      name: "each chunk is fetched as its own whole object, with a GET answered 200",
-      pass:
-        chunkCalls.length > 4 &&
-        fixtureCalls.every((e) => e.method === "GET" && e.status === 200) &&
-        fixtureCalls.every((e) => e.range === null),
-      // Nothing is asserted about caching: this adapter makes no such promise, and xarray reads
-      // lazily, so the same chunk is legitimately fetched again for a second access.
-      detail: JSON.stringify({
-        chunks: chunkCalls.length,
-        total: fixtureCalls.length,
-        statuses: [...new Set(fixtureCalls.map((e) => e.status))],
-        ranged: fixtureCalls.filter((e) => e.range !== null).length,
-      }),
-    });
+    if (capabilities.jspi) {
+      const fixtureCalls = server.exchanges.filter((e) => e.path.startsWith("/fixtures/"));
+      const chunkCalls = fixtureCalls.filter((e) => /\/(sfcWind|time|lat|lon)\//.test(e.path));
+      checks.push({
+        name: "each chunk is fetched as its own whole object, with a GET answered 200",
+        pass:
+          chunkCalls.length > 4 &&
+          fixtureCalls.every((e) => e.method === "GET" && e.status === 200) &&
+          fixtureCalls.every((e) => e.range === null),
+        // Nothing is asserted about caching: this adapter makes no such promise, and xarray reads
+        // lazily, so the same chunk is legitimately fetched again for a second access.
+        detail: JSON.stringify({
+          chunks: chunkCalls.length,
+          total: fixtureCalls.length,
+          statuses: [...new Set(fixtureCalls.map((e) => e.status))],
+          ranged: fixtureCalls.filter((e) => e.range !== null).length,
+        }),
+      });
+    }
 
     // THE WATERPARK CALL, through s3://. Same store, same arguments, reached by the mapping
     // instead of by an absolute URL - so a store a catalogue names as `s3://bucket/key` opens
     // without s3fs, which cannot run here at all.
-    const s3Open = await phase("open the Zarr v2 fixture through s3 mapping", () =>
-      page.evaluate(
-        async ({ origin }) => {
-          return window.__py.run(
-            `import xarray as xr\n` +
-              `ds_s3 = xr.open_zarr(\n` +
-              `    "s3://waterpark/zarr-v2",\n` +
-              `    consolidated=True,\n` +
-              `    chunks=None,\n` +
-              `    storage_options={"anon": True, "endpoint_url": ${JSON.stringify(origin)}},\n` +
-              `)\n`,
-          );
-        },
-        { origin: server.url.replace(/\/$/, "") },
-      ),
-    );
-    checks.push({
-      name: "s3://bucket/key opens with anon=True and an endpoint_url, no s3fs",
-      pass: !s3Open.error,
-      detail: s3Open.error ? String(s3Open.error).split("\n").pop() : "opened",
-    });
-    if (!s3Open.error) {
+    if (capabilities.jspi) {
+      const s3Open = await phase("open the Zarr v2 fixture through s3 mapping", () =>
+        page.evaluate(
+          async ({ origin }) => {
+            return window.__py.run(
+              `import xarray as xr\n` +
+                `ds_s3 = xr.open_zarr(\n` +
+                `    "s3://waterpark/zarr-v2",\n` +
+                `    consolidated=True,\n` +
+                `    chunks=None,\n` +
+                `    storage_options={"anon": True, "endpoint_url": ${JSON.stringify(origin)}},\n` +
+                `)\n`,
+            );
+          },
+          { origin: server.url.replace(/\/$/, "") },
+        ),
+      );
       checks.push({
-        name: "…and it is the same dataset the https:// URL gives",
-        pass: (await value("list(ds_s3.data_vars)")) === "['sfcWind']",
-        detail: await value("list(ds_s3.data_vars)"),
+        name: "s3://bucket/key opens with anon=True and an endpoint_url, no s3fs",
+        pass: !s3Open.error,
+        detail: s3Open.error ? String(s3Open.error).split("\n").pop() : "opened",
       });
-      checks.push({
-        name: "…with the same values, read through the mapped keys",
-        pass:
-          (await value("float(ds_s3.sfcWind.isel(time=0, lat=0, lon=0).values)")) ===
-          (await value("float(ds_zarr_v2.sfcWind.isel(time=0, lat=0, lon=0).values)")),
-        detail: await value("float(ds_s3.sfcWind.isel(time=0, lat=0, lon=0).values)"),
-      });
+      if (!s3Open.error) {
+        checks.push({
+          name: "…and it is the same dataset the https:// URL gives",
+          pass: (await value("list(ds_s3.data_vars)")) === "['sfcWind']",
+          detail: await value("list(ds_s3.data_vars)"),
+        });
+        checks.push({
+          name: "…with the same values, read through the mapped keys",
+          pass:
+            (await value("float(ds_s3.sfcWind.isel(time=0, lat=0, lon=0).values)")) ===
+            (await value("float(ds_zarr_v2.sfcWind.isel(time=0, lat=0, lon=0).values)")),
+          detail: await value("float(ds_s3.sfcWind.isel(time=0, lat=0, lon=0).values)"),
+        });
+      }
     }
 
     // Listing is refused rather than faked. A silent `[]` would read as "this prefix is empty".
+    // Awaited reads - no JSPI involved - so these run in every engine.
     const listing = await phase("refuse HTTP listing", () =>
       page.evaluate(async () => {
         const url = new URL("/fixtures/zarr-v2/", location.href).href;
@@ -289,7 +357,109 @@ const result = await inBrowser(async (page) => {
       pass: !missing.error && (await value("_missing")) === "'FileNotFoundError'",
     });
 
-    return checks;
+    const everyStderr = await page.evaluate(() =>
+      window.__py.events.filter((e) => e.type === "stderr").map((e) => e.text),
+    );
+    if (capabilities.jspi) {
+      checks.push({
+        name: "with JSPI, no command printed anything about stack switching",
+        pass: !everyStderr.some((t) => MENTIONS_STACK_SWITCHING.test(t)),
+        detail: JSON.stringify(everyStderr.slice(-3)),
+      });
+    }
+
+    // ------------------------------------------------------------------ JSPI removed, always
+    // The no-JSPI behaviour in EVERY engine, whatever this build has: the capability is removed
+    // from a worker before it loads (`test-worker/no-jspi.mjs`), through the public `workerURL`.
+    await page.evaluate(() => window.__py?.engine.dispose()).catch(() => undefined);
+    const withoutJspi = await serve(
+      fixturePage({ profile: "xarray-zarr", workerURL: "/test-worker/no-jspi.mjs" }),
+    );
+    try {
+      await phase("open the no-JSPI fixture page", () => page.goto(withoutJspi.url), 30_000);
+      await phase(
+        "wait for the no-JSPI fixture module",
+        () => page.waitForFunction(() => window.__ready === true, null, { timeout: 30_000 }),
+        35_000,
+      );
+      const seamReady = await phase(
+        "start xarray-zarr without JSPI",
+        () => page.evaluate(() => window.__py.start()),
+        START_TIMEOUT_MS,
+      );
+      const seamStartup = await page.evaluate(() =>
+        window.__py
+          .drain()
+          .filter((e) => e.type === "stderr")
+          .map((e) => e.text),
+      );
+      checks.push({
+        name: "without JSPI: xarray-zarr starts, reports jspi: false and warns about nothing",
+        pass:
+          seamReady.jspi === false && !seamStartup.some((t) => MENTIONS_STACK_SWITCHING.test(t)),
+        detail: JSON.stringify({ jspi: seamReady.jspi, stderr: seamStartup }),
+      });
+      const local = await phase("local xarray without JSPI", () =>
+        page.evaluate(async () => {
+          window.__py.drain();
+          const r = await window.__py.run(
+            "import numpy as np\nimport xarray as xr\n" +
+              "ds = xr.Dataset({'a': ('x', np.arange(4.0))})\n" +
+              "print(float(ds.a.mean()), ds.a.sizes['x'])\n",
+          );
+          const events = window.__py.drain();
+          return {
+            error: r.error ?? null,
+            stdout: events
+              .filter((e) => e.type === "stdout")
+              .map((e) => e.text)
+              .join(""),
+            stderr: events.filter((e) => e.type === "stderr").map((e) => e.text),
+          };
+        }),
+      );
+      checks.push({
+        name: "without JSPI: NumPy and xarray on local data work, with nothing on stderr",
+        pass: local.error === null && local.stdout === "1.5 4\n" && local.stderr.length === 0,
+        detail: JSON.stringify(local),
+      });
+      const remote = await phase("open a remote store without JSPI", () =>
+        page.evaluate(async () => {
+          window.__py.drain();
+          const url = new URL("/fixtures/zarr-v3/", location.href).href;
+          const r = await window.__py.push(
+            `xr.open_zarr(${JSON.stringify(url)}, consolidated=True, chunks=None)`,
+          );
+          const events = window.__py.drain();
+          return {
+            error: r.error ?? null,
+            stderr: events.filter((e) => e.type === "stderr").map((e) => e.text),
+          };
+        }),
+      );
+      checks.push({
+        name: "without JSPI: a typed xr.open_zarr(<remote>) gives the concise JSPI message",
+        pass: isConciseNoJspi(remote.error),
+        detail: JSON.stringify(remote.error),
+      });
+      checks.push({
+        name: "…printed once, with no display-capture warning appended",
+        pass: remote.stderr.length === 1 && !remote.stderr.some((t) => /display capture/i.test(t)),
+        detail: JSON.stringify(remote.stderr),
+      });
+      const after = await phase("carry on after the refusal", () =>
+        page.evaluate(() => window.__py.push("float(ds.a.sum())")),
+      );
+      checks.push({
+        name: "without JSPI: the session carries on after the refusal",
+        pass: after.result === "6.0" && !after.error,
+        detail: JSON.stringify(after),
+      });
+    } finally {
+      await withoutJspi.close();
+    }
+
+    return { checks, unavailable };
   } catch (error) {
     const engine = await Promise.race([
       page
@@ -320,13 +490,11 @@ const result = await inBrowser(async (page) => {
     if (error instanceof ZarrPhaseTimeout) {
       // End the operation whose Promise lost the race. This is test cleanup, not a user-facing
       // execution timeout: terminating the worker is the only reliable way to stop arbitrary
-      // Python, and the engine's normal teardown below remains idempotent.
-      await Promise.race([
-        page.evaluate(() => window.__py?.dispose()).catch(() => undefined),
-        new Promise((resolve) => setTimeout(resolve, 2000)),
-      ]);
+      // Python. Bounded, and escalating to closing the context if the page does not answer, so
+      // the losing evaluate() cannot live on; the engine's normal teardown remains idempotent.
+      await terminateEngines(page);
     }
-    return checks;
+    return { checks, unavailable };
   } finally {
     await server.close();
   }

@@ -20,10 +20,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Buffer } from "node:buffer";
 import {
+  ENGINE,
   ensureFrevaWheelhouse,
   fixturePage,
   FREVA_WHEELHOUSE,
   isStrict,
+  launchPersistent,
   report,
   requireDist,
   requireRuntimeFor,
@@ -119,8 +121,6 @@ let status = "pass";
 let detail = "";
 
 try {
-  const playwright = await import("playwright");
-  const override = process.env.PLAYWRIGHT_CHROMIUM_PATH;
   // The derived wheel, built before any browser starts and INSIDE this try, so a wheel that could
   // not be built is reported through `report()` like every other failure here - and is not
   // mistaken for a credential that failed to survive the restart.
@@ -134,10 +134,9 @@ try {
 
   /** One whole browser lifetime against the same on-disk profile and the same origin. */
   const launch = async (body) => {
-    const context = await playwright.chromium.launchPersistentContext(profileDir, {
-      ...(override ? { executablePath: override } : {}),
-      args: ["--no-sandbox"],
-    });
+    // The selected engine: what a persistent profile keeps across a restart is the browser's
+    // own behaviour, and each engine is asked for it rather than Chromium standing in for all.
+    const context = await launchPersistent(profileDir);
     try {
       const page = await context.newPage();
       await page.goto(server.url, { waitUntil: "load" });
@@ -365,7 +364,7 @@ try {
 }
 
 process.exit(
-  report("Freva credentials across a real browser restart (graceful close)", {
+  report(`Freva credentials across a real browser restart, graceful close (${ENGINE})`, {
     status,
     detail,
     checks,

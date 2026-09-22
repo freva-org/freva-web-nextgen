@@ -150,6 +150,132 @@ def interrupt():
     task.cancel()
     return True
 
+# ----------------------------------------------------------------------------- JSPI
+#
+# Whether this worker's WebAssembly can stack switch, as the WORKER detected it (`set_jspi`, called
+# once at startup with the same answer `ready.jspi` reports). Never inferred from a browser name.
+#
+# Without it, everything that does not wait synchronously on the network works unchanged: local
+# Python, NumPy, xarray on local data, /workspace, plotting. The one thing that cannot work is a
+# SYNCHRONOUS call that waits on an asynchronous browser fetch - `xr.open_zarr("https://...")`,
+# a remote `.values` - because that is exactly what stack switching provides. Pyodide refuses it
+# with a RuntimeError naming the JavaScript runtime, deep inside zarr's sync layer, which reads like
+# the whole browser is broken. So that one error, and only that one, is reported as what it is.
+_jspi = True
+
+# What Pyodide raises from `run_sync`/`callPromising` when the runtime cannot stack switch. Matched
+# on the message because that is all that distinguishes it: the type is a plain RuntimeError.
+_NO_STACK_SWITCHING = "WebAssembly stack switching not supported in this JavaScript runtime"
+
+REMOTE_DATA_NEEDS_JSPI = (
+    "RuntimeError: Remote dataset access requires WebAssembly JSPI (stack switching), which this "
+    "browser does not provide.\n"
+    "Local Python, NumPy/xarray on local data and /workspace files are not affected.\n"
+    "Updating the browser fixes this: Safari 27 and later provide JSPI "
+    "(https://webkit.org/blog/18325/webkit-features-for-safari-27-0/), as do Chrome and Edge 137 "
+    "and Firefox 153 or later.\n"
+)
+
+
+def set_jspi(available):
+    """Record whether this worker can stack switch. Called once, by the worker, at startup."""
+    global _jspi
+    _jspi = bool(available)
+    if not _jspi:
+        _quiet_run_sync()
+    return _jspi
+
+
+def _quiet_run_sync():
+    """Without JSPI, let ``run_sync`` refuse WITHOUT a second, misleading warning.
+
+    Pyodide's ``run_sync`` refuses before it has touched the coroutine it was handed, so the
+    coroutine is garbage-collected unawaited and Python adds "RuntimeWarning: coroutine ... was
+    never awaited" above the real error - a line about the caller's code, when nothing is wrong
+    with it. Closing the coroutine on exactly that refusal removes the noise; the RuntimeError
+    raised is the same object, and every other outcome is untouched. Installed once, before any
+    user code runs; a module that bound ``run_sync`` earlier keeps the original, which differs only
+    by that warning.
+    """
+    import pyodide.ffi as ffi
+
+    original = ffi.run_sync
+    if getattr(original, "_freva_browser_patch", False):
+        return
+
+    def run_sync(awaitable):
+        try:
+            return original(awaitable)
+        except RuntimeError as exc:
+            if _NO_STACK_SWITCHING in str(exc) and _inspect.iscoroutine(awaitable):
+                awaitable.close()
+            raise
+
+    run_sync.__doc__ = original.__doc__
+    run_sync.__wrapped__ = original
+    run_sync._freva_browser_patch = True
+    ffi.run_sync = run_sync
+    # The event loop's `run_until_complete` - which a synchronous library layer may reach for -
+    # imported its own binding; it gets the same wrapper.
+    try:
+        import pyodide.webloop as webloop
+
+        if getattr(webloop, "run_sync", None) is original:
+            webloop.run_sync = run_sync
+    except Exception:  # an internal module moved: the warning is cosmetic, never worth failing
+        pass
+
+
+def _mentions_no_stack_switching(exc):
+    try:
+        return _NO_STACK_SWITCHING in str(exc)
+    except Exception:  # an exception whose __str__ raises says nothing about stack switching
+        return False
+
+
+def _needs_jspi(exc):
+    """True when ``exc`` failed ONLY because this runtime cannot stack switch.
+
+    Never true where JSPI is present: there the same family of messages ("the Python entrypoint
+    was a synchronous function") is a real bug and keeps its full traceback. Otherwise:
+
+    * the exception itself carries Pyodide's refusal, or a member of an exception group does;
+    * or it is a LIBRARY's own exception type (zarr, xarray, fsspec wrap what they catch) whose
+      cause/context chain carries it. A BUILTIN exception raised from the refusal - typically the
+      visitor's own ``raise ValueError(...) from exc`` - is not rewritten: its traceback is theirs.
+
+    Called inside the REPL's exception handlers, so it never raises.
+    """
+    if _jspi:
+        return False
+    try:
+        if _mentions_no_stack_switching(exc):
+            return True
+        for member in getattr(exc, "exceptions", None) or ():
+            if _needs_jspi(member):
+                return True
+        if type(exc).__module__ == "builtins":
+            return False
+        seen = {id(exc)}
+        current = exc.__cause__ or exc.__context__
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if _mentions_no_stack_switching(current):
+                return True
+            current = current.__cause__ or current.__context__
+    except Exception:
+        return False
+    return False
+
+
+def _report(exc, formatted):
+    """The text a failed execution shows: the fixed sentence for a remote read without JSPI, the
+    real traceback for everything else."""
+    if exc is not None and _needs_jspi(exc):
+        return REMOTE_DATA_NEEDS_JSPI
+    return formatted
+
+
 # How long a repr may be before it is elided. A REPL that prints a 4 GB array's repr in full has
 # hung the tab, which is not the array's fault but is still the console's problem.
 REPR_LIMIT = 4000
@@ -246,9 +372,9 @@ async def run_future(future):
     interrupted = False
     try:
         result = await future
-    except BaseException:  # noqa: BLE001 - a REPL reports every exception, including SystemExit
+    except BaseException as exc:  # noqa: BLE001 - a REPL reports every exception, incl. SystemExit
         formatted = getattr(future, "formatted_error", None) or _traceback.format_exc()
-        return (False, "", formatted)
+        return (False, "", _report(exc, formatted))
     finally:
         # Cleared HERE, not in `runcode`, and only once the future this request was waiting on has
         # settled. An interrupt races the end of the execution it is aimed at: a Ctrl+C pressed in
@@ -346,8 +472,8 @@ async def run_source(source):
             # for.
             raise
         return (False, "", _format_interrupt(cancelled.__traceback__))
-    except BaseException:  # noqa: BLE001
-        return (False, "", _traceback.format_exc())
+    except BaseException as exc:  # noqa: BLE001
+        return (False, "", _report(exc, _traceback.format_exc()))
     finally:
         _running_task = None
         _interrupt_requested = False

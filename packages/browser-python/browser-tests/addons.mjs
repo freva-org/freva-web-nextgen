@@ -12,6 +12,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  ENGINE,
+  NO_JSPI_REMOTE_MESSAGE,
+  capabilityAbsent,
   fixturePage,
   inBrowser,
   report,
@@ -56,16 +59,31 @@ function tampered(change) {
 
 const external = (page, server) => {
   const seen = [];
+  // A POSITIVE CONTROL for the negative claim. Everything under /runtime/ and /addons/ is fetched
+  // by the WORKER, never the page; if none of it is observed, this engine's automation does not
+  // report worker requests and "nothing was fetched from outside" would be true of nothing.
+  seen.fromWorker = 0;
   page.on("request", (request) => {
     const url = request.url();
-    if (!url.startsWith(server.url) && !url.startsWith("data:") && !url.startsWith("blob:"))
-      seen.push(url);
+    if (url.startsWith(server.url)) {
+      const path = new URL(url).pathname;
+      if (path.startsWith("/runtime/") || path.startsWith("/addons/")) seen.fromWorker += 1;
+      return;
+    }
+    if (!url.startsWith("data:") && !url.startsWith("blob:")) seen.push(url);
   });
   return seen;
 };
 
+/** Whether `outside` could have seen the worker's requests at all - see `external`. */
+const blindTo = (outside) => outside.fromWorker === 0;
+const BLIND_REASON =
+  `automation limitation: Playwright reported none of the worker's own requests in ${ENGINE}, ` +
+  "so an external fetch from the worker could not have been observed either";
+
 const result = await inBrowser(async (page) => {
   const checks = [];
+  const notApplicable = [];
   const servers = [];
   const open = async (options, roots) => {
     const server = await serve(fixturePage(options), { roots });
@@ -121,19 +139,40 @@ const result = await inBrowser(async (page) => {
         // NO CACHE CLEARING. This is the whole ordering claim: xarray binds `DaskManager.available`
         // at import and caches `module_available` and `list_chunkmanagers`, so an add-on installed
         // any later would make this line raise "chunk manager 'dask' is not available".
+        //
+        // The dataset is a REMOTE Zarr fixture, read synchronously: that needs JSPI, which the
+        // worker reported on. Without it the refusal is checked and the Dask-over-Zarr half is not
+        // applicable; `dask.array` below needs no network and runs either way.
+        const jspi = started.info.jspi === true;
         const opened = await page.evaluate(async () => {
           const url = new URL("/fixtures/zarr-v3/", location.href).href;
           return window.__py.run(
             `import xarray as xr\nds = xr.open_dataset(${JSON.stringify(url)}, engine="zarr", chunks={})\n`,
           );
         });
-        checks.push({
-          name: 'xr.open_dataset(..., engine="zarr", chunks={}) is dask-backed with no cache surgery',
-          pass: !opened.error && (await value("type(ds.sfcWind.data).__module__")).includes("dask"),
-          detail: opened.error
-            ? String(opened.error).split("\n").slice(-3).join(" | ")
-            : await value("ds.sfcWind.chunks"),
-        });
+        if (jspi) {
+          checks.push({
+            name: 'xr.open_dataset(..., engine="zarr", chunks={}) is dask-backed with no cache surgery',
+            pass:
+              !opened.error && (await value("type(ds.sfcWind.data).__module__")).includes("dask"),
+            detail: opened.error
+              ? String(opened.error).split("\n").slice(-3).join(" | ")
+              : await value("ds.sfcWind.chunks"),
+          });
+        } else {
+          checks.push({
+            name: "without JSPI the remote Zarr open is refused with the concise JSPI message",
+            pass: typeof opened.error === "string" && opened.error.includes(NO_JSPI_REMOTE_MESSAGE),
+            detail: JSON.stringify(opened.error),
+          });
+          capabilityAbsent(
+            checks,
+            notApplicable,
+            "jspi",
+            "Dask over a remote Zarr fixture (open, rechunk, compute, exact values)",
+            `this ${ENGINE} build's worker has no WebAssembly.Suspending (JSPI)`,
+          );
+        }
         if (!opened.error) {
           const computed = await run(
             [
@@ -168,22 +207,33 @@ const result = await inBrowser(async (page) => {
               wholeSum: await value("round(float(ds.sfcWind.sum().compute().values), 3)"),
             }),
           });
-          const array = await run(
-            "import dask.array as da\ntotal = float((da.ones((10, 10), chunks=(5, 5)) * 2).sum().compute())\n",
+        }
+        // Local arrays: no network, no JSPI.
+        const array = await run(
+          "import dask.array as da\ntotal = float((da.ones((10, 10), chunks=(5, 5)) * 2).sum().compute())\n",
+        );
+        checks.push({
+          name: "dask.array computes a bounded result on the same scheduler",
+          pass: !array.error && (await value("total")) === "200.0",
+          detail: array.error
+            ? String(array.error).split("\n").slice(-2).join(" | ")
+            : await value("total"),
+        });
+        if (blindTo(outside)) {
+          capabilityAbsent(
+            checks,
+            notApplicable,
+            "worker-request-observation",
+            "no external fetch during the Dask start",
+            BLIND_REASON,
           );
+        } else {
           checks.push({
-            name: "dask.array computes a bounded result on the same scheduler",
-            pass: !array.error && (await value("total")) === "200.0",
-            detail: array.error
-              ? String(array.error).split("\n").slice(-2).join(" | ")
-              : await value("total"),
+            name: "nothing was fetched from PyPI, or from anywhere but the fixture origin",
+            pass: outside.length === 0,
+            detail: JSON.stringify(outside.slice(0, 6)),
           });
         }
-        checks.push({
-          name: "nothing was fetched from PyPI, or from anywhere but the fixture origin",
-          pass: outside.length === 0,
-          detail: JSON.stringify(outside.slice(0, 6)),
-        });
 
         // restart is the same environment
         await page.evaluate(() => window.__py.restart());
@@ -277,11 +327,23 @@ const result = await inBrowser(async (page) => {
           pass: !/DownloadWarning|TLS not supported|could not be rendered/i.test(shot.text),
           detail: JSON.stringify(shot.text.slice(-300)),
         });
+        if (blindTo(outside)) {
+          capabilityAbsent(
+            checks,
+            notApplicable,
+            "worker-request-observation",
+            "no request to Natural Earth while rendering",
+            BLIND_REASON,
+          );
+        }
         checks.push({
-          name: "Cartopy was pointed at the staged data, and Natural Earth was never asked",
+          name: blindTo(outside)
+            ? "Cartopy was pointed at the staged data"
+            : "Cartopy was pointed at the staged data, and Natural Earth was never asked",
           pass:
             (await value("str(__import__('cartopy').config['pre_existing_data_dir'])")) ===
-              "'/freva-addons/cartopy-natural-earth-110m'" && outside.length === 0,
+              "'/freva-addons/cartopy-natural-earth-110m'" &&
+            (blindTo(outside) || outside.length === 0),
           detail: JSON.stringify({
             dir: await value("str(__import__('cartopy').config['pre_existing_data_dir'])"),
             outside: outside.slice(0, 6),
@@ -369,13 +431,22 @@ const result = await inBrowser(async (page) => {
       const outside = external(page, server);
       const started = await ready(server);
       const asked = server.requests.filter((path) => path.startsWith("/addons/"));
+      if (blindTo(outside)) {
+        capabilityAbsent(
+          checks,
+          notApplicable,
+          "worker-request-observation",
+          "no external fetch with no add-ons",
+          BLIND_REASON,
+        );
+      }
       checks.push({
         name: "with no add-ons configured nothing is fetched from the add-on directory",
         pass:
           Boolean(started.info) &&
           started.info.addons.length === 0 &&
           asked.length === 0 &&
-          outside.length === 0,
+          (blindTo(outside) || outside.length === 0),
         detail: JSON.stringify({ addons: started.info?.addons, asked: asked.slice(0, 4) }),
       });
       checks.push({
@@ -390,7 +461,7 @@ const result = await inBrowser(async (page) => {
       });
     }
 
-    return checks;
+    return { checks, notApplicable };
   } finally {
     for (const server of servers) await server.close();
   }

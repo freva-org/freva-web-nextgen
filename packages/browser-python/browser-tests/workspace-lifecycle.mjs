@@ -8,7 +8,16 @@
  * quietly: a page cached across a deployment talks to a worker that no longer speaks its protocol,
  * and two tabs starting in the same instant race for the same OPFS session directories.
  */
-import { bundleConsole, fixturePage, inBrowser, report, requireDist, serve } from "./harness.mjs";
+import {
+  bundleConsole,
+  fixturePage,
+  inBrowser,
+  probeWorkerCapabilities,
+  report,
+  requireDist,
+  serve,
+  workspaceFallbackChecks,
+} from "./harness.mjs";
 
 requireDist();
 
@@ -83,6 +92,16 @@ const result = await inBrowser(async (page) => {
       future.kind === "fatal" && /v99/.test(future.message ?? ""),
       future.message,
     );
+
+    // Everything from here is about OPFS session directories. Asked of a Worker first, because
+    // the next step is two tabs STARTING at once and the answer is needed before either does.
+    const worker = await probeWorkerCapabilities(page);
+    if (!worker.opfsUsable) {
+      const status = await page.evaluate(() => window.__py.start().then((info) => info.workspace));
+      const fallback = await workspaceFallbackChecks(page, status, worker);
+      checks.push(...fallback.checks);
+      return { checks, unavailable: fallback.reason };
+    }
 
     // two tabs starting in the same instant
     const second = await page.context().newPage();

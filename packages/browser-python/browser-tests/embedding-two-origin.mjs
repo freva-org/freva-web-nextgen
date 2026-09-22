@@ -15,8 +15,18 @@
 // Not covered: `showSaveFilePicker()` opens a native dialog no automation can answer, so a sink
 // is injected through the same parameter the default picker goes through, and the picker's
 // presence in the parent and refusal in the child are asserted separately.
-import { inFullBrowser, report, requireDist, serve } from "./harness.mjs";
+import {
+  ENGINE,
+  capabilityAbsent,
+  inFullBrowser,
+  probeWorkerCapabilities,
+  report,
+  requireDist,
+  serve,
+} from "./harness.mjs";
 import { contentSecurityPolicy } from "../dist/csp.js";
+import { EMBED_CHANNEL, EMBED_PROTOCOL_VERSION } from "../dist/embed/protocol.js";
+import { cleanupChecks, createPhases, phaseFailureCheck, withDeadline } from "./deadline.mjs";
 
 requireDist();
 
@@ -34,7 +44,14 @@ const ISOLATE_CHILD = {
   "cross-origin-embedder-policy": "require-corp",
   "cross-origin-resource-policy": "cross-origin",
 };
-const BIG_MIB = 96;
+/**
+ * How much crosses the bridge. 96 MiB where the browser can MEASURE memory, because only a
+ * transfer that large shows whether memory grows with the file. Where it cannot, 96 MiB would add
+ * nothing but minutes, so a smaller transfer that is still many chunks checks the same
+ * correctness: digest, chunking, one write in flight, interruption and renewal.
+ */
+const MEMORY_TEST_MIB = 96;
+const PORTABLE_MIB = 16;
 
 /**
  * The playground document: an engine, and the child half of the bridge. The script is EXTERNAL
@@ -113,6 +130,31 @@ const PLAYGROUND_JS = (hostOrigin) => `
     if (data && data.channel === "freva-python-embed" && data.kind === "hail") {
       window.__pg.lastChallenge = data.challenge;
     }
+  });
+  // THE TEST'S OWN LINE INTO THIS DOCUMENT, independent of the automation driver. After a real
+  // reload Playwright's Firefox driver never gets an evaluation into this cross-origin sandboxed
+  // frame again, while the document itself is alive and has already renewed the bridge. So the
+  // fixture reads and drives the child the way the portal can: by postMessage, on a channel of
+  // its own (the bridge ignores it), accepted only from the parent window at the host origin.
+  // Registered at module top level, so it is listening before the bridge's handshake completes.
+  const FIXTURE_OPS = {
+    sessionId: () => window.__pg.sessionId,
+    say: (text) => window.__pg.say(text),
+    consoleState: () => window.__pg.consoleState(),
+    violations: () => window.__pg.violations(),
+    // Started synchronously, exactly as \`frame.evaluate(() => location.reload())\` did: the
+    // navigation is under way before the answer is posted.
+    reload: () => { location.reload(); return true; },
+  };
+  addEventListener("message", (event) => {
+    const data = event.data;
+    if (event.source !== parent || event.origin !== ${JSON.stringify(hostOrigin)}) return;
+    if (!data || data.channel !== "fixture-control" || !(data.op in FIXTURE_OPS)) return;
+    const value = FIXTURE_OPS[data.op](data.arg);
+    parent.postMessage(
+      { channel: "fixture-control", id: data.id, value },
+      ${JSON.stringify(hostOrigin)},
+    );
   });
   window.__ready = true;
 `;
@@ -238,12 +280,17 @@ const PORTAL_JS = (playgroundOrigin) => `
     done: false, result: null, error: null, clickActivation: null,
     /** Every transcript the playground has pushed, in order. */
     transcripts: [],
+    /** Why each previous session ended, in order. */
+    invalidations: [],
   };
 
   const host = createPlaygroundHost({
     frame,
     playgroundOrigin: ${JSON.stringify(playgroundOrigin)},
     onReady: (id) => { state.ready = id; },
+    // A document the session belonged to is gone: what the fixture exposes must stop claiming a
+    // session the host itself has already dropped, or a test waits on a stale id.
+    onInvalidated: (why) => { state.ready = null; state.invalidations.push(why); },
     onArtifacts: (artifacts) => {
       state.artifacts = artifacts;
       button.disabled = artifacts.length === 0;
@@ -304,9 +351,36 @@ const PORTAL_JS = (playgroundOrigin) => `
     state.done = true;
   });
 
+  /** The fixture's line into the playground document (see FIXTURE_OPS there), bounded. */
+  const fixturePending = new Map();
+  let fixtureNext = 0;
+  addEventListener("message", (event) => {
+    if (event.origin !== ${JSON.stringify(playgroundOrigin)}) return;
+    if (event.source !== frame.contentWindow) return;
+    const data = event.data;
+    if (!data || data.channel !== "fixture-control") return;
+    const settle = fixturePending.get(data.id);
+    if (settle) { fixturePending.delete(data.id); settle(data.value); }
+  });
+  const child = (op, arg) => new Promise((resolve, reject) => {
+    fixtureNext += 1;
+    const id = fixtureNext;
+    const timer = setTimeout(() => {
+      fixturePending.delete(id);
+      reject(new Error("the playground did not answer fixture operation " + op + " within 10 s"));
+    }, 10000);
+    fixturePending.set(id, (value) => { clearTimeout(timer); resolve(value); });
+    frame.contentWindow.postMessage(
+      { channel: "fixture-control", id, op, arg }, ${JSON.stringify(playgroundOrigin)},
+    );
+  });
+
   window.__portal = {
     host,
+    child,
     state,
+    /** The session the HOST holds now - which the exposed ready state must agree with. */
+    hostSession: () => host.sessionId,
     hasPicker: typeof window.showSaveFilePicker === "function",
     activation: () => navigator.userActivation
       ? { isActive: navigator.userActivation.isActive, hasBeenActive: navigator.userActivation.hasBeenActive }
@@ -349,7 +423,65 @@ const PORTAL_JS = (playgroundOrigin) => `
 let measureUnavailable = null;
 const result = await inFullBrowser(async (page) => {
   const checks = [];
+  const notApplicable = [];
   const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
+
+  // NAMED PHASES WITH REAL DEADLINES. `page.evaluate()` has no timeout of its own, so a wedge used
+  // to be silent until the runner killed the process at 15 minutes. Every step below runs through
+  // `phases.run(name, ms, work)`, which logs start, finish and elapsed time and REJECTS at its
+  // deadline whatever the browser does next. Only then is the browser context closed, to
+  // terminate what the phase abandoned; that is bounded and reported on its own, so a close that
+  // never returns cannot keep this suite waiting.
+  const phases = createPhases("embedding-two-origin", {
+    onDeadline: () => page.context().close(),
+  });
+  const run = (name, ms, work) => phases.run(name, ms, work);
+  const finish = async () => {
+    checks.push(...(await cleanupChecks(phases)));
+    return { checks, notApplicable };
+  };
+
+  // THE MEMORY MEASUREMENT IS CHROMIUM'S, and it is asked for rather than assumed: an isolated
+  // page is loaded and asked whether `measureUserAgentSpecificMemory()` exists. Without it the
+  // isolation headers - which exist only for the measurement - are left off, and the transfer's
+  // correctness is still checked in full.
+  const probe = await serve("<!doctype html><title>probe</title>", {
+    headers: ISOLATE_PARENT,
+    assetHeaders: ISOLATE_PARENT,
+  });
+  let canMeasure = false;
+  try {
+    canMeasure = await run("capability probe", 60_000, async () => {
+      await page.goto(probe.url);
+      return await page.evaluate(
+        () =>
+          self.crossOriginIsolated === true &&
+          typeof performance.measureUserAgentSpecificMemory === "function",
+      );
+    });
+  } catch (error) {
+    checks.push(phaseFailureCheck(error));
+    return await finish();
+  } finally {
+    await withDeadline(probe.close(), 10_000, "closing the probe server").catch(() => {});
+  }
+  const transferMiB = canMeasure ? MEMORY_TEST_MIB : PORTABLE_MIB;
+  const transferBytes = transferMiB * 1024 * 1024;
+  console.log(
+    `[embedding-two-origin] transfer size: ${transferMiB} MiB ` +
+      `(${canMeasure ? "memory measured" : "no memory measurement in this engine"})`,
+  );
+  const isolateParent = canMeasure ? ISOLATE_PARENT : {};
+  const isolateChild = canMeasure ? ISOLATE_CHILD : {};
+  if (!canMeasure) {
+    capabilityAbsent(
+      checks,
+      notApplicable,
+      "memory-measurement",
+      `the portal's memory growth during a ${MEMORY_TEST_MIB} MiB transfer, and its negative control`,
+      `performance.measureUserAgentSpecificMemory() is not provided by ${ENGINE}`,
+    );
+  }
 
   // TWO SERVERS, so the two documents really are on different origins, each carrying the header
   // the other needs. `frame-ancestors` on the playground names the PORTAL's exact origin rather
@@ -365,7 +497,7 @@ const result = await inFullBrowser(async (page) => {
         res.writeHead(200, {
           "content-type": "text/javascript; charset=utf-8",
           "content-security-policy": wiring.playgroundPolicy,
-          ...ISOLATE_CHILD,
+          ...isolateChild,
         });
         res.end(PLAYGROUND_JS(wiring.portalOrigin));
         return true;
@@ -374,7 +506,7 @@ const result = await inFullBrowser(async (page) => {
         res.writeHead(200, {
           "content-type": "text/javascript; charset=utf-8",
           "content-security-policy": wiring.playgroundPolicy,
-          ...ISOLATE_CHILD,
+          ...isolateChild,
         });
         res.end(WATCHER);
         return true;
@@ -385,12 +517,12 @@ const result = await inFullBrowser(async (page) => {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "content-security-policy": wiring.playgroundPolicy,
-        ...ISOLATE_CHILD,
+        ...isolateChild,
       });
       res.end(PLAYGROUND);
       return true;
     },
-    assetHeaders: ISOLATE_CHILD,
+    assetHeaders: isolateChild,
   });
   const portal = await serve("", {
     handle: (req, res, url) => {
@@ -398,7 +530,7 @@ const result = await inFullBrowser(async (page) => {
         res.writeHead(200, {
           "content-type": "text/javascript; charset=utf-8",
           "content-security-policy": wiring.portalPolicy,
-          ...ISOLATE_PARENT,
+          ...isolateParent,
         });
         res.end(PORTAL_JS(wiring.playgroundOrigin));
         return true;
@@ -407,12 +539,12 @@ const result = await inFullBrowser(async (page) => {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "content-security-policy": wiring.portalPolicy,
-        ...ISOLATE_PARENT,
+        ...isolateParent,
       });
       res.end(PORTAL(wiring.playgroundUrl));
       return true;
     },
-    assetHeaders: ISOLATE_PARENT,
+    assetHeaders: isolateParent,
   });
 
   const playgroundOrigin = playground.url.replace(/\/$/, "");
@@ -445,474 +577,702 @@ const result = await inFullBrowser(async (page) => {
       `${portalOrigin} vs ${playgroundOrigin}`,
     );
 
-    await page.goto(`${portal.url}portal.html`, { waitUntil: "load" });
-    await page.waitForFunction(() => window.__portalReady === true, null, { timeout: 20_000 });
-    const frame = page.frames().find((f) => f.url().startsWith(playgroundOrigin));
-    ok(
-      "the playground loads inside the portal, cross-origin",
-      Boolean(frame),
-      page
-        .frames()
-        .map((f) => f.url())
-        .join(" | "),
-    );
+    const frame = await run("portal and iframe navigation", 90_000, async () => {
+      await page.goto(`${portal.url}portal.html`, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__portalReady === true, null, { timeout: 20_000 });
+      const found = page.frames().find((f) => f.url().startsWith(playgroundOrigin));
+      ok(
+        "the playground loads inside the portal, cross-origin",
+        Boolean(found),
+        page
+          .frames()
+          .map((f) => f.url())
+          .join(" | "),
+      );
+      if (found) {
+        await found.waitForFunction(() => window.__ready === true, null, { timeout: 60_000 });
+      }
+      return found;
+    });
     // Return the checks made so far rather than throwing: a suite that gives up must still report
     // what it established, and `inBrowser` replaces a thrown body's checks with an empty array.
-    if (!frame) return checks;
+    if (!frame) return await finish();
 
-    await frame.waitForFunction(() => window.__ready === true, null, { timeout: 60_000 });
+    /**
+     * THE SESSION, PROVEN CURRENT before the bridge is used again. After the frame's document is
+     * replaced the host drops the old session (`onInvalidated` clears what the fixture exposes)
+     * and a new one exists only once the NEW document has answered a hail. Using the bridge before
+     * that is a race with the handshake, not a test of it: wait for a non-null session that
+     * differs from `previous`, and require the host and the fixture to agree on it.
+     */
+    const renewedSession = async (previous) => {
+      await page.waitForFunction(
+        (old) => {
+          const ready = window.__portal.state.ready;
+          return ready !== null && ready !== old && window.__portal.hostSession() === ready;
+        },
+        previous,
+        { timeout: 60_000 },
+      );
+      return await page.evaluate(() => ({
+        ready: window.__portal.state.ready,
+        host: window.__portal.hostSession(),
+        invalidations: [...window.__portal.state.invalidations],
+      }));
+    };
 
-    // the platform facts, measured not cited
-    const pickerInChild = await frame.evaluate(async () => {
-      try {
-        await window.showSaveFilePicker({ suggestedName: "x.bin" });
-        return "opened";
-      } catch (e) {
-        return `${e.name}: ${String(e.message).slice(0, 60)}`;
+    /**
+     * THE RENEWED PLAYGROUND DOCUMENT, REACHED through the fixture's postMessage line and proven
+     * to be the new one by the session id it reports from inside itself. The Playwright `Frame`
+     * is NOT used for the child after a reload: Firefox's driver never answers an evaluation in
+     * this reloaded cross-origin sandboxed frame (a re-resolved frame timed out as well), while
+     * the document is alive and has renewed the bridge. What the automation driver can reach is
+     * logged, bounded, as a diagnostic - never counted as a check either way.
+     */
+    const reachRenewedPlayground = async (session) => {
+      const childSession = await page.evaluate(() => window.__portal.child("sessionId"));
+      const driver = await withDeadline(
+        frame.evaluate(() => true),
+        5_000,
+        "driver evaluation",
+      )
+        .then(() => "answers")
+        .catch((error) => String(error?.message ?? error).split("\n")[0]);
+      console.log(
+        `[embedding-two-origin] diagnostic: Playwright evaluation in the renewed frame: ${driver}`,
+      );
+      return { childSession, expected: session };
+    };
+
+    await run("platform facts", 30_000, async () => {
+      // THE NATIVE PICKER is separate from the bridge. Where the engine provides
+      // `showSaveFilePicker()`, the parent must be able to open it and the cross-origin child
+      // must not. Where it does not, neither document has it and the portal's own sink is the
+      // only route - the one every download below takes anyway.
+      const portalHasPicker = await page.evaluate(() => window.__portal.hasPicker);
+      if (portalHasPicker) {
+        const pickerInChild = await frame.evaluate(async () => {
+          try {
+            await window.showSaveFilePicker({ suggestedName: "x.bin" });
+            return "opened";
+          } catch (e) {
+            return `${e.name}: ${String(e.message).slice(0, 60)}`;
+          }
+        });
+        ok(
+          "a cross-origin sub-frame CANNOT open the file picker, which is why the parent owns it",
+          /SecurityError/.test(pickerInChild),
+          pickerInChild,
+        );
+        ok(
+          "…while the portal page can: the API is present where the gesture is",
+          portalHasPicker === true,
+          "showSaveFilePicker in the portal",
+        );
+      } else {
+        const childPicker = await frame.evaluate(() => typeof window.showSaveFilePicker);
+        ok(
+          "without a native save picker, the sub-frame has none either: the portal's sink is the route",
+          childPicker === "undefined",
+          `typeof showSaveFilePicker in the child: ${childPicker}`,
+        );
+        capabilityAbsent(
+          checks,
+          notApplicable,
+          "save-file-picker",
+          "native showSaveFilePicker (present in the portal, refused in the sub-frame)",
+          `window.showSaveFilePicker is not provided by ${ENGINE}`,
+        );
+      }
+      // A platform fact the design deliberately does NOT depend on, recorded where it holds.
+      const transferable = await page.evaluate(() => window.__portal.transferableWritableStream());
+      if (transferable === "transferable") {
+        ok(
+          "a WritableStream is transferable here - so the bridge moving BYTES is a choice, not a limit",
+          true,
+          "FileSystemWritableFileStream transfer remains unproven; the design does not depend on it",
+        );
+      } else {
+        capabilityAbsent(
+          checks,
+          notApplicable,
+          "transferable-streams",
+          "transferable WritableStream (recorded only; the bridge moves bytes regardless)",
+          `${ENGINE} refuses to transfer a WritableStream (${transferable})`,
+        );
       }
     });
-    ok(
-      "a cross-origin sub-frame CANNOT open the file picker, which is why the parent owns it",
-      /SecurityError/.test(pickerInChild),
-      pickerInChild,
-    );
-    ok(
-      "…while the portal page can: the API is present where the gesture is",
-      (await page.evaluate(() => window.__portal.hasPicker)) === true,
-      "showSaveFilePicker in the portal",
-    );
-    ok(
-      "a WritableStream is transferable here - so the bridge moving BYTES is a choice, not a limit",
-      (await page.evaluate(() => window.__portal.transferableWritableStream())) === "transferable",
-      "FileSystemWritableFileStream transfer remains unproven; the design does not depend on it",
-    );
 
-    // start, attach, hand shake
-    await frame.evaluate(() => window.__pg.start(), null, { timeout: 300_000 });
-    const childSession = await frame.evaluate(() => window.__pg.sessionId);
-    ok(
-      "the playground bridge attaches and names a per-frame session",
-      typeof childSession === "string" && childSession.length > 0,
-      childSession,
+    // start, attach, hand shake. The deadline is the PHASE's: `evaluate()` takes no timeout option.
+    await run("Python startup in the playground", 300_000, () =>
+      frame.evaluate(() => window.__pg.start()),
     );
-    await page.waitForFunction(() => window.__portal.state.ready !== null, null, {
-      timeout: 30_000,
-    });
-    ok(
-      "the handshake completes and the portal learns the playground's per-frame session id",
-      typeof (await page.evaluate(() => window.__portal.state.ready)) === "string",
-      await page.evaluate(() => window.__portal.state.ready),
-    );
-
-    const wrote = await frame.evaluate(async () => {
-      const r = await window.__pg.run(
-        "with open('small.csv','w') as fh:\n    fh.write('a,b\\n1,2\\n')\n",
+    const { hasWorkspace } = await run("bridge handshake", 60_000, async () => {
+      const childSession = await frame.evaluate(() => window.__pg.sessionId);
+      ok(
+        "the playground bridge attaches and names a per-frame session",
+        typeof childSession === "string" && childSession.length > 0,
+        childSession,
       );
-      return {
-        error: r.error ? String(r.error).split("\n").pop() : null,
-        artifacts: (await window.__pg.engine.artifacts()).map((a) => a.name),
-      };
+      await page.waitForFunction(() => window.__portal.state.ready !== null, null, {
+        timeout: 30_000,
+      });
+      // Every download below needs the playground's disk-backed workspace. What the WORKER in
+      // this engine reported decides; without it the artifact half - listing, the forgery checks
+      // made on it, every parent-mediated download and the reload DURING a transfer - is not
+      // applicable, and the bounded operations and the later iframe reload still run. An
+      // independent probe worker in the same frame says whether the browser would have allowed
+      // it: if it would, the package failed, and that fails.
+      const playgroundWorkspace = await frame.evaluate(() => window.__pg.engine.workspace);
+      const available = playgroundWorkspace?.available === true;
+      if (!available) {
+        const probed = await probeWorkerCapabilities(frame);
+        ok(
+          "the playground's missing workspace is the browser's answer, not the package's failure",
+          probed.opfsUsable === false,
+          JSON.stringify({ workspace: playgroundWorkspace, probe: probed }),
+        );
+        capabilityAbsent(
+          checks,
+          notApplicable,
+          "sync-access-handles",
+          "artifact listing, forgery checks on it, every parent-mediated download, and a reload " +
+            "during a transfer",
+          `this ${ENGINE} context's worker cannot back /workspace with OPFS ` +
+            `(${playgroundWorkspace?.reason ?? "unknown"}${probed.opfsError ? `; ${probed.opfsError}` : ""})`,
+        );
+      }
+      ok(
+        "the handshake completes and the portal learns the playground's per-frame session id",
+        typeof (await page.evaluate(() => window.__portal.state.ready)) === "string",
+        await page.evaluate(() => window.__portal.state.ready),
+      );
+      return { hasWorkspace: available };
     });
-    ok(
-      "the playground writes an artifact of its own",
-      wrote.error === null && wrote.artifacts.includes("small.csv"),
-      JSON.stringify(wrote),
-    );
-    const pushed = await page
-      .waitForFunction(() => window.__portal.state.artifacts.length > 0, null, { timeout: 15_000 })
-      .then(() => true)
-      .catch(() => false);
-    ok(
-      "the playground PUSHES its new artifact list to the portal, unprompted",
-      pushed,
-      JSON.stringify(await page.evaluate(() => window.__portal.state)),
-    );
-    if (!pushed) {
-      await page.evaluate(() => window.__portal.host.refresh());
-      await page.waitForFunction(() => window.__portal.state.artifacts.length > 0, null, {
-        timeout: 15_000,
+
+    if (hasWorkspace) {
+      const listed = await run("small artifact setup", 60_000, async () => {
+        const wrote = await frame.evaluate(async () => {
+          const r = await window.__pg.run(
+            "with open('small.csv','w') as fh:\n    fh.write('a,b\\n1,2\\n')\n",
+          );
+          return {
+            error: r.error ? String(r.error).split("\n").pop() : null,
+            artifacts: (await window.__pg.engine.artifacts()).map((a) => a.name),
+          };
+        });
+        ok(
+          "the playground writes an artifact of its own",
+          wrote.error === null && wrote.artifacts.includes("small.csv"),
+          JSON.stringify(wrote),
+        );
+        const pushed = await page
+          .waitForFunction(() => window.__portal.state.artifacts.length > 0, null, {
+            timeout: 15_000,
+          })
+          .then(() => true)
+          .catch(() => false);
+        ok(
+          "the playground PUSHES its new artifact list to the portal, unprompted",
+          pushed,
+          JSON.stringify(await page.evaluate(() => window.__portal.state)),
+        );
+        if (!pushed) {
+          await page.evaluate(() => window.__portal.host.refresh());
+          await page.waitForFunction(() => window.__portal.state.artifacts.length > 0, null, {
+            timeout: 15_000,
+          });
+        }
+        const artifacts = await page.evaluate(() => window.__portal.state.artifacts);
+        ok(
+          "artifact METADATA crosses the boundary - name, size, mime, state - and no bytes",
+          artifacts.length === 1 &&
+            artifacts[0].name === "small.csv" &&
+            !Object.keys(artifacts[0]).some((k) => /byte|blob|content|token/i.test(k)),
+          JSON.stringify(artifacts),
+        );
+        return artifacts;
+      });
+
+      // every check on the parent, defeated
+      await run("forged-envelope checks", 30_000, async () => {
+        const accepted = async (message, targetOrigin) => {
+          await frame.evaluate(
+            ([m, o]) => window.__pg.forge(m, o),
+            [message, targetOrigin ?? null],
+          );
+          await page.waitForTimeout(120);
+          return await page.evaluate(() => window.__portal.state.artifacts.map((a) => a.name));
+        };
+        const session = await page.evaluate(() => window.__portal.state.ready);
+        // The parent's current challenge, read from the last hail the child received.
+        const challenge = await frame.evaluate(() => window.__pg.lastChallenge ?? null);
+        // The CURRENT protocol, imported rather than written down: a hard-coded version that had
+        // fallen behind made every negative check below pass for the wrong reason.
+        const good = {
+          channel: EMBED_CHANNEL,
+          version: EMBED_PROTOCOL_VERSION,
+          sessionId: session,
+          challenge,
+        };
+        // THE POSITIVE CONTROL: the otherwise-valid envelope IS accepted - the parent replaces its
+        // list with the forged one. Only after this does "ignored" mean the one field changed.
+        const control = { ...listed[0], name: "forged-control.csv" };
+        const afterControl = await accepted({ ...good, kind: "artifacts", artifacts: [control] });
+        ok(
+          "a well-formed envelope from the child IS accepted (the control for the checks below)",
+          JSON.stringify(afterControl) === JSON.stringify(["forged-control.csv"]),
+          JSON.stringify({ afterControl, envelope: { ...good, challenge: Boolean(challenge) } }),
+        );
+        const ignoredWith = async (change) => {
+          const list = await accepted({ ...good, ...change, kind: "artifacts", artifacts: [] });
+          return JSON.stringify(list) === JSON.stringify(["forged-control.csv"]);
+        };
+        ok(
+          "a message with the wrong protocol version is ignored",
+          await ignoredWith({ version: EMBED_PROTOCOL_VERSION + 1 }),
+          `version ${EMBED_PROTOCOL_VERSION + 1} where ${EMBED_PROTOCOL_VERSION} is current`,
+        );
+        ok(
+          "…with the wrong session id is ignored, so a reloaded frame's traffic cannot be replayed",
+          await ignoredWith({ sessionId: "not-this-frame" }),
+          "foreign session",
+        );
+        ok(
+          "…without the channel marker is ignored rather than parsed",
+          await ignoredWith({ channel: "something-else" }),
+          "foreign channel",
+        );
+        // Put the real list back before downloading from it.
+        await page.evaluate(() => window.__portal.host.refresh());
+        await page.waitForFunction(
+          () => window.__portal.state.artifacts.some((a) => a.name === "small.csv"),
+          null,
+          { timeout: 15_000 },
+        );
+      });
+
+      // the download, through the parent's sink
+      await run("small parent-mediated download", 60_000, async () => {
+        await page.evaluate(() => window.__portal.arm("small.csv"));
+        await page.click("#download");
+        await page.waitForFunction(() => window.__portal.state.done === true, null, {
+          timeout: 60_000,
+        });
+        const small = await page.evaluate(() => ({
+          written: window.__portal.state.written,
+          result: window.__portal.state.result,
+          error: window.__portal.state.error,
+          activation: window.__portal.state.clickActivation,
+        }));
+        ok(
+          "a parent-owned click drives a bounded pull of the child's artifact",
+          small.error === null && small.written === 8 && small.result?.bytesWritten === 8,
+          JSON.stringify(small),
+        );
+        // `navigator.userActivation` is how activation is OBSERVED; where the engine has no such
+        // API there is nothing to observe, which is not the same as no activation.
+        if (small.activation !== null) {
+          ok(
+            "…on the portal's own user activation",
+            small.activation?.isActive === true,
+            JSON.stringify(small.activation),
+          );
+          // the child's click, and the parent's activation
+          const propagated = await page.evaluate(() => window.__portal.activation());
+          ok(
+            "user activation is observable in the parent after the click - recorded, not relied on",
+            propagated !== null,
+            JSON.stringify(propagated),
+          );
+        } else {
+          capabilityAbsent(
+            checks,
+            notApplicable,
+            "user-activation",
+            "observing the portal's user activation",
+            `navigator.userActivation is not provided by ${ENGINE}`,
+          );
+        }
+      });
+
+      // the large artifact, and the bound
+      const built = await run(`large artifact creation (${transferMiB} MiB)`, 300_000, async () => {
+        const made = await frame.evaluate(async (mib) => {
+          // Joined from lines rather than embedded escapes: a `\\n` that survives one level of
+          // quoting too many becomes a literal backslash-n and Python raises a SyntaxError.
+          const source = [
+            "import hashlib",
+            "h = hashlib.sha256()",
+            "block = bytes(range(256)) * 4096",
+            "with open('big.bin','wb') as fh:",
+            `    for _ in range(${mib} * 1024 * 1024 // len(block)):`,
+            "        fh.write(block)",
+            "        h.update(block)",
+            "print(h.hexdigest())",
+            "",
+          ].join("\n");
+          const r = await window.__pg.run(source);
+          return {
+            error: r.error ? String(r.error).split("\n").pop() : null,
+            // Python's OWN digest of the bytes it wrote, so the comparison is between two
+            // independent computations of one standard function rather than two copies of a trick.
+            digest: (r.stdout ?? "").trim(),
+            artifacts: (await window.__pg.engine.artifacts()).map((a) => `${a.name}:${a.size}`),
+          };
+        }, transferMiB);
+        ok(
+          `the playground writes a ${transferMiB} MiB artifact`,
+          made.error === null && made.artifacts.some((a) => a.startsWith("big.bin:")),
+          JSON.stringify(made),
+        );
+        ok(
+          "…and Python reports its own SHA-256 of those bytes",
+          /^[0-9a-f]{64}$/.test(made.digest ?? ""),
+          made.digest,
+        );
+        return made;
+      });
+
+      const boundedDigest = await run(
+        `complete artifact transfer (${transferMiB} MiB)`,
+        300_000,
+        async () => {
+          await page.waitForFunction(
+            () => window.__portal.state.artifacts.some((a) => a.name === "big.bin"),
+            null,
+            { timeout: 120_000 },
+          );
+          // MEASURED WHILE IT IS RUNNING, not after it has finished: once the transfer is over
+          // every chunk has been released and the collector has had every chance to run. The sink
+          // HOLDS at roughly half the file, the measurement is taken there with the transfer
+          // genuinely in flight, and it is released.
+          const halfway = transferBytes / 2;
+          await page.evaluate((pauseAt) => window.__portal.arm("big.bin", { pauseAt }), halfway);
+          const before = canMeasure ? await measure(page) : null;
+          await page.click("#download");
+          await page.waitForFunction(() => window.__portal.state.paused === true, null, {
+            timeout: 300_000,
+          });
+          const during = canMeasure ? await measure(page) : null;
+          const midway = await page.evaluate(() => ({
+            written: window.__portal.state.written,
+            live: window.__portal.state.live,
+            maxWriting: window.__portal.state.maxWriting,
+          }));
+          ok(
+            `the transfer really was in flight ${canMeasure ? "when memory was measured" : "at the midpoint"} (~half of ${transferMiB} MiB)`,
+            midway.written >= halfway / 2 && midway.written < transferBytes,
+            JSON.stringify(midway),
+          );
+          ok(
+            "…with exactly one sink.write() running, tracked as a count rather than assumed",
+            midway.maxWriting === 1,
+            `most concurrent writes observed: ${midway.maxWriting}`,
+          );
+          const resumed = await page.evaluate(() => window.__portal.resume());
+          ok(
+            "…and it resumes when released",
+            resumed === true,
+            `resume() found a waiter: ${resumed}`,
+          );
+          await page.waitForFunction(() => window.__portal.state.done === true, null, {
+            timeout: 300_000,
+          });
+          const big = await page.evaluate(() => ({
+            written: window.__portal.state.written,
+            peakLive: window.__portal.state.peakLive,
+            maxWriting: window.__portal.state.maxWriting,
+            error: window.__portal.state.error,
+            result: window.__portal.state.result,
+          }));
+          ok(
+            `a ${transferMiB} MiB artifact crosses the boundary in full`,
+            big.error === null && big.written === transferBytes,
+            JSON.stringify({ written: big.written, expected: transferBytes, error: big.error }),
+          );
+          ok(
+            "…in chunks, never holding more than one at a time in the portal",
+            big.peakLive > 0 && big.peakLive <= CHUNK && big.maxWriting === 1,
+            `peak live bytes ${big.peakLive}, most concurrent writes ${big.maxWriting}`,
+          );
+          if (canMeasure) {
+            ok(
+              "…with the portal's memory growth bounded rather than proportional to the file",
+              // NOT `true` when the measurement is unavailable: a check that cannot run is not a
+              // check that passed.
+              before !== null && during !== null && during - before < 40 * 1024 * 1024,
+              before !== null && during !== null
+                ? `growth ${((during - before) / 1024 / 1024).toFixed(1)} MiB across ${transferMiB} MiB ` +
+                    `(isolated: ${await page.evaluate(() => crossOriginIsolated)})`
+                : `performance.measureUserAgentSpecificMemory() gave nothing: ${
+                    measureUnavailable ?? "no reason recorded"
+                  } (isolated: ${await page.evaluate(() => crossOriginIsolated)})`,
+            );
+          }
+          return await page.evaluate(() => window.__portal.state.digest);
+        },
+      );
+
+      // THE CONTROL. A measurement that always reads "no growth" is indistinguishable from one
+      // that reads nothing at all, so the same transfer is repeated with a sink that KEEPS every
+      // chunk. If that one also shows no growth, the number above means nothing.
+      if (canMeasure) {
+        await run("memory measurement negative control", 300_000, async () => {
+          await page.evaluate(() => window.__portal.arm("big.bin", { retain: true }));
+          const beforeRetain = await measure(page);
+          await page.click("#download");
+          await page.waitForFunction(() => window.__portal.state.done === true, null, {
+            timeout: 300_000,
+          });
+          const duringRetain = await measure(page);
+          ok(
+            "…and the measurement can fail: a sink that keeps every chunk shows the whole file",
+            beforeRetain !== null &&
+              duringRetain !== null &&
+              duringRetain - beforeRetain > 40 * 1024 * 1024,
+            beforeRetain !== null && duringRetain !== null
+              ? `retaining growth ${((duringRetain - beforeRetain) / 1024 / 1024).toFixed(1)} MiB, ` +
+                  `chunks kept ${await page.evaluate(() => window.__portal.state.retained)}`
+              : "measurement unavailable",
+          );
+        });
+      }
+
+      ok(
+        "…and the bytes are identical: the portal's streaming SHA-256 equals Python's own",
+        boundedDigest === built.digest,
+        JSON.stringify({ portal: boundedDigest, python: built.digest }),
+      );
+
+      // A real navigation WHILE a transfer is in flight: the frame is reloaded with a download
+      // held open, so the port, the child's lease and the visitor's destination all belong to a
+      // document that no longer exists. It has to settle, and the destination has to be aborted
+      // rather than closed. Only replacing a real document exercises this.
+      await run("interrupted transfer", 180_000, async () => {
+        // 8 MiB into the 96 MiB transfer, as before; a quarter of the portable one.
+        await page.evaluate(
+          (pauseAt) => window.__portal.arm("big.bin", { pauseAt }),
+          Math.min(8 * 1024 * 1024, transferBytes / 4),
+        );
+        await page.click("#download");
+        await page.waitForFunction(() => window.__portal.state.paused === true, null, {
+          timeout: 300_000,
+        });
+        const sessionBeforeReload = await page.evaluate(() => window.__portal.state.ready);
+        await page.evaluate(() => window.__portal.child("reload"));
+        await page.evaluate(() => window.__portal.resume());
+        const interrupted = await page
+          .waitForFunction(() => window.__portal.state.done === true, null, { timeout: 120_000 })
+          .then(() =>
+            page.evaluate(() => ({
+              error: window.__portal.state.error,
+              result: window.__portal.state.result,
+              written: window.__portal.state.written,
+            })),
+          )
+          .catch(() => null);
+        ok(
+          "a navigation DURING a transfer settles it rather than leaving it pending",
+          interrupted !== null && interrupted.error !== null && interrupted.result === null,
+          JSON.stringify(interrupted),
+        );
+        ok(
+          "…having delivered only part of the file, and never reported success",
+          interrupted !== null && interrupted.written > 0 && interrupted.written < transferBytes,
+          JSON.stringify({ written: interrupted?.written, of: transferBytes }),
+        );
+        return sessionBeforeReload;
+      }).then(async (sessionBeforeReload) => {
+        // The replaced document must finish ITS handshake before anything uses the bridge again.
+        const renewed = await run("session renewal after the interrupted transfer", 90_000, () =>
+          renewedSession(sessionBeforeReload),
+        );
+        ok(
+          "…after which a NEW session is established, and the host and the fixture agree on it",
+          renewed.ready !== sessionBeforeReload &&
+            renewed.ready === renewed.host &&
+            renewed.invalidations.length > 0,
+          JSON.stringify({ before: sessionBeforeReload, ...renewed }),
+        );
+        const reached = await run(
+          "playground document reachable after the interrupted transfer",
+          60_000,
+          () => reachRenewedPlayground(renewed.ready),
+        );
+        ok(
+          "…and the NEW playground document answers, reporting that same session",
+          reached.childSession === renewed.ready,
+          JSON.stringify(reached),
+        );
       });
     }
-    const listed = await page.evaluate(() => window.__portal.state.artifacts);
-    ok(
-      "artifact METADATA crosses the boundary - name, size, mime, state - and no bytes",
-      listed.length === 1 &&
-        listed[0].name === "small.csv" &&
-        !Object.keys(listed[0]).some((k) => /byte|blob|content|token/i.test(k)),
-      JSON.stringify(listed),
-    );
-
-    // every check on the parent, defeated
-    const forged = async (message, targetOrigin) => {
-      const before = await page.evaluate(() => window.__portal.state.artifacts.length);
-      await frame.evaluate(([m, o]) => window.__pg.forge(m, o), [message, targetOrigin ?? null]);
-      await page.waitForTimeout(120);
-      return (await page.evaluate(() => window.__portal.state.artifacts.length)) === before;
-    };
-    const session = await page.evaluate(() => window.__portal.state.ready);
-    // The parent's current challenge, read from the last hail the child received.
-    const challenge = await frame.evaluate(() => window.__pg.lastChallenge ?? null);
-    const good = { channel: "freva-python-embed", version: 2, sessionId: session, challenge };
-    ok(
-      "a message with the wrong protocol version is ignored",
-      await forged({ ...good, version: 99, kind: "artifacts", artifacts: [] }),
-      "version 99",
-    );
-    ok(
-      "…with the wrong session id is ignored, so a reloaded frame's traffic cannot be replayed",
-      await forged({ ...good, sessionId: "not-this-frame", kind: "artifacts", artifacts: [] }),
-      "foreign session",
-    );
-    ok(
-      "…without the channel marker is ignored rather than parsed",
-      await forged({ ...good, channel: "something-else", kind: "artifacts", artifacts: [] }),
-      "foreign channel",
-    );
-
-    // the download, through the parent's sink
-    await page.evaluate(() => window.__portal.arm("small.csv"));
-    await page.click("#download");
-    await page.waitForFunction(() => window.__portal.state.done === true, null, {
-      timeout: 60_000,
-    });
-    const small = await page.evaluate(() => ({
-      written: window.__portal.state.written,
-      result: window.__portal.state.result,
-      error: window.__portal.state.error,
-      activation: window.__portal.state.clickActivation,
-    }));
-    ok(
-      "a parent-owned click drives a bounded pull of the child's artifact",
-      small.error === null && small.written === 8 && small.result?.bytesWritten === 8,
-      JSON.stringify(small),
-    );
-    ok(
-      "…on the portal's own user activation",
-      small.activation?.isActive === true,
-      JSON.stringify(small.activation),
-    );
-
-    // the child's click, and the parent's activation
-    const propagated = await page.evaluate(() => window.__portal.activation());
-    ok(
-      "user activation from a child click reaches the parent in this Chromium - recorded, not relied on",
-      propagated !== null,
-      JSON.stringify(propagated),
-    );
-
-    // 96 MiB, and the bound
-    const built = await frame.evaluate(async (mib) => {
-      // Joined from lines rather than embedded escapes: a `\\n` that survives one level of
-      // quoting too many becomes a literal backslash-n and Python raises a SyntaxError on line 1.
-      const source = [
-        "import hashlib",
-        "h = hashlib.sha256()",
-        "block = bytes(range(256)) * 4096",
-        "with open('big.bin','wb') as fh:",
-        `    for _ in range(${mib} * 1024 * 1024 // len(block)):`,
-        "        fh.write(block)",
-        "        h.update(block)",
-        "print(h.hexdigest())",
-        "",
-      ].join("\n");
-      const r = await window.__pg.run(source);
-      return {
-        error: r.error ? String(r.error).split("\n").pop() : null,
-        // Python's OWN digest of the bytes it wrote, so the comparison is between two
-        // independent computations of one standard function rather than two copies of a trick.
-        digest: (r.stdout ?? "").trim(),
-        artifacts: (await window.__pg.engine.artifacts()).map((a) => `${a.name}:${a.size}`),
-      };
-    }, BIG_MIB);
-    ok(
-      `the playground writes a ${BIG_MIB} MiB artifact`,
-      built.error === null && built.artifacts.some((a) => a.startsWith("big.bin:")),
-      JSON.stringify(built),
-    );
-    ok(
-      "…and Python reports its own SHA-256 of those bytes",
-      /^[0-9a-f]{64}$/.test(built.digest ?? ""),
-      built.digest,
-    );
-
-    await page.waitForFunction(
-      () => window.__portal.state.artifacts.some((a) => a.name === "big.bin"),
-      null,
-      { timeout: 120_000 },
-    );
-    // MEASURED WHILE IT IS RUNNING, not after it has finished: once the transfer is over every
-    // chunk has been released and the collector has had every chance to run, so "no growth" is
-    // guaranteed whether the transfer was bounded or not. The sink HOLDS at roughly half the file,
-    // the measurement is taken there with the transfer genuinely in flight, and it is released.
-    const halfway = (BIG_MIB / 2) * 1024 * 1024;
-    await page.evaluate((pauseAt) => window.__portal.arm("big.bin", { pauseAt }), halfway);
-    const before = await measure(page);
-    await page.click("#download");
-    await page.waitForFunction(() => window.__portal.state.paused === true, null, {
-      timeout: 300_000,
-    });
-    const during = await measure(page);
-    const midway = await page.evaluate(() => ({
-      written: window.__portal.state.written,
-      live: window.__portal.state.live,
-      maxWriting: window.__portal.state.maxWriting,
-    }));
-    ok(
-      `the transfer really was in flight when memory was measured (~half of ${BIG_MIB} MiB)`,
-      midway.written >= halfway / 2 && midway.written < BIG_MIB * 1024 * 1024,
-      JSON.stringify(midway),
-    );
-    ok(
-      "…with exactly one sink.write() running, tracked as a count rather than assumed",
-      midway.maxWriting === 1,
-      `most concurrent writes observed: ${midway.maxWriting}`,
-    );
-    expect_resumed: {
-      const resumed = await page.evaluate(() => window.__portal.resume());
-      ok("…and it resumes when released", resumed === true, `resume() found a waiter: ${resumed}`);
-      break expect_resumed;
-    }
-    await page.waitForFunction(() => window.__portal.state.done === true, null, {
-      timeout: 300_000,
-    });
-    const big = await page.evaluate(() => ({
-      written: window.__portal.state.written,
-      peakLive: window.__portal.state.peakLive,
-      maxWriting: window.__portal.state.maxWriting,
-      error: window.__portal.state.error,
-      result: window.__portal.state.result,
-    }));
-
-    ok(
-      `a ${BIG_MIB} MiB artifact crosses the boundary in full`,
-      big.error === null && big.written === BIG_MIB * 1024 * 1024,
-      JSON.stringify({ written: big.written, expected: BIG_MIB * 1024 * 1024, error: big.error }),
-    );
-    ok(
-      "…in chunks, never holding more than one at a time in the portal",
-      big.peakLive > 0 && big.peakLive <= CHUNK && big.maxWriting === 1,
-      `peak live bytes ${big.peakLive}, most concurrent writes ${big.maxWriting}`,
-    );
-    ok(
-      "…with the portal's memory growth bounded rather than proportional to the file",
-      // NOT `true` when the measurement is unavailable: a check that cannot run is not a check
-      // that passed.
-      before !== null && during !== null && during - before < 40 * 1024 * 1024,
-      before !== null && during !== null
-        ? `growth ${((during - before) / 1024 / 1024).toFixed(1)} MiB across ${BIG_MIB} MiB ` +
-            `(isolated: ${await page.evaluate(() => crossOriginIsolated)})`
-        : `performance.measureUserAgentSpecificMemory() gave nothing: ${
-            measureUnavailable ?? "no reason recorded"
-          } (isolated: ${await page.evaluate(() => crossOriginIsolated)})`,
-    );
-    const boundedDigest = await page.evaluate(() => window.__portal.state.digest);
-
-    // THE CONTROL. A measurement that always reads "no growth" is indistinguishable from one that
-    // reads nothing at all, so the same transfer is repeated with a sink that KEEPS every chunk.
-    // If that one also shows no growth, the number above means nothing.
-    await page.evaluate(() => window.__portal.arm("big.bin", { retain: true }));
-    const beforeRetain = await measure(page);
-    await page.click("#download");
-    await page.waitForFunction(() => window.__portal.state.done === true, null, {
-      timeout: 300_000,
-    });
-    const duringRetain = await measure(page);
-    ok(
-      "…and the measurement can fail: a sink that keeps every chunk shows the whole file",
-      beforeRetain !== null &&
-        duringRetain !== null &&
-        duringRetain - beforeRetain > 40 * 1024 * 1024,
-      beforeRetain !== null && duringRetain !== null
-        ? `retaining growth ${((duringRetain - beforeRetain) / 1024 / 1024).toFixed(1)} MiB, ` +
-            `chunks kept ${await page.evaluate(() => window.__portal.state.retained)}`
-        : "measurement unavailable",
-    );
-
-    ok(
-      "…and the bytes are identical: the portal's streaming SHA-256 equals Python's own",
-      boundedDigest === built.digest,
-      JSON.stringify({ portal: boundedDigest, python: built.digest }),
-    );
-
-    // A real navigation WHILE a transfer is in flight: the frame is reloaded with a download held
-    // open halfway through, so the port, the child's lease and the visitor's destination all
-    // belong to a document that no longer exists. It has to settle, and the destination has to be
-    // aborted rather than closed. Only replacing a real document exercises this.
-    await page.evaluate((pauseAt) => window.__portal.arm("big.bin", { pauseAt }), 8 * 1024 * 1024);
-    await page.click("#download");
-    await page.waitForFunction(() => window.__portal.state.paused === true, null, {
-      timeout: 300_000,
-    });
-    await frame.evaluate(() => location.reload());
-    await page.evaluate(() => window.__portal.resume());
-    const interrupted = await page
-      .waitForFunction(() => window.__portal.state.done === true, null, { timeout: 120_000 })
-      .then(() =>
-        page.evaluate(() => ({
-          error: window.__portal.state.error,
-          result: window.__portal.state.result,
-          written: window.__portal.state.written,
-        })),
-      )
-      .catch(() => null);
-    ok(
-      "a navigation DURING a transfer settles it rather than leaving it pending",
-      interrupted !== null && interrupted.error !== null && interrupted.result === null,
-      JSON.stringify(interrupted),
-    );
-    ok(
-      "…having delivered only part of the file, and never reported success",
-      interrupted !== null &&
-        interrupted.written > 0 &&
-        interrupted.written < BIG_MIB * 1024 * 1024,
-      JSON.stringify({ written: interrupted?.written, of: BIG_MIB * 1024 * 1024 }),
-    );
 
     // The four bounded operations. The parent has ordinary window operations it cannot perform
     // across an origin - read the transcript, clear it, clear the prompt's history, start a new
     // interpreter - and without them a framed session's Copy copies an empty string and reports
-    // success, Clear prints a warning, and Restart can only replace the whole document. Each
-    // request is a NAME with no arguments; what is measured is that the name arrives, that the
-    // child's own answer comes back, and that the transcript is PUSHED rather than fetched.
-    const said = await frame.evaluate(() => window.__pg.say("hello from the playground\n"));
+    // success, Clear prints a warning, and Restart can only replace the whole document. Each is
+    // its OWN phase with its own deadline: `host.perform()` settles within its 15 s operation
+    // timeout, so a phase that overruns names exactly the step the browser wedged in.
+    const said = await run("bridge operation: transcript setup", 30_000, () =>
+      page.evaluate(() => window.__portal.child("say", "hello from the playground\n")),
+    );
     ok("the playground has a transcript to share", said > 0, `${said} characters`);
 
-    const asked = await page.evaluate(() => window.__portal.perform("transcript"));
-    ok(
-      "a `transcript` request is answered by the playground",
-      asked.ok === true,
-      JSON.stringify(asked),
-    );
-    const held = await page.evaluate(() => window.__portal.transcript());
-    ok(
-      "…and the parent HOLDS the transcript, so its Copy control need not await anything",
-      held !== null && held.text.includes("hello from the playground"),
-      JSON.stringify(held).slice(0, 120),
-    );
-    ok(
-      "…and it is not marked truncated at this size",
-      held?.truncated === false,
-      String(held?.truncated),
-    );
+    await run("bridge operation: transcript request", 30_000, async () => {
+      const asked = await page.evaluate(() => window.__portal.perform("transcript"));
+      ok(
+        "a `transcript` request is answered by the playground",
+        asked.ok === true,
+        JSON.stringify(asked),
+      );
+      const held = await page.evaluate(() => window.__portal.transcript());
+      ok(
+        "…and the parent HOLDS the transcript, so its Copy control need not await anything",
+        held !== null && held.text.includes("hello from the playground"),
+        JSON.stringify(held).slice(0, 120),
+      );
+      ok(
+        "…and it is not marked truncated at this size",
+        held?.truncated === false,
+        String(held?.truncated),
+      );
+    });
 
-    const cleared = await page.evaluate(() => window.__portal.perform("clear-transcript"));
-    const childAfterClear = await frame.evaluate(() => window.__pg.consoleState());
-    ok(
-      "`clear-transcript` reaches the playground's own console",
-      cleared.ok === true && childAfterClear.cleared === 1 && childAfterClear.text === "",
-      JSON.stringify({ cleared, childAfterClear }),
-    );
-    const heldAfterClear = await page.evaluate(() => window.__portal.transcript());
-    ok(
-      "…and the parent's copy is corrected rather than left stale",
-      heldAfterClear !== null && heldAfterClear.text === "",
-      JSON.stringify(heldAfterClear),
-    );
+    await run("bridge operation: clear transcript", 30_000, async () => {
+      const cleared = await page.evaluate(() => window.__portal.perform("clear-transcript"));
+      const childAfterClear = await page.evaluate(() => window.__portal.child("consoleState"));
+      ok(
+        "`clear-transcript` reaches the playground's own console",
+        cleared.ok === true && childAfterClear.cleared === 1 && childAfterClear.text === "",
+        JSON.stringify({ cleared, childAfterClear }),
+      );
+      const heldAfterClear = await page.evaluate(() => window.__portal.transcript());
+      ok(
+        "…and the parent's copy is corrected rather than left stale",
+        heldAfterClear !== null && heldAfterClear.text === "",
+        JSON.stringify(heldAfterClear),
+      );
+    });
 
-    const history = await page.evaluate(() => window.__portal.perform("clear-history"));
-    const childAfterHistory = await frame.evaluate(() => window.__pg.consoleState());
-    ok(
-      "`clear-history` reaches it too, and is a different operation from clearing the transcript",
-      history.ok === true && childAfterHistory.historyCleared === 1,
-      JSON.stringify({ history, childAfterHistory }),
-    );
+    await run("bridge operation: clear history", 30_000, async () => {
+      const history = await page.evaluate(() => window.__portal.perform("clear-history"));
+      const childAfterHistory = await page.evaluate(() => window.__portal.child("consoleState"));
+      ok(
+        "`clear-history` reaches it too, and is a different operation from clearing the transcript",
+        history.ok === true && childAfterHistory.historyCleared === 1,
+        JSON.stringify({ history, childAfterHistory }),
+      );
+    });
 
-    const sessionBeforeRestart = await page.evaluate(() => window.__portal.state.ready);
-    const restarted = await page.evaluate(() => window.__portal.perform("restart"));
-    const childAfterRestart = await frame.evaluate(() => window.__pg.consoleState());
-    ok(
-      "`restart` brings up a new interpreter in the SAME document",
-      restarted.ok === true && childAfterRestart.restarts === 1,
-      JSON.stringify({ restarted, childAfterRestart }),
-    );
-    ok(
-      "…so the session survives it, and everything the parent holds stays valid",
-      (await page.evaluate(() => window.__portal.state.ready)) === sessionBeforeRestart,
-      `${sessionBeforeRestart} -> ${await page.evaluate(() => window.__portal.state.ready)}`,
-    );
+    await run("bridge operation: interpreter restart", 60_000, async () => {
+      const sessionBeforeRestart = await page.evaluate(() => window.__portal.state.ready);
+      const restarted = await page.evaluate(() => window.__portal.perform("restart"));
+      const childAfterRestart = await page.evaluate(() => window.__portal.child("consoleState"));
+      ok(
+        "`restart` brings up a new interpreter in the SAME document",
+        restarted.ok === true && childAfterRestart.restarts === 1,
+        JSON.stringify({ restarted, childAfterRestart }),
+      );
+      ok(
+        "…so the session survives it, and everything the parent holds stays valid",
+        (await page.evaluate(() => window.__portal.state.ready)) === sessionBeforeRestart,
+        `${sessionBeforeRestart} -> ${await page.evaluate(() => window.__portal.state.ready)}`,
+      );
+    });
 
     // AND NOTHING ELSE IS ASKABLE. These are four names rather than one general "call this"
     // because a peer able to reach the frame must not be able to describe an action.
-    const unknown = await page.evaluate(() => window.__portal.perform("eval"));
-    ok(
-      "an operation that is not one of the four is refused by the parent before it is sent",
-      unknown.ok === false,
-      unknown.message,
-    );
+    await run("bridge operation: unknown-operation refusal", 30_000, async () => {
+      const unknown = await page.evaluate(() => window.__portal.perform("eval"));
+      ok(
+        "an operation that is not one of the four is refused by the parent before it is sent",
+        unknown.ok === false,
+        unknown.message,
+      );
+    });
 
     // A REAL navigation, with a real new document. A navigated iframe keeps the SAME
     // `contentWindow` - the `WindowProxy` is stable across navigations by design - while the
     // document behind it and its session are new. Binding the conversation to the first session
     // learned filters the new document's `hello` out and leaves the bridge dead until the whole
     // portal is reloaded; only a real reload proves the WindowProxy really is the same object.
-    const sessionBefore = await page.evaluate(() => {
-      window.__portal.frameWindowBefore = document.getElementById("pg").contentWindow;
-      return window.__portal.state.ready;
-    });
-    await frame.evaluate(() => location.reload());
-    const renewedInTime = await page
-      .waitForFunction(
-        (before) => window.__portal.state.ready !== null && window.__portal.state.ready !== before,
+    await run("iframe renewal", 150_000, async () => {
+      const sessionBefore = await page.evaluate(() => {
+        window.__portal.frameWindowBefore = document.getElementById("pg").contentWindow;
+        return window.__portal.state.ready;
+      });
+      await page.evaluate(() => window.__portal.child("reload"));
+      const renewal = await renewedSession(sessionBefore)
+        .then((value) => ({ ok: true, value }))
+        .catch((error) => ({ ok: false, error: String(error?.message ?? error).split("\n")[0] }));
+      const renewed = await page.evaluate(
+        (before) => ({
+          before,
+          after: window.__portal.state.ready,
+          host: window.__portal.hostSession(),
+          sameProxy:
+            window.__portal.frameWindowBefore === document.getElementById("pg").contentWindow,
+          artifacts: window.__portal.state.artifacts.map((a) => a.name),
+        }),
         sessionBefore,
-        { timeout: 120_000 },
-      )
-      .then(() => true)
-      .catch(() => false);
-    const renewed = await page.evaluate(
-      (before) => ({
-        before,
-        after: window.__portal.state.ready,
-        sameProxy:
-          window.__portal.frameWindowBefore === document.getElementById("pg").contentWindow,
-        artifacts: window.__portal.state.artifacts.map((a) => a.name),
-      }),
-      sessionBefore,
-    );
-    ok(
-      "a real iframe reload renews the session rather than killing the bridge",
-      renewedInTime && renewed.after !== null && renewed.after !== renewed.before,
-      JSON.stringify({ before: renewed.before, after: renewed.after }),
-    );
-    ok(
-      "…and it really is the same WindowProxy, which is why the old session filtered it out",
-      renewed.sameProxy === true,
-      `contentWindow identical across the navigation: ${renewed.sameProxy}`,
-    );
-    ok(
-      "…with the previous document's artifacts gone rather than carried over",
-      !renewed.artifacts.includes("big.bin") && !renewed.artifacts.includes("small.csv"),
-      JSON.stringify(renewed.artifacts),
-    );
+      );
+      ok(
+        "a real iframe reload renews the session rather than killing the bridge",
+        renewal.ok &&
+          renewed.after !== null &&
+          renewed.after !== renewed.before &&
+          renewed.after === renewed.host,
+        JSON.stringify({ ...renewed, artifacts: undefined, error: renewal.error }),
+      );
+      if (renewal.ok) {
+        const reached = await reachRenewedPlayground(renewal.value.ready);
+        ok(
+          "…and the renewed playground document answers, reporting that session",
+          reached.childSession === renewal.value.ready,
+          JSON.stringify(reached),
+        );
+      }
+      ok(
+        "…and it really is the same WindowProxy, which is why the old session filtered it out",
+        renewed.sameProxy === true,
+        `contentWindow identical across the navigation: ${renewed.sameProxy}`,
+      );
+      if (hasWorkspace) {
+        ok(
+          "…with the previous document's artifacts gone rather than carried over",
+          !renewed.artifacts.includes("big.bin") && !renewed.artifacts.includes("small.csv"),
+          JSON.stringify(renewed.artifacts),
+        );
+      }
+    });
 
-    const violations = await frame.evaluate(() => window.__pg.violations());
-    ok(
-      "the sandbox keeps only what the playground needs: scripts, and its own origin storage",
-      (await page.evaluate(() => document.getElementById("pg").getAttribute("sandbox"))) ===
-        "allow-scripts allow-same-origin",
-      "no allow-downloads (the portal saves), no allow-popups, no allow-top-navigation",
-    );
-    ok(
-      "nothing in the playground was blocked by its own policy",
-      violations.length === 0,
-      JSON.stringify(violations),
-    );
+    await run("policy violations", 30_000, async () => {
+      const violations = await page.evaluate(() => window.__portal.child("violations"));
+      ok(
+        "the sandbox keeps only what the playground needs: scripts, and its own origin storage",
+        (await page.evaluate(() => document.getElementById("pg").getAttribute("sandbox"))) ===
+          "allow-scripts allow-same-origin",
+        "no allow-downloads (the portal saves), no allow-popups, no allow-top-navigation",
+      );
+      ok(
+        "nothing in the playground was blocked by its own policy",
+        violations.length === 0,
+        JSON.stringify(violations),
+      );
+    });
 
-    return checks;
+    return await finish();
   } catch (error) {
     // A suite that gives up must still report what it established. `inBrowser` replaces a thrown
     // body's checks with an empty array, which `report` refuses to call a pass - honest but
-    // uninformative. This keeps both.
-    ok(
-      "the suite ran to the end",
-      false,
-      String(error?.message ?? error)
-        .split("\n")[0]
-        .slice(0, 200),
-    );
-    return checks;
+    // uninformative. This keeps both, and names the phase when a deadline ended it.
+    checks.push(phaseFailureCheck(error));
+    return await finish();
   } finally {
-    await playground.close();
-    await portal.close();
+    // Bounded: a server that will not close must not hold the suite either.
+    await withDeadline(playground.close(), 10_000, "closing the playground server").catch(() => {});
+    await withDeadline(portal.close(), 10_000, "closing the portal server").catch(() => {});
   }
 });
 

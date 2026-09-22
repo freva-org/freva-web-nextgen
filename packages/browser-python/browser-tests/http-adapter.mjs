@@ -6,6 +6,7 @@
  * end-to-end Zarr read. The fsspec subclass is covered by the Zarr fixtures.
  */
 import { fixturePage, inBrowser, report, requireDist, serve } from "./harness.mjs";
+import { jsonFromPythonRepr, pythonJsonExpression } from "./py-json.mjs";
 
 requireDist();
 
@@ -1031,10 +1032,13 @@ _unsolicited = await _refused(
     const refusal = async (name, expression, pattern) => {
       // JSON from Python, so an error message full of quotes and apostrophes cannot break the
       // parsing of the state around it.
-      const raw = await value(expression);
       let parsed = null;
+      let raw = "";
       try {
-        parsed = JSON.parse(raw.slice(1, -1).replace(/\\'/g, "'"));
+        raw = await value(expression);
+        parsed = jsonFromPythonRepr(
+          await value(pythonJsonExpression(`__import__("json").loads(${expression})`)),
+        );
       } catch {
         parsed = null;
       }
@@ -1049,7 +1053,7 @@ _unsolicited = await _refused(
           parsed.released === 1 &&
           parsed.whole_reads === 0,
         ),
-        detail: raw.slice(0, 190),
+        detail: JSON.stringify(parsed ?? raw).slice(0, 190),
       });
     };
     await refusal(

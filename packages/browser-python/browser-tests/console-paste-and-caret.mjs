@@ -33,6 +33,7 @@ const result = await inBrowser(
   async (page) => {
     const server = await serve(consolePage());
     const checks = [];
+    const notApplicable = [];
     try {
       if (browserName === "chromium") {
         await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
@@ -111,7 +112,7 @@ const result = await inBrowser(
           pass: false,
           detail: JSON.stringify(pasteEvent),
         });
-        return checks;
+        return { checks, notApplicable };
       }
       await page.waitForFunction((text) => window.__c.mock.pushes.includes(text), source, {
         timeout: 5000,
@@ -181,6 +182,13 @@ const result = await inBrowser(
             JSON.stringify(realClipboardPushes.filter((entry) => entry !== "")) ===
             JSON.stringify([realClipboardSource]),
           detail: JSON.stringify(realClipboardPushes),
+        });
+      } else {
+        notApplicable.push({
+          name: "the trusted OS clipboard and a real paste shortcut",
+          reason:
+            `automation limitation: Playwright cannot grant clipboard-read in ${browserName}; ` +
+            "the component's paste-event path above carried the same text",
         });
       }
 
@@ -264,7 +272,7 @@ const result = await inBrowser(
         detail: JSON.stringify(reduced),
       });
 
-      return checks;
+      return { checks, notApplicable };
     } finally {
       await server.close();
     }

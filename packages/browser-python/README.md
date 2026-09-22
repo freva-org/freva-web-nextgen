@@ -54,9 +54,12 @@ const info = await python.start();
 //   workspace: { available, maxFiles, … }, credentialsPersisted, jspi }
 ```
 
-`jspi` is WebAssembly stack switching. It is not needed to start an interpreter, to run Python or
-to use `/workspace`, but reading a **remote** dataset is, because a synchronous Zarr decode calls an
-asynchronous fetch underneath.
+`jspi` is WebAssembly stack switching, detected in the worker (`WebAssembly.Suspending`), never
+inferred from the browser's name. It is not needed to start an interpreter, to run Python or to use
+`/workspace`, but reading a **remote** dataset is, because a synchronous Zarr decode calls an
+asynchronous fetch underneath. Without it nothing is printed at startup or after ordinary commands;
+the one call that needs it fails with a short, actionable `RuntimeError` naming the browser versions
+that provide it (Safari 27, Chrome and Edge 137, Firefox 153), and the session carries on.
 
 ## The download
 
@@ -72,8 +75,8 @@ Nothing is fetched until `start()`.
 | matplotlib                             | ~5 MB                                                     | the first `import matplotlib`        |
 | dataset chunks                         | as much as you ask for                                    | when you read data                   |
 
-The emitted headless-engine files — everything in `dist/` except the console and optional embed
-bridge — are
+The emitted headless-engine files - everything in `dist/` except the console and optional embed
+bridge - are
 
 <!-- size:engine-dist-gz --> 78.7 KiB gzipped against a budget of
 <!-- size:engine-budget-gz --> 83.0 KiB. None of the runtime is in your bundle: it is a dynamic
@@ -93,7 +96,7 @@ await python.restart(); // new worker, new interpreter, no variables
 python.clearBuffer(); // discard a half-typed multi-line statement
 ```
 
-`push()` returns Python's own parser verdict — `"incomplete"`, `"complete"`, `"syntax-error"` — so
+`push()` returns Python's own parser verdict - `"incomplete"`, `"complete"`, `"syntax-error"` - so
 a prompt can show `...` without guessing at the text. An expression's value is echoed, a
 statement's is not, and `run()` does not touch the console's line buffer. Both share one namespace
 and both support top-level `await`.
@@ -104,7 +107,7 @@ echo a trailing expression's value; `print()` it.
 
 **`interrupt()` is cooperative.** It returns `true` when the cancellation is recorded, never when
 anything has ended: Python delivers it at the next suspension point, so `await`ing code raises
-`KeyboardInterrupt` and `while True: pass` does not. For synchronous code only `restart()` works —
+`KeyboardInterrupt` and `while True: pass` does not. For synchronous code only `restart()` works -
 a pre-emptive interrupt would need `SharedArrayBuffer`, and the COOP/COEP headers this package
 cannot set for you.
 
@@ -120,7 +123,7 @@ python.onOutput((event) => {
 });
 ```
 
-The protocol carries only `image/png` and `text/plain`, validated at both boundaries — not
+The protocol carries only `image/png` and `text/plain`, validated at both boundaries - not
 `text/html`, not `image/svg+xml`, because both carry script and the payload was authored by
 whatever the visitor typed. Render with `textContent`, never `innerHTML`.
 
@@ -141,16 +144,16 @@ await micropip.install("cmocean")
 **Whether that line works is a property of the page, not of this package.** All five of these have
 to hold:
 
-1. the package has a pure-Python wheel, or one built for Pyodide's WebAssembly target — a Linux or
+1. the package has a pure-Python wheel, or one built for Pyodide's WebAssembly target - a Linux or
    macOS native wheel is compiled for a different platform and nothing in a browser can load it;
-2. the embedding page's CSP permits the index **and** the wheel origin in `connect-src` — for the
+2. the embedding page's CSP permits the index **and** the wheel origin in `connect-src` - for the
    default index, `https://pypi.org` and `https://files.pythonhosted.org`;
 3. those origins answer with CORS headers the browser accepts;
 4. the configured index is reachable from wherever the visitor is;
 5. the package does not, once installed, depend on something a browser does not have.
 
 A page whose policy does not name the index gets `ValueError: Can't fetch metadata for …`, raised
-during metadata lookup — **before** wheel compatibility is evaluated, so the message says nothing
+during metadata lookup - **before** wheel compatibility is evaluated, so the message says nothing
 about whether the package would have worked.
 
 `@freva-org/portal-builder` emits a default-deny policy naming the configured runtime, service and
@@ -162,8 +165,8 @@ wheel is installed with dependency resolution; on the other profiles it names no
 its job, because the browser is not Linux. `s3fs` is the sharp case: its dependency closure
 installs and the result still cannot open an S3 store, because what is registered here is a
 READ-ONLY adapter over the browser's own Fetch, with no credentials, no signing and no writes.
-Cartopy was the older example — it installs, then tries to download Natural Earth shapefiles
-through `urllib` — and is now covered by the `cartopy-natural-earth-110m` add-on.
+Cartopy was the older example - it installs, then tries to download Natural Earth shapefiles
+through `urllib` - and is now covered by the `cartopy-natural-earth-110m` add-on.
 
 **Installing does not import**, and it lasts only as long as the interpreter: a restart, a reload
 or a new tab starts an empty environment. `micropip.list()` reports what this interpreter has,
@@ -192,7 +195,7 @@ Four constraints, all real:
 - **`chunks=None`**, unless the `dask` add-on is enabled.
 
 **The server must also expose `Content-Range`.** A browser hides response headers from JavaScript
-unless the server lists them, and an unverifiable 206 is refused — a caching proxy that widens or
+unless the server lists them, and an unverifiable 206 is refused - a caching proxy that widens or
 clamps a range returns bytes of the right length from the wrong place, which Zarr decodes into an
 array that is quietly wrong.
 
@@ -203,8 +206,8 @@ Access-Control-Expose-Headers: Content-Range
 
 A server that ignores `Range` and answers `200` is refused rather than sliced locally, because that
 turns a 4 KiB chunk request into the whole object in tab memory. Every accepted response is read
-under a bound that never comes from the wire — an accepted range span, or `MAX_DECODED_BODY_BYTES`
-(64 MiB) for a whole-object read — because Fetch hands over the _decoded_ body and
+under a bound that never comes from the wire - an accepted range span, or `MAX_DECODED_BODY_BYTES`
+(64 MiB) for a whole-object read - because Fetch hands over the _decoded_ body and
 `Content-Encoding`, unlike `Content-Length`, is not CORS-safelisted. Existence is probed with
 `HEAD`, falling back to `Range: bytes=0-0`; only `404` means missing, and a `403`, a `500` or a
 CORS rejection raises.
@@ -213,7 +216,7 @@ CORS rejection raises.
 
 **Limited compatibility with an anonymous S3-compatible gateway, not S3 support.** No signing, no
 credential chain, no region resolution, no listing. A path is rewritten and handed to the HTTPS
-filesystem above — `s3://<bucket>/<key>` + `endpoint_url` → `<endpoint>/<bucket>/<key>`:
+filesystem above - `s3://<bucket>/<key>` + `endpoint_url` → `<endpoint>/<bucket>/<key>`:
 
 ```py
 ds = xr.open_zarr(
@@ -226,7 +229,7 @@ ds = xr.open_zarr(
 
 Supported: `anon=True`, an HTTPS `endpoint_url` (also inside `client_kwargs`), path-style
 addressing, the `s3`/`s3a`/`s3n` schemes, consolidated Zarr, reads. Keys are preserved byte for
-byte — `a/c`, `a//c`, `/a/c` and `a/c/` are four different objects.
+byte - `a/c`, `a//c`, `/a/c` and `a/c/` are four different objects.
 
 Refused by name rather than half-attempted: any credential (`key`, `secret`, `token`, `profile`,
 `anon=False`), a missing `endpoint_url`, a plaintext endpoint other than loopback, an endpoint
@@ -298,19 +301,19 @@ await python.deleteArtifact("surface_wind.nc");
 
 **Two limits.** At most 64 files exist at one time (`workspaceMaxFiles`), because Emscripten's
 `open()` is synchronous and acquiring a storage handle is not, so handles are reserved in advance;
-exceeding it raises `EMFILE`. And the workspace is **session-scoped** — each worker holds its own
+exceeding it raises `EMFILE`. And the workspace is **session-scoped** - each worker holds its own
 directory exclusively, and artifacts do not survive a restart or a reload. `disposeAsync()` releases
 it; otherwise a later session reclaims it, but never one younger than 30 seconds.
 
 **Every write is staging.** A file becomes downloadable only once every descriptor is closed and
-nothing went short — which is how the browser reports an exhausted quota. Otherwise it is marked
+nothing went short - which is how the browser reports an exhausted quota. Otherwise it is marked
 `failed`, refused for download with a reason, and offered for deletion. Real quota exhaustion
 raises `ENOSPC`. A local multi-file Zarr store is not supported: `to_zarr()` raises `EMFILE` rather
 than half-writing thousands of chunk files. Write a `zarr.storage.ZipStore` instead, or export
 NetCDF and convert outside.
 
 Where synchronous access handles are missing the interpreter still starts and Python still writes
-files — into memory. `python.workspace` reports the difference, with a sentence to show.
+files - into memory. `python.workspace` reports the difference, with a sentence to show.
 
 > **Parquet: load `pyarrow` before pandas is first imported.** pandas registers its Arrow extension
 > types at its own import, and only if pyarrow is already loadable; the other order leaves
@@ -351,14 +354,14 @@ freva-client wheel, verifies its SHA-256, and builds a derived one: `Requires-Di
 moved to an extra rather than dropped, `==` specifiers for the versions this package tests against,
 a PEP 440 local version, and one overlaid source file so reaching for intake raises a sentence
 instead of a resolver error. A prepared directory is verified against the pinned plan in
-`bin/freva-wheelhouse.json` — filenames, digests, and the derived wheel's source relationship —
+`bin/freva-wheelhouse.json` - filenames, digests, and the derived wheel's source relationship -
 not against the manifest lying beside it.
 
 **It is installed with dependency resolution**, so micropip fetches the ordinary dependencies from
 PyPI, and **every one is pinned** in the derived metadata: `appdirs`, `py-oidc-auth-client` and
 `typer` are requirements upstream declares, given `==`; `shellingham` and `annotated-doc` are
 transitive and are added as requirements upstream does not declare. The versions are pinned, not
-the bytes. So **the page needs PyPI in its `connect-src`** — `packageIndex: true`, below.
+the bytes. So **the page needs PyPI in its `connect-src`** - `packageIndex: true`, below.
 
 `intake_catalogue()` raises with a sentence rather than a resolver error: the runtime ships polars
 1.33.1 and intake-esm requires `>=1.24,<1.33`. A version conflict, not a missing build.
@@ -368,8 +371,8 @@ directory is mounted before anything imports Freva and the token store is flushe
 authentication, so a reload reuses the token. `ready` reports `credentialsPersisted`, false both
 when you did not ask and when the browser refused; if the origin's quota later fills, the engine
 emits one `onStorage` event and flips it to false rather than silently claiming persistence. What
-is persisted is a refresh token, readable by any same-origin script — including a package the
-visitor installs at the prompt — so a dedicated origin is the safer shape.
+is persisted is a refresh token, readable by any same-origin script - including a package the
+visitor installs at the prompt - so a dedicated origin is the safer shape.
 
 **Compatibility patches live in one file**, `src/python/freva_client_compat.py`, each with the
 upstream problem and the condition under which it can be deleted:
@@ -384,7 +387,7 @@ upstream problem and the condition under which it can be deleted:
 
 They are version-locked to an exact set, not a floor: the module pins the `freva-client` and
 `py-oidc-auth-client` versions it was read against and raises `CompatError` on anything else. Treat
-an upgrade of either as a compatibility project. No HTTP transport is injected — httpx already
+an upgrade of either as a compatibility project. No HTTP transport is injected - httpx already
 speaks browser networking here, and the suite asserts it still does.
 
 Nothing here can make a server accept your origin; that is CORS, and the deployment's decision.
@@ -408,8 +411,8 @@ The default is a pinned version, never `latest`: a moving runtime URL means the 
 deployment ships is decided by whoever last published to the CDN. The CLI downloads the official
 release, checks its SHA-256 against `bin/runtime-releases.json`, unpacks it, and prints the
 directory to pass as `indexURL`. Static files; nothing runs. It refuses `--version latest`, a
-version with no recorded digest unless you pass `--sha256`, a digest that does not match, and —
-under `--full` — an unpack missing any package named in `pyodide-lock.json`. The distribution is
+version with no recorded digest unless you pass `--sha256`, a digest that does not match, and -
+under `--full` - an unpack missing any package named in `pyodide-lock.json`. The distribution is
 taken whole; `pyodide-lock.json` is never rewritten.
 
 A warm cache is re-verified against the shipped digests, so a stamp sitting in the directory cannot
@@ -445,7 +448,7 @@ incomplete, state persists between lines, and top-level `await` works.
 
 The console layer over the headless engine is <!-- size:console-layer-gz --> 116.9 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
-a target — 124 KiB for the layer, 8 KiB for the root entry — and fails if it finds a jQuery or
+a target - 124 KiB for the layer, 8 KiB for the root entry - and fails if it finds a jQuery or
 worker-only add-on pin fingerprint in the root bundle.
 
 ### Attributes, properties, methods
@@ -457,19 +460,19 @@ worker-only add-on pin fingerprint in the root bundle.
 | `theme`        | `theme`            | `"auto"`                                        | `auto` follows `prefers-color-scheme`             |
 | `hide-toolbar` | `hideToolbar`      | `false`                                         | hide the built-in buttons                         |
 | `hide-files`   | `hideFiles`        | `false`                                         | hide the file panel                               |
-| —              | `engine`           | `undefined`                                     | inject an engine; the element will not dispose it |
-| —              | `banner`           | plain-text default                              | `false` for none. Text only, never markup         |
-| —              | `startupSource`    | `undefined`                                     | bootstrap run before ready, off-transcript        |
-| —              | `historyOptions`   | `{ persistence: "local", maxEntries: 500, … }`  |                                                   |
-| —              | `outputOptions`    | `{ maxEntries: 500, maxCharacters: 2_000_000 }` |                                                   |
-| —              | `highlightOptions` | `{ enabled: true, live: true, … }`              |                                                   |
+| -              | `engine`           | `undefined`                                     | inject an engine; the element will not dispose it |
+| -              | `banner`           | plain-text default                              | `false` for none. Text only, never markup         |
+| -              | `startupSource`    | `undefined`                                     | bootstrap run before ready, off-transcript        |
+| -              | `historyOptions`   | `{ persistence: "local", maxEntries: 500, … }`  |                                                   |
+| -              | `outputOptions`    | `{ maxEntries: 500, maxCharacters: 2_000_000 }` |                                                   |
+| -              | `highlightOptions` | `{ enabled: true, live: true, … }`              |                                                   |
 
 Methods: `start()`, `execute(source)`, `runExample(example)`, `transcript()`, `focus()`, `clear()`,
 `clearHistory()`, `restart()`, `dispose()`.
 
 The element creates an engine when it needs one and disposes only what it created; assign `engine`
 and it subscribes without taking ownership, so two consoles share one interpreter. A disconnect
-never disposes an engine — only an explicit `dispose()` does.
+never disposes an engine - only an explicit `dispose()` does.
 
 **`execute()` is not for startup work.** It means "behave as though this were typed", so the source
 is echoed at a prompt and recorded in history. Installing wheels or warming an import is
@@ -481,7 +484,7 @@ nor history, runs again after every `restart()`, and **rejects `start()`** with
 
 | Key                 | Does                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------- |
-| `Enter`             | run the line — or open a continuation if the statement is incomplete                      |
+| `Enter`             | run the line - or open a continuation if the statement is incomplete                      |
 | `Shift+Enter`       | newline inside the current statement, without running it                                  |
 | `Tab`               | Python completion; at a whitespace-only prefix, indents instead                           |
 | `Tab` / `Shift+Tab` | cycle the completion menu when it is open                                                 |
@@ -497,13 +500,13 @@ nor history, runs again after every `restart()`, and **rejects `start()`** with
 
 `Ctrl+C` on a synchronous loop never reaches a suspension point, and a second and a half later the
 console says so and points at **Stop and restart**. `clear` is shadowed only in the exact case
-Python would have answered with a `NameError` — the line must be `clear` or `clear()` with an empty
+Python would have answered with a `NameError` - the line must be `clear` or `clear()` with an empty
 buffer, so `clear = 5`, `clear(x)` and `del clear` are ordinary Python.
 
 ### History, highlighting, theming
 
 History stays in the browser it was typed in and is never synchronised. **The default is
-`persistence: "local"`, which outlives the tab** — on a shared or kiosk machine choose `"session"`,
+`persistence: "local"`, which outlives the tab** - on a shared or kiosk machine choose `"session"`,
 `"memory"` or `"none"` deliberately, because a token pasted at the prompt is a history entry like
 any other. A multi-line block is one entry.
 
@@ -535,8 +538,8 @@ bigger figure, write it to `/workspace` and download it.
 jQuery Terminal's shell-shaped defaults are all off in `adapters/surface-options.ts`, held against
 the pinned library's own defaults by a test: `processArguments` (which turns `{"Test": 'test'}`
 into something Python never sees), `exit`, `clear`, `convertLinks`, `anyLinks`, `invokeMethods`,
-`execHash`, `historyState`, `checkArity`. The library is a private instance — `window.$` stays
-`undefined` — behind `ConsoleSurfaceAdapter`, the seam to implement for a smaller surface.
+`execHash`, `historyState`, `checkArity`. The library is a private instance - `window.$` stays
+`undefined` - behind `ConsoleSurfaceAdapter`, the seam to implement for a smaller surface.
 
 ## Registered examples
 
@@ -558,7 +561,7 @@ createExampleRegistry(examples).resolve("open-store", digest);
 ```
 
 An entry is `{ id, datasetId?, title, source, sha256 }`, and resolution needs both an id this build
-registered and the digest it was registered under. The digest is not a signature — it is an
+registered and the digest it was registered under. The digest is not a signature - it is an
 integrity check between two halves of one deployment, so a stale portal asking a fresh playground
 for `open-store` gets a refusal rather than a different program under a name it knew.
 `consoleElement.runExample(...)` is always file semantics whatever the length, and resets nothing.
@@ -588,9 +591,9 @@ registrable domain buys cookie isolation that a subdomain does not.
 | playground  | `https://play.portal.example` | the document, the Worker, OPFS, IDBFS, the token |
 
 ```ts
-// the playground's response — the exact portal origin, not 'self'
+// the playground's response - the exact portal origin, not 'self'
 contentSecurityPolicy({ frameAncestors: ["https://portal.example"] });
-// the portal's response — the exact playground origin
+// the portal's response - the exact playground origin
 contentSecurityPolicy({ frameSrc: ["https://play.portal.example"] });
 ```
 
@@ -617,7 +620,7 @@ const host = createPlaygroundHost({
 button.onclick = () => host.download(name, saveFilePickerSink);
 ```
 
-The playground reports artifact **metadata** only — never bytes, never a token — and the only
+The playground reports artifact **metadata** only - never bytes, never a token - and the only
 execution message carries a registered **name**, `host.runExample(id, digest, targetSession?)`,
 which a bridge with no manifest refuses. The portal opens the picker synchronously on its own
 activation; the playground then streams one transferred `ArrayBuffer` per message, with the
@@ -631,7 +634,7 @@ open the playground as a top-level page on its own origin, where it calls the pi
 Origin separation protects the portal's credentials, storage and authority from visitor code. It
 does **not** sandbox a Freva token from code deliberately run beside it: a token obtained by
 `authenticate()` lives in the interpreter, and anything in that interpreter can read it. What
-bounds the damage is the token — narrow scope, short lifetime, an audience of the Freva API alone,
+bounds the damage is the token - narrow scope, short lifetime, an audience of the Freva API alone,
 and a revocation path. Nor is it a defence against availability: a flood of well-formed bridge
 messages is work the portal page does.
 
@@ -653,7 +656,7 @@ style-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'none';
 
 > **The two defaults do not compose, on purpose.** `contentSecurityPolicy()` is `script-src 'self'`
 > and `connect-src 'self'`; `createBrowserPython()` loads the runtime from jsDelivr. Together the
-> policy blocks the engine. Pass `runtimeOrigin`, or self-host the runtime — which is the
+> policy blocks the engine. Pass `runtimeOrigin`, or self-host the runtime - which is the
 > production answer, since the runtime is a dynamic `import()` by URL and subresource integrity
 > does not apply to it.
 
@@ -662,7 +665,7 @@ style-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'none';
 | `runtimeOrigin`             | your runtime CDN, to `script-src` and `connect-src`                      |
 | `dataOrigins`               | data origins, to `connect-src` only                                      |
 | `packageIndex: true`        | `https://pypi.org` and `https://files.pythonhosted.org` to `connect-src` |
-| `network: "https"`          | the `https:` **scheme** to `connect-src` — deliberately not `*`          |
+| `network: "https"`          | the `https:` **scheme** to `connect-src` - deliberately not `*`          |
 | `console: true`             | `style-src-attr 'unsafe-inline'`, and only that                          |
 | `frameAncestors`/`frameSrc` | the exact origins you name; the default is `frame-ancestors 'none'`      |
 
@@ -674,13 +677,13 @@ default and separate from `dataOrigins`, so a deployment that never installs a p
 policy naming no index at all.
 
 **The worker needs its own header.** A dedicated Worker's policy comes from the worker script's own
-response, not from the page that created it — and every fetch the visitor's Python makes happens
+response, not from the page that created it - and every fetch the visitor's Python makes happens
 inside that Worker:
 
 ```ts
 // the page
 response.setHeader("Content-Security-Policy", contentSecurityPolicy({ console: true }));
-// the worker script's response — where connect-src actually bites
+// the worker script's response - where connect-src actually bites
 response.setHeader("Content-Security-Policy", contentSecurityPolicy({ dataOrigins: [store] }));
 ```
 
@@ -694,8 +697,10 @@ in it.
 
 ## Browser support, and what does not work
 
-Chromium is tested in CI; Firefox and Safari are expected to work but are not gated. Requirements:
-WebAssembly, module Workers, and — for remote Zarr — JSPI. An environment that cannot run the
+Chromium is the CI gate. Firefox and WebKit run the same real-interpreter suites through
+`npm run test:browser:firefox-full` and `npm run test:browser:webkit-full`: each suite asks the
+worker what the engine has, exercises the feature where it exists.
+Requirements: WebAssembly, module Workers, and - for remote Zarr - JSPI. An environment that cannot run the
 engine reports `BrowserPythonError` with a `reason` (`no-worker`, `no-webassembly`,
 `runtime-unreachable`); a missing workspace reports `workspace.available: false` with a reason
 (`no-opfs`, `no-sync-access-handles`, `open-failed`) instead of failing to start. Large streamed
@@ -703,14 +708,14 @@ downloads are Chromium-tested only.
 
 Consequences of running CPython in a browser sandbox, not defects:
 
-- **`subprocess`** — there are no processes.
-- **`%pip`** — IPython magic; this is a plain Python REPL.
-- **Native wheels** — a CPython extension built for Linux cannot load.
-- **Multiprocessing and threads** — Emscripten has none. (fsspec's synchronous mode starts an IO
+- **`subprocess`** - there are no processes.
+- **`%pip`** - IPython magic; this is a plain Python REPL.
+- **Native wheels** - a CPython extension built for Linux cannot load.
+- **Multiprocessing and threads** - Emscripten has none. (fsspec's synchronous mode starts an IO
   thread, which is why the adapter forces asynchronous mode.) Dask core works on one synchronous
   scheduler with the add-on; nothing that would make it parallel does.
-- **Memory** — one tab, typically a couple of gigabytes. Subset before you materialise.
-- **Files** — `/workspace` is on disk but session-scoped, bounded in file count, and cannot hold a
+- **Memory** - one tab, typically a couple of gigabytes. Subset before you materialise.
+- **Files** - `/workspace` is on disk but session-scoped, bounded in file count, and cannot hold a
   local multi-file Zarr store.
 
 ## Development
@@ -720,12 +725,18 @@ npm run build                          # generates the Python string modules, th
 npm test                               # unit tests (no browser, no interpreter)
 node scripts/prepare-runtime.mjs       # assemble .runtime/ (needs the Pyodide CDN once)
 npm run test:browser                   # real Chromium, real interpreter
+npm run test:browser:firefox-full      # every suite in Firefox, capability-aware, strict
+npm run test:browser:webkit-full       # every suite in WebKit, capability-aware, strict
 npm run test:packaging                 # pack, install elsewhere, import from there
 npm run check:bytes                    # the size gate
 node scripts/measure-console.mjs       # console weight, and no jQuery in the root bundle
 node scripts/console-screenshots.mjs   # every console state, as PNGs, for review by eye
 node scripts/serve-demo.mjs            # http://127.0.0.1:8123/
 ```
+
+Every `test:browser*` script builds the package first, and each suite refuses a `dist/` whose
+recorded source digest (`.build-stamp.json`, written by `npm run build`) no longer matches the
+checked-out sources - by content, not by modification time.
 
 The Python helpers in `src/python/*.py` are the source of truth and are embedded into
 `src/worker/python-sources.generated.ts` at build time; `npm run typecheck` fails if they have

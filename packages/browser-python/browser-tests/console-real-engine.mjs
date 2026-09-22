@@ -3,6 +3,7 @@
 // proves the two halves fit - real keystrokes, a real `PyodideConsole`, real continuation
 // semantics, and a real figure. Kept small on purpose: each check costs a Pyodide startup.
 import {
+  ENGINE,
   bundleConsole,
   inBrowser,
   isStrict,
@@ -40,6 +41,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8"></head><body>
 const result = await inBrowser(async (browser) => {
   const server = await serve(page);
   const checks = [];
+  const notApplicable = [];
   try {
     await browser.goto(server.url);
     await browser.waitForFunction(() => window.__ready === true, null, { timeout: 20000 });
@@ -318,9 +320,12 @@ const result = await inBrowser(async (browser) => {
     // ordinary Python - fed to `push()` a line at a time it closes the `for`, and the next,
     // still-indented line arrives at top level as `IndentationError: unexpected indent`. A REAL
     // clipboard paste, not `execute()`, because the API path has always split its input.
-    await browser.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-      origin: server.url,
-    });
+    //
+    // TWO ROUTES IN. The component's own paste-event path runs in EVERY engine: the browser event
+    // the console handles, carrying the program, dispatched at the real terminal input - and then
+    // the real interpreter runs what arrived. The trusted OS clipboard plus a real Ctrl/Cmd+V is
+    // an AUTOMATION capability, not a browser one: Playwright can grant `clipboard-read` only in
+    // Chromium, so that route runs there and is reported as not applicable elsewhere.
     const PROGRAM = [
       "values = []",
       "for i in range(2):",
@@ -331,24 +336,44 @@ const result = await inBrowser(async (browser) => {
       "",
     ].join("\n");
 
-    await browser.evaluate(async (program) => {
-      await navigator.clipboard.writeText(program);
-    }, PROGRAM);
+    /** The paste event the console owns, at the real input. Mirrors console-paste-and-caret.mjs. */
+    const dispatchPaste = (text) =>
+      browser.evaluate((source) => {
+        const root = window.__c.element.shadowRoot;
+        const target = root.querySelector(".cmd-clipboard, .cmd-editable");
+        if (!(target instanceof HTMLElement)) throw new Error("terminal paste target not found");
+        const clipboardData = new DataTransfer();
+        clipboardData.setData("text/plain", source);
+        let event = new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clipboardData,
+        });
+        // Firefox may construct a synthetic ClipboardEvent while discarding the DataTransfer it
+        // was given; the component reads `event.clipboardData`, so give it one that is readable.
+        if (event.clipboardData?.getData("text/plain") !== source) {
+          event = new Event("paste", { bubbles: true, cancelable: true, composed: true });
+          Object.defineProperty(event, "clipboardData", { enumerable: true, value: clipboardData });
+        }
+        target.dispatchEvent(event);
+        return event.defaultPrevented;
+      }, text);
+
+    await browser.evaluate(() => window.__c.element.clear());
     await browser.evaluate(() => window.__c.focusInput());
     await browser.waitForTimeout(150);
-    await browser.keyboard.press("ControlOrMeta+V");
+    const ownedByConsole = await dispatchPaste(PROGRAM);
     // Polled, not slept on: the block is compiled and run in the worker, and how long that takes
     // depends on what else the interpreter has already loaded.
     await browser
       .waitForFunction(() => window.__c.text().includes("[0, 10, 1, 11]"), null, { timeout: 20000 })
       .catch(() => {});
-
     const pastedTranscript = await browser.evaluate(() => window.__c.text());
-
     checks.push({
       name: "a pasted program with a blank line inside a loop runs as written",
-      pass: pastedTranscript.includes("[0, 10, 1, 11]"),
-      detail: JSON.stringify(pastedTranscript.slice(-220)),
+      pass: ownedByConsole && pastedTranscript.includes("[0, 10, 1, 11]"),
+      detail: JSON.stringify({ ownedByConsole, tail: pastedTranscript.slice(-220) }),
     });
     checks.push({
       name: "…with no IndentationError from the blank line closing the suite",
@@ -357,6 +382,41 @@ const result = await inBrowser(async (browser) => {
         ? JSON.stringify(pastedTranscript.slice(-220))
         : "none",
     });
+
+    if (ENGINE === "chromium") {
+      // The trusted route, where automation can drive it: the real clipboard, a real shortcut.
+      await browser.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+        origin: server.url,
+      });
+      const TRUSTED = PROGRAM.replace("print(values)", "print(values + [99])");
+      await browser.evaluate(() => window.__c.element.clear());
+      await browser.evaluate(async (program) => {
+        await navigator.clipboard.writeText(program);
+      }, TRUSTED);
+      await browser.evaluate(() => window.__c.focusInput());
+      await browser.waitForTimeout(150);
+      await browser.keyboard.press("ControlOrMeta+V");
+      await browser
+        .waitForFunction(() => window.__c.text().includes("[0, 10, 1, 11, 99]"), null, {
+          timeout: 20000,
+        })
+        .catch(() => {});
+      const trustedTranscript = await browser.evaluate(() => window.__c.text());
+      checks.push({
+        name: "the real clipboard and a trusted Ctrl/Cmd+V reach the interpreter the same way",
+        pass:
+          trustedTranscript.includes("[0, 10, 1, 11, 99]") &&
+          !trustedTranscript.includes("IndentationError"),
+        detail: JSON.stringify(trustedTranscript.slice(-220)),
+      });
+    } else {
+      notApplicable.push({
+        name: "trusted OS clipboard paste",
+        reason:
+          `automation limitation: Playwright cannot grant clipboard-read in ${ENGINE}; ` +
+          "the console's paste-event path ran the same program through the real interpreter",
+      });
+    }
 
     const healthyToolbar = await browser.evaluate(() =>
       Math.round(
@@ -483,7 +543,7 @@ const result = await inBrowser(async (browser) => {
       detail: JSON.stringify(profileChange),
     });
 
-    return checks;
+    return { checks, notApplicable };
   } finally {
     await server.close();
   }

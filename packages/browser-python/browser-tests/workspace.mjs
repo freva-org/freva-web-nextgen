@@ -19,6 +19,7 @@ import {
   requireDist,
   requireRuntimeFor,
   serve,
+  workspaceFallbackChecks,
 } from "./harness.mjs";
 
 requireDist();
@@ -182,13 +183,49 @@ const result = await inBrowser(async (page) => {
   const checks = [];
   const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
   try {
+    // WHERE STARTUP STOPPED, if it does. "did not respond" names neither the step nor whether the
+    // worker was alive, so a failed start reports the engine's own last status events, whether the
+    // Worker or the page went away, and the last runtime files the page actually requested.
+    const lifecycle = { workerClosed: 0, pageCrashed: false };
+    page.on("worker", (worker) => worker.on("close", () => (lifecycle.workerClosed += 1)));
+    page.on("crash", () => (lifecycle.pageCrashed = true));
+    const startedAt = Date.now();
     await page.goto(server.url);
     await page.waitForFunction(() => window.__py !== undefined, null, { timeout: 20000 });
-    await page.evaluate(() => window.__py.start());
+    const started = await page
+      .evaluate(() => window.__py.start())
+      .then(() => ({ ok: true }))
+      .catch((error) => ({ ok: false, error: String(error?.message ?? error).split("\n")[0] }));
+    if (!started.ok) {
+      const statuses = page.isClosed()
+        ? null
+        : await page
+            .evaluate(() => window.__py.statuses.slice(-6))
+            .catch((error) => `unreadable: ${String(error?.message ?? error).split("\n")[0]}`);
+      ok(
+        "Python starts with the xarray-zarr profile plus pyarrow",
+        false,
+        JSON.stringify({
+          error: started.error,
+          afterMs: Date.now() - startedAt,
+          lastStatuses: statuses,
+          ...lifecycle,
+          lastRuntimeRequests: server.requests.filter((p) => p.startsWith("/runtime/")).slice(-8),
+        }),
+      );
+      return checks;
+    }
     await page.waitForFunction(() => window.__py.state() === "ready", null, { timeout: 240000 });
 
     // the workspace is real, and says so
     const status = await page.evaluate(() => window.__py.workspace());
+    if (status?.available !== true) {
+      // What the WORKER found in this engine. The feature under test cannot exist here; the
+      // documented fallback can, and is checked before this is called not applicable.
+      const fallback = await workspaceFallbackChecks(page, status);
+      checks.push(...fallback.checks);
+      return { checks, unavailable: fallback.reason };
+    }
     ok(
       "start() reports a disk-backed workspace, mounted at /workspace",
       status?.available === true && status.path === "/workspace" && status.maxFiles === 24,

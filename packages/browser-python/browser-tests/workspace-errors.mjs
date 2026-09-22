@@ -12,7 +12,15 @@
 // Python as the right errno rather than as "an OSError happened". The exact numbers are checked,
 // because they were wrong once: `new FS.ErrnoError(28)` under a `// ENOSPC` comment, and 28 is
 // EINVAL.
-import { inBrowser, report, requireDist, serve } from "./harness.mjs";
+import {
+  fixturePage,
+  inBrowser,
+  probeWorkerCapabilities,
+  report,
+  requireDist,
+  serve,
+  workspaceFallbackChecks,
+} from "./harness.mjs";
 
 requireDist();
 
@@ -26,6 +34,24 @@ const result = await inBrowser(async (page) => {
   const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
   try {
     await page.goto(server.url);
+    // Every case below wraps a real sync access handle. A worker without them cannot have these
+    // failure paths at all; it has the documented fallback instead, checked through the engine.
+    const worker = await probeWorkerCapabilities(page);
+    if (!worker.opfsUsable) {
+      const fixture = await serve(fixturePage({ profile: "minimal" }));
+      try {
+        await page.goto(fixture.url);
+        await page.waitForFunction(() => window.__py !== undefined, null, { timeout: 20000 });
+        const status = await page.evaluate(() =>
+          window.__py.start().then((info) => info.workspace),
+        );
+        const fallback = await workspaceFallbackChecks(page, status, worker);
+        checks.push(...fallback.checks);
+        return { checks, unavailable: fallback.reason };
+      } finally {
+        await fixture.close();
+      }
+    }
     const out = await page.evaluate(async () => {
       const worker = new Worker("/probes/workspace-worker.js", { type: "module" });
       const r = await new Promise((resolve) => {

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBrowserPython } from "../src/browser-python.js";
 import { attachPlaygroundBridge } from "../src/embed/playground.js";
 import { createPlaygroundHost, type HostSink } from "../src/embed/host.js";
+import { EMBED_CHANNEL, EMBED_PROTOCOL_VERSION } from "../src/embed/protocol.js";
 import { healthyWorker, type FakeWorker } from "./fake-worker.js";
 import type { FakeWindow } from "./embed-fixtures.js";
 import { connectedWindows, settle } from "./embed-fixtures.js";
@@ -180,8 +181,10 @@ describe("silence from the peer is bounded", () => {
       if (data?.kind === "hail") {
         portal.postMessage(
           {
-            channel: "freva-python-embed",
-            version: 2,
+            // The CURRENT envelope, imported: a stale literal made this reply one the host
+            // ignored, so the test passed without the stub ever being heard.
+            channel: EMBED_CHANNEL,
+            version: EMBED_PROTOCOL_VERSION,
             challenge: data.challenge,
             sessionId: session,
             kind: "ready",

@@ -439,13 +439,18 @@ const result = await inBrowser(async (page) => {
         [
           "import asyncio",
           "print('VERIFY-CODE WXYZ-1234')",
-          "await asyncio.sleep(0.6)",
+          "await asyncio.sleep(3)",
           "print('POLL-FINISHED')",
           "",
         ].join("\n"),
       );
-      // Well inside the await, and far longer than the 50 ms flush interval.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Polled rather than slept on, and stopped well inside the 3 s await - far longer than the
+      // 50 ms flush interval - so a slower engine's startup of the snippet is not mistaken for a
+      // batch that was never flushed. A batch that waited for the coroutine to end still fails.
+      const deadline = Date.now() + 2000;
+      while (!window.__py.text("stdout").includes("VERIFY-CODE") && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       const midway = window.__py.text("stdout");
       await running;
       return { midway, final: window.__py.text("stdout") };

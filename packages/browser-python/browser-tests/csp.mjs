@@ -10,7 +10,29 @@
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { bundleConsole, inBrowser, report, requireDist, serve } from "./harness.mjs";
+import {
+  ENGINE,
+  bundleConsole,
+  capabilityAbsent,
+  inBrowser,
+  probeWorkerCapabilities,
+  report,
+  requireDist,
+  serve,
+  terminateEngines,
+} from "./harness.mjs";
+import {
+  PhaseDeadline,
+  cleanupChecks,
+  createPhases,
+  phaseFailureCheck,
+  withDeadline,
+} from "./deadline.mjs";
+import { workspaceAbsenceConsistent } from "./workspace-reasons.mjs";
+
+/** Each Python fetch is bounded inside Python, and its phase outside it with room to spare. */
+const PYTHON_FETCH_BOUND_S = 20;
+const FETCH_PHASE_MS = 60_000;
 
 requireDist();
 bundleConsole();
@@ -89,9 +111,14 @@ const WORKER_SOURCE = readFileSync(
   "utf8",
 );
 
-/** A tiny origin that answers one JSON route, so a fetch from Python has something real to reach. */
-const dataService = (req, res, url) => {
+/**
+ * A tiny origin that answers one JSON route, so a fetch from Python has something real to reach,
+ * and COUNTS what reached it: a refusal is proved by the request never arriving, whatever the
+ * engine then does with the promise.
+ */
+const dataService = (hits) => (req, res, url) => {
   if (url.pathname !== "/data.json") return false;
+  hits.count += 1;
   res.writeHead(200, {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
@@ -106,8 +133,10 @@ const result = await inBrowser(async (page) => {
   // created it, and every network request the visitor's Python makes happens inside that Worker.
   // So: one origin the worker's policy grants, one it does not, both answering. If the granted
   // one fails the policy is too tight; if the ungranted one SUCCEEDS the header is not in force.
-  const allowed = await serve("", { handle: dataService });
-  const blocked = await serve("", { handle: dataService });
+  const allowedHits = { count: 0 };
+  const blockedHits = { count: 0 };
+  const allowed = await serve("", { handle: dataService(allowedHits) });
+  const blocked = await serve("", { handle: dataService(blockedHits) });
   const allowedOrigin = allowed.url.replace(/\/$/, "");
   const blockedOrigin = blocked.url.replace(/\/$/, "");
 
@@ -146,6 +175,10 @@ const result = await inBrowser(async (page) => {
     },
   });
   const checks = [];
+  const notApplicable = [];
+  // A phase that overruns is rejected at its deadline and the page's engines are disposed, so a
+  // pending evaluate settles; nothing here waits on the runner's 15-minute watchdog.
+  const phases = createPhases("csp", { onDeadline: () => terminateEngines(page) });
   const ok = (name, pass, detail) => checks.push({ name, pass, detail: String(detail ?? "") });
   try {
     // ------ the policy itself, before any of it runs
@@ -217,30 +250,71 @@ const result = await inBrowser(async (page) => {
     ok("…and Python runs", ran.error === null, ran.error ?? "ran");
 
     // ------ the workspace, and a blob preview
-    const workspace = await page.evaluate(async () => {
-      const r = await window.__csp.run(
-        "with open('note.csv', 'w') as fh:\n    fh.write('a,b\\n1,2\\n')\n",
+    //
+    // Only this part needs OPFS. What the WORKER reported decides: with a disk-backed workspace the
+    // artifact is listed and read back through a blob: URL under this policy; without one (WebKit
+    // has no OPFS) the documented fallback is checked instead - the reason agrees with an
+    // independent probe, Python still writes files, downloads are refused with that same reason -
+    // and the blob readback is reported NOT APPLICABLE. Every policy check around it still runs.
+    const status = await page.evaluate(() => window.__csp.engine.workspace);
+    if (status?.available === true) {
+      const workspace = await page.evaluate(async () => {
+        const r = await window.__csp.run(
+          "with open('note.csv', 'w') as fh:\n    fh.write('a,b\\n1,2\\n')\n",
+        );
+        const artifacts = await window.__csp.artifacts();
+        const data = await window.__csp.engine.readArtifact("note.csv");
+        const url = URL.createObjectURL(data.blob);
+        const text = await data.blob.text();
+        URL.revokeObjectURL(url);
+        return {
+          error: r.error ?? null,
+          names: artifacts.map((a) => a.name),
+          blobUrl: url.slice(0, 5),
+          text,
+        };
+      });
+      ok(
+        "the disk-backed workspace works, and an artifact reads back through a blob: URL",
+        workspace.error === null &&
+          workspace.names.join() === "note.csv" &&
+          workspace.blobUrl === "blob:" &&
+          workspace.text === "a,b\n1,2\n",
+        JSON.stringify(workspace),
       );
-      const artifacts = await window.__csp.artifacts();
-      const data = await window.__csp.engine.readArtifact("note.csv");
-      const url = URL.createObjectURL(data.blob);
-      const text = await data.blob.text();
-      URL.revokeObjectURL(url);
-      return {
-        error: r.error ?? null,
-        names: artifacts.map((a) => a.name),
-        blobUrl: url.slice(0, 5),
-        text,
-      };
-    });
-    ok(
-      "the disk-backed workspace works, and an artifact reads back through a blob: URL",
-      workspace.error === null &&
-        workspace.names.join() === "note.csv" &&
-        workspace.blobUrl === "blob:" &&
-        workspace.text === "a,b\n1,2\n",
-      JSON.stringify(workspace),
-    );
+    } else {
+      const probed = await probeWorkerCapabilities(page);
+      const consistent = workspaceAbsenceConsistent(status, probed);
+      ok(
+        "no disk-backed workspace here, for the reason an independent worker confirms",
+        consistent.ok,
+        JSON.stringify({ status, probed, ...(consistent.ok ? {} : { why: consistent.why }) }),
+      );
+      const fallback = await page.evaluate(async () => {
+        const r = await window.__csp.run(
+          "with open('note.csv', 'w') as fh:\n    fh.write('kept')\nprint(open('note.csv').read())\n",
+        );
+        let refused = null;
+        try {
+          await window.__csp.artifacts();
+        } catch (error) {
+          refused = String(error?.message ?? error);
+        }
+        return { error: r.error ?? null, refused };
+      });
+      ok(
+        "…Python still writes files in memory, and downloads are refused with that reason",
+        fallback.error === null && fallback.refused === status?.detail,
+        JSON.stringify(fallback),
+      );
+      capabilityAbsent(
+        checks,
+        notApplicable,
+        "sync-access-handles",
+        "listing and blob: readback of a disk-backed artifact under this policy",
+        `this ${ENGINE} context's worker has no disk-backed workspace (${status?.reason ?? "unknown"})`,
+      );
+    }
 
     // ------ nothing was blocked
     const violations = await page.evaluate(() => window.__csp.violations());
@@ -251,47 +325,76 @@ const result = await inBrowser(async (page) => {
     );
 
     // ------ the WORKER's own policy, where Python's fetches actually happen
-    const fromPython = await page.evaluate(
-      async ([allowedUrl, blockedUrl]) => {
-        const probe = async (url) => {
-          const r = await window.__csp.run(
-            [
-              "import json",
-              "from pyodide.http import pyfetch",
-              "try:",
-              `    _r = await pyfetch("${url}")`,
-              "    print(json.dumps({'ok': _r.status == 200}))",
-              "except Exception as _e:",
-              "    print(json.dumps({'ok': False, 'error': type(_e).__name__}))",
-              "",
-            ].join("\n"),
-          );
-          return { error: r.error ?? null };
-        };
-        window.__csp.engine.onOutput?.(() => {});
-        const out = [];
-        const off = window.__csp.engine.onOutput((event) => {
-          if (event.type === "stdout") out.push(event.text);
-        });
-        await probe(`${allowedUrl}/data.json`);
-        const granted = out.join("");
-        out.length = 0;
-        await probe(`${blockedUrl}/data.json`);
-        const refused = out.join("");
-        off();
-        return { granted, refused };
-      },
-      [allowedOrigin, blockedOrigin],
+    //
+    // One phase per origin, each with its own deadline, and each fetch bounded INSIDE Python too:
+    // a fetch that never settles is reported as exactly that ("settled": false) rather than holding
+    // the suite until the runner's watchdog - and it is not a refusal. A policy that refuses a
+    // request rejects the fetch; only a fetch that SETTLED with an error counts as refused.
+    const fetchFromPython = (url) =>
+      page.evaluate(
+        async ([target, boundSeconds]) => {
+          const out = [];
+          const off = window.__csp.engine.onOutput((event) => {
+            if (event.type === "stdout") out.push(event.text);
+          });
+          try {
+            const r = await window.__csp.run(
+              [
+                "import asyncio, json",
+                "from pyodide.http import pyfetch",
+                "async def _probe():",
+                "    try:",
+                `        _r = await asyncio.wait_for(pyfetch("${target}"), ${boundSeconds})`,
+                "        return {'settled': True, 'ok': _r.status == 200}",
+                "    except asyncio.TimeoutError:",
+                `        return {'settled': False, 'ok': False, 'error': 'no answer within ${boundSeconds} s'}`,
+                "    except Exception as _e:",
+                "        return {'settled': True, 'ok': False, 'error': type(_e).__name__}",
+                "print(json.dumps(await _probe()))",
+                "",
+              ].join("\n"),
+            );
+            const text = out.join("").trim();
+            let parsed = null;
+            try {
+              parsed = JSON.parse(text.split("\n").pop());
+            } catch {
+              parsed = null;
+            }
+            // The run's own error and the probe's outcome are kept apart: the outcome has an
+            // `error` of its own (the refusal's exception name), which is not a failed run.
+            return { runError: r.error ?? null, outcome: parsed, text };
+          } finally {
+            off();
+          }
+        },
+        [url, PYTHON_FETCH_BOUND_S],
+      );
+    const granted = await phases.run("worker fetch: granted origin", FETCH_PHASE_MS, () =>
+      fetchFromPython(`${allowedOrigin}/data.json`),
     );
     ok(
       "Python may fetch an origin the WORKER's policy grants",
-      fromPython.granted.includes('"ok": true'),
-      fromPython.granted.trim(),
+      granted.runError === null &&
+        granted.outcome?.settled === true &&
+        granted.outcome?.ok === true &&
+        allowedHits.count === 1,
+      JSON.stringify({ ...granted, requestsReceived: allowedHits.count }),
+    );
+    // REFUSED means the request never left the worker: the refused origin, which is up and would
+    // answer, received nothing, and Python got no response. Engines differ in what the promise does
+    // next - Chromium and Firefox reject it at once, WebKit leaves it pending - so whether it
+    // settled is recorded in the detail but is not what the policy is proved by.
+    const refused = await phases.run("worker fetch: refused origin", FETCH_PHASE_MS, () =>
+      fetchFromPython(`${blockedOrigin}/data.json`),
     );
     ok(
       "…and may not fetch one it does not, even though the origin is up and answering",
-      fromPython.refused.includes('"ok": false'),
-      fromPython.refused.trim(),
+      refused.runError === null &&
+        refused.outcome !== null &&
+        refused.outcome.ok === false &&
+        blockedHits.count === 0,
+      JSON.stringify({ ...refused, requestsReceived: blockedHits.count }),
     );
     ok(
       "the worker response carries a policy of its own, because a Worker does not inherit the page's",
@@ -300,32 +403,50 @@ const result = await inBrowser(async (page) => {
     );
 
     // ------ and the policy is doing something: prove a denial
-    const denied = await page.evaluate(async () => {
-      window.__violations.length = 0;
-      try {
-        // `connect-src 'self'` - a cross-origin fetch must be refused. If this SUCCEEDS the header
-        // is not being applied at all, and every check above proved nothing.
-        await fetch("https://example.invalid/probe");
-        return { blocked: false };
-      } catch {
-        await new Promise((r) => setTimeout(r, 50));
-        return { blocked: true, violations: window.__violations.length };
-      }
-    });
+    const denied = await phases.run("page fetch: refused by the page policy", 30_000, () =>
+      page.evaluate(async () => {
+        window.__violations.length = 0;
+        try {
+          // `connect-src 'self'` - a cross-origin fetch must be refused. If this SUCCEEDS the header
+          // is not being applied at all, and every check above proved nothing.
+          await fetch("https://example.invalid/probe");
+          return { blocked: false };
+        } catch {
+          await new Promise((r) => setTimeout(r, 50));
+          return { blocked: true, violations: window.__violations.length };
+        }
+      }),
+    );
     ok(
       "the header is genuinely in force: a cross-origin fetch is refused",
       denied.blocked === true,
       JSON.stringify(denied),
     );
 
-    return checks;
+    checks.push(...(await cleanupChecks(phases)));
+    return { checks, notApplicable };
   } catch (error) {
-    ok("the suite ran to the end", false, String(error?.message ?? error).split("\n")[0]);
-    return checks;
+    // A deadline names its phase; anything else is reported as the suite not reaching its end.
+    checks.push(
+      error instanceof PhaseDeadline
+        ? phaseFailureCheck(error)
+        : {
+            name: "the suite ran to the end",
+            pass: false,
+            detail: String(error?.message ?? error).split("\n")[0],
+          },
+    );
+    checks.push(...(await cleanupChecks(phases)));
+    return { checks, notApplicable };
   } finally {
-    await server.close();
-    await allowed.close();
-    await blocked.close();
+    // Bounded: a server holding a connection from a wedged page must not hold the process.
+    for (const [what, server_] of [
+      ["the page server", server],
+      ["the granted origin", allowed],
+      ["the refused origin", blocked],
+    ]) {
+      await withDeadline(server_.close(), 10_000, `closing ${what}`).catch(() => {});
+    }
   }
 });
 

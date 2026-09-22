@@ -91,6 +91,8 @@ export const SUITE_REQUIREMENTS = Object.freeze({
   // Nothing beyond the interpreter: what is being tested is whether a bundler's rewriting of the
   // Worker URL survives, which needs a Worker and not a wheel.
   "bundled-consumer.mjs": [],
+  // The interpreter only: it removes JSPI and sync access handles from its own worker.
+  "capability-fallbacks.mjs": [],
 });
 
 /**

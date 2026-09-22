@@ -152,9 +152,15 @@ const result = built
       });
       try {
         const failures = [];
-        page.on("requestfailed", (request) => failures.push(request.url()));
+        // The browser's own favicon probe is not something the bundle referenced; some engines
+        // make it and some do not, so it cannot decide whether the build output is complete.
+        const browserOwn = (url) => new URL(url).pathname === "/favicon.ico";
+        page.on("requestfailed", (request) => {
+          if (!browserOwn(request.url())) failures.push(request.url());
+        });
         page.on("response", (response) => {
-          if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`);
+          if (response.status() >= 400 && !browserOwn(response.url()))
+            failures.push(`${response.status()} ${response.url()}`);
         });
 
         await page.goto(server.url);

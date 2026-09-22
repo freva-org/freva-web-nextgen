@@ -9,7 +9,10 @@
  * while `wind.plot()` on this store pulls a source chunk measured in tens of megabytes.
  */
 import {
+  ENGINE,
+  NO_JSPI_REMOTE_MESSAGE,
   fixturePage,
+  unavailableUnlessRequired,
   inBrowser,
   report,
   requireDist,
@@ -31,7 +34,7 @@ const result = await inBrowser(async (page) => {
   try {
     await page.goto(server.url);
     await page.waitForFunction(() => window.__ready === true, null, { timeout: 30000 });
-    await page.evaluate(() => window.__py.start());
+    const ready = await page.evaluate(() => window.__py.start());
 
     const opened = await page.evaluate(async (url) => {
       return window.__py.run(
@@ -40,6 +43,22 @@ const result = await inBrowser(async (page) => {
       );
     }, URL_UNDER_TEST);
 
+    if (ready.jspi !== true) {
+      // A synchronous remote read needs JSPI, which the worker reported absent.
+      checks.push({
+        name: "without JSPI the store is refused with the concise JSPI message",
+        pass: typeof opened.error === "string" && opened.error.includes(NO_JSPI_REMOTE_MESSAGE),
+        detail: JSON.stringify(opened.error),
+      });
+      return {
+        checks,
+        unavailable: unavailableUnlessRequired(
+          checks,
+          "jspi",
+          `this ${ENGINE} build's worker has no WebAssembly.Suspending (JSPI)`,
+        ),
+      };
+    }
     checks.push({
       name: "a real public CMIP6 store opens through the ordinary xarray call",
       pass: !opened.error,

@@ -18,12 +18,15 @@
  * The digest is a rolling SHA-256 computed identically in Python and in the sink.
  */
 import {
+  ENGINE,
   bundleConsole,
+  capabilityAbsent,
   fixturePage,
   inFullBrowser,
   report,
   requireDist,
   serve,
+  workspaceFallbackChecks,
 } from "./harness.mjs";
 
 requireDist();
@@ -68,23 +71,58 @@ print(json.dumps({"size": target * MiB, "sha256": rolling.hex()}))
 
 // The full browser supports the memory API; forcing its internal Blink feature in headless-shell
 // crashes the target on CI before this suite reaches the transfer.
+const ISOLATION = {
+  headers: {
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-embedder-policy": "require-corp",
+  },
+  // The worker script too: a dedicated Worker created by an isolated document must carry a
+  // compatible COEP header of its own, or it is refused before it runs a line.
+  assetHeaders: { "cross-origin-embedder-policy": "require-corp" },
+};
+
 const result = await inFullBrowser(async (page) => {
-  // Cross-origin isolated ON PURPOSE: `performance.measureUserAgentSpecificMemory()` refuses to
-  // answer without it, and that call is the only honest way to see ArrayBuffer memory from inside
-  // a browser. The engine needs nothing from these headers - everything it loads is same-origin -
-  // so this changes what can be MEASURED, not what is tested.
-  const server = await serve(fixturePage({ profile: "minimal", workspaceMaxFiles: 8 }), {
-    headers: {
-      "cross-origin-opener-policy": "same-origin",
-      "cross-origin-embedder-policy": "require-corp",
-    },
-    // The worker script too: a dedicated Worker created by an isolated document must carry a
-    // compatible COEP header of its own, or it is refused before it runs a line.
-    assetHeaders: { "cross-origin-embedder-policy": "require-corp" },
-  });
   const checks = [];
+  const notApplicable = [];
   const ok = (name, pass, detail, meta = {}) =>
     checks.push({ name, pass, detail: String(detail ?? ""), ...meta });
+
+  // TWO KINDS OF CHECK, separated. The transfer's correctness - bytes, chunking, backpressure,
+  // cancellation, lease release, cleanup - runs in every engine. The MEMORY measurement is
+  // Chromium's `performance.measureUserAgentSpecificMemory()`, which other engines do not provide;
+  // whether it exists is asked of the browser, in an isolated page, not assumed from its name.
+  phase("probe for the browser memory measurement");
+  const probe = await serve("<!doctype html><title>probe</title>", ISOLATION);
+  let canMeasure = false;
+  try {
+    await page.goto(probe.url);
+    canMeasure = await page.evaluate(
+      () =>
+        self.crossOriginIsolated === true &&
+        typeof performance.measureUserAgentSpecificMemory === "function",
+    );
+  } finally {
+    await probe.close();
+  }
+  if (!canMeasure) {
+    capabilityAbsent(
+      checks,
+      notApplicable,
+      "memory-measurement",
+      "browser memory measurement during the transfer, and its negative control",
+      `performance.measureUserAgentSpecificMemory() is not provided by ${ENGINE}`,
+    );
+  }
+
+  // Cross-origin isolated ON PURPOSE when measuring: `measureUserAgentSpecificMemory()` refuses to
+  // answer without it, and that call is the only honest way to see ArrayBuffer memory from inside
+  // a browser. The engine needs nothing from these headers - everything it loads is same-origin -
+  // so this changes what can be MEASURED, not what is tested; without the measurement they are
+  // left off.
+  const server = await serve(
+    fixturePage({ profile: "minimal", workspaceMaxFiles: 8 }),
+    canMeasure ? ISOLATION : {},
+  );
   try {
     phase("open the isolated fixture");
     await page.goto(server.url);
@@ -92,6 +130,15 @@ const result = await inFullBrowser(async (page) => {
     phase("start the Python runtime");
     await page.evaluate(() => window.__py.start());
     await page.waitForFunction(() => window.__py.state() === "ready", null, { timeout: 240000 });
+
+    // The transfer needs a disk-backed workspace. Where the worker reports none, the documented
+    // fallback is checked and the feature reported as not applicable - never passed.
+    const status = await page.evaluate(() => window.__py.workspace());
+    if (status?.available !== true) {
+      const fallback = await workspaceFallbackChecks(page, status);
+      checks.push(...fallback.checks);
+      return { checks, notApplicable, unavailable: fallback.reason };
+    }
 
     phase(`write and hash ${MIB} MiB in Python`);
     const written = await page.evaluate(async (code) => {
@@ -101,7 +148,7 @@ const result = await inFullBrowser(async (page) => {
     }, WRITE_AND_HASH);
     if (written.r.error) {
       ok(`writing ${MIB} MiB succeeded`, false, String(written.r.error).split("\n").pop());
-      return checks;
+      return { checks, notApplicable };
     }
     const source = JSON.parse(written.out);
     ok(
@@ -111,15 +158,19 @@ const result = await inFullBrowser(async (page) => {
     );
 
     // ------ the whole file, streamed
-    phase("stream with bounded browser-memory measurements");
+    phase(canMeasure ? "stream with bounded browser-memory measurements" : "stream the whole file");
     const streamed = await page.evaluate(
       (options) => window.__py.streamArtifact("export.bin", options),
       {
         chunkBytes: 4 * 1024 * 1024,
         windowChunks: 2,
         // Stop in the middle and ask the browser how much memory is in use. See the harness.
-        measureAtBytes: Math.floor((MIB * 1024 * 1024) / 2),
-        memoryTimeoutMs: MEMORY_PROBE_TIMEOUT_MS,
+        ...(canMeasure
+          ? {
+              measureAtBytes: Math.floor((MIB * 1024 * 1024) / 2),
+              memoryTimeoutMs: MEMORY_PROBE_TIMEOUT_MS,
+            }
+          : {}),
       },
     );
 
@@ -142,7 +193,7 @@ const result = await inFullBrowser(async (page) => {
           growthMiB: +(growth / 1048576).toFixed(1),
         }),
       );
-    } else {
+    } else if (canMeasure) {
       ok(
         "the browser reported its own memory use during the transfer",
         false,
@@ -200,7 +251,7 @@ const result = await inFullBrowser(async (page) => {
     // ArrayBuffer backing stores at all, so a test built on it passes whether the transfer holds
     // one chunk or all of them. The same transfer runs again with a sink that keeps every chunk,
     // and the measurement has to SEE that.
-    if (streamed.memoryDuring != null) {
+    if (canMeasure && streamed.memoryDuring != null) {
       phase("run the retaining-memory negative control");
       const retaining = await page.evaluate(
         (options) => window.__py.streamArtifact("export.bin", options),
@@ -345,8 +396,14 @@ const result = await inFullBrowser(async (page) => {
         chunkBytes: 1024 * 1024,
         windowChunks: 1,
       });
-      // Let the first chunk arrive and block.
-      await new Promise((r) => setTimeout(r, 300));
+      // Let the first chunk arrive and block - waited for, not guessed at with a fixed sleep, so a
+      // slower engine is not mistaken for a broken freeze. Bounded: a chunk that never arrives is
+      // recorded and the checks below fail on it.
+      const firstWriteBy = Date.now() + 30_000;
+      while (observed.writes === undefined && Date.now() < firstWriteBy) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      observed.heldAtFirstChunk = observed.writes === 1;
 
       observed.write = await window.__py.run(
         "with open('export.bin', 'ab') as fh:\n    fh.write(b'x')\n",
@@ -367,10 +424,12 @@ const result = await inFullBrowser(async (page) => {
     });
     ok(
       "Python cannot append to, delete or rename an artifact while it is being downloaded",
-      /Errno 10/.test(duringTransfer.write?.error ?? "") &&
+      duringTransfer.heldAtFirstChunk === true &&
+        /Errno 10/.test(duringTransfer.write?.error ?? "") &&
         /Errno 10/.test(duringTransfer.remove?.error ?? "") &&
         /Errno 10/.test(duringTransfer.rename?.error ?? ""),
       JSON.stringify({
+        heldAtFirstChunk: duringTransfer.heldAtFirstChunk,
         write: (duringTransfer.write?.error ?? "").split("\n").pop(),
         remove: (duringTransfer.remove?.error ?? "").split("\n").pop(),
         rename: (duringTransfer.rename?.error ?? "").split("\n").pop(),
@@ -402,13 +461,13 @@ const result = await inFullBrowser(async (page) => {
       afterAll.r.error ? String(afterAll.r.error).split("\n").pop() : "removed",
     );
 
-    return checks;
+    return { checks, notApplicable };
   } catch (error) {
     const detail = String(error?.message ?? error).split("\n")[0];
     ok("the suite ran to the end", false, detail, {
       retryable: /Target crashed|Page crashed|browser has been closed/i.test(detail),
     });
-    return checks;
+    return { checks, notApplicable };
   } finally {
     await server.close();
   }

@@ -47,6 +47,7 @@ function isDestroyable(value: unknown): value is Destroyable {
 /** The `_freva_bridge` module proxy: the one long-lived handle. See the file header. */
 interface Bridge extends Destroyable {
   make_console(stdout: (t: string) => void, stderr: (t: string) => void): boolean;
+  set_jspi(available: boolean): boolean;
   console_push(line: string): unknown;
   run_future(future: unknown): Promise<unknown>;
   run_source(source: string): unknown;
@@ -77,16 +78,28 @@ interface Sequence extends Destroyable {
   toJs?(options?: { create_pyproxies?: boolean; dict_converter?: unknown }): unknown;
 }
 
+/** How the worker's own capabilities shape the REPL. */
+export interface ReplOptions {
+  /**
+   * Whether THIS worker's WebAssembly can stack switch - `WebAssembly.Suspending`, detected by the
+   * worker. Without it Pyodide still defines `callPromising`, and every call to it throws; so the
+   * REPL must not use it, and must not print that it tried.
+   */
+  jspi?: boolean;
+}
+
 export class Repl {
   readonly #pyodide: PyodideApi;
   readonly #output: OutputBridge;
+  readonly #jspi: boolean;
   #bridge: Bridge | null = null;
   /** Temporaries currently held. Asserted back to zero by the browser suite - see the header. */
   #live = 0;
 
-  constructor(pyodide: PyodideApi, output: OutputBridge) {
+  constructor(pyodide: PyodideApi, output: OutputBridge, options: ReplOptions = {}) {
     this.#pyodide = pyodide;
     this.#output = output;
+    this.#jspi = options.jspi ?? true;
   }
 
   /** Temporary proxies currently outstanding. Zero whenever no call is in progress. */
@@ -117,6 +130,9 @@ export class Repl {
       (text: string) => this.#output.stdout(text),
       (text: string) => this.#output.stderr(text),
     );
+    // Python formats the one error that depends on it - a synchronous remote read - so it has to
+    // know the same answer `ready.jspi` reports.
+    this.#bridge.set_jspi(this.#jspi);
   }
 
   /** Install the Fetch-backed filesystem. Only meaningful once fsspec is loaded. */
@@ -399,12 +415,20 @@ export class Repl {
    * user's program has finished, so Cartopy asks for a missing 50m coastline from inside THIS
    * call - and `run_sync` is only legal when the JS-to-Python entry was made with stack
    * switching enabled, Pyodide otherwise refusing with "Cannot stack switch because the Python
-   * entrypoint was a synchronous function" and losing the figure. `callPromising` is that entry;
-   * it is experimental and absent without JSPI, so the plain call remains the fallback.
+   * entrypoint was a synchronous function" and losing the figure. `callPromising` is that entry.
+   *
+   * WITHOUT JSPI IT IS NOT TRIED AT ALL. Pyodide defines `callPromising` either way, and without
+   * stack switching every call throws "WebAssembly stack switching not supported in this
+   * JavaScript runtime" - so trying it printed a warning after EVERY command, `1 + 1` included, in
+   * a browser where nothing was wrong with the command. The plain call is the path such a browser
+   * has; a figure that needs no download renders the same way on it, and a Cartopy download that
+   * would need stack switching reports that itself (`cartopy_data._fetch`).
    */
   async #captureDisplay(bridge: Bridge): Promise<unknown> {
+    if (!this.#jspi) return bridge.capture_display();
     const capture = (bridge as unknown as { capture_display?: PromisingCallable }).capture_display;
     if (typeof capture !== "function" || typeof capture.callPromising !== "function") {
+      if (isDestroyable(capture)) capture.destroy();
       return bridge.capture_display();
     }
     // The attribute access made a proxy; it is ours and it is destroyed here. Counted like every
@@ -413,10 +437,10 @@ export class Repl {
     try {
       return await capture.callPromising();
     } catch (error) {
-      // A runtime that HAS the method but cannot stack switch (an asyncify build, a browser that
-      // dropped the flag) rejects here before Python runs. Falling back to the plain call keeps
-      // such a browser exactly as capable; a Python-side failure cannot arrive this way, because
-      // `capture_display` catches its own exceptions and answers with a text payload.
+      // The worker reported JSPI and the stack-switching entry still refused - unexpected, so it
+      // is said rather than hidden. Falling back to the plain call keeps the figure; a Python-side
+      // failure cannot arrive this way, because `capture_display` catches its own exceptions and
+      // answers with a text payload.
       this.#output.stderr(
         `[browser-python] display capture could not use stack switching: ${
           lastMeaningfulLine(error) ?? String(error)

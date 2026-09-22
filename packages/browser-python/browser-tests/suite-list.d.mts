@@ -8,3 +8,16 @@ export declare const SUITES: string[];
 export declare const NETWORK_SUITES: string[];
 export declare const PACKAGE_INDEX_SUITES: string[];
 export declare const CROSS_BROWSER: readonly string[];
+export interface SuiteClass {
+  category: "console" | "portable" | "capability" | "chromium";
+  capabilities?: readonly string[];
+  reason?: string;
+}
+export declare const SUITE_CLASSES: Readonly<Record<string, SuiteClass>>;
+export declare const CATEGORIES: readonly string[];
+export declare const CAPABILITIES: Readonly<Record<string, string>>;
+export declare function planFor(
+  engine: string,
+  suites: readonly string[],
+): { run: string[]; withheld: { suite: string; reason: string }[] };
+export declare const DEFAULT_GATE_REQUIRES: readonly string[];
