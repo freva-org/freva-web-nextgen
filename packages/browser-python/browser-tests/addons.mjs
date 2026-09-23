@@ -106,7 +106,51 @@ const result = await inBrowser(async (page) => {
     return started;
   };
   const run = (code) => page.evaluate((c) => window.__py.run(c), code);
-  const phases = createPhases("addons", { onDeadline: () => page.context().close() });
+  const lastWords = async () => {
+    try {
+      const tail = await withDeadline(
+        page.evaluate(() => ({
+          state: window.__py?.state?.(),
+          statuses: (window.__py?.statuses ?? [])
+            .slice(-8)
+            .map((e) => [e.state, e.detail].filter(Boolean).join(": ")),
+          output: (window.__py?.events ?? [])
+            .filter((e) => typeof e.text === "string")
+            .map((e) => e.text)
+            .join("")
+            .slice(-600),
+        })),
+        5_000,
+        "reading the interpreter's last status",
+      );
+      console.log(`[addons] last interpreter state: ${JSON.stringify(tail, null, 2)}`);
+    } catch (error) {
+      console.log(`[addons] last interpreter state unavailable: ${error?.message ?? error}`);
+    }
+  };
+  const phases = createPhases("addons", {
+    onDeadline: async () => {
+      await lastWords();
+      await page.context().close();
+    },
+  });
+  /**
+   * Run `steps` in order, each timed and logged, stopping at the first error. One figure drawn in
+   * one `run` gave a deadline with no location; this names the step that did not come back.
+   */
+  const runSteps = async (label, steps) => {
+    let last = { error: null };
+    for (const [name, code] of steps) {
+      const started = Date.now();
+      console.log(`[addons] ${label}: ${name} - started`);
+      last = await run(code);
+      console.log(
+        `[addons] ${label}: ${name} - ${last.error ? "failed" : "finished"} in ${Date.now() - started} ms`,
+      );
+      if (last.error) break;
+    }
+    return last;
+  };
   const phase = (name, ms, work) => phases.run(name, ms, work);
   const finish = async () => {
     checks.push(...(await cleanupChecks(phases)));
@@ -286,26 +330,27 @@ const result = await inBrowser(async (page) => {
           ),
         });
         await page.evaluate(() => window.__py.drain());
-        const drew = await run(
+        const drew = await runSteps("cartopy", [
+          ["import cartopy", "import cartopy.crs as ccrs\nimport cartopy.feature as feature\n"],
+          ["import matplotlib", "import matplotlib.pyplot as plt\n"],
           [
-            "import cartopy.crs as ccrs",
-            "import cartopy.feature as feature",
-            "import matplotlib.pyplot as plt",
-            "",
-            "fig = plt.figure(figsize=(10, 5))",
-            "ax = plt.axes(projection=ccrs.Robinson())",
-            "",
-            "ax.coastlines(linewidth=0.4)",
-            "ax.add_feature(",
-            "    feature.BORDERS,",
-            "    linewidth=0.3,",
-            "    edgecolor='0.3',",
-            ")",
-            "",
-            "plt.show()",
-            "",
-          ].join("\n"),
-        );
+            "project and draw",
+            [
+              "fig = plt.figure(figsize=(10, 5))",
+              "ax = plt.axes(projection=ccrs.Robinson())",
+              "",
+              "ax.coastlines(linewidth=0.4)",
+              "ax.add_feature(",
+              "    feature.BORDERS,",
+              "    linewidth=0.3,",
+              "    edgecolor='0.3',",
+              ")",
+              "",
+              "plt.show()",
+              "",
+            ].join("\n"),
+          ],
+        ]);
         const shot = await page.evaluate(() => {
           const events = window.__py.events;
           const display = events.filter((e) => e.type === "display");

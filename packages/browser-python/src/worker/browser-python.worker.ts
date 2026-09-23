@@ -13,6 +13,7 @@ import { ArtifactWatcher } from "./artifacts.js";
 import { Workspace } from "./opfs-workspace.js";
 import { OutputBridge } from "./output.js";
 import { Repl } from "./repl.js";
+import { useSyncInstantiationWhileLoading } from "./wasm-instantiation.js";
 import {
   PROFILE_PACKAGES,
   PROFILE_REPORTED,
@@ -163,6 +164,7 @@ async function handleInit(request: Extract<WorkerRequest, { kind: "init" }>): Pr
       },
       onStderr: (text) => output.stderr(collapsePackageErrors(text)),
     });
+    useSyncInstantiationWhileLoading(pyodide);
 
     installPythonHelpers(pyodide);
 
