@@ -1,0 +1,503 @@
+/*
+ * The portal's frame around `@freva-org/dataset-tree`.
+ *
+ * The component's own stylesheet is imported beside this one and styles everything inside
+ * `.dataset-tree`. This file styles only the block AROUND it - the width it occupies, the heading
+ * above it, the one surface it gets over the Cosmos scene - and overrides the package's supported
+ * `--dataset-tree-*` variables. It never reaches inside for an internal class: those are not the
+ * package's public surface, and a portal depending on one would break on a patch release.
+ *
+ * It ships only when a landing declares the block: the entry module imports it through the island.
+ */
+
+/*
+ * A structurally quiet wrapper: spacing and the heading, no card. The tree's own panel is the only
+ * frame, and it fills the portal's normal content region like every other full-width block. A
+ * wrapper panel around it would be two frames, two radii and 44px of padding saying twice that
+ * this is a box.
+ */
+.portal-dataset-tree-block {
+  margin-bottom: clamp(28px, 3.4vw, 56px);
+}
+
+/*
+ * In the hero row the block is a column, not a run of page. The row owns the spacing under it, and
+ * the aside carrying a tree gets the larger share of the split - see `[data-aside="wide"]` in the
+ * shell - so the tree keeps the width its layout needs rather than a search box's column.
+ */
+.portal-hero-aside .portal-dataset-tree-block {
+  margin-bottom: 0;
+}
+
+.portal-dataset-tree-block > .portal-block-heading {
+  margin-top: 0;
+}
+
+.portal-dataset-tree-summary {
+  color: var(--ink-2, var(--muted));
+  margin: 0 0 14px;
+  max-width: 68ch;
+}
+
+/*
+ * With no heading and no summary configured, the block IS the tree: nothing above it, no top
+ * margin to explain, and the toolbar is the first thing the reader meets.
+ */
+.portal-dataset-tree-block > .portal-dataset-tree:first-child {
+  margin-top: 0;
+}
+
+.portal-dataset-tree .dataset-tree {
+  /*
+   * The micro-text - a file size, a metric - uses `--dataset-tree-faint`, which defaults to 72 % of
+   * the muted colour over the surface. Against this portal's `--muted` that computes to #97978f on
+   * #fffef9: 2.91:1 at 10.9 px, failing AA in both themes. The full muted colour instead gives
+   * 5.02:1 in light and 5.37:1 in dark.
+   */
+  --dataset-tree-faint: var(--muted);
+
+  /*
+   * Accent-coloured TEXT is the portal's `--accent-text`, not its `--accent`. `--accent` is a
+   * deployment's fill colour - the header bar, the primary button - identical in both modes, while
+   * `--accent-text` is derived from it per theme, stepped until it clears 4.5:1 against the worst
+   * surface accent text lands on. The package cannot know that and mixes the accent toward the ink
+   * instead, which in this portal's dark theme lands on #67798c: 3.87:1 for the snapshot pill. The
+   * fallback below is the package's own formula, for a theme that sets no accent at all.
+   */
+  --dataset-tree-accent-text: var(--accent-text, color-mix(in srgb, var(--accent) 62%, var(--ink)));
+  /* An accent FILL with the portal's chosen ink on it - the pairing the theme contrast-checks. */
+  --dataset-tree-accent-strong: var(--accent);
+
+  /*
+   * TWO ACCENTS, doing two jobs, and this is the one that says where the reader is. The portal's
+   * accent marks what a thing IS - a store's icon, its Inspect action, the active recipe tab; this
+   * marks the row whose panel is open and the keyboard focus ring, which has to be answerable at a
+   * glance in a list where half the rows are already accent-coloured. Warm, because the portal's
+   * accent is cool: outlined in the same teal as its own icon a focused store reads as "this is a
+   * store", which every store already is. The theme's own warm token where there is one, and
+   * otherwise an amber that clears 3:1 against both surfaces.
+   */
+  --dataset-tree-focus: var(--accent-warm, var(--warning, #d98324));
+
+  /*
+   * A generous scroll ceiling for a block standing beside the hero, in `rem` so it grows with the
+   * visitor's text size. Height is not this element's problem: the maximize control gives the tree
+   * the whole screen in one press. The floor keeps a collapsed tree showing the room it has, so the
+   * page does not reflow by half a column the first time somebody opens a branch.
+   */
+  --dataset-tree-max-height: 40rem;
+  --dataset-tree-min-height: 18rem;
+}
+
+.portal-dataset-tree-failed {
+  margin: 0;
+}
+
+/*
+ * COSMOS. The tree's own panel becomes translucent so the scene reads behind it; the scene itself
+ * is not touched. ONE surface, on the component's panel - two nested translucent cards multiply
+ * their alphas and give a muddier centre than either was designed for.
+ *
+ * The alpha is the theme's `--portal-cosmos-card-alpha` rather than a number invented here, so
+ * this surface stays consistent with the cards beside it and follows the theme's
+ * `prefers-reduced-transparency` override (which sets the alpha to 1) without repeating the media
+ * query. `--portal-cosmos-scene-opacity` must not be mentioned here: readability is bought per
+ * surface. Only the two supported background variables are overridden; the package derives its
+ * own colours from them, so the code sample tint and the subtle row fill follow.
+ */
+.portal-shell[data-backdrop="cosmos"] .portal-dataset-tree .dataset-tree {
+  --dataset-tree-bg: color-mix(
+    in srgb,
+    var(--surface) calc(var(--portal-cosmos-card-alpha, 1) * 100%),
+    transparent
+  );
+  /*
+   * Rows keep a faint fill of their own on top of the panel's: a scrolling list of monospace paths
+   * over a moving sky is the one place here where text is small, dense and in motion at once.
+   */
+  --dataset-tree-bg-subtle: color-mix(
+    in srgb,
+    var(--surface-2) calc(var(--portal-cosmos-card-alpha, 1) * 100%),
+    transparent
+  );
+  backdrop-filter: saturate(1.1);
+}
+
+/*
+ * The detail panel and the path pill stay legible: the smallest, densest text in the component, and
+ * where a visitor is reading a value they intend to copy.
+ */
+.portal-shell[data-backdrop="cosmos"] .portal-dataset-tree .dataset-tree {
+  --dataset-tree-code-bg: color-mix(in srgb, var(--surface-2) 92%, var(--ink));
+}
+
+/* Where `color-mix` is unavailable, the panel stays opaque. Legibility first. */
+@supports not (background: color-mix(in srgb, red 50%, transparent)) {
+  .portal-shell[data-backdrop="cosmos"] .portal-dataset-tree .dataset-tree {
+    --dataset-tree-bg: var(--surface);
+  }
+}
+
+/* The panel header, and the one control that gives the tree the whole screen. */
+
+.portal-dataset-tree-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  /* The control grows leftwards on hover; the row must not reflow when it does. */
+  min-height: 34px;
+}
+/*
+ * Once the island has moved the maximize control into the panel's toolbar, this row holds a heading
+ * and a summary and nothing else, so it stops reserving a control's height. The attribute is set by
+ * the island rather than inferred with `:has`: "the control has moved" is a fact about what ran.
+ */
+.portal-dataset-tree-bar[data-portal-tree-bar="text"] {
+  min-height: 0;
+}
+.portal-dataset-tree-bar[hidden] {
+  display: none;
+}
+.portal-dataset-tree-head {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.portal-dataset-tree-head > .portal-block-heading,
+.portal-dataset-tree-head > .portal-dataset-tree-summary {
+  margin: 0;
+}
+.portal-dataset-tree-head > .portal-dataset-tree-summary {
+  margin-top: 4px;
+}
+
+/*
+ * SIZED AS ONE OF THE TREE'S OWN CONTROLS, because that is where it is: the island hands this
+ * button to the component as a toolbar extra, so it stands in the same row as `Collapse all`.
+ * These are the package's own button metrics, written out rather than inherited, because the
+ * package's classes are not this file's to use. When the two disagree it is this file that is
+ * wrong, and a screenshot says so immediately.
+ */
+.portal-tree-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  flex: 0 0 auto;
+  min-height: 1.62rem;
+  padding: 0.22rem 0.42rem;
+  border: 1px solid var(--line-2, var(--line));
+  border-radius: var(--r-6, 0.35rem);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    gap 0.16s ease,
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+/*
+ * The label is in the DOM at every state - it is the button's own text, where a screen reader meets
+ * it - and collapsed to zero width until the control is hovered or focused. `max-width` rather than
+ * `display: none` so the reveal is a transition, with `overflow` hidden so letters do not spill.
+ */
+.portal-tree-expand-text {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-width 0.18s ease,
+    opacity 0.14s ease;
+}
+/*
+ * OUTLINE, NOT FILL, on hover. In the toolbar an accent-filled pill would be the only filled thing
+ * in a row of outlined ones - louder than the filter beside it, and louder than `Collapse all`,
+ * which is the control that undoes a session's work. It takes the same hover its neighbours take.
+ */
+.portal-tree-expand:hover,
+.portal-tree-expand:focus-visible {
+  gap: 6px;
+  border-color: var(--accent);
+  color: var(--accent-text, var(--accent));
+}
+/*
+ * FULL SCREEN: the same glyph, in the corner, still naming itself on hover. A reader who has just
+ * pressed a control to enlarge something knows what the control in the corner does, and a permanent
+ * `Exit full screen` beside a heading would be the loudest thing in a surface whose job is to get
+ * out of the way. Icon at rest, name on hover and on focus, in both states.
+ */
+.portal-dataset-tree-block[data-expanded="true"] .portal-tree-expand {
+  align-self: flex-start;
+  padding: 0.28rem 0.5rem;
+}
+.portal-dataset-tree-block[data-expanded="true"] .portal-tree-expand:hover,
+.portal-dataset-tree-block[data-expanded="true"] .portal-tree-expand:focus-visible {
+  gap: 6px;
+  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--accent-text);
+}
+.portal-tree-expand:hover > .portal-tree-expand-text,
+.portal-tree-expand:focus-visible > .portal-tree-expand-text {
+  max-width: 14rem;
+  opacity: 1;
+}
+/*
+ * No hover means no reveal, so the label is always there. A glyph on its own is not a name, and a
+ * touch visitor's screen is the least able to supply the missing context.
+ */
+@media (hover: none) {
+  .portal-tree-expand {
+    gap: 6px;
+  }
+  .portal-tree-expand-text {
+    max-width: 14rem;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-tree-expand,
+  .portal-tree-expand-text {
+    transition: none;
+  }
+}
+/* One icon at a time: grow while collapsed, shrink while maximized. */
+.portal-tree-expand-icon {
+  flex: 0 0 auto;
+}
+.portal-tree-expand-icon[data-icon="shrink"],
+.portal-dataset-tree-block[data-expanded="true"] .portal-tree-expand-icon[data-icon="grow"] {
+  display: none;
+}
+.portal-dataset-tree-block[data-expanded="true"] .portal-tree-expand-icon[data-icon="shrink"] {
+  display: inline;
+}
+.portal-tree-expand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* maximized */
+
+/*
+ * MAXIMIZED, AS AN OVERLAY THE PAGE DOES NOT OWN. The block is moved into the portal's overlay root
+ * and the backdrop and the sheet are siblings there - see `client/components/tree-maximize.ts` for
+ * why a bigger z-index here cannot do the same job. Everything below styles those two elements and
+ * the block while it is inside them.
+ */
+
+/*
+ * The dim, over the whole page - header, footer and the Freva badge included. A real element, not
+ * `body::after`: the way out a visitor reaches for first is a click outside the sheet, and a
+ * pseudo-element can be seen and cannot be clicked. Restrained rather than heavy, because the
+ * scene behind a portal on the `cosmos` preset is the composition and drowning it makes the whole
+ * screen read as one dead grey rectangle.
+ */
+.portal-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #05070c 62%, transparent);
+}
+@supports not (background: color-mix(in srgb, red 50%, transparent)) {
+  .portal-sheet-backdrop {
+    background: rgba(5, 7, 12, 0.62);
+  }
+}
+
+/*
+ * The sheet: the same panel, temporarily given the screen. It BEGINS BELOW THE HEADER.
+ * `--portal-sheet-top` is measured from the header at open and on every resize, so the sheet meets
+ * it exactly rather than overlapping it at one width and floating away from it at another. The
+ * header stays where it is, behind the backdrop: dimmed, inert, and not half-covered.
+ */
+.portal-sheet {
+  position: fixed;
+  top: calc(var(--portal-sheet-top, 0px) + clamp(8px, 1.4vh, 18px));
+  right: clamp(10px, 2.4vw, 44px);
+  bottom: clamp(10px, 1.8vh, 26px);
+  left: clamp(10px, 2.4vw, 44px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+/*
+ * The block, while it is the sheet's only child. ONE surface, not two: inside the sheet the block
+ * draws the frame - border, radius, shadow - and the tree's own panel draws none, so a reader sees
+ * a single card rather than a card inside a card inside a scrim.
+ */
+.portal-dataset-tree-block[data-expanded="true"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  margin: 0;
+  padding: clamp(14px, 1.6vw, 22px) clamp(14px, 1.8vw, 26px) clamp(10px, 1.2vh, 16px);
+  border: 1px solid color-mix(in srgb, var(--line-2, var(--line)) 82%, transparent);
+  border-radius: var(--r-16);
+  /*
+   * ONE READABLE SURFACE, AND THE SCENE AROUND IT. Opaque by decision: this file may not blur what
+   * is behind the sheet - readability is bought locally, never by treating the scene - and a 96%
+   * sheet without blur puts a ghost of the hero's headline through the filter row. Cosmos stays
+   * visible through the scrim AROUND the sheet, where the scene is a picture rather than noise
+   * under a page of monospace. The border and the shadow are what keep it a surface floating over
+   * a scene rather than a slab.
+   */
+  background: var(--surface);
+  box-shadow:
+    0 24px 70px -24px rgba(0, 0, 0, 0.62),
+    0 2px 10px -4px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+/*
+ * The sheet's own header row: the heading leads, the summary explains, and the exit control is at
+ * the end of the same line, inside the sheet.
+ */
+.portal-dataset-tree-block[data-expanded="true"] .portal-dataset-tree-bar {
+  /*
+   * `flex: 0 0 auto` keeps the summary from being clipped. The bar carries `min-height: 34px` so
+   * the hover-growing control cannot reflow the row, and a `min-height` on a flex item REPLACES the
+   * implicit `min-height: auto` that would otherwise stop it shrinking below its content - so in a
+   * column the bar collapses to 34px and the toolbar below cuts the wrapped summary mid-line, at
+   * every width where the heading wraps.
+   */
+  flex: 0 0 auto;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 0 0 clamp(10px, 1.2vh, 16px);
+  padding-bottom: clamp(10px, 1.2vh, 14px);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+.portal-dataset-tree-block[data-expanded="true"] .portal-block-heading {
+  margin: 0 0 2px;
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  line-height: 1.25;
+}
+.portal-dataset-tree-block[data-expanded="true"] .portal-dataset-tree-summary {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--ink-2, var(--muted));
+}
+/* The way out is a named control at rest here, not a glyph that names itself on hover. */
+.portal-dataset-tree-block[data-expanded="true"] .portal-tree-expand {
+  flex: 0 0 auto;
+}
+
+/*
+ * MAXIMIZED MEANS A LARGER LIST, not the same list on a bigger surface. The component sizes itself
+ * from one font-size and everything that should follow the names is relative to it, so the whole
+ * tree steps up about 12%. The icons, chips and metrics are pixel- and rem-sized and stay where
+ * they are, keeping the row's furniture quiet while the thing being read gets bigger. Set on the
+ * BLOCK's tree only, so an inline block on a page is untouched.
+ */
+.portal-dataset-tree-block[data-expanded="true"] .dataset-tree {
+  font-size: 0.92rem;
+}
+
+/* The panel fills the sheet, and the sheet is the only thing with a height. */
+.portal-dataset-tree-block[data-expanded="true"] > .portal-dataset-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.portal-dataset-tree-block[data-expanded="true"] > .portal-dataset-tree,
+.portal-dataset-tree-block[data-expanded="true"] .dataset-tree {
+  --dataset-tree-max-height: none;
+  --dataset-tree-min-height: 0;
+}
+.portal-dataset-tree-block[data-expanded="true"] .dataset-tree {
+  height: 100%;
+  /*
+   * ONE STEP LARGER, and only the glyphs. A 16px folder is right in a column beside the hero and
+   * small on a sheet four times as wide, where the eye travels further between one row's icon and
+   * the next - and the icon is what a reader scans a tree by. The TEXT does not grow with it: a
+   * list of paths is read at the size the host set for text. Through the package's published
+   * variables, the only way this file may change anything inside the component.
+   */
+  --dataset-tree-icon-size: 18px;
+  --dataset-tree-chev-size: 15px;
+  /*
+   * THROUGH THE PACKAGE'S OWN VARIABLES, the whole supported surface. The tree draws no frame of
+   * its own inside the sheet - the sheet is the frame - and its rows sit on a surface a shade off
+   * the sheet's, so a dense list has structure without gridlines.
+   */
+  --dataset-tree-bg: transparent;
+  --dataset-tree-bg-subtle: color-mix(in srgb, var(--ink) 4%, transparent);
+  --dataset-tree-border: color-mix(in srgb, var(--line-2, var(--line)) 60%, transparent);
+  --dataset-tree-radius: var(--r-12);
+}
+/*
+ * The panel's own border and background, removed here rather than in the package. `.dataset-tree`
+ * is the package's root element and its background is `--dataset-tree-bg`, so this is the
+ * documented variable doing the work and not a reach inside.
+ */
+.portal-dataset-tree-block[data-expanded="true"] .dataset-tree {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/*
+ * NARROW. The exit control needs no reordering here: it sits in the panel's toolbar, where it wraps
+ * with the rest of that row and never competes with the heading for a phone's width.
+ */
+@media (max-width: 640px) {
+  .portal-dataset-tree-block[data-expanded="true"] .portal-dataset-tree-summary {
+    font-size: 0.82rem;
+  }
+}
+
+/*
+ * DENSITY IS THE PACKAGE'S, and stays the package's. A maximized browser wants tighter rows, but
+ * that would mean styling `.dataset-tree__row`, an internal class that
+ * `tests/artifact/dataset-tree-block.test.ts` refuses: an internal is not a contract. The package
+ * publishes no row-density variable, so the rows keep the density the package chose; if this is
+ * worth having, it is worth asking `@freva-org/dataset-tree` for `--dataset-tree-row-padding`.
+ */
+
+/*
+ * Cosmos: the tree's own panel stops being translucent inside the sheet. The preset's
+ * `--portal-cosmos-card-alpha` is right for a card standing in a composition and wrong inside a
+ * sheet, where the two alphas would multiply and the rows would sit over a starfield twice removed.
+ * Inside the sheet the panel is transparent and the SHEET is the surface.
+ */
+.portal-shell[data-backdrop="cosmos"]
+  .portal-dataset-tree-block[data-expanded="true"]
+  .dataset-tree {
+  --dataset-tree-bg: transparent;
+}
+
+/*
+ * The placeholder holds the block's place in the document while it is elsewhere. Zero height and no
+ * margins: the composition behind the backdrop is still the page the visitor came from, and must
+ * look exactly as it did.
+ */
+.portal-dataset-tree-placeholder {
+  display: none;
+}
+
+/* The page underneath does not scroll while a sheet is over it. */
+:root[data-tree-expanded="true"] body {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-sheet,
+  .portal-sheet-backdrop,
+  .portal-dataset-tree-block[data-expanded="true"] {
+    transition: none !important;
+    animation: none !important;
+  }
+}

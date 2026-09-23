@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "profile": "static-docs-v1",
+  "entryPoints": ["index.html", "api/index.html"],
+  "runtime": {
+    "connectOrigins": [],
+    "frameOrigins": [],
+    "workers": "self"
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/portal-manifest.schema.json",
+  "title": "portal-manifest.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "site", "routes", "components", "services", "files"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "language", "canonicalUrl", "basePath", "theme"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "language": { "type": "string" },
+        "canonicalUrl": { "type": "string" },
+        "basePath": { "type": "string" },
+        "theme": { "type": "string" }
+      }
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "url", "kind", "file"],
+        "properties": {
+          "path": { "type": "string" },
+          "url": { "type": "string" },
+          "kind": { "enum": ["landing", "content", "component", "auth-callback", "error"] },
+          "file": { "type": "string" },
+          "componentId": { "type": "string" },
+          "landingId": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "enabled"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "route": { "type": "string" },
+          "serviceId": { "type": "string" }
+        }
+      }
+    },
+    "services": {
+      "type": "array",
+      "description": "Only services actually emitted into the browser artifact.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "origin"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "origin": { "type": "string" },
+          "url": { "type": "string" },
+          "authentication": { "type": "string" }
+        }
+      }
+    },
+    "mounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mount", "kind"],
+        "properties": {
+          "mount": { "type": "string" },
+          "kind": { "enum": ["content", "asset", "download", "subsite"] },
+          "profile": { "type": "string" }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "mimeType", "cacheClass"],
+        "properties": {
+          "path": { "type": "string" },
+          "mimeType": { "type": "string" },
+          "cacheClass": { "enum": ["immutable", "revalidate", "download", "subsite", "no-store"] },
+          "contentDisposition": { "type": "string" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}

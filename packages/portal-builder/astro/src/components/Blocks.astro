@@ -1,0 +1,367 @@
+---
+/**
+ * Landing blocks.
+ *
+ * The first run of hero-shaped blocks becomes a two-column `portal-hero-row` - lead on the left,
+ * search and feature links in the aside - and everything after it stacks full width. The class
+ * names, the `data-block` attributes and the heading discipline (exactly one `h1` on the page,
+ * whichever headline comes first) are the design's.
+ *
+ * The search block is a plain GET form carrying the serialized `SearchIntentV1`, so the handoff
+ * survives JavaScript being off, a reload, a bookmark and a paste into a chat window.
+ */
+import type {
+  ResolvedBlock,
+  ResolvedComponent,
+  ResolvedService,
+} from "../../../src/model/types.js";
+import DatasetTreeBlock from "./DatasetTreeBlock.astro";
+
+interface Props {
+  blocks: readonly ResolvedBlock[];
+  /** The site subtitle, drawn as the hero eyebrow exactly as the design does. */
+  eyebrow?: string;
+  /** Enabled components, so a search block can name the thing it searches. */
+  components?: readonly ResolvedComponent[];
+  /** Emitted services, so the search box can offer values from the real index. */
+  services?: readonly ResolvedService[];
+}
+
+const { blocks, eyebrow, components = [], services = [] } = Astro.props;
+
+/**
+ * The service the search box asks for values. Written onto the form as data rather than into a
+ * generated module, because the box is a plain GET form first: the attributes are inert without a
+ * script, and the island that reads them is only imported when the Data Browser is enabled.
+ */
+function searchService(block: ResolvedBlock): string | undefined {
+  const component = components.find((c) => c.id === block.search?.componentId);
+  if (!component?.serviceId) return undefined;
+  return services.find((s) => s.id === component.serviceId)?.url;
+}
+
+function searchFacets(block: ResolvedBlock): string {
+  return JSON.stringify(block.search?.intent.facets ?? {});
+}
+
+/**
+ * The design titles the search box with the component it searches and lists the deployment's
+ * locked facets underneath as a legend for the scope. The chips are not controls: the scope
+ * belongs to the configuration, and a visitor cannot remove it.
+ */
+function searchHeading(block: ResolvedBlock): string | undefined {
+  if (block.heading) return block.heading;
+  return components.find((component) => component.id === block.search?.componentId)?.title;
+}
+
+function scopeChips(block: ResolvedBlock): [string, string][] {
+  const facets = block.search?.intent.facets ?? {};
+  return Object.entries(facets).map(([key, values]) => [key, values.join(", ")]);
+}
+
+/**
+ * Blocks the design places in the hero row's right-hand column.
+ *
+ * `dataset-tree` belongs here: a deployment puts a browsable archive where the search box would
+ * have gone and gets the same composition - one lead column of prose, one column of entry points.
+ * The tree beside the headline IS the landing page's composition; below the hero instead, it
+ * leaves the hero's right-hand half empty and pushes the one thing a visitor came for below the
+ * fold. The height that would argue for a full-width band is what the maximize control solves.
+ *
+ * Width is why the row is not always split the same way. A search box is one field and a button;
+ * a tree is a hierarchy with names, descriptions, right-aligned metrics and a panel that opens
+ * under a row, and in a 0.95fr aside all of that starts to collapse - the component's own
+ * `@container (max-width: 30rem)` rule drops the descriptions somewhere below a 1100px window. So
+ * an aside holding a tree takes the larger share.
+ */
+const ASIDE = new Set(["component-search", "component-link", "dataset-tree"]);
+/** Blocks the design allows inside the hero row at all. */
+const HERO_ROW = new Set(["hero", "component-search", "component-link", "dataset-tree"]);
+
+let heroEnd = 0;
+while (heroEnd < blocks.length && HERO_ROW.has(blocks[heroEnd]!.type)) heroEnd += 1;
+
+const lead = blocks.slice(0, heroEnd).filter((block) => !ASIDE.has(block.type));
+const aside = blocks.slice(0, heroEnd).filter((block) => ASIDE.has(block.type));
+const rest = blocks.slice(heroEnd);
+const columns = lead.length > 0 && aside.length > 0 ? "two" : "one";
+// Which way the row is split. `wide` when the aside carries a dataset tree, so the tree keeps the
+// width its own layout needs rather than being handed a search box's column.
+const asideKind = aside.some((block) => block.type === "dataset-tree") ? "wide" : "even";
+
+/**
+ * The page's single `h1`. A landing may carry several headline-shaped blocks; exactly one may be
+ * the `h1`, or the outline announces two page titles. The first hero wins.
+ */
+const firstHeroIndex = blocks.findIndex((block) => block.type === "hero");
+
+function hiddenFields(query: string): [string, string][] {
+  return [...new URLSearchParams(query).entries()];
+}
+---
+
+{
+  (lead.length > 0 || aside.length > 0) && (
+    <div class="portal-hero-row" data-columns={columns} data-aside={asideKind}>
+      {lead.length > 0 && (
+        <div class="portal-hero-lead">
+          {lead.map((block) => (
+            <Fragment>
+              {block.type === "hero" && (
+                <section class="portal-hero" data-block="hero">
+                  {eyebrow && <p class="portal-eyebrow">{eyebrow}</p>}
+                  {block.heading &&
+                    (blocks.indexOf(block) === firstHeroIndex ? (
+                      <h1 class="portal-hero-heading">{block.heading}</h1>
+                    ) : (
+                      <h2 class="portal-hero-heading">{block.heading}</h2>
+                    ))}
+                  {block.summary && <p class="portal-hero-text">{block.summary}</p>}
+                  {block.actions && block.actions.length > 0 && (
+                    <div class="portal-hero-actions">
+                      {block.actions.map((action, index) => (
+                        <a
+                          class={
+                            index === 0
+                              ? "portal-button portal-button-primary"
+                              : "portal-button"
+                          }
+                          href={action.href}
+                          target={action.external ? "_blank" : undefined}
+                          rel={action.external ? "noopener noreferrer" : undefined}
+                        >
+                          {action.label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+            </Fragment>
+          ))}
+        </div>
+      )}
+
+      {aside.length > 0 && (
+        <div class="portal-hero-aside">
+          {aside.map((block) => (
+            <Fragment>
+              {block.type === "component-search" && block.search && (
+                <section class="portal-search-block" data-block="search">
+                  {searchHeading(block) && (
+                    <h2 class="portal-block-heading">{searchHeading(block)}</h2>
+                  )}
+                  <form
+                    class="portal-search-form"
+                    method="get"
+                    action={block.search.action}
+                    role="search"
+                    data-portal-search-api={searchService(block)}
+                    data-portal-search-flavour={block.search.intent.flavour}
+                    data-portal-search-facets={searchFacets(block)}
+                  >
+                    <label
+                      class="portal-visually-hidden"
+                      for={`portal-search-${block.search.componentId}`}
+                    >
+                      {block.search.placeholder}
+                    </label>
+                    <div class="portal-search-field">
+                      <input
+                        id={`portal-search-${block.search.componentId}`}
+                        class="portal-search-input"
+                        type="search"
+                        name="q"
+                        placeholder={block.search.placeholder}
+                        autocomplete="off"
+                      />
+                    </div>
+                    {hiddenFields(block.summary ?? "").map(([name, value]) => (
+                      <input type="hidden" name={name} value={value} />
+                    ))}
+                    <button class="portal-button portal-button-primary portal-search-submit" type="submit">
+                      <span class="portal-search-submit-label">{block.search.submitLabel}</span>
+                      <span class="portal-search-spinner" aria-hidden="true" />
+                    </button>
+                  </form>
+                  {scopeChips(block).length > 0 && (
+                    <ul class="portal-chips" aria-label="Search scope">
+                      {scopeChips(block).map(([key, value]) => (
+                        <li class="portal-chip">{`${key}: ${value}`}</li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+
+              {block.type === "component-link" && block.link && (
+                <section class="portal-feature-link" data-block="feature-link">
+                  <a class="portal-feature-link-anchor" href={block.link.href}>
+                    <span class="portal-feature-link-label">{block.link.label}</span>
+                    <span class="portal-feature-link-open">Open</span>
+                  </a>
+                  {block.summary && <p class="portal-card-text">{block.summary}</p>}
+                </section>
+              )}
+
+              {block.type === "dataset-tree" && block.datasetTree && (
+                <DatasetTreeBlock block={block} />
+              )}
+            </Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+{
+  rest.map((block) => {
+    if (block.type === "hero") {
+      return (
+        <section class="portal-hero" data-block="hero">
+          {block.heading && <h2 class="portal-hero-heading">{block.heading}</h2>}
+          {block.summary && <p class="portal-hero-text">{block.summary}</p>}
+        </section>
+      );
+    }
+
+    if (block.type === "prose") {
+      return (
+        <section class="portal-content-block" data-block="content">
+          <div class="portal-content-body">
+            {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
+            <div class="portal-prose" set:html={block.prose?.html ?? ""} />
+          </div>
+        </section>
+      );
+    }
+
+    if (block.type === "cards") {
+      return (
+        <section class="portal-cards" data-block="cards">
+          {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
+          <ul class="portal-card-grid">
+            {block.cards?.map((card) => (
+              <li class="portal-card">
+                {card.link ? (
+                  <a
+                    class="portal-card-link"
+                    href={card.link.href}
+                    target={card.link.external ? "_blank" : undefined}
+                    rel={card.link.external ? "noopener noreferrer" : undefined}
+                  >
+                    {card.title}
+                  </a>
+                ) : (
+                  <span class="portal-card-link">{card.title}</span>
+                )}
+                {card.summary && <p class="portal-card-text">{card.summary}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    }
+
+    if (block.type === "links") {
+      return (
+        <section class="portal-links" data-block="links">
+          {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
+          <ul class="portal-card-grid">
+            {block.actions?.map((action) => (
+              <li class="portal-card">
+                <a
+                  class="portal-card-link"
+                  href={action.href}
+                  target={action.external ? "_blank" : undefined}
+                  rel={action.external ? "noopener noreferrer" : undefined}
+                >
+                  {action.label}
+                </a>
+                {action.description && <p class="portal-card-text">{action.description}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    }
+
+    if (block.type === "callout") {
+      const level = block.level ?? "note";
+      return (
+        <aside class={`portal-admonition portal-admonition-${level}`} data-block="callout">
+          <p class="portal-admonition-title">
+            <span class="portal-admonition-icon" aria-hidden="true" />
+            {block.heading ?? level.charAt(0).toUpperCase() + level.slice(1)}
+          </p>
+          <div class="portal-admonition-body">
+            <p>{block.body}</p>
+          </div>
+        </aside>
+      );
+    }
+
+    if (block.type === "component-link" && block.link) {
+      return (
+        <section class="portal-feature-link" data-block="feature-link">
+          <a class="portal-feature-link-anchor" href={block.link.href}>
+            <span class="portal-feature-link-label">{block.link.label}</span>
+            <span class="portal-feature-link-open">Open</span>
+          </a>
+        </section>
+      );
+    }
+
+    if (block.type === "dataset-tree" && block.datasetTree) {
+      return <DatasetTreeBlock block={block} />;
+    }
+
+    if (block.type === "component-search" && block.search) {
+      return (
+        <section class="portal-search-block" data-block="search">
+          {searchHeading(block) && <h2 class="portal-block-heading">{searchHeading(block)}</h2>}
+          <form
+            class="portal-search-form"
+            method="get"
+            action={block.search.action}
+            role="search"
+            data-portal-search-api={searchService(block)}
+            data-portal-search-flavour={block.search.intent.flavour}
+            data-portal-search-facets={searchFacets(block)}
+          >
+            <label class="portal-visually-hidden" for={`portal-search-${block.search.componentId}`}>
+              {block.search.placeholder}
+            </label>
+            <div class="portal-search-field">
+              <input
+                id={`portal-search-${block.search.componentId}`}
+                class="portal-search-input"
+                type="search"
+                name="q"
+                placeholder={block.search.placeholder}
+                autocomplete="off"
+              />
+            </div>
+            {hiddenFields(block.summary ?? "").map(([name, value]) => (
+              <input type="hidden" name={name} value={value} />
+            ))}
+            <button class="portal-button portal-button-primary portal-search-submit" type="submit">
+              <span class="portal-search-submit-label">{block.search.submitLabel}</span>
+              <span class="portal-search-spinner" aria-hidden="true" />
+            </button>
+          </form>
+          {scopeChips(block).length > 0 && (
+            <ul class="portal-chips" aria-label="Search scope">
+              {scopeChips(block).map(([key, value]) => (
+                <li class="portal-chip">{`${key}: ${value}`}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      );
+    }
+
+    return null;
+  })
+}

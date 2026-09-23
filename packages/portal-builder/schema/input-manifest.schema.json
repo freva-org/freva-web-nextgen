@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/input-manifest.schema.json",
+  "title": "input-manifest.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "site",
+    "sources",
+    "builder",
+    "schemas",
+    "profile",
+    "components",
+    "reproducibility"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "canonicalUrl", "basePath"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "canonicalUrl": {
+          "type": "string"
+        },
+        "basePath": {
+          "type": "string"
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "description": "Every actual config, landing, prose, fragment, asset, download, subsite policy and subsite file, hashed by source-root-relative path, in normalized lexical order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "role", "digest", "bytes"],
+        "properties": {
+          "ref": {
+            "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/sourceRef"
+          },
+          "role": {
+            "enum": [
+              "config",
+              "landing",
+              "page",
+              "fragment",
+              "asset",
+              "download",
+              "identity",
+              "subsite-policy",
+              "subsite-file",
+              "component-asset"
+            ]
+          },
+          "digest": {
+            "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "builder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package"],
+      "properties": {
+        "package": {
+          "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/packageRef"
+        },
+        "image": {
+          "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/imageRef"
+        },
+        "sourceRevision": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["portal", "landing", "subsitePolicy"],
+      "properties": {
+        "portal": {
+          "$ref": "#/$defs/named"
+        },
+        "landing": {
+          "$ref": "#/$defs/named"
+        },
+        "subsitePolicy": {
+          "$ref": "#/$defs/named"
+        }
+      }
+    },
+    "profile": {
+      "$ref": "#/$defs/named"
+    },
+    "rstHelper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "package", "version", "docutils"],
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "docutils": {
+          "type": "string"
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "enabled", "materials"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "materials": {
+            "type": "array",
+            "items": {
+              "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/materialRef"
+            }
+          }
+        }
+      }
+    },
+    "stac": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upstream", "patches", "preparedDigest"],
+      "properties": {
+        "upstream": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "tag", "commit"],
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "commit": {
+              "type": "string"
+            },
+            "sourceDigest": {
+              "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+            }
+          }
+        },
+        "patches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "digest"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "digest": {
+                "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+              }
+            }
+          }
+        },
+        "preparedDigest": {
+          "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+        },
+        "recipeVersion": {
+          "type": "string",
+          "description": "Version of the central Freva recipe that produced the prepared materials. Recorded so an upgrade review can line up the Freva side of the provenance with the upstream side."
+        },
+        "cacheKey": {
+          "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest",
+          "description": "Cache key of the preparation inputs: upstream commit, upstream lockfile digest, ordered patch digests, recipe version and toolchain."
+        },
+        "lockfileDigest": {
+          "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest",
+          "description": "Digest of the upstream lockfile the prepared dependency tree was installed from."
+        },
+        "license": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["spdx"],
+          "description": "The upstream licence as verified during preparation: its identity, and the digest of the text that was actually present.",
+          "properties": {
+            "spdx": {
+              "type": "string"
+            },
+            "digest": {
+              "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+            }
+          }
+        }
+      }
+    },
+    "trustedSubsites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mount", "profile", "policyDigest", "treeDigest", "fileCount", "bytes"],
+        "properties": {
+          "mount": {
+            "type": "string"
+          },
+          "profile": {
+            "const": "static-docs-v1"
+          },
+          "policyDigest": {
+            "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+          },
+          "treeDigest": {
+            "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceDateEpoch"],
+      "properties": {
+        "sourceDateEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "effectiveAt": {
+          "type": "string"
+        },
+        "release": {
+          "type": "boolean"
+        }
+      }
+    },
+    "publicEnvironment": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Environment-defining public values only. Never a secret."
+    }
+  },
+  "$defs": {
+    "named": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "digest"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/digest"
+        }
+      }
+    }
+  }
+}

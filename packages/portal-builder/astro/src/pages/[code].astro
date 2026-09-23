@@ -1,0 +1,68 @@
+---
+/**
+ * One template for every HTTP status page.
+ *
+ * A static host hands a *file* back for a status, at the URL that failed, so the status code
+ * survives. Hence documents rather than redirects, and one per code rather than one generic page:
+ * `error_page 503 /503.html` cannot pass a parameter.
+ *
+ * Astro writes `/404` and `/500` as `404.html` and `500.html` itself; the rest arrive as
+ * `<code>/index.html` and the builder moves them - the one place in the artifact where a
+ * generated file is renamed, see `placeStatusPages` in `src/artifact/index.ts`.
+ */
+import model from "virtual:portal-model";
+import Shell from "../layouts/Shell.astro";
+import statusMark from "../assets/status-mark.webp?url";
+import statusMarkStill from "../assets/status-mark-still.webp?url";
+import type { ResolvedRoute } from "../../../src/model/types.js";
+
+export function getStaticPaths() {
+  return model.routes
+    .filter((route) => route.kind === "error")
+    .map((route) => ({ params: { code: String(route.status) }, props: { route } }));
+}
+
+const { route } = Astro.props as { route: ResolvedRoute };
+const home = model.site.basePath;
+---
+
+<Shell model={model} route={route}>
+  <section class="portal-status" data-portal-status={route.status}>
+    {/*
+      The mark at the size it is never allowed to be anywhere else. A status page has no content
+      to compete with, and a visitor who has just been stopped should be able to tell whose site
+      stopped them.
+
+      TWO FILES, NOT A GLYPH. An animated image cannot be paused from CSS, so reduced motion is
+      served the same artwork's first frame, exported beside it, rather than a lettering
+      substitute.
+
+      These are the STATUS page's own files, not the shell's `freva-mark.webp` that the footer and
+      the badge both read; replacing that one would change the mark on every page.
+    */}
+    <span class="portal-status-mark" aria-hidden="true">
+      <img class="portal-status-logo" src={statusMark} alt="" decoding="async" />
+      <img class="portal-status-logo-still" src={statusMarkStill} alt="" decoding="async" />
+    </span>
+
+    <p class="portal-status-code">
+      <span class="portal-status-number">{route.status}</span>
+      <span class="portal-status-reason">{route.reason}</span>
+    </p>
+    <h1 class="portal-status-title">{route.title}</h1>
+    <p class="portal-status-summary">{route.description}</p>
+
+    {
+      route.retry && (
+        <p class="portal-status-summary">
+          If it persists, it is worth telling whoever runs this deployment - the address above and
+          the time it happened are the two things they will ask for.
+        </p>
+      )
+    }
+
+    <p class="portal-status-actions">
+      <a class="portal-button" href={home}>Go to {model.site.title}</a>
+    </p>
+  </section>
+</Shell>

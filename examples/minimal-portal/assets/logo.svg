@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Example mark">
+  <title>Example mark</title>
+  <rect x="4" y="4" width="40" height="40" rx="8" fill="#1f6f8b" />
+  <path d="M14 30 L24 16 L34 30 Z" fill="#ffffff" />
+</svg>

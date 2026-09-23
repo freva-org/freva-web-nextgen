@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/buildinfo.schema.json",
+  "title": "BUILDINFO.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "builder", "schemas", "profile", "inputManifestDigest", "artifact"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "builder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "purl": { "type": "string" },
+        "image": {
+          "$ref": "https://schemas.freva.org/portal/v1/material-reference.schema.json#/$defs/imageRef"
+        },
+        "sourceRevision": { "type": "string" }
+      }
+    },
+    "schemas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "digest"],
+        "properties": { "name": { "type": "string" }, "digest": { "type": "string" } }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "digest"],
+      "properties": { "name": { "type": "string" }, "digest": { "type": "string" } }
+    },
+    "rstHelper": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": { "type": "string" },
+        "package": { "type": "string" },
+        "version": { "type": "string" },
+        "docutils": { "type": "string" },
+        "used": { "type": "boolean" }
+      }
+    },
+    "inputManifestDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "release"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "release": { "type": "boolean" },
+        "sourceDateEpoch": { "type": "integer" },
+        "effectiveAt": { "type": "string" }
+      }
+    }
+  }
+}

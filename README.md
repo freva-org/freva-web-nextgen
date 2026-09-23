@@ -13,6 +13,7 @@ Freva-web-nextgen, framework-agnostic Web Components and utilities.
 | [`@freva-org/freva-badge`](./packages/freva-badge)                     | [![npm](https://img.shields.io/npm/v/@freva-org/freva-badge)](https://www.npmjs.com/package/@freva-org/freva-badge)                     | The Freva footer badge: a mark that opens an About panel                  |
 | [`@freva-org/stac-browser`](./packages/stac-browser)                   | [`ae1956e`](https://github.com/radiantearth/stac-browser/tree/ae1956e8cb2067ce27938b3ae70c00515ac0ff33)                                 | Recipe that builds Radiant Earth's STAC Browser into embeddable materials |
 | [`@freva-org/freva-client-terminal`](./packages/freva-client-terminal) | [![npm](https://img.shields.io/npm/v/@freva-org/freva-client-terminal)](https://www.npmjs.com/package/@freva-org/freva-client-terminal) | Reusable terminal window for freva-client commands                        |
+| [`@freva-org/portal-builder`](./packages/portal-builder)               | [![npm](https://img.shields.io/npm/v/@freva-org/portal-builder)](https://www.npmjs.com/package/@freva-org/portal-builder)               | Builds a static Freva portal from a YAML configuration                    |
 | [`@freva-org/ts-oidc-auth-client`](./packages/ts-oidc-auth-client)     | [![npm](https://img.shields.io/npm/v/@freva-org/ts-oidc-auth-client)](https://www.npmjs.com/package/@freva-org/ts-oidc-auth-client)     | OIDC browser auth client for py-oidc-auth / freva-rest servers            |
 
 ## Getting started

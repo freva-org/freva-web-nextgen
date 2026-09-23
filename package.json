@@ -18,6 +18,11 @@
     "prepare": "husky || echo \"husky not installed - git hooks were not set up. That is expected for a build-only or --omit=dev install; run npm ci at the repo root to get them.\"",
     "changeset": "changeset",
     "version-packages": "changeset version",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "acceptance": "node scripts/acceptance.mjs",
+    "closure": "node packages/portal-builder/scripts/source-closure.mjs",
+    "sbom": "node packages/portal-builder/scripts/sbom.mjs",
+    "licenses": "node packages/portal-builder/scripts/license-report.mjs",
     "stac:prepare": "npm run prepare:upstream -w @freva-org/stac-browser --",
     "stac:cache-key": "npm run cache-key -w @freva-org/stac-browser --"
   },

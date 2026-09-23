@@ -1,0 +1,100 @@
+{
+  "name": "@freva-org/portal-builder",
+  "version": "2609.0.0",
+  "description": "FP-001 build-time portal framework: closed YAML in, one immutable static artifact out. Astro compiles the pages; nothing about the site is fetched at runtime.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/portal-builder"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "freva-portal-builder": "./bin/freva-portal-builder.mjs"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema/portal.schema.json": "./schema/portal.schema.json",
+    "./schema/landing.schema.json": "./schema/landing.schema.json",
+    "./schema/subsite-policy.schema.json": "./schema/subsite-policy.schema.json",
+    "./schema/portal-content-v1.profile.json": "./schema/portal-content-v1.profile.json",
+    "./schema/": "./schema/",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "schema",
+    "astro",
+    "client",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "!client/components/cosmos/scene/regional-aircraft.webp"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.client.json --noEmit && astro check --root astro --minimumFailingSeverity error",
+    "lint": "eslint src tests scripts bin client browser-tests",
+    "pretest": "node scripts/preflight.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "node browser-tests/run.mjs",
+    "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
+    "test:browser:python": "BROWSER_STRICT=1 node browser-tests/python-playground.mjs",
+    "test:browser:runnable": "BROWSER_STRICT=1 node browser-tests/runnable-content.mjs",
+    "test:browser:tree": "BROWSER_STRICT=1 node browser-tests/dataset-tree-overlay.mjs",
+    "test:browser:tree:s3": "BROWSER_STRICT=1 node browser-tests/dataset-tree-s3.mjs",
+    "test:browser:terminal": "BROWSER_STRICT=1 node browser-tests/waterpark-terminal.mjs",
+    "test:browser:package-index": "BROWSER_STRICT=1 node browser-tests/python-package-index.mjs",
+    "cosmos:acceptance": "node scripts/cosmos-static-acceptance.mjs",
+    "test:security": "vitest run tests/security",
+    "test:packaging": "node tests/packaging/pack-and-install.mjs"
+  },
+  "license": "BSD-3-Clause",
+  "dependencies": {
+    "@freva-org/browser-python": "2609.0.2",
+    "@freva-org/data-inspector": "2609.0.2",
+    "@freva-org/databrowser": "2609.0.2",
+    "@freva-org/dataset-tree": "2610.0.0",
+    "@freva-org/freva-badge": "2609.0.0",
+    "@freva-org/freva-client-terminal": "2609.0.0",
+    "@freva-org/ts-oidc-auth-client": "2608.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "astro": "^7.2.1",
+    "katex": "^0.16.25",
+    "mdast-util-to-string": "^4.0.0",
+    "mermaid": "^11.16.1",
+    "parse5": "^8.0.1",
+    "postcss": "^8.5.26",
+    "remark-directive": "^4.0.0",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "remark-parse": "^11.0.0",
+    "shiki": "^3.14.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.0.0",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@types/node": "^25.9.3",
+    "axe-core": "^4.12.0",
+    "playwright": "^1.56.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.8"
+  }
+}

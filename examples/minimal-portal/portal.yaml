@@ -1,0 +1,30 @@
+# The smallest site the schema accepts: an identity, one landing and one page.
+# No services, no components, no navigation - and still a real, deployable
+# artifact with real HTML for every route.
+schemaVersion: 1
+
+site:
+  id: minimal-example
+  title: Minimal Example Portal
+  language: en
+  canonicalUrl: https://minimal.example.org/
+  identity:
+    logo: ./assets/logo.svg
+    favicon: ./assets/favicon.svg
+
+theme:
+  preset: default
+
+rendering:
+  profile: portal-content-v1
+  sources:
+    - root: ./content
+      mount: /docs/
+  assets:
+    - root: ./assets
+      mount: /assets/
+
+landings:
+  home:
+    path: /
+    source: ./landings/home.yaml

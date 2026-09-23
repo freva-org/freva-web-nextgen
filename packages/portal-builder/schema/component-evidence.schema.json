@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/component-evidence.schema.json",
+  "title": "component-evidence.json",
+  "description": "What the build graph and the copy manifest actually contained. Absence is proved here, not inferred from filenames or CSS.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "components", "graph"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "enabled",
+          "ownedModuleRoots",
+          "ownedStaticRoots",
+          "assetNamespaces"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "ownedModuleRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ownedStaticRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assetNamespaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedSharedModules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modules": {
+            "type": "array",
+            "description": "Normalized source-graph membership actually observed in the bundle.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "chunks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "copiedRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "copiedFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "emittedServiceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunks", "modules"],
+      "properties": {
+        "chunks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "modules"],
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "isEntry": {
+                "type": "boolean"
+              },
+              "modules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "copiedFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "moduleBytes": {
+          "type": "object",
+          "description": "Rendered bytes per normalized module id, as the bundler reported them. It is what the size budgets are measured against.",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

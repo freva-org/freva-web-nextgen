@@ -1,0 +1,233 @@
+---
+/**
+ * The narrow-width navigation panel: a full-screen drill-down.
+ *
+ * Two levels of navigation have to collapse below desktop, and a dropdown the width of a button
+ * holds only one - a flat list of site sections, with the page's own outline left above the
+ * article as a boxed list to scroll past. So: level one is the sections, level two is the
+ * section's pages, and a page with headings expands them in place as a nested group. Every level
+ * is written at build time, and the panel works with no JavaScript beyond the open/close and the
+ * slide - the groups are native `<details>` and every entry is a real link to a real route.
+ *
+ * The same tree feeds the tablet breadcrumb dropdown (`OutlineBar.astro`). One derivation, two
+ * presentations - see `src/model/nav-outline.ts`.
+ */
+import type { OutlineSection } from "../../../src/model/nav-outline.js";
+
+interface Props {
+  sections: OutlineSection[];
+  currentPath: string;
+  homeHref: string;
+  brandName: string;
+}
+
+const { sections, currentPath, homeHref, brandName } = Astro.props;
+
+const isCurrentPage = (href: string): boolean => href === currentPath;
+/** A section is current when the page being read lives inside it. */
+const isCurrentSection = (href: string): boolean =>
+  href === currentPath || (href !== homeHref && currentPath.startsWith(href));
+---
+
+<div class="portal-navpanel" id="portal-navpanel" hidden data-level="root">
+  <div class="portal-navpanel-head">
+    {/*
+      One button, two jobs, and which one is written in `data-role`: absent at the root, where the
+      title is the site's name; inside a section it goes back a level. An always-present back
+      button that does nothing at the root is a control that lies.
+    */}
+    <button
+      type="button"
+      class="portal-navpanel-back"
+      data-portal-navpanel-back
+      hidden
+      aria-label="Back to all sections"
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 18l-6-6 6-6" />
+      </svg>
+    </button>
+    <p class="portal-navpanel-title" data-portal-navpanel-title>{brandName}</p>
+    <button
+      type="button"
+      class="portal-navpanel-close"
+      data-portal-navpanel-close
+      aria-label="Close navigation"
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18" />
+      </svg>
+    </button>
+  </div>
+
+  <div class="portal-navpanel-scroll">
+    {/* Level one. Always present; hidden by `data-level` rather than replaced, so going back is
+        instant and the scroll position of each level survives the trip. */}
+    <nav class="portal-navpanel-level" data-portal-navpanel-root aria-label="Site sections">
+      <ul class="portal-navpanel-list">
+        <li>
+          <a
+            class="portal-navpanel-link"
+            href={homeHref}
+            data-active={currentPath === homeHref ? "true" : undefined}
+            aria-current={currentPath === homeHref ? "page" : undefined}
+          >
+            Home
+          </a>
+        </li>
+        {sections.map((section, index) =>
+          section.pages.length > 0 ? (
+            <li>
+              {/*
+                A row with two targets: the label goes to the section, the chevron drills in. One
+                control doing both would make "open the section index" unreachable; one that only
+                drills would strand a section whose index is the page you want.
+              */}
+              <div class="portal-navpanel-row" data-active={isCurrentSection(section.href) ? "true" : undefined}>
+                <a
+                  class="portal-navpanel-link"
+                  href={section.href}
+                  data-active={isCurrentSection(section.href) ? "true" : undefined}
+                  aria-current={isCurrentPage(section.href) ? "page" : undefined}
+                >
+                  {section.label}
+                </a>
+                <button
+                  type="button"
+                  class="portal-navpanel-drill"
+                  data-portal-navpanel-drill={String(index)}
+                  aria-label={`Show pages in ${section.label}`}
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 6l6 6-6 6" />
+                  </svg>
+                </button>
+              </div>
+            </li>
+          ) : (
+            <li>
+              <a
+                class="portal-navpanel-link"
+                href={section.href}
+                data-active={isCurrentSection(section.href) ? "true" : undefined}
+                aria-current={isCurrentPage(section.href) ? "page" : undefined}
+                target={section.external ? "_blank" : undefined}
+                rel={section.external ? "noopener noreferrer" : undefined}
+              >
+                {section.label}
+                {section.external && (
+                  <span class="portal-navpanel-ext" aria-hidden="true">↗</span>
+                )}
+                {section.external && <span class="portal-visually-hidden"> (opens in a new tab)</span>}
+              </a>
+            </li>
+          ),
+        )}
+      </ul>
+    </nav>
+
+    {/* Level two, one per section that has pages. */}
+    {sections.map((section, index) =>
+      section.pages.length > 0 ? (
+        <nav
+          class="portal-navpanel-level"
+          data-portal-navpanel-section={String(index)}
+          aria-label={`${section.label} pages`}
+          hidden
+        >
+          <ul class="portal-navpanel-list">
+            <li>
+              <a
+                class="portal-navpanel-link portal-navpanel-overview"
+                href={section.href}
+                data-active={isCurrentPage(section.href) ? "true" : undefined}
+                aria-current={isCurrentPage(section.href) ? "page" : undefined}
+              >
+                {section.label} overview
+              </a>
+            </li>
+            {section.pages.map((page) =>
+              page.headings.length > 0 ? (
+                <li>
+                  {/*
+                    Native `<details>`, open on the page you are reading. No script decides it, so
+                    the outline works before the island loads and after it fails.
+                  */}
+                  <details class="portal-navpanel-group" open={isCurrentPage(page.href)}>
+                    <summary class="portal-navpanel-summary" data-active={isCurrentPage(page.href) ? "true" : undefined}>
+                      <span class="portal-navpanel-summary-text">{page.title}</span>
+                      <svg class="portal-navpanel-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </summary>
+                    <ul class="portal-navpanel-list portal-navpanel-sublist">
+                      <li>
+                        <a
+                          class="portal-navpanel-link portal-navpanel-pagelink"
+                          href={page.href}
+                          data-active={isCurrentPage(page.href) ? "true" : undefined}
+                        >
+                          Top of page
+                        </a>
+                      </li>
+                      {page.headings.map((heading) =>
+                          heading.children.length > 0 ? (
+                            <li>
+                              <details class="portal-navpanel-group portal-navpanel-group-inner">
+                                {/* The heading's own link is in the summary, not repeated below it. */}
+                                <summary class="portal-navpanel-summary portal-navpanel-summary-inner">
+                                  <a
+                                    class="portal-navpanel-summary-link"
+                                    href={`${page.href}#${heading.id}`}
+                                  >
+                                    {heading.text}
+                                  </a>
+                                  <svg class="portal-navpanel-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M6 9l6 6 6-6" />
+                                  </svg>
+                                </summary>
+                                <ul class="portal-navpanel-list portal-navpanel-sublist">
+                                  {heading.children.map((child) => (
+                                    <li>
+                                      <a
+                                        class="portal-navpanel-link portal-navpanel-heading"
+                                        data-depth="1"
+                                        href={`${page.href}#${child.id}`}
+                                      >
+                                        {child.text}
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            </li>
+                          ) : (
+                            <li>
+                              <a class="portal-navpanel-link portal-navpanel-heading" href={`${page.href}#${heading.id}`}>
+                                {heading.text}
+                              </a>
+                            </li>
+                          ),
+                      )}
+                    </ul>
+                  </details>
+                </li>
+              ) : (
+                <li>
+                  <a
+                    class="portal-navpanel-link"
+                    href={page.href}
+                    data-active={isCurrentPage(page.href) ? "true" : undefined}
+                    aria-current={isCurrentPage(page.href) ? "page" : undefined}
+                  >
+                    {page.title}
+                  </a>
+                </li>
+              ),
+            )}
+          </ul>
+        </nav>
+      ) : null,
+    )}
+  </div>
+</div>

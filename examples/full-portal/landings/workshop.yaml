@@ -1,0 +1,10 @@
+schemaVersion: 1
+title: Workshop
+blocks:
+  - type: hero
+    heading: Example workshop
+    summary: A second landing, to show that landings are project-named and routed.
+  - type: component-link
+    component: data
+    label: Open the Data Browser
+    summary: The same component instance, linked by id rather than by URL.

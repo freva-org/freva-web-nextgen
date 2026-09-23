@@ -1,0 +1,46 @@
+schemaVersion: 1
+title: Example Research Portal
+description: A fictional portal exercising every v1 landing block.
+blocks:
+  - type: hero
+    heading: Research data, ready to explore
+    summary: Find and inspect published datasets, then take them into your own analysis.
+    actions:
+      - label: Browse data
+        component: data
+      - label: Read the guide
+        href: /docs/guide/
+  - type: component-search
+    heading: Search the archive
+    component: data
+    placeholder: Search climate data
+    submitLabel: Search
+    flavour: freva
+    fixedFacets:
+      experiment: historical
+  - type: prose
+    heading: About this portal
+    source: ../content/_fragments/introduction.md
+  - type: cards
+    heading: Where to go next
+    items:
+      - title: Documentation
+        summary: The data model and the workflows around it.
+        href: /docs/
+      - title: Catalog
+        summary: Browse the STAC catalog in place.
+        component: catalog
+      - title: Downloads
+        summary: A small sample file to try things with.
+        href: /downloads/sample-data.csv
+  - type: callout
+    level: tip
+    heading: Bookmarkable searches
+    body: A search started here becomes a URL, so it survives a reload and can be shared.
+  - type: links
+    heading: Related
+    items:
+      - label: Institute
+        href: https://www.example.org/
+      - label: Workshop
+        landing: workshop

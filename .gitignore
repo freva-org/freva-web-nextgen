@@ -138,3 +138,16 @@ packages/browser-python/.runtime/
 packages/browser-python/.freva-wheels/
 
 packages/stac-browser/materials/
+
+# Python packaging leftovers from `pip install ./tools/portal-rst-renderer`.
+*.egg-info/
+.eggs/
+.venv/
+tools/portal-rst-renderer/build/
+
+# The portal builder's scratch tree and its evidence output (screenshots, licences, SBOM).
+packages/portal-builder/.portal-build/
+packages/portal-builder/reports/
+
+# Written by `npm run acceptance`.
+/reports/
