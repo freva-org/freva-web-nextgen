@@ -934,21 +934,23 @@ try {
       // element, derived from upstream's router state via the `historyMode` and `pathPrefix` the
       // adapter itself configured, and shown only once the configured catalogue has loaded.
       const intro = page.locator("[data-portal-stac-intro]");
+      const atRoot = async () => {
+        await page.waitForFunction(
+          () => document.documentElement.dataset.portalStacView === "root",
+          undefined,
+          { timeout: 30_000 },
+        );
+        await page.waitForFunction(
+          () =>
+            Boolean(document.querySelector("[data-portal-stac-intro]")?.closest("#stac-browser")),
+          undefined,
+          { timeout: 30_000 },
+        );
+      };
 
       await page.goto(`${base}catalog/`, { waitUntil: "load" });
       await waitForStacReady(page);
-      await page.waitForFunction(() => document.documentElement.dataset.portalStacView === "root", {
-        timeout: 30_000,
-      });
-      // The root view is what takes the introduction in - `PortalIntro` moves it into the metadata
-      // column when that view mounts - and it is hidden until then, so a deep link to an item never
-      // flashes the catalogue's introduction in the document's own flow. `root` is published as the
-      // document is preprocessed, before the view has painted, so this waits for the placement.
-      await page.waitForFunction(
-        () => Boolean(document.querySelector("[data-portal-stac-intro]")?.closest("#stac-browser")),
-        undefined,
-        { timeout: 30_000 },
-      );
+      await atRoot();
       assert(await intro.isVisible(), "the introduction was not shown at the catalogue root");
       const introText = await intro.innerText();
       assert(
@@ -980,9 +982,7 @@ try {
 
       // Back to the root.
       await page.goBack();
-      await page.waitForFunction(() => document.documentElement.dataset.portalStacView === "root", {
-        timeout: 30_000,
-      });
+      await atRoot();
       assert(await intro.isVisible(), "the introduction did not return on going back");
 
       // The deep link, loaded cold: this is the case a post-render hide would flash.
@@ -1006,9 +1006,7 @@ try {
       // Back at the root, from cold.
       await page.goto(`${base}catalog/`, { waitUntil: "load" });
       await waitForStacReady(page);
-      await page.waitForFunction(() => document.documentElement.dataset.portalStacView === "root", {
-        timeout: 30_000,
-      });
+      await atRoot();
       assert(await intro.isVisible(), "the introduction did not return at the root");
     }),
   );
@@ -1176,6 +1174,7 @@ try {
       // 143px to -34px with its own header and close button off the screen. So both halves are
       // asserted: that the region has nothing to scroll, which is the cause, and that the drawer
       // does not move, which is the symptom. Either alone would pass on a page broken the other way.
+      await page.setViewportSize({ width: 1280, height: 480 });
       await page.goto(`${base}catalog/`, { waitUntil: "load" });
       await waitForStacReady(page);
       await page.waitForFunction(
@@ -1196,6 +1195,15 @@ try {
         ))
           element.getAnimations().forEach((animation) => animation.finish());
       });
+
+      await page.waitForFunction(
+        () => {
+          const region = document.querySelector(".portal-feature-stac");
+          return Boolean(region) && region.scrollHeight > region.clientHeight;
+        },
+        undefined,
+        { timeout: 30_000 },
+      );
 
       const before = await page.evaluate(() => {
         const main = document.querySelector(".portal-main");
