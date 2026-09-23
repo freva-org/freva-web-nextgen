@@ -360,7 +360,8 @@ jobs:
             --source-root examples/full-portal \
             --config examples/full-portal/portal.yaml \
             --out build/full --quiet \
-            --effective-at 2026-01-07T12:00:00Z
+            --effective-at 2026-01-07T12:00:00Z \
+            --stac-materials packages/stac-browser/materials
           node packages/portal-builder/bin/freva-portal-builder.mjs verify --dir build/full
         env:
           SOURCE_DATE_EPOCH: 1760000000
