@@ -90,7 +90,7 @@ function preparedStacMaterials() {
 const STAC_MATERIALS = preparedStacMaterials();
 if (!STAC_MATERIALS) {
   const message =
-    "no prepared STAC materials; run 'npm run prepare -w @freva-org/stac-browser' or set " +
+    "no prepared STAC materials; run 'npm run stac:prepare' or set " +
     "FREVA_PORTAL_STAC_MATERIALS. The example portal enables the component, so the build cannot " +
     "proceed without them.";
   if (STRICT) throw new Error(`[browser] ${message}`);

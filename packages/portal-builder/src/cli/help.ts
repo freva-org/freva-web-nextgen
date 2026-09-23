@@ -24,11 +24,11 @@ Options:
   --out <dir>             Output directory. Must be outside every declared input root.
   --effective-at <time>   RFC 3339 instant used to select dated announcements.
   --stac-materials <dir>  Prepared STAC Browser materials, produced beforehand by
-                          'npm run prepare -w @freva-org/stac-browser'. Required
-                          only when the portal enables the stac-browser
-                          component; ignored when it does not. This build never
-                          fetches, patches or compiles upstream, and it does not
-                          look for materials it was not given.
+                          'npm run stac:prepare'. Required only when the portal
+                          enables the stac-browser component; ignored when it
+                          does not. This build never fetches, patches or
+                          compiles upstream, and it does not look for materials
+                          it was not given.
                           FREVA_PORTAL_STAC_MATERIALS says the same thing.
   --python-materials <dir>  Prepared Python playground materials - the Freva
                           wheels and the curated add-ons' pinned artefacts -

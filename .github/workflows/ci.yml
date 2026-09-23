@@ -314,6 +314,23 @@ jobs:
       - name: Build workspace dependencies
         run: npm run build
 
+      # The example portal enables the STAC Browser component, so the suites that build it need
+      # the prepared materials. Preparing them compiles a third-party application and its ~800
+      # dependencies, so the result is cached on the recipe's own key.
+      - name: STAC materials id
+        id: stac
+        run: |
+          echo "id=$(npm run --silent stac:cache-key)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the prepared STAC materials
+        uses: actions/cache@v4
+        with:
+          path: packages/stac-browser/materials
+          key: stac-materials-${{ steps.stac.outputs.id }}
+
+      - name: Prepare the STAC materials
+        run: npm run stac:prepare
+
       - name: Test
         run: npm test -w @freva-org/portal-builder
 
