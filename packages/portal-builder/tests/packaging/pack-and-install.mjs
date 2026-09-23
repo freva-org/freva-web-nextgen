@@ -24,6 +24,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO = resolve(PKG, "../..");
 
+function packResult(printed) {
+  const starts = [];
+  if (printed.startsWith("[")) starts.push(0);
+  for (let at = printed.indexOf("\n["); at !== -1; at = printed.indexOf("\n[", at + 1))
+    starts.push(at + 1);
+  for (const at of starts.reverse()) {
+    try {
+      const parsed = JSON.parse(printed.slice(at));
+      if (Array.isArray(parsed) && typeof parsed[0]?.filename === "string") return parsed[0];
+    } catch {
+      // Not where the JSON starts. Keep looking.
+    }
+  }
+  throw new Error(`npm pack --json printed no packed file:\n${printed}`);
+}
+
 const results = [];
 /**
  * One check, which may be asynchronous. Every caller must `await` it: an async body whose
@@ -182,14 +198,12 @@ try {
     // `npm pack --json` prints JSON, and a `prepack` script prints whatever it likes FIRST.
     // Every package here builds in `prepack`, and browser-python also runs its size gate, which
     // reports a table. Feeding all of that to `JSON.parse` fails with `Unexpected token 'p'`,
-    // which names nothing and reads like a corrupt tarball. The JSON is printed last, so it is
-    // taken from the first line that opens an array.
+    // which names nothing and reads like a corrupt tarball.
     const printed = execFileSync("npm", ["pack", "--json", "--pack-destination", scratch], {
       cwd: dir,
       encoding: "utf8",
     });
-    const json = printed.slice(printed.indexOf("["));
-    const result = JSON.parse(json)[0];
+    const result = packResult(printed);
     return join(scratch, result.filename);
   });
 
@@ -449,6 +463,7 @@ try {
       "test:browser:package-index",
       "test:security",
       "test:packaging",
+      "cosmos:acceptance",
     ]);
     const manifest = JSON.parse(
       readFileSync(
