@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/portal-builder",
-  "version": "2609.0.0",
+  "version": "2608.0.0",
   "description": "FP-001 build-time portal framework: closed YAML in, one immutable static artifact out. Astro compiles the pages; nothing about the site is fetched at runtime.",
   "type": "module",
   "repository": {
