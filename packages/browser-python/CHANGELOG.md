@@ -1,5 +1,11 @@
 # @freva-org/browser-python
 
+## 2609.0.2
+
+### Patch Changes
+
+- 8fff77a: browse-python: instantiate side modules synchronously while packages load, working around a WebKit stall where WebAssembly.instantiate never settles
+
 ## 2609.0.1
 
 ### Patch Changes
