@@ -870,8 +870,10 @@ describe("WebKit fixes stay capability-driven and narrow", () => {
 
   it("the add-ons suite runs every section as a named phase with a deadline", () => {
     const source = read("addons.mjs");
-    expect(source).toContain(
-      'createPhases("addons", { onDeadline: () => page.context().close() })',
+    // A deadline records what the interpreter last said, then closes the page it was on.
+    expect(source).toContain('createPhases("addons", {');
+    expect(source).toMatch(
+      /onDeadline: async \(\) => \{\s*await lastWords\(\);\s*await page\.context\(\)\.close\(\);/,
     );
     for (const phase of [
       "Dask add-on, end to end",
