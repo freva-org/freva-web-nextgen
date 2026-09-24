@@ -5,7 +5,7 @@
  * Python list literals. Every case below is typed with real keystrokes and asserted byte-for-byte
  * against what the mock engine received, because the regression lives in the typing path.
  */
-import { consolePage, TINY_PNG } from "./console-fixture.mjs";
+import { consolePage, TINY_PNG, waitForConsole } from "./console-fixture.mjs";
 import { bundleConsole, inBrowser, report, requireDist, serve } from "./harness.mjs";
 
 requireDist();
@@ -250,7 +250,7 @@ const result = await inBrowser(
         detail: JSON.stringify(figure),
       });
 
-      const revoked = await page.evaluate(async () => {
+      const revoked = await page.evaluate(() => {
         const revokedUrls = [];
         const original = URL.revokeObjectURL.bind(URL);
         URL.revokeObjectURL = (url) => {
@@ -258,7 +258,6 @@ const result = await inBrowser(
           original(url);
         };
         window.__c.element.clear();
-        await new Promise((r) => setTimeout(r, 40));
         URL.revokeObjectURL = original;
         return revokedUrls.length;
       });
@@ -353,7 +352,7 @@ const result = await inBrowser(
         window.__c.focusInput();
       });
       await page.keyboard.type("name = f\"{ds.attrs['title']!r}\" # trailing", { delay: 1 });
-      await page.waitForTimeout(200);
+      await waitForConsole(page, () => Boolean(window.__c.q(".cmd-cursor-line .bp-tok-comment")));
       const liveState = await page.evaluate(() => {
         const cells = [...window.__c.qa(".cmd-cursor-line [data-text]")].filter(
           (c) => (c.textContent ?? "") !== "",
@@ -423,7 +422,7 @@ const result = await inBrowser(
 
       // lifecycle
 
-      const lifecycle = await page.evaluate(async () => {
+      const lifecycle = await page.evaluate(() => {
         const element = window.__c.element;
         const mock = window.__c.mock;
         const before = mock.listenerCount;
@@ -431,13 +430,16 @@ const result = await inBrowser(
         element.remove();
         const afterRemove = mock.listenerCount;
         parent.append(element);
-        await new Promise((r) => setTimeout(r, 20));
         const afterReadd = mock.listenerCount;
         return { before, afterRemove, afterReadd, disposed: mock.disposed };
       });
       checks.push({
         name: "disconnecting unsubscribes and does NOT dispose an injected engine",
-        pass: lifecycle.afterRemove === 0 && lifecycle.disposed === false,
+        pass:
+          lifecycle.before > 0 &&
+          lifecycle.afterRemove === 0 &&
+          lifecycle.afterReadd === lifecycle.before &&
+          lifecycle.disposed === false,
         detail: JSON.stringify(lifecycle),
       });
 
@@ -471,34 +473,29 @@ const result = await inBrowser(
         'Traceback (most recent call last):\n  File "<console>", line 1, in <module>\n' +
         "NameError: name 'ls' is not defined\n";
 
-      const rendered = await page.evaluate((text) => {
+      await page.evaluate((text) => {
         window.__c.mock.emit({ type: "stderr", text, executionId: "tb" });
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            // THE TRACEBACK'S OWN LINE, by the execution id it was emitted with.
-            // `querySelector(".bp-stderr")` takes the FIRST stderr in the transcript, which is
-            // only the traceback while nothing else has written to stderr - and Ctrl+C answers
-            // `KeyboardInterrupt` the way Python does, which the check above presses.
-            const el = window.__el.shadowRoot.querySelector('.bp-stderr[data-execution-id="tb"]');
-            if (!el) return resolve({ missing: true });
-            const cs = getComputedStyle(el);
-            const lineHeight = parseFloat(cs.lineHeight);
-            const probe = document.createElement("span");
-            probe.style.color = cs.getPropertyValue("--bp-console-error");
-            document.body.append(probe);
-            const errorToken = getComputedStyle(probe).color;
-            probe.remove();
-            resolve({
-              whiteSpace: cs.whiteSpace,
-              height: el.getBoundingClientRect().height,
-              lineHeight,
-              lines: Math.round(el.getBoundingClientRect().height / lineHeight),
-              color: cs.color,
-              errorToken,
-            });
-          }, 250);
-        });
       }, traceback);
+      await waitForConsole(page, () => Boolean(window.__c.q('.bp-stderr[data-execution-id="tb"]')));
+      const rendered = await page.evaluate(() => {
+        const el = window.__c.q('.bp-stderr[data-execution-id="tb"]');
+        if (!el) return { missing: true };
+        const cs = getComputedStyle(el);
+        const lineHeight = parseFloat(cs.lineHeight);
+        const probe = document.createElement("span");
+        probe.style.color = cs.getPropertyValue("--bp-console-error");
+        document.body.append(probe);
+        const errorToken = getComputedStyle(probe).color;
+        probe.remove();
+        return {
+          whiteSpace: cs.whiteSpace,
+          height: el.getBoundingClientRect().height,
+          lineHeight,
+          lines: Math.round(el.getBoundingClientRect().height / lineHeight),
+          color: cs.color,
+          errorToken,
+        };
+      });
 
       checks.push({
         name: "a three-line traceback occupies three lines, not one",

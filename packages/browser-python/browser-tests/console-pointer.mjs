@@ -8,7 +8,7 @@
  * never matched. Hence the rule here: NO `focusInput()`, no `element.focus()`, no `.click()` on a
  * node, only `page.mouse` at real coordinates.
  */
-import { consolePage } from "./console-fixture.mjs";
+import { consolePage, waitForConsole } from "./console-fixture.mjs";
 import { bundleConsole, inBrowser, report, requireDist, serve } from "./harness.mjs";
 
 requireDist();
@@ -209,7 +209,9 @@ const result = await inBrowser(
           window.__c.mock.emit({ type: "stdout", text: `line ${i}\n`, executionId: `e${i}` });
         }
       });
-      await page.waitForTimeout(400);
+      const scrollOutput = await waitForConsole(page, () =>
+        Boolean(window.__c.q('.bp-stdout[data-execution-id="e119"]')),
+      );
 
       const scrollState = () =>
         page.evaluate(() => {
@@ -238,8 +240,8 @@ const result = await inBrowser(
 
       checks.push({
         name: "there is something to scroll, and wheeling up moved off the bottom",
-        pass: before.overflow > 100 && before.top < before.overflow,
-        detail: JSON.stringify(before),
+        pass: scrollOutput && before.overflow > 100 && before.top < before.overflow,
+        detail: JSON.stringify({ rendered: scrollOutput, ...before }),
       });
       checks.push({
         name: "the mouse wheel scrolls the transcript down",
@@ -264,12 +266,14 @@ const result = await inBrowser(
       await page.evaluate(() => {
         window.__c.mock.emit({ type: "stdout", text: "background line\n", executionId: "bg" });
       });
-      await page.waitForTimeout(350);
+      const backgroundOutput = await waitForConsole(page, () =>
+        Boolean(window.__c.q('.bp-stdout[data-execution-id="bg"]')),
+      );
       const afterBackground = await scrollState();
       checks.push({
         name: "background output leaves a reader who has scrolled up where they are",
-        pass: afterBackground.top < 200,
-        detail: JSON.stringify(afterBackground),
+        pass: backgroundOutput && afterBackground.top < 200,
+        detail: JSON.stringify({ rendered: backgroundOutput, ...afterBackground }),
       });
 
       await page.evaluate(() =>
