@@ -1,0 +1,582 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/landing.schema.json",
+  "title": "Freva portal landing definition",
+  "description": "One named landing: an ordered list of framework-owned block types carrying project-owned data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "title", "blocks"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/block"
+      }
+    }
+  },
+  "$defs": {
+    "instanceId": {
+      "type": "string",
+      "pattern": "^[a-z][a-zA-Z0-9]*(-[a-zA-Z0-9]+)*$",
+      "maxLength": 64
+    },
+    "localPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "not": {
+        "pattern": "^[a-zA-Z]+:"
+      }
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "longText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1200
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/text"
+        },
+        "landing": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "component": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "href": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["landing"],
+          "properties": {
+            "landing": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["component"],
+          "properties": {
+            "component": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["href"],
+          "properties": {
+            "href": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        }
+      ]
+    },
+    "block": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": [
+            "hero",
+            "prose",
+            "cards",
+            "links",
+            "callout",
+            "component-link",
+            "component-search",
+            "dataset-tree"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/blockHero"
+        },
+        {
+          "$ref": "#/$defs/blockProse"
+        },
+        {
+          "$ref": "#/$defs/blockCards"
+        },
+        {
+          "$ref": "#/$defs/blockLinks"
+        },
+        {
+          "$ref": "#/$defs/blockCallout"
+        },
+        {
+          "$ref": "#/$defs/blockComponentLink"
+        },
+        {
+          "$ref": "#/$defs/blockComponentSearch"
+        },
+        {
+          "$ref": "#/$defs/blockDatasetTree"
+        }
+      ]
+    },
+    "blockHero": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "heading"],
+      "properties": {
+        "type": {
+          "const": "hero"
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        },
+        "summary": {
+          "$ref": "#/$defs/longText"
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        }
+      }
+    },
+    "blockProse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "source"],
+      "properties": {
+        "type": {
+          "const": "prose"
+        },
+        "source": {
+          "$ref": "#/$defs/localPath"
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "blockCards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "items"],
+      "properties": {
+        "type": {
+          "const": "cards"
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["title"],
+            "properties": {
+              "title": {
+                "$ref": "#/$defs/text"
+              },
+              "summary": {
+                "$ref": "#/$defs/longText"
+              },
+              "landing": {
+                "$ref": "#/$defs/instanceId"
+              },
+              "component": {
+                "$ref": "#/$defs/instanceId"
+              },
+              "href": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              }
+            }
+          }
+        }
+      }
+    },
+    "blockLinks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "items"],
+      "properties": {
+        "type": {
+          "const": "links"
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        }
+      }
+    },
+    "blockCallout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "body"],
+      "properties": {
+        "type": {
+          "const": "callout"
+        },
+        "level": {
+          "enum": ["note", "tip", "warning", "caution"]
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        },
+        "body": {
+          "$ref": "#/$defs/longText"
+        }
+      }
+    },
+    "blockComponentLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "component", "label"],
+      "properties": {
+        "type": {
+          "const": "component-link"
+        },
+        "component": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "label": {
+          "$ref": "#/$defs/text"
+        },
+        "summary": {
+          "$ref": "#/$defs/longText"
+        }
+      }
+    },
+    "blockComponentSearch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "component"],
+      "properties": {
+        "type": {
+          "const": "component-search"
+        },
+        "component": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        },
+        "placeholder": {
+          "$ref": "#/$defs/text"
+        },
+        "submitLabel": {
+          "$ref": "#/$defs/text"
+        },
+        "flavour": {
+          "$ref": "#/$defs/flavourName"
+        },
+        "fixedFacets": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "blockDatasetTree": {
+      "type": "object",
+      "description": "A dataset archive, browsed in place. TWO SOURCE MODES, exactly one of which must be given. `catalog` is a build-time SNAPSHOT: a project-owned file validated and embedded while the artifact is produced, so the block issues no request at page load and depends on no service being up. `s3` is LIVE: the block lists one prefix of an S3-compatible gateway when a row is expanded, which is how a petabyte archive is browsed without a build that walks it. A live block adds the endpoint to the recorded `connect-src` and its contents depend on that gateway being up and CORS-readable; a snapshot block adds nothing and depends on nothing. It is a full-width landing block in the portal's normal content region: a hierarchy with descriptions, right-aligned metadata and an inline detail panel needs the page's width, not a hero column.",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "dataset-tree"
+        },
+        "catalog": {
+          "$ref": "#/$defs/localPath",
+          "description": "Path to a dataset-tree-catalog-v1 JSON document, relative to this landing file and inside the source root. Read at build time and embedded in the page; never fetched. Mutually exclusive with `s3`."
+        },
+        "s3": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["endpoint", "roots"],
+          "description": "Browse an S3-compatible gateway live, one prefix per expanded row. Mutually exclusive with `catalog`. THE ROOTS ARE DECLARED, never discovered: this never issues ListBuckets, because an S3 root legitimately answers 403 and a browser cannot be asked to enumerate someone's account. What a visitor can reach is what the deployment listed here.",
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "description": "Absolute URL of the gateway, with no credentials and no query. Its ORIGIN is added to the artifact's recorded `connect-src`, and nothing else about the policy changes. HTTPS, except a loopback host over http for a development gateway. Checked by the build rather than by a pattern here: a block whose `type` is right and whose endpoint is a typo should be told which value is wrong and why, and a failed pattern inside a discriminated union reports every OTHER block type instead.",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "style": {
+              "enum": ["path", "virtual-host"],
+              "description": "`path` puts the bucket in the URL path; `virtual-host` puts it in the hostname. Default `path`, which is what a self-hosted gateway serves and what needs no wildcard certificate."
+            },
+            "roots": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "description": "The buckets and prefixes this tree may browse. Required, and the whole of what is reachable.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "bucket"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "description": "Node identifier. Defaults to `s3://bucket/prefix`, which is already stable and unique."
+                  },
+                  "name": {
+                    "$ref": "#/$defs/text",
+                    "description": "The row label."
+                  },
+                  "bucket": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+                    "description": "Bucket name."
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Key prefix to start at. Must end with `/` when given, and must not start with one; the build says so by name rather than by a pattern here, so the message names the root that is wrong."
+                  },
+                  "title": {
+                    "$ref": "#/$defs/text"
+                  },
+                  "description": {
+                    "$ref": "#/$defs/text"
+                  },
+                  "link": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["href"],
+                    "description": "A project or documentation page for this collection, drawn as a small external-link control beside its title. Carried rather than derived: a URL invented from the bucket name would navigate a reader to a raw storage listing instead of a page written for them.",
+                    "properties": {
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "description": "Absolute https URL. Checked by the build, which names the root that is wrong."
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "description": "Accessible name for the link. Defaults to a generic one."
+                      }
+                    }
+                  },
+                  "planned": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60,
+                    "description": "Announced but not yet browsable, and the badge's exact text. The row is drawn with no chevron, no aria-expanded and no listing request - not on expansion, because there is none, and not on the background availability probe either."
+                  }
+                }
+              }
+            },
+            "maxKeys": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Keys per request. Default 1000, the protocol maximum."
+            },
+            "maxPages": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Continuation pages per expansion. Default 25. Reaching it stops the walk and says so in the row; it is never a silent cut."
+            },
+            "requestTimeoutMs": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 120000,
+              "description": "Per-request timeout. Default 20000."
+            },
+            "retries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5,
+              "description": "Retries for network errors and 5xx only. Default 1. Never unbounded."
+            },
+            "datasetSuffixes": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "string",
+                "pattern": "^\\.[a-z0-9]{1,15}$"
+              },
+              "description": "Prefix suffixes that mark a chunked store rather than a directory - a `.zarr` prefix is one dataset, not a thousand chunk files, and the tree stops there. Default `[\".zarr\"]`."
+            }
+          }
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        },
+        "summary": {
+          "$ref": "#/$defs/text"
+        },
+        "expand": {
+          "type": "array",
+          "description": "Node identifiers to expand as soon as they appear, at any depth. In snapshot mode an identifier the catalogue does not contain is a build error rather than a silent no-op; in live mode the identifiers are `s3://bucket/prefix/` and cannot be checked at build time, because checking would mean listing the archive at build time - which is the thing live mode exists not to do.",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "statusLabel": {
+          "$ref": "#/$defs/text",
+          "description": "Pill text for the footer status line. Defaults to SNAPSHOT for a build-time catalogue and LIVE for an S3 source, which is the honest word for each."
+        },
+        "python": {
+          "type": "object",
+          "description": "The optional in-page Python playground. Absent, or `enabled: false`, and the block is Copy-only: no interpreter chunk is loaded, no Worker or iframe is created, and the page's Content-Security-Policy is not widened. Turning it on adds a run control beside eligible examples in the catalogue and a terminal window to run them in.",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "The whole switch. Everything below is inert while this is false."
+            },
+            "profile": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$",
+              "description": "Which browser-python profile the interpreter loads, e.g. `xarray-zarr`. Passed through verbatim: the set of profiles belongs to that package and a list here would go stale."
+            },
+            "autostart": {
+              "enum": ["never", "after-interactive", "immediately"],
+              "description": "When the interpreter is brought up. `never` waits for the first run; `after-interactive` warms it once the page is idle; `immediately` starts it during load and is a deliberate cost on every visitor, including the ones who never press anything. Default `never`."
+            },
+            "network": {
+              "enum": ["origins", "https"],
+              "description": "How much of the network this page's Python may reach. `origins` (the default) is the exact allowlist and nothing else, with a public package index refused wherever it is configured. `https` adds the `https:` SCHEME to `connect-src` - any TLS origin, never plaintext - which is what lets a visitor run `micropip.install(\"name\")`, paste a wheel URL, or read a CORS-enabled dataset nobody listed at deployment time. The prepared environment is unchanged and is still the starting point. Choose it deliberately: an installed package runs in the same interpreter as the rest of the session. Add-ons are NOT configurable here - they belong to the portal-level `pythonPlayground` stanza, which is where the artefacts they need are resolved."
+            },
+            "maxSessions": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2,
+              "description": "How many independent interpreters one page may hold. Two is the ceiling and not merely the default: each is a Worker with its own WASM heap, and the second one is created only after the visitor has been told what it costs."
+            },
+            "initialSource": {
+              "type": "string",
+              "maxLength": 4096,
+              "description": "Python run once, into a new session, before anything the visitor asks for. Part of the portal's own configuration and therefore trusted exactly as much as the rest of it."
+            },
+            "playgroundOrigin": {
+              "type": "string",
+              "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)$",
+              "description": "Serve the interpreter from THIS origin, in a frame, instead of the portal's own. Recommended for a public deployment: visitor Python and anything it installs otherwise run with the portal's origin authority. An exact origin, never a wildcard and never a path. HTTPS, with one exception: a loopback host over http, because that is what a development server and an acceptance run are - and a browser already treats loopback as a secure context, so the interpreter's own WebAssembly and crypto requirements are met there. Any other http origin is refused."
+            },
+            "runtimeIndexUrl": {
+              "type": "string",
+              "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)(?:/[A-Za-z0-9._~-]+)*/$",
+              "description": "Fetch the Python runtime from THIS directory instead of the pinned CDN. A deployment that mirrors Pyodide - because its network does not reach a CDN, or because it will not depend on one - points this at its own copy, and the recorded Content-Security-Policy names that origin instead. Must end with a slash: it is a directory the interpreter resolves file names against, not a file. The version it serves must be the one this build pins; a different one is a runtime the console was not built for."
+            },
+            "terminal": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "How the window around the console is drawn.",
+              "properties": {
+                "style": {
+                  "const": "freva-client-terminal",
+                  "description": "The only value, and it is spelled out rather than assumed so a second style can be added later without changing what an existing portal means."
+                },
+                "osControls": {
+                  "enum": ["auto", "mac", "windows", "linux"],
+                  "description": "Which window controls to draw. `auto` reads the visitor's platform."
+                },
+                "alwaysOnTop": {
+                  "type": "boolean",
+                  "description": "Keep the window above portal-owned content, including while minimized. It cannot cover browser-native surfaces - a file picker, a permission prompt, fullscreen UI - and does not claim to."
+                },
+                "rememberAppearance": {
+                  "type": "boolean",
+                  "description": "Persist the window's colour, opacity and text size in this browser."
+                }
+              }
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["catalog"],
+          "properties": {
+            "catalog": true,
+            "s3": false
+          }
+        },
+        {
+          "required": ["s3"],
+          "properties": {
+            "s3": true,
+            "catalog": false
+          }
+        }
+      ]
+    },
+    "flavourName": {
+      "$comment": "A flavour is a lens the DEPLOYMENT's own freva-rest instance serves, not a value this schema can know. The widget types it as a plain string for exactly that reason. Constrained to an identifier so a typo is still caught, but never to a fixed list - a portal whose backend serves `waterpark` must be able to name it.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$comment": "The access recipes a live dataset-tree block shows for a store, as DATA rather than as a module. Read by the build, which hashes each `template` and registers the runnable ones, and by the page, which fills the one `{{STORE}}` hole with a store identifier it has validated against the block's configured endpoint and declared roots. It lives here, in a directory the package publishes, because the two readers are on opposite sides of a boundary: `src/` reaches a consumer only as compiled `dist/`, `client/` ships as TypeScript for their bundler, and a module in one imported from the other is either unpublished or unresolvable. One file, one set of bytes, one digest. THERE IS ONE RECIPE. An `s3fs` route used to sit beside this one and was removed: it needs botocore and a credential chain, so it is in no browser profile and never carried a run control, and what a reader met was a tab they could not run beside a tab they could - two ways to open the same store, one of them theoretical, in a panel three disclosures deep. The route that works anonymously over HTTPS is the one the hub is for. A deployment that needs another adds it as its own example. `description` is absent on purpose: the snippet's first line is an xarray open over an https:// URL, and a sentence saying the store is opened over HTTPS restates it.",
+  "schemaVersion": 1,
+  "recipes": [
+    {
+      "id": "http",
+      "label": "HTTP",
+      "template": "import xarray as xr\n\nds = xr.open_dataset(\n    \"{{STORE}}\",\n    engine=\"zarr\",\n)\nprint(ds)\n",
+      "parameter": "https-url",
+      "requires": ["xarray", "zarr", "fsspec"]
+    }
+  ]
+}

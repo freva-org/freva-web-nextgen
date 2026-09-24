@@ -1,0 +1,148 @@
+---
+/**
+ * The footer: a compact bar - the Freva lockup and the institution - that unrolls into the site
+ * index as the visitor scrolls through the space reserved for it at the end of a document page.
+ * Application views keep the bar and never expand, which keeps the viewport-locked layout from
+ * losing rows to a footer.
+ *
+ * The index is written at build time from validated configuration; the shell island owns the
+ * expansion behaviour and the height reservation, because both depend on the viewport, not data.
+ */
+import frevaMark from "../assets/freva-mark.webp?url";
+import type { ResolvedPortalModel } from "../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+}
+
+const { model } = Astro.props;
+const { chrome, site } = model;
+const footer = chrome.footer;
+const badge = footer.badge;
+
+/**
+ * The manifest's own legal URLs merged with the group links, de-duplicated by href so a consumer
+ * that writes a privacy link in both places gets one.
+ */
+const legal: { label: string; href: string; external: boolean }[] = [];
+const seen = new Set<string>();
+for (const link of footer.legalLinks) {
+  if (seen.has(link.href)) continue;
+  seen.add(link.href);
+  legal.push(link);
+}
+
+const hasIndex = footer.groups.length > 0 || legal.length > 0 || Boolean(footer.prose);
+---
+
+{
+  footer.enabled && (
+    <footer class="portal-footer" data-mode="landing" data-expanded="false" data-has-index={hasIndex ? "true" : "false"}>
+      <div class="portal-footer-expanded" hidden>
+        <div class="portal-footer-inner-wrap">
+        <div class="portal-footer-inner">
+          {site.institution && (
+            <div class="portal-footer-about">
+              <p class="portal-footer-org">{site.institution.name}</p>
+              {site.institution.url && (
+                <a
+                  class="portal-footer-link"
+                  href={site.institution.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {site.institution.url}
+                </a>
+              )}
+            </div>
+          )}
+
+          {footer.groups.map((group) => (
+            <div class="portal-footer-group">
+              {group.title && <h2 class="portal-footer-group-title">{group.title}</h2>}
+              <ul class="portal-footer-links">
+                {group.links.map((link) => (
+                  <li>
+                    <a
+                      class="portal-footer-link"
+                      href={link.href}
+                      target={link.external ? "_blank" : undefined}
+                      rel={link.external ? "noopener noreferrer" : undefined}
+                    >
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {legal.length > 0 && (
+          <ul class="portal-footer-legal">
+            {legal.map((link) => (
+              <li>
+                <a
+                  class="portal-footer-link"
+                  href={link.href}
+                  target={link.external ? "_blank" : undefined}
+                  rel={link.external ? "noopener noreferrer" : undefined}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {footer.prose && (
+          <div class="portal-footer-content portal-prose">
+            <Fragment set:html={footer.prose.html} />
+          </div>
+        )}
+        </div>
+      </div>
+
+      <div class="portal-footer-bar">
+        {badge ? (
+          /*
+            The badge replaces the lockup - never both. It draws its own mark, wordmark and panel,
+            so a second "powered by" beside it would be the same credit twice. This is only the
+            anchor the adapter mounts into and the thing focus returns to.
+
+            `data-portal-badge-live` is the one picture the portal lends it: the animated Freva
+            mark the Data Browser carries, the badge's resting state. The badge has its own still
+            and falls back to it, so this is a loan and not a dependency.
+          */
+          <span
+            class="portal-footer-badge"
+            id="portal-footer-badge"
+            data-portal-badge={badge.kind}
+            data-portal-badge-quality={badge.quality}
+            data-portal-badge-assets={badge.assetBase}
+            data-portal-badge-live={frevaMark}
+          />
+        ) : (
+        <span class="portal-freva-lockup">
+          {/*
+            The Freva mark itself, the animated one the Data Browser carries, emitted as a hashed
+            file rather than inlined: it is 81 KiB, and one cached request beats that much base64
+            in the HTML of every page. The static mark beside it is what a visitor who asked for
+            reduced motion sees - an animated image cannot be paused from CSS, so the choice is
+            made by showing one or the other.
+          */}
+          <span class="portal-freva-mark" aria-hidden="true">
+            <img class="portal-freva-logo" src={frevaMark} alt="" decoding="async" />
+            <span class="portal-freva-glyph">FV</span>
+          </span>
+          <span class="portal-freva-text">
+            <span class="portal-freva-kicker">Powered by</span>
+            <span class="portal-freva-name">Freva</span>
+          </span>
+        </span>
+        )}
+        <span class="portal-footer-institution">{site.institution?.name ?? ""}</span>
+      </div>
+    </footer>
+  )
+}

@@ -1,0 +1,82 @@
+---
+/**
+ * The generated separate-origin playground document.
+ *
+ * DEPLOYED ELSEWHERE. Emitted into the portal artifact at `playground-origin/`, it is the only
+ * part of that artifact that does NOT belong on the portal's origin: it is copied to the origin
+ * the configuration names and served from that origin's root, by the command in
+ * `docs/configuration.md`. Nothing on the portal links to it - the parent reaches it with an
+ * `<iframe src>` at the configured origin, never at a portal path.
+ *
+ * NOT A PORTAL PAGE. No `Shell`, so no chrome, no navigation, no theme stylesheet, and above all
+ * no `virtual:portal-entry`: the portal's island entry is not in this document's graph, which
+ * keeps the child from carrying the parent's code and the parent from carrying the child's.
+ *
+ * NO STYLESHEET OF ITS OWN EITHER - the child's layout is adopted at run time by its entry module.
+ * The compiler links the CSS of everything a page's graph can reach, so a `<style>` block here
+ * would become a stylesheet asset in every portal's artifact, including ones with no playground,
+ * whose absence check would then find a rule naming `freva-python-console` in a build that
+ * contains no interpreter.
+ *
+ * NOTHING INLINE. The configuration and the example manifest travel in
+ * `<script type="application/json">` blocks, which no browser executes and which therefore need
+ * nothing from `script-src`; the one real script is a module the bundler emitted. So the document
+ * runs under a policy with no `unsafe-inline` anywhere - see `playground-origin/HEADERS.md`,
+ * which the build writes beside it.
+ */
+import model from "virtual:portal-model";
+
+export function getStaticPaths() {
+  // Emitted only when a landing asked for a second origin. A portal without one contains no
+  // playground document at all, which is a checkable fact rather than a claim.
+  return model.playground ? [{ params: { child: undefined } }] : [];
+}
+
+const playground = model.playground!;
+// The configuration the child needs, and not one field more. The portal's title, its navigation,
+// its component list and its theme are absent on purpose: this document is not the portal, and an
+// artifact that described one would be a description deployed to somebody else's origin.
+const config = {
+  hostOrigin: playground.hostOrigin,
+  profile: playground.profile,
+  protocolVersion: playground.protocolVersion,
+  runtimeIndexUrl: playground.runtimeIndexUrl,
+  ...(playground.initialSource ? { initialSource: playground.initialSource } : {}),
+  // The interpreter's own configuration, which is the CHILD's business: in this topology the
+  // parent never builds an interpreter, so it cannot know which add-ons to prepare or where the
+  // wheels are. Everything the engine needs is here, in the document that creates it.
+  ...(playground.wheelhouseUrl ? { wheelhouseUrl: playground.wheelhouseUrl } : {}),
+  ...(playground.addonBaseUrl ? { addonBaseUrl: playground.addonBaseUrl } : {}),
+  ...(playground.addons && playground.addons.length > 0 ? { addons: playground.addons } : {}),
+  ...(playground.persistCredentials ? { persistCredentials: true } : {}),
+};
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Python playground</title>
+  </head>
+  <body>
+    <p id="playground-status" role="status" hidden></p>
+    <div id="playground-root"></div>
+    <script
+      type="application/json"
+      id="playground-config"
+      is:inline
+      set:html={JSON.stringify(config).replaceAll("<", "\\u003c")}
+    />
+    <script
+      type="application/json"
+      id="playground-examples"
+      is:inline
+      set:html={JSON.stringify(playground.examples).replaceAll("<", "\\u003c")}
+    />
+    <noscript>
+      <p>This playground needs JavaScript. The portal's pages still work without it.</p>
+    </noscript>
+    <script>import "virtual:portal-playground-entry";</script>
+  </body>
+</html>

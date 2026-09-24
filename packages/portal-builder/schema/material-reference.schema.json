@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/material-reference.schema.json",
+  "title": "Structured material reference",
+  "description": "The only grammar a manifest may use to name an input. Absolute caller paths and temporary directory names are never artifact identity.",
+  "$comment": "The root schema validates one reference, so the grammar can be checked directly as well as through $defs.",
+  "$ref": "#/$defs/materialRef",
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "sourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": {
+          "const": "source"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^[^/][^\\\\]*$",
+          "description": "NFC, POSIX, source-root-relative."
+        }
+      }
+    },
+    "packageRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "purl", "path"],
+      "properties": {
+        "kind": {
+          "const": "package"
+        },
+        "purl": {
+          "type": "string",
+          "pattern": "^pkg:[a-z]+/"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^[^/][^\\\\]*$"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "imageRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reference",
+        "indexDigest",
+        "manifestDigest",
+        "configDigest",
+        "platform"
+      ],
+      "properties": {
+        "kind": {
+          "const": "image"
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "indexDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "manifestDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "configDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "architecture"],
+          "properties": {
+            "os": {
+              "type": "string",
+              "minLength": 1
+            },
+            "architecture": {
+              "type": "string",
+              "minLength": 1
+            },
+            "variant": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "materialRef": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sourceRef"
+        },
+        {
+          "$ref": "#/$defs/packageRef"
+        },
+        {
+          "$ref": "#/$defs/imageRef"
+        }
+      ]
+    }
+  }
+}

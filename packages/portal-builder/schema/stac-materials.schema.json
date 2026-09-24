@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/stac-materials.schema.json",
+  "title": "Prepared STAC Browser materials manifest",
+  "description": "The closed description of the tree a consumer build reads instead of cloning, patching and compiling upstream STAC Browser. It is framework-produced, not consumer-authored, which is exactly why it is validated: a builder image is an input like any other, and a malformed or tampered manifest must fail the build rather than steer it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "upstream", "patches", "entry", "files", "treeDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "stac-browser-materials" },
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "commit"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$",
+          "description": "The pinned upstream repository. https only: the pin is evidence, and an unauthenticated scheme cannot carry it."
+        },
+        "tag": { "type": "string", "minLength": 1 },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Full object name. An abbreviated one is ambiguous by construction."
+        },
+        "sourceDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "patches": {
+      "type": "array",
+      "description": "The small reviewed framework patch series, in apply order. Empty is legal and means unpatched upstream.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "digest"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[A-Za-z0-9][A-Za-z0-9._-]*\\.patch$"
+          },
+          "digest": { "$ref": "#/$defs/digest" }
+        }
+      }
+    },
+    "entry": { "$ref": "#/$defs/materialsPath" },
+    "styles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/materialsPath" }
+    },
+    "mountId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "digest", "bytes"],
+        "properties": {
+          "path": { "$ref": "#/$defs/materialsPath" },
+          "digest": { "$ref": "#/$defs/digest" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "treeDigest": { "$ref": "#/$defs/digest" },
+    "producer": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "materialsPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "A materials-root-relative POSIX path in NFC. No leading slash, no drive letter, no backslash, no dot segment, no empty segment, no percent-encoding, no control character, no trailing slash. Normalization beyond NFC is refused rather than performed: a path that needs normalizing is a path whose author and reader disagree.",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*//)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\u0000-\\u001f\\u007f\\\\%:*?\"<>|]+(?<!/)$"
+    }
+  }
+}

@@ -1,0 +1,321 @@
+---
+/**
+ * The one dynamic page template. `getStaticPaths()` receives every resolved route - landings,
+ * prose pages, component routes and the technical auth callback - and Astro writes a real HTML
+ * file for each. There is no history fallback and no client router: a deep link is a file, which
+ * is what makes the artifact servable by any static host and readable with JavaScript disabled.
+ *
+ * The markup inside each view is the portal's: `portal-landing`, `portal-doc-layout` with its
+ * sticky contents list, `portal-document` / `portal-prose` for prose, `portal-feature` for an
+ * embedded application.
+ */
+import model from "virtual:portal-model";
+import Shell from "../layouts/Shell.astro";
+import OutlineBar from "../components/OutlineBar.astro";
+import Blocks from "../components/Blocks.astro";
+import SectionNavList from "../components/SectionNavList.astro";
+import type { ResolvedRoute } from "../../../src/model/types.js";
+
+export function getStaticPaths() {
+  return model.routes
+    .filter((route) => route.kind !== "error")
+    .map((route) => ({
+      // `/` must produce `undefined`, not an empty segment.
+      params: { route: route.path === "/" ? undefined : route.path.replace(/^\/|\/$/g, "") },
+      props: { route },
+    }));
+}
+
+const { route } = Astro.props as { route: ResolvedRoute };
+const landing = route.landingId ? model.landings.find((l) => l.id === route.landingId) : undefined;
+const component = route.componentId
+  ? model.components.find((c) => c.id === route.componentId)
+  : undefined;
+const mountId =
+  component?.kind === "databrowser"
+    ? "portal-databrowser-mount"
+    : component?.kind === "stac-browser"
+      ? "stac-browser-mount"
+      : undefined;
+
+// The STAC root introduction, already rendered and sanitized by the resolver. Undefined for every
+// other component and every other route, so the region below simply does not exist.
+const stacIntroHtml =
+  component?.kind === "stac-browser"
+    ? (component.options as { rootPage?: { introHtml?: string } } | undefined)?.rootPage?.introHtml
+    : undefined;
+
+// The contents list, in the design's own shape: `data-depth` is relative to the shallowest
+// heading the page actually has, not the absolute level, so a document that starts at `h2` and
+// one that starts at `h3` read the same. Below two entries the list says nothing the page does
+// not already show, so it is not drawn at all.
+const headings = route.toc ?? [];
+const shallowest = headings.length > 0 ? Math.min(...headings.map((h) => h.depth)) : 0;
+const toc = headings.map((heading) => ({ ...heading, level: heading.depth - shallowest }));
+const showToc = toc.length >= 2;
+
+// The section list, and the rail that holds both lists. The rail's existence is decided by
+// whether EITHER group has something to say, not by the contents list alone: an introduction page
+// for a section usually has fewer than two eligible headings, and keying on the contents list
+// would take the whole left column away on exactly the page where knowing what else is in the
+// section helps most.
+//
+// The model does not say which item is the current page - one frozen section object is shared by
+// every route in it - so the comparison happens here, on `source`: an identity check on a file
+// rather than a string comparison between two URLs that a base path, a trailing slash or a
+// percent-encoding could make differ while naming the same page.
+const section = route.sectionNavigation;
+const showSection = (section?.items.length ?? 0) >= 2;
+const showRail = showSection || showToc;
+// A long section is a native `<details>`; a short one is a heading and a list. Native, so the
+// disclosure needs no JavaScript at all. Two shapes rather than one always-open `<details>`
+// because a `<summary>` is a control whether or not anybody wants it to be: on a three-page
+// section it offers an interaction whose entire effect is to hide something the reader could
+// simply have been shown, and the marker beside it promises exactly that.
+const collapsibleSection = (section?.items.length ?? 0) > 6;
+/**
+ * The document supplies its own opening heading when the source began with one; repeating the
+ * metadata title above it would show the same words twice.
+ */
+const ownHeading = /^\s*<h1[\s>]/.test(route.content?.html ?? "");
+
+// The same two lists, for the medium-width breadcrumb bar. Derived here rather than inside the
+// bar so the bar renders data and decides nothing: which item is current is the identity check
+// above, on `source`, and that does not survive a trip through a component boundary as two URLs.
+// Nested on the build side; see `ResolvedRoute.tocTree`.
+const outlineHeadings = showToc ? (route.tocTree ?? []) : [];
+const outlinePages = showSection
+  ? (section?.items ?? []).map((item) => ({
+      title: item.title,
+      href: item.href,
+      current: item.source === route.source,
+    }))
+  : [];
+---
+
+<Shell model={model} route={route}>
+  {
+    /*
+      This page's Python playground, as data - and only on a page that has something runnable. An
+      inert, hidden element carrying the resolved configuration, exactly as a dataset-tree block
+      carries its own. It is the anchor a failure is reported next to as well as the configuration
+      the provider reads, which is why it is an element rather than a script: a page that could
+      not load the coordinator has somewhere to say so. A page with no marked snippet does not
+      emit it, and a portal with no `pythonPlayground` never has one on any page.
+    */
+    route.python && (
+      <div
+        class="portal-python-config"
+        hidden
+        data-portal-python-playground={JSON.stringify(route.python)}
+      />
+    )
+  }
+
+  {
+    /*
+      The theme's drawn backdrop, behind the configurable landing page and nowhere else. Two inert
+      canvases and nothing more: every pixel in them is the runtime's, and with a preset that asks
+      for no backdrop neither element is emitted and the module is never imported.
+    */
+    landing && model.theme.backdrop === "contour" && (
+      <Fragment>
+        <canvas class="portal-contour" aria-hidden="true" />
+      </Fragment>
+    )
+  }
+
+  {
+    /*
+      The Cosmos scene's root: an empty element, inert and decorative. The scene is RETAINED -
+      baked sprites, SVG and generated keyframes, built once and thereafter only moved by the
+      compositor - so the root has to hold children, which is why it is a div rather than a
+      canvas. It is emitted empty because nothing about the drawing is known until the page has a
+      width and a height; a portal with no JavaScript keeps the theme's own sky gradient and a
+      completely readable page. The asset base is stamped here because only the build knows it:
+      the object bodies are published under a directory named for the digest of the set.
+    */
+    landing && model.theme.backdrop === "cosmos" && (
+      <Fragment>
+        <div
+          class="portal-cosmos"
+          aria-hidden="true"
+          data-portal-cosmos-assets={model.theme.sceneAssetBase}
+        />
+      </Fragment>
+    )
+  }
+
+  {
+    landing && (
+      <div class="portal-landing">
+        {model.theme.backdrop === "contour" && (
+          <canvas class="portal-contour-stripes" aria-hidden="true" />
+        )}
+        <Blocks
+          blocks={landing.blocks}
+          eyebrow={model.site.subtitle}
+          components={model.enabledComponents}
+          services={model.services}
+        />
+      </div>
+    )
+  }
+
+  {
+    route.kind === "content" && route.content && showRail && (
+      <OutlineBar
+        sectionLabel={section?.title}
+        sectionPages={outlinePages}
+        pageTitle={route.title}
+        headings={outlineHeadings}
+      />
+    )
+  }
+
+  {
+    route.kind === "content" && route.content && (
+      <div class="portal-doc-layout" data-rail={showRail ? "true" : "false"}>
+        {showRail && (
+          <div class="portal-doc-rail">
+            {showSection && section && (
+              <nav class="portal-section-nav" aria-labelledby="portal-section-nav-title">
+                {collapsibleSection ? (
+                  /*
+                    A long section. The summary is the group's visible heading AND its control, so
+                    the title is announced once rather than twice and the control's accessible
+                    name is the section title, which tells a reader on a phone what they are about
+                    to open.
+
+                    `open` is in the markup, at every width. Revealing the list with a desktop-only
+                    stylesheet rule instead would make the element say one thing and the screen
+                    show another: links visible while the control announces itself collapsed, and
+                    operating it reporting a state change with no visible effect. A reader who
+                    wants the document collapses it, on any screen, and it stays that way.
+                  */
+                  <details class="portal-section-nav-body" open>
+                    <summary class="portal-section-nav-title" id="portal-section-nav-title">
+                      {section.title}
+                    </summary>
+                    <SectionNavList
+                      items={section.items}
+                      current={route.source}
+                      toc={showToc ? toc : []}
+                    />
+                  </details>
+                ) : (
+                  <Fragment>
+                    <p class="portal-section-nav-title" id="portal-section-nav-title">
+                      {section.title}
+                    </p>
+                    <SectionNavList
+                      items={section.items}
+                      current={route.source}
+                      toc={showToc ? toc : []}
+                    />
+                  </Fragment>
+                )}
+              </nav>
+            )}
+            {/*
+              Only when there is no section list to hang the headings from. A page in a section
+              gets them nested under its own entry, inside `SectionNavList`, because two stacked
+              lists in one rail make a reader work out which column they are in. A page that is
+              not in one - a standalone document, or a section with a single page - still needs
+              its outline, and this is where it goes.
+            */}
+            {showToc && !showSection && (
+              <nav class="portal-toc" aria-labelledby="portal-toc-title">
+                <p class="portal-toc-title" id="portal-toc-title">On this page</p>
+                <ul class="portal-toc-list">
+                  {toc.map((heading) => (
+                    <li class="portal-toc-item" data-depth={heading.level}>
+                      <a class="portal-toc-link" href={`#${heading.id}`}>
+                        {heading.text}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
+          </div>
+        )}
+        <article class="portal-document">
+          {!ownHeading && <h1 class="portal-document-title">{route.title}</h1>}
+          <div
+            class={ownHeading ? "portal-prose portal-prose-leads" : "portal-prose"}
+            set:html={route.content.html}
+          />
+        </article>
+      </div>
+    )
+  }
+
+  {
+    route.kind === "component" && component && (
+      <div
+        class={
+          component.kind === "stac-browser" ? "portal-feature portal-feature-stac" : "portal-feature"
+        }
+        data-component={component.kind}
+      >
+        <h1 class="portal-visually-hidden">{component.title}</h1>
+        {
+          /*
+            The portal-owned root introduction, rendered by the portal's own `portal-content-v1`
+            pipeline - the same one every other fragment goes through, so headings, links, images,
+            animated GIFs and captions work and local assets are rewritten through the
+            content-hashed asset pipeline - and sanitized before it gets here. It is never passed
+            to upstream and never through upstream's CommonMark renderer.
+
+            It ships hidden. The adapter sets `data-portal-stac-view` on the root element from the
+            document it just loaded, and the stylesheet reveals this only at `root`, so a deep
+            link to an item never flashes the catalogue's introduction before hiding it.
+          */
+          stacIntroHtml && (
+            <div class="portal-stac-intro" data-portal-stac-intro>
+              <div class="portal-prose" set:html={stacIntroHtml} />
+            </div>
+          )
+        }
+        {/*
+          `portal-stac-mount` is not decoration and not a duplicate of the id. `freva-stac.css`
+          maps upstream's `--sb-*` hooks onto the shell's tokens, and upstream declares its own
+          defaults for those on this very element - the build scopes its `:root` block to the
+          mount. Two rules at equal specificity are settled by source order, and upstream's
+          stylesheet is appended to the head at mount time, so the id alone loses; the class is
+          what makes the portal's block win.
+        */}
+        <div
+          class={
+            component.kind === "stac-browser"
+              ? "portal-feature-fill portal-stac-mount"
+              : "portal-feature-fill"
+          }
+          id={mountId}
+        >
+          <p class="portal-note" data-portal-boundary>
+            This application needs JavaScript. If it does not appear, the portal's other pages
+            still work and the data service can be used directly.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  {
+    route.kind === "auth-callback" && (
+      <section class="portal-sandbox" data-portal-callback data-portal-callback-state="working">
+        <h1 class="portal-document-title">Signing in</h1>
+        <p class="portal-note" data-portal-callback-message>
+          Completing sign-in and returning you to the portal.
+        </p>
+        <p>
+          <a class="portal-button" href={model.site.basePath}>
+            Back to {model.site.title}
+          </a>
+        </p>
+      </section>
+    )
+  }
+</Shell>

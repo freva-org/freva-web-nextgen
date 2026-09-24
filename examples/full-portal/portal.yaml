@@ -1,0 +1,172 @@
+# The full fictional consumer.
+#
+# It exercises every part of the v1 contract: chrome, a registered theme preset,
+# Markdown and RST content, fragments, assets, downloads, all three components,
+# typed navigation, a dated announcement and a trusted documentation subsite.
+# None of it belongs to a real project - that is the point of D2/D3.
+schemaVersion: 1
+
+site:
+  id: example-research
+  title: Example Research Portal
+  subtitle: Discover data and project resources
+  language: en
+  canonicalUrl: https://portal.example.org/site/
+  identity:
+    logo: ./assets/logo.svg
+    favicon: ./assets/favicon.svg
+  institution:
+    name: Example Institute
+    url: https://www.example.org/
+
+chrome:
+  header:
+    enabled: true
+    links:
+      - label: Reference
+        href: /reference/
+  footer:
+    enabled: true
+    groups:
+      - title: Project
+        links:
+          - label: Documentation
+            href: /docs/
+          - label: Guide
+            href: /docs/guide/
+      - title: Elsewhere
+        links:
+          - label: Institute
+            href: https://www.example.org/
+    legalLinks:
+      - label: Privacy
+        href: https://portal.example.org/privacy/
+    prose: ./content/_fragments/footer-note.md
+
+theme:
+  preset: waterpark
+  tokens:
+    colorAccent: "#006f86"
+
+rendering:
+  profile: portal-content-v1
+  sources:
+    - root: ./content
+      mount: /docs/
+      files:
+        include:
+          - "**/*.md"
+          - "**/*.rst"
+        exclude:
+          - "_fragments/**"
+          - "**/README.md"
+  assets:
+    - root: ./assets
+      mount: /assets/
+  downloads:
+    - root: ./downloads
+      mount: /downloads/
+  diagnostics:
+    warningsAsErrors: false
+
+landings:
+  home:
+    path: /
+    source: ./landings/home.yaml
+  workshop:
+    path: /workshop/
+    source: ./landings/workshop.yaml
+
+services:
+  dataApi:
+    kind: databrowser
+    baseUrl: /api/freva-nextgen/databrowser
+    authentication: optional
+  publicCatalog:
+    kind: stac
+    catalogUrl: /api/freva-nextgen/stac/?visible_collections=collection-a,collection-b
+  authBroker:
+    kind: auth
+    baseUrl: /api/freva-nextgen/auth/v2
+
+components:
+  data:
+    kind: databrowser
+    enabled: true
+    service: dataApi
+    route: /data/
+    options:
+      defaultFlavour: freva
+      fixedFacets:
+        project: example
+  catalog:
+    kind: stac-browser
+    enabled: true
+    service: publicCatalog
+    route: /catalog/
+    options:
+      chrome:
+        title: Example Catalog
+        image: ./assets/catalog-mark.svg
+        footerLinks:
+          - label: Institute
+            href: https://www.example.org/
+      access:
+        externalCatalogs: deny
+      rootPage:
+        title: Example Research Catalog
+        intro: ./content/_fragments/catalog-intro.md
+        keywords:
+          - example
+          - reanalysis
+        license: CC-BY-4.0
+        providers:
+          - name: Example Institute
+            url: https://www.example.org/
+            roles:
+              - host
+      linkPolicy:
+        canonicalizeAdvertisedRoot: true
+        hiddenRelations:
+          - service-desc
+  login:
+    kind: auth
+    enabled: true
+    service: authBroker
+    options:
+      callbackPath: /auth/callback/
+      expectedIssuer: https://identity.example.org/realms/portal
+      additionalResourceOrigins:
+        - https://jobs.example.org
+
+navigation:
+  header:
+    - landing: home
+      label: Home
+    - component: data
+      label: Data Browser
+    - component: catalog
+      label: Catalog
+    - href: /docs/
+      label: Documentation
+    - landing: workshop
+      label: Workshop
+
+announcements:
+  - id: winter-maintenance
+    message: The archive is read-only during the winter maintenance window.
+    level: warning
+    dismissible: true
+    startsAt: "2026-01-05T08:00:00Z"
+    endsAt: "2026-01-09T18:00:00Z"
+  - id: always-on
+    message: This is a fictional portal used by the framework's own tests.
+    level: info
+    dismissible: true
+
+trustedSubsites:
+  - profile: static-docs-v1
+    source: ./reference-docs
+    mount: /reference/
+    trust: active
+    policy: ./subsite-policies/reference.json

@@ -1,0 +1,135 @@
+---
+/**
+ * The breadcrumb bar that carries the page outline at medium widths.
+ *
+ * Between phone and desktop the header has room for the site sections but not for the page's own
+ * structure as well, and a boxed contents list above the article would put a screenful between a
+ * reader and the first sentence. So the outline moves out of the flow into a thin bar directly
+ * under the header: where you are, and one control that drops the whole nested outline over the
+ * page.
+ *
+ * It carries EVERYTHING THE RAIL CARRIES - the section's other pages and the current page's
+ * nested headings - because the rail is hidden at these widths and half an outline would leave
+ * the other half nowhere to be. Desktop hides this bar and shows the rail; phone hides it too,
+ * because the drill-down panel already has both levels.
+ */
+import type { OutlineHeading } from "../../../src/model/nav-outline.js";
+
+export interface OutlineBarPage {
+  title: string;
+  href: string;
+  current: boolean;
+}
+
+interface Props {
+  /** The section this page belongs to, when it has one. */
+  sectionLabel?: string;
+  /** The section's other pages, in the rail's own order. */
+  sectionPages?: OutlineBarPage[];
+  pageTitle: string;
+  headings: OutlineHeading[];
+}
+
+const { sectionLabel, sectionPages = [], pageTitle, headings } = Astro.props;
+// Nothing to open means no bar. An empty control is worse than an absent one.
+const hasOutline = headings.length > 0 || sectionPages.length > 1;
+---
+
+{
+  hasOutline && (
+    <div class="portal-outlinebar" data-portal-outlinebar>
+      <nav class="portal-outlinebar-crumbs" aria-label="Breadcrumb">
+        {sectionLabel && (
+          <>
+            <span class="portal-outlinebar-crumb">{sectionLabel}</span>
+            <span class="portal-outlinebar-sep" aria-hidden="true">
+              /
+            </span>
+          </>
+        )}
+        <span class="portal-outlinebar-current">{pageTitle}</span>
+      </nav>
+
+      {/*
+        A native `<details>`, not the header's JavaScript dropdown. This is the ONLY outline below
+        1024px - the rail is a desktop column and the drill-down panel is behind a button - so it
+        has to work with no script at all: `<details>` is a disclosure the browser owns, it is
+        keyboard-operable, and it is in the accessibility tree before any island loads.
+      */}
+      <details class="portal-outlinebar-menu">
+        <summary class="portal-outlinebar-button" aria-label={`Outline of ${pageTitle}`}>
+          <span class="portal-outlinebar-button-text">{sectionLabel ?? "Outline"}</span>
+          <svg class="portal-outlinebar-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </summary>
+
+        <div class="portal-outlinebar-panel">
+          {sectionPages.length > 1 && (
+            <div class="portal-outlinebar-block">
+              <p class="portal-outlinebar-blocktitle">{sectionLabel ?? "Section"}</p>
+              {/*
+                `data-active` styles the current page; `aria-current` deliberately does NOT appear
+                here. The rail carries the document's one `aria-current="page"`, and a second would
+                announce the page twice to a screen reader though a sighted reader never sees both
+                regions at once - the bar is 720-1023px, the rail 1024px and up. The breadcrumb
+                beside the button names the page in text.
+              */}
+              {sectionPages.map((page) => (
+                <a
+                  class="portal-panel-item portal-outlinebar-item"
+                  href={page.href}
+                  data-active={page.current ? "true" : undefined}
+                >
+                  {page.title}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {headings.length > 0 && (
+            <div class="portal-outlinebar-block">
+              <p class="portal-outlinebar-blocktitle">On this page</p>
+              {/*
+                Groups are native `<details>`, open by default: the list is short, it sits over the
+                page rather than in it, and a reader who opened the outline wants the structure now.
+              */}
+              {headings.map((heading) =>
+                heading.children.length > 0 ? (
+                  <details class="portal-outlinebar-group" open>
+                    {/*
+                      The heading's own link lives IN the summary, not repeated as the first child:
+                      a group whose first entry repeats the group reads as broken, and dropping the
+                      link would make the parent heading the one thing you cannot jump to.
+                    */}
+                    <summary class="portal-outlinebar-summary">
+                      <a class="portal-outlinebar-summary-link" href={`#${heading.id}`}>
+                        {heading.text}
+                      </a>
+                      <svg class="portal-outlinebar-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </summary>
+                    {heading.children.map((child) => (
+                      <a
+                        class="portal-panel-item portal-outlinebar-item"
+                        data-depth="1"
+                        href={`#${child.id}`}
+                      >
+                        {child.text}
+                      </a>
+                    ))}
+                  </details>
+                ) : (
+                  <a class="portal-panel-item portal-outlinebar-item" href={`#${heading.id}`}>
+                    {heading.text}
+                  </a>
+                ),
+              )}
+            </div>
+          )}
+        </div>
+      </details>
+    </div>
+  )
+}

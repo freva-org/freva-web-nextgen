@@ -1,0 +1,25 @@
+/*
+ * Host-side presentation for the Data Browser embed, in its own stylesheet rather than the
+ * shell's because the Data Browser component owns it: a portal built with `databrowser` disabled
+ * must not ship a single byte that names the mount, and the enablement matrix reads the artifact
+ * for exactly that. A rule that merely never matches is still a shipped trace of a component the
+ * operator turned off.
+ *
+ * The embed takes the portal's main colour through the component's own `--accent` family on its
+ * root: mapping the portal's readable accent onto it recolours every link, active chip, focus
+ * ring and gradient inside the application without restyling a single one of its components.
+ * `--accent-text` rather than `--accent`, because inside the embed the colour is used as text far
+ * more than as a fill, and it is already the value that reads on the current theme.
+ *
+ * Two scopes, because the component opens two surfaces: the embed is one `.freva-db`, and the
+ * File Inspector's dialog is a second in the portal's overlay layer, because a modal over the
+ * whole portal cannot live inside the region it covers. It carries the class so the component's
+ * own stylesheet still reaches it, and it has to carry the portal's colour for the same reason,
+ * or the one surface that opens over the whole site wears the component's default blue.
+ */
+#portal-databrowser-mount .freva-db,
+#portal-overlay-root .freva-db {
+  --accent: var(--accent-text);
+  --accent-2: var(--accent-hi);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+}

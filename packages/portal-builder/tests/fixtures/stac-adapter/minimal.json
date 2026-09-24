@@ -1,0 +1,40 @@
+{
+  "case": "minimal",
+  "input": {
+    "options": {
+      "chrome": {
+        "footerLinks": []
+      },
+      "access": {
+        "externalCatalogs": "deny"
+      },
+      "rootPage": {},
+      "linkPolicy": {
+        "canonicalizeAdvertisedRoot": false,
+        "hiddenRelations": []
+      },
+      "historyMode": "hash",
+      "pathPrefix": "/catalog/",
+      "catalogUrl": "https://catalog.example.org/stac/"
+    },
+    "entryUrl": "/stac/assets/index.js",
+    "styleUrls": [],
+    "mountId": "stac-browser-mount"
+  },
+  "config": {
+    "catalogUrl": "https://catalog.example.org/stac/",
+    "catalogTitle": "Catalog",
+    "footerLinks": [],
+    "allowExternalAccess": false,
+    "allowedDomains": [],
+    "historyMode": "hash",
+    "pathPrefix": "/catalog/",
+    "showKeywordsInItemCards": false,
+    "showThumbnailsAsAssets": false
+  },
+  "hiddenRelations": [],
+  "canonicalizeAdvertisedRoot": false,
+  "entryUrl": "/stac/assets/index.js",
+  "styleUrls": [],
+  "mountId": "stac-browser-mount"
+}

@@ -1,0 +1,1097 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/portal.schema.json",
+  "title": "Freva portal configuration (portal.yaml)",
+  "description": "FP-001 v1 closed consumer configuration. Every object is closed: an unknown property is an error, never an extension point.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "site"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "site": {
+      "$ref": "#/$defs/site"
+    },
+    "chrome": {
+      "$ref": "#/$defs/chrome"
+    },
+    "theme": {
+      "$ref": "#/$defs/theme"
+    },
+    "rendering": {
+      "$ref": "#/$defs/rendering"
+    },
+    "landings": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/instanceId"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/landingRef"
+      }
+    },
+    "services": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/instanceId"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/service"
+      }
+    },
+    "components": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/instanceId"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/component"
+      }
+    },
+    "navigation": {
+      "$ref": "#/$defs/navigation"
+    },
+    "announcements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/announcement"
+      }
+    },
+    "trustedSubsites": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/trustedSubsite"
+      }
+    },
+    "pythonPlayground": {
+      "type": "object",
+      "description": "The portal-wide Python playground, and the switch that gives `try-in-python` a meaning. Absent, or `enabled: false`, and every marked code block renders as ordinary copyable code: no interpreter module, no console chunk, no Worker, no frame and no widening of any page's Content-Security-Policy. Enabling it does NOT turn Python on for an existing dataset tree - that is still the tree's own `python` stanza - and it does not by itself put an interpreter on any page: a page with no marked snippet ships nothing. If a page carries both runnable prose and a Python-enabled tree, the two share one window and must agree about the interpreter.",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "The whole switch. Everything below is inert while this is false."
+        },
+        "profile": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$",
+          "description": "Which browser-python profile the interpreter loads, e.g. `xarray-zarr`. SINGULAR: the profiles are a chain - minimal, then xarray-zarr, then freva-client - so a list would only ever be a longer way of naming the last one, and `freva-client` already carries xarray, Zarr and fsspec. Validated against the set the browser-python package actually offers."
+        },
+        "addons": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["dask", "cartopy-natural-earth-110m"]
+          },
+          "description": "Curated add-ons, from a closed list. NOT package names: each one is a set of artefacts this project pinned, with digests compiled into the interpreter's own bundle, an install order and a statement of which profiles it works with. `dask` gives Dask core, dask.array and xarray's Dask-backed `chunks={}` path on ONE synchronous scheduler - not a cluster, not threads, and not a way to rechunk an archive. `cartopy-natural-earth-110m` stages the coastline and country-border data Cartopy would otherwise download while drawing a figure. An add-on that does not work with the chosen profile is a build error, not a ModuleNotFoundError in a visitor's face."
+        },
+        "optionalAddons": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["dask", "cartopy-natural-earth-110m"]
+          },
+          "description": "The subset of `addons` whose ABSENCE must not stop the interpreter. A capability listed here is still prepared, still digest-checked, and still fatal if the portal asked for something impossible - but a deployment that has not uploaded its files yet gets a working interpreter without that one capability, and a page that says so, instead of a terminal that will not start. NOT EVERY ADD-ON MAY BE LISTED, and the restriction is a proof rather than a policy: an add-on qualifies only when every artefact can be fetched and verified before anything at all is written into the interpreter, so that dropping it leaves no debris. `cartopy-natural-earth-110m` qualifies - it installs no wheels and loads no packages, and its activation is one environment variable. `dask` does not: it installs three wheels through micropip, and a failure on the second leaves a session holding Dask's dependencies and not Dask, which no amount of catching can undo. An id here that is not also in `addons`, or that appears in both twice, is a build error - this is not a second way to configure an add-on, it is a statement about one already configured."
+        },
+        "autostart": {
+          "enum": ["never", "after-interactive", "immediately"],
+          "description": "When the interpreter is brought up. `never` waits for the first run; `after-interactive` warms it once the page is idle; `immediately` starts it during load and is a deliberate cost on every visitor, including the ones who never press anything. Default `never`."
+        },
+        "maxSessions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2,
+          "description": "How many independent interpreters one page may hold. Two is the ceiling and not merely the default: each is a Worker with its own WASM heap, and the second one is created only after the visitor has been told what it costs."
+        },
+        "initialSource": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Python run once, into a new session, before anything the visitor asks for. Part of the portal's own configuration and therefore trusted exactly as much as the rest of it."
+        },
+        "playgroundOrigin": {
+          "type": "string",
+          "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)$",
+          "description": "Serve the interpreter from THIS origin, in a frame, instead of the portal's own. Recommended for a public deployment: visitor Python and anything it installs otherwise run with the portal's origin authority. An exact origin, never a wildcard and never a path. HTTPS, with one exception: a loopback host over http, because that is what a development server and an acceptance run are - and a browser already treats loopback as a secure context, so the interpreter's own WebAssembly and crypto requirements are met there. Any other http origin is refused."
+        },
+        "runtimeIndexUrl": {
+          "type": "string",
+          "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)(?:/[A-Za-z0-9._~-]+)*/$",
+          "description": "Fetch the Python runtime from THIS directory instead of the pinned CDN. A deployment that mirrors Pyodide - because its network does not reach a CDN, or because it will not depend on one - points this at its own copy, and the recorded Content-Security-Policy names that origin instead. Must end with a slash: it is a directory the interpreter resolves file names against, not a file. The version it serves must be the one this build pins; a different one is a runtime the console was not built for."
+        },
+        "wheelhouseUrl": {
+          "type": "string",
+          "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)(?:/[A-Za-z0-9._~-]+)*/$",
+          "description": "Where the Freva client's wheels are served from, for the `freva-client` profile. Prepared with `freva-browser-python prepare-freva-wheelhouse`. Must end with a slash. Defaults to `freva-wheels/` beside the runtime, which is what a deployment that copies both together gets for free."
+        },
+        "addonBaseUrl": {
+          "type": "string",
+          "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)(?:/[A-Za-z0-9._~-]+)*/$",
+          "description": "Where the curated add-ons' pinned artefacts are served from. Prepared with `freva-browser-python prepare-addons`. Must end with a slash. Defaults to `python-addons/` beside the runtime. Every file fetched from here is checked against a digest that shipped inside the interpreter, so a stale or substituted directory fails the start rather than quietly running something else."
+        },
+        "connectOrigins": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^https://[a-z0-9.-]+(?::[0-9]{1,5})?$"
+          },
+          "description": "Exactly the origins the interpreter may reach, beyond the portal's own and the runtime's. An allowlist of exact HTTPS origins: no wildcards, no paths, no queries, no credentials. Never inferred - nothing reads Python source to decide what a page may connect to, so a snippet that mentions a host does not thereby get permission to reach it. A Freva deployment and its authentication server are the usual two."
+        },
+        "network": {
+          "enum": ["origins", "https"],
+          "description": "How much of the network the visitor's Python may reach. `origins` (the default) is the exact allowlist and nothing else: the runtime, the prepared artefacts and whatever `connectOrigins` names, with a public package index refused wherever it is configured - so `micropip.install(\"name\")` does not work and is not offered. `https` adds the `https:` SCHEME to `connect-src` - any TLS origin, never plaintext - which is what makes an ordinary experimental session possible: installs from the public index, a wheel URL a visitor pasted, a CORS-enabled dataset nobody listed at deployment time. The prepared environment is unchanged and is still the starting point; it stops being a ceiling, and unsupported packages may simply fail. Choose it deliberately: an installed package runs in the same interpreter as the rest of the session, so weigh it together with `persistCredentials` and `playgroundOrigin`."
+        },
+        "persistCredentials": {
+          "type": "boolean",
+          "description": "Keep a Freva refresh token across reloads, in browser storage. FALSE by default, deliberately: what is stored is a credential readable by any same-origin script, including a package the visitor installs at the prompt - which this console encourages. Turning it on is a statement that the origin is one you trust with a credential, so pair it with `playgroundOrigin`; the build warns when it is on without one."
+        },
+        "terminal": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How the window around the console is drawn.",
+          "properties": {
+            "style": {
+              "const": "freva-client-terminal",
+              "description": "The only value, and it is spelled out rather than assumed so a second style can be added later without changing what an existing portal means."
+            },
+            "osControls": {
+              "enum": ["auto", "mac", "windows", "linux"],
+              "description": "Which window controls to draw. `auto` reads the visitor's platform."
+            },
+            "alwaysOnTop": {
+              "type": "boolean",
+              "description": "Keep the window above portal-owned content, including while minimized. It cannot cover browser-native surfaces - a file picker, a permission prompt, fullscreen UI - and does not claim to."
+            },
+            "rememberAppearance": {
+              "type": "boolean",
+              "description": "Persist the window's colour, opacity and text size in this browser."
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "instanceId": {
+      "type": "string",
+      "pattern": "^[a-z][a-zA-Z0-9]*(-[a-zA-Z0-9]+)*$",
+      "maxLength": 64
+    },
+    "localPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "A path relative to the file that declares it. Resolved inside the trusted source root; symlinks are rejected.",
+      "not": {
+        "pattern": "^[a-zA-Z]+:"
+      }
+    },
+    "sitePath": {
+      "type": "string",
+      "pattern": "^/([^?#\\\\]*)?$",
+      "maxLength": 512,
+      "description": "A normalized site-logical path. It is resolved under the pathname of site.canonicalUrl."
+    },
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^\\s/?#\\\\@]+(/[^\\s\\\\]*)?$",
+      "maxLength": 2048
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "language", "canonicalUrl", "identity"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "subtitle": {
+          "$ref": "#/$defs/text"
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+        },
+        "canonicalUrl": {
+          "type": "string",
+          "pattern": "^https://[^\\s/?#\\\\@]+(/[^\\s?#\\\\]*)?/$",
+          "maxLength": 2048,
+          "description": "The exact absolute HTTPS site-base URL with a trailing slash and no user-info, query or fragment. Its pathname is the one and only base path."
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["logo", "favicon"],
+          "properties": {
+            "logo": {
+              "$ref": "#/$defs/localPath"
+            },
+            "favicon": {
+              "$ref": "#/$defs/localPath"
+            }
+          }
+        },
+        "institution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/text"
+            },
+            "url": {
+              "$ref": "#/$defs/httpsUrl"
+            }
+          }
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/text"
+        },
+        "landing": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "component": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "href": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["landing"],
+          "properties": {
+            "landing": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["component"],
+          "properties": {
+            "component": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["href"],
+          "properties": {
+            "href": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        }
+      ]
+    },
+    "chrome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/link"
+              },
+              "maxItems": 24
+            },
+            "prose": {
+              "$ref": "#/$defs/localPath"
+            }
+          }
+        },
+        "footer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "groups": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["title", "links"],
+                "properties": {
+                  "title": {
+                    "$ref": "#/$defs/text"
+                  },
+                  "links": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/link"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16
+                  }
+                }
+              }
+            },
+            "legalLinks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/link"
+              },
+              "maxItems": 8
+            },
+            "prose": {
+              "$ref": "#/$defs/localPath"
+            },
+            "badge": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The footer badge, which an enabled footer already has. Every property here is an override: write this object only to turn the badge off or to change its quality. Present or absent, the badge replaces the plain 'powered by' lockup - the two are never shown together.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "false restores the plain 'powered by' lockup and generates no badge markup, script, stylesheet or asset. A footer that is itself disabled has no badge either, whatever this says."
+                },
+                "kind": {
+                  "enum": ["freva"],
+                  "default": "freva",
+                  "description": "The only badge there is, and the default. An enum rather than a free string, so a typo is a validation error and not a silently missing badge."
+                },
+                "quality": {
+                  "enum": ["auto", "standard"],
+                  "default": "standard",
+                  "description": "'standard', the default, pins the badge's motion assets to the 1x set, which is what a small footer bird needs and keeps the on-demand animation near 1.65 MB. 'auto' lets the badge pick 1x or 2x from the display's density and the visitor's data preference."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preset"],
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": ["contour", "cosmos", "default", "freva", "waterpark"]
+        },
+        "tokens": {
+          "$ref": "#/$defs/themeTokens"
+        }
+      }
+    },
+    "themeTokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A finite override surface. Arbitrary CSS is not accepted in v1.",
+      "properties": {
+        "colorAccent": {
+          "$ref": "#/$defs/color"
+        },
+        "colorAccentContrast": {
+          "$ref": "#/$defs/color"
+        },
+        "colorBackground": {
+          "$ref": "#/$defs/color"
+        },
+        "colorSurface": {
+          "$ref": "#/$defs/color"
+        },
+        "colorText": {
+          "$ref": "#/$defs/color"
+        },
+        "colorTextMuted": {
+          "$ref": "#/$defs/color"
+        },
+        "colorBorder": {
+          "$ref": "#/$defs/color"
+        },
+        "density": {
+          "enum": ["compact", "comfortable", "spacious"]
+        },
+        "cornerStyle": {
+          "enum": ["sharp", "soft", "round"]
+        },
+        "headingScale": {
+          "enum": ["modest", "regular", "expressive"]
+        }
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "rendering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile"],
+      "properties": {
+        "profile": {
+          "const": "portal-content-v1"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/contentSource"
+          },
+          "maxItems": 16
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mountRoot"
+          },
+          "maxItems": 16
+        },
+        "downloads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mountRoot"
+          },
+          "maxItems": 16
+        },
+        "diagnostics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "warningsAsErrors": {
+              "type": "boolean"
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A bounded raise of the published operational guardrails. Never a renderer plugin.",
+          "properties": {
+            "maxSourceBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 8388608
+            },
+            "maxPages": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000
+            },
+            "maxAssetBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 134217728
+            },
+            "maxTotalAssetBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 2147483648
+            },
+            "maxNodesPerDocument": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 200000
+            },
+            "maxHeadingDepth": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 6
+            },
+            "maxDiagramBytes": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 262144
+            }
+          }
+        }
+      }
+    },
+    "contentSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "mount"],
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/localPath"
+        },
+        "mount": {
+          "$ref": "#/$defs/sitePath"
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "include": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/glob"
+              },
+              "maxItems": 32
+            },
+            "exclude": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/glob"
+              },
+              "maxItems": 32
+            }
+          }
+        }
+      }
+    },
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "not": {
+        "pattern": "\\\\"
+      }
+    },
+    "mountRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "mount"],
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/localPath"
+        },
+        "mount": {
+          "$ref": "#/$defs/sitePath"
+        }
+      }
+    },
+    "landingRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "source"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/sitePath"
+        },
+        "source": {
+          "$ref": "#/$defs/localPath"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["databrowser", "stac", "auth"]
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/serviceDatabrowser"
+        },
+        {
+          "$ref": "#/$defs/serviceStac"
+        },
+        {
+          "$ref": "#/$defs/serviceAuth"
+        }
+      ]
+    },
+    "serviceDatabrowser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "baseUrl"],
+      "properties": {
+        "kind": {
+          "const": "databrowser"
+        },
+        "baseUrl": {
+          "$ref": "#/$defs/serviceBaseUrl"
+        },
+        "authentication": {
+          "enum": ["none", "optional", "required"]
+        }
+      }
+    },
+    "serviceStac": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "catalogUrl"],
+      "properties": {
+        "kind": {
+          "const": "stac"
+        },
+        "catalogUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "The complete initial STAC catalog/API URL. Query is allowed; the adapter appends no path."
+        },
+        "authentication": {
+          "const": "none"
+        }
+      }
+    },
+    "serviceAuth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "baseUrl"],
+      "properties": {
+        "kind": {
+          "const": "auth"
+        },
+        "baseUrl": {
+          "$ref": "#/$defs/serviceBaseUrl"
+        }
+      }
+    },
+    "serviceBaseUrl": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "description": "A complete API root: root-relative or HTTPS, no query, no fragment, no user-info."
+    },
+    "component": {
+      "type": "object",
+      "required": ["kind", "enabled"],
+      "properties": {
+        "kind": {
+          "enum": ["databrowser", "stac-browser", "auth"]
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/componentDatabrowser"
+        },
+        {
+          "$ref": "#/$defs/componentStacBrowser"
+        },
+        {
+          "$ref": "#/$defs/componentAuth"
+        }
+      ]
+    },
+    "componentDatabrowser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "enabled"],
+      "properties": {
+        "kind": {
+          "const": "databrowser"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "service": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "route": {
+          "$ref": "#/$defs/sitePath"
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "defaultFlavour": {
+              "$ref": "#/$defs/flavourName"
+            },
+            "fixedFacets": {
+              "$ref": "#/$defs/facetMap"
+            },
+            "defaultLayout": {
+              "$comment": "Which view a visitor lands on. A default, not a lock: the Browse/Overview control is still there and a visitor's own choice is remembered over this.",
+              "enum": ["browse", "overview"]
+            },
+            "overview": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "order": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "$ref": "#/$defs/overviewBlockKey"
+                  },
+                  "$comment": "Block keys in the order they should appear. Keys not listed keep their natural position AFTER the listed ones, so naming three is a statement about those three and never an accidental hiding of the rest."
+                },
+                "mainFacets": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "$ref": "#/$defs/overviewBlockKey"
+                  },
+                  "$comment": "Which keys are MAIN blocks. Everything else moves under 'Show additional facets' - moved, not hidden. Unset: the server's own primary_facets, which is today's behaviour."
+                }
+              }
+            },
+            "scopeRemovable": {
+              "$comment": "Whether a visitor may remove a value that came from fixedFacets. Default false: the scope renders locked and survives 'Clear all'. True makes it a starting point rather than a boundary. Never an authorization boundary either way.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "facetMap": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ]
+      }
+    },
+    "componentStacBrowser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "enabled"],
+      "properties": {
+        "kind": {
+          "const": "stac-browser"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "service": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "route": {
+          "$ref": "#/$defs/sitePath"
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The closed portal-owned STAC option set. Upstream option names are never accepted here.",
+          "properties": {
+            "chrome": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "$ref": "#/$defs/text"
+                },
+                "image": {
+                  "$ref": "#/$defs/localPath"
+                },
+                "footerLinks": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["label", "href"],
+                    "properties": {
+                      "label": {
+                        "$ref": "#/$defs/text"
+                      },
+                      "href": {
+                        "$ref": "#/$defs/httpsUrl"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "access": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "externalCatalogs": {
+                  "const": "deny"
+                },
+                "basemapOrigins": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "description": "Origins this deployment permits the mounted application to fetch basemap tiles from. Every entry is a third-party request made from the visitor's browser on every document with a footprint, so the default - an empty list - makes none: the map draws the footprint over blank ground. Listing an origin both reaches the application and adds that origin to the artifact's img-src; upstream's own attribution metadata is displayed with the layer.",
+                  "items": {
+                    "$ref": "#/$defs/httpsUrl"
+                  }
+                }
+              }
+            },
+            "rootPage": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Portal-owned presentation of the root catalogue. Every value here changes what this portal DISPLAYS for the root document; none of it modifies, or claims to modify, the remote STAC API. Overrides apply only when the loaded document is the configured catalogue root or a declared alias - never to a collection, an item, a child catalogue or an external document.",
+              "properties": {
+                "title": {
+                  "$ref": "#/$defs/text"
+                },
+                "description": {
+                  "$comment": "PLAIN TEXT, one sentence or two: the root's stated description and the route's meta description. Not Markdown, and not an asset-reference source - a figure or a link written here is neither rendered nor scanned, so a referenced image is left out of the artifact and its URL 404s. The rendered, asset-resolved introduction is `intro`.",
+                  "$ref": "#/$defs/text"
+                },
+                "intro": {
+                  "$ref": "#/$defs/localPath"
+                },
+                "keywords": {
+                  "type": "array",
+                  "maxItems": 24,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "license": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "providers": {
+                  "type": "array",
+                  "maxItems": 12,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name"],
+                    "properties": {
+                      "name": {
+                        "$ref": "#/$defs/text"
+                      },
+                      "url": {
+                        "$ref": "#/$defs/httpsUrl"
+                      },
+                      "roles": {
+                        "type": "array",
+                        "maxItems": 4,
+                        "items": {
+                          "enum": ["licensor", "producer", "processor", "host"]
+                        }
+                      },
+                      "logo": {
+                        "$comment": "A local image, published through the asset pipeline and drawn beside the provider's name. STAC has no logo field, so this one is the portal's: the deployment names a file, the build validates, sanitizes, publishes and hashes it, and nothing is fetched from anywhere at runtime. Without it a deployment would have to inject a stylesheet keyed on each provider's URL, which is not something a deployment can do.",
+                        "$ref": "#/$defs/localPath"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "linkPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "canonicalizeAdvertisedRoot": {
+                  "type": "boolean"
+                },
+                "hiddenRelations": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "enum": [
+                      "service-desc",
+                      "service-doc",
+                      "conformance",
+                      "search",
+                      "alternate",
+                      "canonical",
+                      "http://esipfed.org/ns/fedsearch/1.1/data#",
+                      "license",
+                      "about",
+                      "describedby",
+                      "queryables",
+                      "aggregate",
+                      "aggregations"
+                    ]
+                  }
+                },
+                "rootAliases": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "description": "Absolute URLs this deployment declares to be the SAME catalogue as the configured catalogUrl - an internal or proxy root the API advertises. A link at one of these, or beneath one, is rewritten to the public root. Nothing is guessed: an origin that is not listed here is never treated as an alias, so a genuine external link cannot become a local one.",
+                  "items": {
+                    "$ref": "#/$defs/httpsUrl"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "componentAuth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "enabled"],
+      "properties": {
+        "kind": {
+          "const": "auth"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "service": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "callbackPath": {
+              "$ref": "#/$defs/sitePath"
+            },
+            "expectedIssuer": {
+              "$ref": "#/$defs/httpsUrl"
+            },
+            "additionalResourceOrigins": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "string",
+                "pattern": "^https://[^\\s/?#\\\\@]+$",
+                "description": "An exact HTTPS origin, no path."
+              }
+            }
+          }
+        }
+      }
+    },
+    "navigation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          },
+          "maxItems": 24
+        },
+        "footer": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          },
+          "maxItems": 24
+        }
+      }
+    },
+    "announcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "message", "level"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "level": {
+          "enum": ["info", "warning", "critical"]
+        },
+        "dismissible": {
+          "type": "boolean"
+        },
+        "startsAt": {
+          "$ref": "#/$defs/rfc3339"
+        },
+        "endsAt": {
+          "$ref": "#/$defs/rfc3339"
+        }
+      }
+    },
+    "rfc3339": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "trustedSubsite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "source", "mount", "trust", "policy"],
+      "properties": {
+        "profile": {
+          "const": "static-docs-v1"
+        },
+        "source": {
+          "$ref": "#/$defs/localPath"
+        },
+        "mount": {
+          "$ref": "#/$defs/sitePath"
+        },
+        "trust": {
+          "const": "active"
+        },
+        "policy": {
+          "$ref": "#/$defs/localPath"
+        }
+      }
+    },
+    "flavourName": {
+      "$comment": "A flavour is a lens the DEPLOYMENT's own freva-rest instance serves, not a value this schema can know. The widget types it as a plain string for exactly that reason. Constrained to an identifier so a typo is still caught, but never to a fixed list - a portal whose backend serves `waterpark` must be able to name it.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "overviewBlockKey": {
+      "$comment": "An overview block key: a facet key, or `__time` / `__bbox` for the two blocks that are not facets. Both are ordered in the same flow as the facets, so a deployment that wants the map first can say so without a second option.",
+      "type": "string",
+      "pattern": "^(__time|__bbox|[a-z][a-z0-9_]{0,63})$"
+    }
+  }
+}

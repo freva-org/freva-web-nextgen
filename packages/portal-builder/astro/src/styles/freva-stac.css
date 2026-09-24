@@ -1,0 +1,403 @@
+/*
+ * Host-side presentation for the STAC embed.
+ *
+ * It lives in its own stylesheet, not in the shell, because the STAC component owns it: a portal
+ * built with `stac` disabled must not ship a single byte that names the embed - the enablement
+ * matrix checks the artifact for exactly that, and a stylesheet that merely never matches would
+ * still be a shipped trace of a component the operator turned off.
+ *
+ * WHAT THIS FILE IS ALLOWED TO NAME. Every rule is scoped to one of two hooks the route template
+ * actually emits: `.portal-feature-stac` for the region and `#stac-browser-mount` for the mount.
+ * The exception is `.portal-stac-intro`, the portal's own region above the mount. A selector that
+ * matches nothing fails silently in both directions, so
+ * `tests/components/stac-adapter-contract.test.ts` reads the scopes out of this file and looks
+ * for each of them in a built STAC route.
+ */
+/* STAC embed. */
+
+/*
+ * The STAC application inside the portal's application region, given a scrolling box of its own
+ * rather than the page's, for the same reason the Data Browser is: the shell's header and footer
+ * stay put and the application scrolls under them. `overflow: visible` on the mount itself is
+ * load-bearing - upstream teleports its Browse drawer and its modals into its own root, and
+ * clipping them would leave the drawer unreachable.
+ */
+.portal-feature-stac {
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* One surface with the mount inside it; see the `--bs-body-bg` mapping below. */
+  background: var(--surface);
+}
+/*
+ * The embed's own page width, which is the portal's. Upstream's root element is a Bootstrap
+ * `.container`, and Bootstrap's grid puts a negative inline margin on every `.row` inside it; the
+ * container's own padding is what absorbs that. So the container is where the gutter belongs, and
+ * giving it the shell's own measure is what lines the application up with the introduction above
+ * it. Capping the mount's children at `max-width: 100%` instead would override the container's
+ * max-width - the one thing holding the application's content to a page - and send the toolbar,
+ * the heading and the share buttons hard against the window; the region clips its overflow, so
+ * nothing needs that second guard against the margins.
+ */
+.portal-stac-mount #stac-browser.container {
+  /*
+   * The application gets the window, less the shell's own gutter - not the shell's reading
+   * column. A catalogue is a browsing surface: a toolbar, a metadata column beside a providers
+   * panel, a grid of collection tiles, none of it prose to be held to a measure. Capped at
+   * `--content-max` the tiles wrap early and the metadata column and its panel stop fitting side
+   * by side, which is the layout the view is built around. This also replaces Bootstrap's own
+   * breakpoint ladder, which steps the width in discrete jumps unrelated to this page. The gutter
+   * stays, and stays the shell's, so the embed lines up with everything else instead of running
+   * under the window edges - and it absorbs the `margin-inline: -12px` Bootstrap puts on `.row`.
+   */
+  max-width: none;
+  /*
+   * And no gutter of its own: the shell's page padding would hold the embed a clear step in from
+   * both window edges, which reads as an inset panel rather than as the page. What is left is
+   * Bootstrap's own - `.container` keeps 12px, every `.row` inside takes it back with
+   * `margin-inline: -12px`, and every `.col` re-adds it - so the rows run to the window and their
+   * content begins where a column's own padding puts it. The 12px the rows overhang is gutter,
+   * not content, and the region clips it.
+   */
+  padding-inline: 12px;
+}
+/*
+ * THE MOUNT GROWS WITH THE APPLICATION. IT DOES NOT GET THE DATA BROWSER'S DEFINITE HEIGHT.
+ *
+ * The mount also carries `portal-feature-fill`, which sets `height: 100%` because the Data
+ * Browser fills its target. The STAC embed is an ordinary document as tall as its content, and
+ * pinning it to the region's height breaks scrolling in a way only visible once you scroll: the
+ * mount fits the region, its content is taller, and `overflow: visible` - load-bearing, because
+ * upstream teleports its Browse drawer and its modals into its own root - lets that content spill
+ * OUTSIDE the box. `.portal-feature-stac`, the region's own scroller, then measures a mount that
+ * fits and has nothing to scroll, the overflow reaches `.portal-main`, and `.portal-main` carries
+ * `contain: layout`, which makes it the containing block for fixed descendants. The Browse drawer
+ * is `position: fixed`, so scrolling the region drags it up with the content and takes its own
+ * header and close button off the top of the screen.
+ *
+ * `height: auto` keeps the mount as tall as the embed, so the region scrolls it and
+ * `.portal-main` has nothing left to scroll - the contained drawer stays over the visible
+ * application region, below the portal's header and above its footer.
+ */
+.portal-stac-mount {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
+/*
+ * Host-side presentation for the embed. The build makes STAC's CSS *safe* inside the portal -
+ * nothing leaks out. This makes it *belong*: an application dropped into a page still reads as a
+ * different product if its type scale, button size and accent colour are its own document's. So
+ * upstream's `--sb-*` custom properties and Bootstrap's `--bs-btn-*` are mapped onto the shell's
+ * design tokens rather than components being restyled one by one. Everything here is scoped under
+ * `#stac-browser-mount`, so it applies only to the embed and cannot touch the shell.
+ */
+/*
+ * The id, not a class, and that is the point: upstream's defaults for these variables are declared
+ * on `#stac-browser-mount` - the very same element, since the build scopes its `:root` block there
+ * - so a class selector would lose the specificity contest no matter which stylesheet came last.
+ */
+#stac-browser-mount.portal-stac-mount {
+  /* Upstream's own theming hooks, pointed at the portal's palette. */
+  --sb-header-background: var(--surface-2);
+  --sb-header-color: var(--ink);
+  --sb-header-hover-color: var(--accent);
+  --sb-header-button-background: transparent;
+  --sb-header-button-border-color: var(--line-2);
+  --sb-header-button-hover-background: var(--chip);
+  --sb-header-button-active-background: var(--chip);
+  --sb-header-hover-button-border-color: var(--accent);
+  --sb-h1-color: var(--ink);
+  --sb-subheadings-color: var(--ink-2);
+  --sb-header-font-size: 1.05rem;
+  --sb-header-font-weight: 600;
+  --sb-block-gap: 12px;
+  /* And Bootstrap's link colour, so the catalogue's links are the portal's main colour. */
+  --bs-link-color: var(--accent-text);
+  --bs-link-hover-color: var(--accent-hi);
+  /*
+   * And the rest of what Bootstrap calls primary: the colour a focus ring is drawn in, the one a
+   * checked control fills with, and the one components that ask for `--bs-primary` by name use.
+   * Left alone these stay Bootstrap's blue, so a catalogue in the deployment's teal grows a blue
+   * ring the moment anything is focused.
+   */
+  --bs-primary: var(--accent);
+  --bs-primary-text-emphasis: var(--accent-text);
+  --bs-primary-border-subtle: var(--accent);
+  --bs-focus-ring-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  --bs-form-check-bg-image-checked-color: var(--accent);
+}
+/*
+ * A focused field takes the accent too. Bootstrap draws the border from a static blue rather than
+ * from a variable, so this is the one place a property is set rather than a hook mapped.
+ */
+.portal-stac-mount #stac-browser .form-control:focus,
+.portal-stac-mount #stac-browser .form-select:focus {
+  border-color: var(--accent-text);
+}
+.portal-stac-mount #stac-browser .form-check-input:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+/*
+ * The page's colour, not upstream's - and a rule of its own, because of how upstream declares it.
+ *
+ * Upstream's `body` rule is scoped to the mount by the containment pass, so
+ * `background-color: var(--bs-body-bg)` is painted on this element: `white`, or `#212529` in
+ * dark. The variable is mapped rather than the background overridden, so every other place
+ * upstream reads it follows too: cards, popovers, the map's own backdrop. It maps to the shell's
+ * SURFACE, not to the page - against the page, upstream's own muted text (`#6c757d`, tuned
+ * against white) drops under 4.5:1 and the catalogue root fails the contrast scan. The region is
+ * painted with it as well, because the mount is only as tall as the application and colouring the
+ * mount alone just moves the break to wherever the catalogue ends; the region fills the rest of
+ * the route, so the two together are one surface.
+ *
+ * It cannot be mapped in the block above. The `--sb-*` hooks there are declared by upstream on
+ * `#stac-browser-mount` alone, which `#stac-browser-mount.portal-stac-mount` outranks; the
+ * Bootstrap ones are declared on `#stac-browser-mount, #stac-browser-mount[data-bs-theme=light]`
+ * - the same specificity as that block - and upstream's stylesheet is appended at mount time, so
+ * at equal specificity it wins. The region is a real ancestor and one more class is all it takes.
+ */
+.portal-feature-stac #stac-browser-mount.portal-stac-mount {
+  --bs-body-bg: var(--surface);
+}
+/*
+ * Bootstrap composes its link colour as `rgba(var(--bs-link-color-rgb), …)`, and a hex custom
+ * property cannot be turned into that triple in CSS, so the anchors are coloured directly.
+ * Buttons keep their own colours: those are component surfaces, not links.
+ */
+.portal-stac-mount #stac-browser a:not(.btn):not(.nav-link) {
+  color: var(--accent-text);
+}
+.portal-stac-mount #stac-browser a:not(.btn):not(.nav-link):hover {
+  color: var(--accent-hi);
+}
+/* The header is the shell's surface, not a coloured band competing with it. */
+.portal-stac-mount #stac-browser > header .site {
+  border-bottom: 1px solid var(--line);
+}
+/*
+ * Upstream sets a text shadow on the header title, which reads as a legibility aid over its own
+ * strongly coloured band. On the shell's surface it is just a blur.
+ */
+.portal-stac-mount #stac-browser > header .site .title {
+  text-shadow: none;
+}
+.portal-stac-mount #stac-browser > header .site > .col-md-12 > .title h1,
+.portal-stac-mount #stac-browser > header .site > .col-md-12 > .title .h1 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  text-shadow: none;
+}
+/* Bootstrap's default type scale is a size larger than the shell's. */
+.portal-stac-mount #stac-browser h1 {
+  font-size: 1.6rem;
+}
+.portal-stac-mount #stac-browser h2 {
+  font-size: 1.2rem;
+}
+.portal-stac-mount #stac-browser h3 {
+  font-size: 1.05rem;
+}
+.portal-stac-mount #stac-browser .btn {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--r-8);
+}
+.portal-stac-mount #stac-browser .list-group-item {
+  padding: 0.5rem 0.75rem;
+}
+.portal-stac-mount #stac-browser .badge {
+  font-size: 0.72em;
+}
+.portal-stac-mount #stac-browser .card {
+  border-radius: var(--r-12);
+}
+/*
+ * Every primary surface in the deployment's own colour, not Bootstrap blue: rather than restyling
+ * components one at a time, Bootstrap's own `--bs-btn-*` point at the theme's primary colour and
+ * every "primary" button follows. Three families need it - the outlined variants, the toolbar's
+ * own buttons and the filled `.btn-primary`.
+ *
+ * `--accent-text` for anything that draws the colour as INK - an outline, a label - and `--accent`
+ * for anything that draws it as a FILL. They are the same hue; the first is the
+ * contrast-corrected one, and using the fill colour as text makes a dark institutional accent
+ * unreadable in the dark theme.
+ */
+.portal-stac-mount #stac-browser .btn-outline-primary,
+.portal-stac-mount #stac-browser .btn-outline-secondary {
+  --bs-btn-color: var(--accent-text);
+  --bs-btn-border-color: var(--accent-text);
+  --bs-btn-hover-color: var(--accent-ink);
+  --bs-btn-hover-bg: var(--accent);
+  --bs-btn-hover-border-color: var(--accent);
+  --bs-btn-active-color: var(--accent-ink);
+  --bs-btn-active-bg: var(--accent);
+  --bs-btn-active-border-color: var(--accent);
+  --bs-btn-disabled-color: var(--accent-text);
+  --bs-btn-disabled-border-color: var(--accent-text);
+}
+/*
+ * The toolbar's own buttons - Browse, Search, API, Language - are driven by upstream's header
+ * hooks rather than by a Bootstrap variant, so they are named here too; left alone they are a
+ * neutral outline in the page's line colour, belonging to no deployment in particular.
+ */
+.portal-stac-mount #stac-browser > header .btn {
+  --bs-btn-color: var(--accent-text);
+  --bs-btn-border-color: var(--accent-text);
+}
+.portal-stac-mount #stac-browser .btn-primary {
+  --bs-btn-bg: var(--accent);
+  --bs-btn-border-color: var(--accent);
+  --bs-btn-color: var(--accent-ink);
+  --bs-btn-hover-bg: var(--accent);
+  --bs-btn-hover-border-color: var(--accent);
+  --bs-btn-hover-color: var(--accent-ink);
+  --bs-btn-active-bg: var(--accent);
+  --bs-btn-active-border-color: var(--accent);
+  --bs-btn-disabled-bg: var(--accent);
+  --bs-btn-disabled-border-color: var(--accent);
+}
+/*
+ * UPSTREAM'S FOOTER, coloured rather than removed.
+ *
+ * It holds two things. `.footer-links` is what the deployment configured under
+ * `chrome.footerLinks`, and `.poweredby` is upstream's own credit: "Powered by STAC Browser
+ * 5.0.0", linking to the project. The artefact keeps the ISC notice and THIRD_PARTY_NOTICES
+ * either way, but a licence file in the bundle is not the same thing as a reader being able to
+ * see what the application in front of them IS, and that credit is the only place the page says
+ * so.
+ *
+ * Upstream binds `:href="link.url"`, so `components/stac-browser/adapter.ts` emits `url`: given
+ * `href` instead, Vue omits the attribute and every configured link renders as dead underlined
+ * text. What is left here is the portal's usual job for the embed - upstream's own bar, in the
+ * portal's colours, separated from the content above it and clear of the portal's footer bar.
+ */
+.portal-stac-mount #stac-browser > footer {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.portal-stac-mount #stac-browser .intro > h2,
+.portal-stac-mount #stac-browser .links > h2 {
+  display: none;
+}
+.portal-stac-mount #stac-browser .styled-description img {
+  width: 100%;
+  height: auto;
+  max-width: 900px;
+  border-radius: var(--r-12);
+}
+.portal-stac-mount #stac-browser .offcanvas-backdrop {
+  opacity: 0.25;
+}
+/*
+ * THE EMBED'S OVERLAYS ARE SIZED TO THE REGION THEY LIVE IN, NOT TO THE WINDOW.
+ *
+ * This is what stops the Browse drawer sliding off the top of the screen, and the cause is one
+ * step removed from the thing that moves. `.portal-main` carries `contain: layout`, which makes
+ * it the containing block for every fixed-position descendant - deliberately, so an application's
+ * own dialogs stay between the portal's header and its footer instead of running under them.
+ * Upstream's overlays are `position: fixed` with `width: 100vw; height: 100vh`, right in a
+ * document upstream owns and wrong here: with an 800px window and a 623px application region, an
+ * overlay pinned to the region's top runs 177px past its bottom. Those 177px are scrollable, and
+ * a fixed element whose containing block is a scroller scrolls with it - so the wheel moves
+ * `.portal-main`, `.portal-main` carries the drawer, and the drawer's own header and close button
+ * go off the top of the screen while its bottom edge rises into view.
+ *
+ * `inset: 0` with auto sizes is the better rule in both places it can apply: where the region is
+ * the containing block the overlay fills the region, and where the viewport is - a document view,
+ * or a browser that does not honour the containment - it fills the viewport, which is what
+ * `100vw/100vh` was reaching for. The region has no overflow to scroll, so nothing carries the
+ * drawer anywhere.
+ *
+ * `#stac-browser-auth-modal` is upstream's own id rather than a Bootstrap class, listed because
+ * it is built the same way and would fail the same way; it is not reachable in a portal with no
+ * authenticated catalogue, so it is reasoned about rather than measured.
+ */
+.portal-stac-mount #stac-browser .offcanvas-backdrop,
+.portal-stac-mount #stac-browser .modal-backdrop,
+.portal-stac-mount #stac-browser #stac-browser-auth-modal {
+  inset: 0;
+  width: auto;
+  height: auto;
+}
+/*
+ * The catalogue drawer's last rows, kept out from under the Freva badge.
+ *
+ * The drawer is `position: fixed` and inset to the space between the portal's header and its
+ * footer bar. The badge does not respect that space: it is drawn from the portal's overlay layer,
+ * above the whole application region, and its mark stands about 26px clear of the bar, so the
+ * bottom-left corner of an open drawer is behind a bird and unreadable. Bootstrap's
+ * `z-index: 1045` on the drawer does not help - `.portal-main` establishes a stacking context, so
+ * that 1045 is 1045 INSIDE it and the whole context still sits below the overlay layer. Nothing
+ * inside the embed can paint over the badge, and this does not try to.
+ *
+ * So the reserve goes in the drawer's own scroll area. The panel keeps its full height - its
+ * surface still reaches the bar, so no strip of page shows through beneath it - and only its
+ * CONTENT stops short. `--badge-rise` is measured and republished by
+ * `client/components/footer-badge.ts` on every resize; absent, this is upstream's own `0.5rem`,
+ * on a portal with no badge configured or before the badge has loaded.
+ *
+ * TWO IDS, because upstream's own rule has two - `#stac-browser #sidebar .offcanvas-body
+ * { padding: .5rem 1rem }` - and an id count decides a specificity contest before class counts
+ * are even compared. The second id here is `#stac-browser-mount`, this file's own declared scope
+ * and the same element as the `.portal-stac-mount` beside it; upstream's `#sidebar` is
+ * deliberately not named, so a drawer that is given another id still gets this.
+ */
+#stac-browser-mount.portal-stac-mount #stac-browser .offcanvas .offcanvas-body {
+  padding-bottom: calc(0.5rem + var(--badge-rise, 0px));
+}
+
+/* The root introduction. */
+
+/*
+ * The portal's own introduction to the catalogue, in the catalogue's own column.
+ *
+ * It is written into this document by the route template but not shown here: `PortalIntro`
+ * (patch 0009) moves the element into the top of the catalogue's metadata column when a catalogue
+ * view mounts and puts it back when that view is torn down, so the introduction reads as what it
+ * is - what this deployment says the catalogue IS, above the keywords and beside the providers -
+ * rather than a band of page sitting on top of the application's own toolbar and title.
+ *
+ * Hence the two rules: hidden wherever it happens to be sitting, shown once it is inside the
+ * application and then only on the root. The adapter writes `data-portal-stac-view` on the root
+ * element from the STAC document it has just loaded, so this follows real navigation - a deep
+ * link, a hash change, back and forward, a reload - rather than a guess from the URL. Hidden by
+ * DEFAULT in both rules, because the alternative is a flash of the introduction in the document's
+ * own flow, above the application, before the view has mounted.
+ */
+.portal-stac-intro {
+  display: none;
+}
+/*
+ * Inside the column it is ordinary block content, so it needs no gutter and no cap of its own -
+ * upstream's `.container` already gives it both. It keeps only the separation from what follows,
+ * in upstream's own block rhythm.
+ */
+:root[data-portal-stac-view="root"] .portal-stac-mount #stac-browser .portal-stac-intro {
+  display: block;
+  margin-bottom: var(--sb-block-gap, 1rem);
+}
+/*
+ * The widget's own element is a mount point, not a container: it runs the lifecycle that moves
+ * the fragment into `section.intro` and then holds nothing.
+ *
+ * `display: none`, and NOT `display: contents`. Above `xl` the metadata column is a flex row with
+ * a 30px gap, and `contents` does not remove a box from that row - it promotes the child to be
+ * the flex item instead, so the anchor stays in the row as a zero-width item and the gap AFTER it
+ * is still drawn, carrying the description column and the providers panel 30px right of the
+ * heading they belong to. `none` takes the box out of the row, gap and all.
+ */
+.portal-stac-mount #stac-browser .widget:has(> .portal-intro) {
+  display: none;
+}
+.portal-stac-mount #stac-browser .portal-intro .portal-prose > :last-child {
+  margin-bottom: 0;
+}

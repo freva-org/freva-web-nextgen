@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.freva.org/portal/v1/host-policy.schema.json",
+  "title": "host-policy.json",
+  "description": "The static-host conformance contract carried by the artifact. Every deployment target must satisfy it, whatever tool installs the bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "mount", "routing", "errorPages", "headers", "cache"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "mount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalUrl", "basePath", "documentRoot"],
+      "properties": {
+        "canonicalUrl": { "type": "string" },
+        "basePath": { "type": "string" },
+        "documentRoot": { "const": "." }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directoryIndex",
+        "spaFallback",
+        "trailingSlashRedirect",
+        "preserveQueryOnRedirect"
+      ],
+      "properties": {
+        "directoryIndex": { "const": "index.html" },
+        "spaFallback": { "const": false },
+        "trailingSlashRedirect": { "enum": ["301", "308"] },
+        "preserveQueryOnRedirect": { "const": true }
+      }
+    },
+    "errorPages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notFound"],
+      "properties": {
+        "notFound": { "type": "string" },
+        "status": { "const": 404 }
+      }
+    },
+    "headers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["match", "set"],
+        "properties": {
+          "match": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string" },
+              "prefix": { "type": "string" },
+              "class": { "type": "string" }
+            }
+          },
+          "set": { "type": "object", "additionalProperties": { "type": "string" } },
+          "accessLog": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "redactQueryString": { "type": "boolean" } }
+          }
+        }
+      }
+    },
+    "csp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["portal"],
+      "properties": {
+        "portal": { "type": "object", "additionalProperties": { "type": "string" } },
+        "subsites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mount", "profile", "directives"],
+            "properties": {
+              "mount": { "type": "string" },
+              "profile": { "const": "static-docs-v1" },
+              "directives": { "type": "object", "additionalProperties": { "type": "string" } },
+              "inlineScriptHashes": { "type": "array", "items": { "type": "string" } },
+              "inlineStyleHashes": { "type": "array", "items": { "type": "string" } },
+              "workers": { "enum": ["none", "self"] }
+            }
+          }
+        }
+      }
+    },
+    "mimeTypes": { "type": "object", "additionalProperties": { "type": "string" } },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classes"],
+      "properties": {
+        "classes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "immutable": { "type": "string" },
+            "revalidate": { "type": "string" },
+            "download": { "type": "string" },
+            "subsite": { "type": "string" },
+            "no-store": { "type": "string" }
+          }
+        }
+      }
+    },
+    "authCallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "headers", "accessLog"],
+      "properties": {
+        "path": { "type": "string" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "accessLog": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["redactQueryString"],
+          "properties": { "redactQueryString": { "const": true } }
+        }
+      }
+    }
+  }
+}

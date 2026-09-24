@@ -1,0 +1,150 @@
+---
+/**
+ * The one page shell.
+ *
+ * The document skeleton, the class names and the CSS are the Freva portal's - `portal-shell`,
+ * `portal-header`, `portal-main`, `portal-footer`, `data-view` - so the stylesheet that shipped
+ * with the design applies without translation. The markup is emitted at build time.
+ *
+ * The inline theme script is the design's own, and it is inline because waiting for a bundle
+ * would show a visitor who chose dark mode a white flash on every navigation.
+ */
+import "../styles/freva-tokens.css";
+import "../styles/freva-shell.css";
+import "virtual:portal-theme.css";
+import "virtual:portal-code.css";
+import "virtual:portal-math.css";
+import "virtual:portal-stac.css";
+import "virtual:portal-databrowser.css";
+import Chrome from "../components/Chrome.astro";
+import Footer from "../components/Footer.astro";
+import Announcements from "../components/Announcements.astro";
+import type { ResolvedPortalModel, ResolvedRoute } from "../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+  route: ResolvedRoute;
+}
+
+const { model, route } = Astro.props;
+const { site } = model;
+const isCallback = route.kind === "auth-callback";
+const title = route.path === "/" ? site.title : `${route.title} - ${site.title}`;
+const description = route.description ?? site.subtitle ?? site.title;
+
+/**
+ * A component route is an *application* view: viewport-locked, chrome in flow, the widget given a
+ * definite height. Everything else is a document view, a page that grows and scrolls. Decided
+ * here from the route kind.
+ */
+const view = route.kind === "component" ? "application" : "document";
+
+/**
+ * The backdrop attribute, on the routes that actually have a backdrop.
+ *
+ * A drawn backdrop is a landing-page thing: the canvas is only emitted on a landing, and the
+ * island only mounts where it finds one. Written on every route, the attribute would give a
+ * documentation page `data-backdrop="cosmos"` with no canvas under it, and every Cosmos rule
+ * naming a shared class would match - the night-sky gradient on the page, a translucent Cosmos
+ * slab on `.portal-prose`, the chrome rules reaching the header and the footer. The theme's own
+ * selectors are scoped through `.portal-landing` as well, so neither alone is load-bearing.
+ */
+const backdrop = route.kind === "landing" ? model.theme.backdrop : undefined;
+---
+
+<!doctype html>
+<html lang={site.language}>
+  <head>
+    <meta charset="utf-8" />
+    {isCallback && <meta name="referrer" content="no-referrer" />}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    {
+      isCallback ? (
+        <meta name="robots" content="noindex, nofollow" />
+      ) : (
+        <link rel="canonical" href={route.url} />
+      )
+    }
+    <link rel="icon" href={site.identity.favicon.url} type={site.identity.favicon.mimeType} />
+    {
+      /*
+        The badge's stylesheet, and only when a badge was configured. A `<link>` rather than an
+        import, because the badge package is vendored runtime published as-is: the compiler never
+        reads it, never renames it and never inlines it, which keeps "replace the animation later"
+        a change inside that package. There is deliberately no preload for the motion assets - the
+        badge's loading lifecycle does not fetch them until somebody shows intent.
+      */
+      model.chrome.footer.badge && (
+        <link rel="stylesheet" href={model.chrome.footer.badge.styleUrl} />
+      )
+    }
+    <meta
+      name="generator"
+      content={`${model.buildIdentity.builderName} ${model.buildIdentity.builderVersion}`}
+    />
+    <script is:inline>
+      // Resolve the theme before first paint. It reads one value this portal wrote itself and
+      // sets one attribute; it fetches nothing.
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("freva.portal.theme");
+          var mode =
+            stored === "dark" || stored === "light"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.setAttribute("data-theme", mode);
+          document.documentElement.style.colorScheme = mode;
+        } catch (error) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
+  </head>
+  <body data-portal-route={route.kind} data-portal-site={site.id}>
+    <a class="portal-skip-link" href="#portal-main">Skip to main content</a>
+
+    <div
+      class="portal-shell"
+      id="portal-shell"
+      data-view={view}
+      data-state="ready"
+      data-backdrop={backdrop}
+    >
+      <Chrome model={model} currentPath={`${site.basePath.replace(/\/$/, "")}${route.path}`} />
+
+      <div id="portal-announcements" class="portal-announcements"><Announcements announcements={model.announcements} /></div>
+
+      <main id="portal-main" class="portal-main" tabindex="-1">
+        <slot />
+      </main>
+
+      <Footer model={model} />
+
+      {/*
+        The portal's overlay layer. A hosted application's *global* surfaces - the Data Browser's
+        terminal window, for instance - belong to the portal, not to the region the application is
+        mounted in: that region is a contained, scrolling box, so anything positioned inside it is
+        bounded by it, and a floating window that cannot leave its widget is not a floating window.
+
+        This viewport-sized layer outside that region is one place for those surfaces to live. It
+        is transparent and takes no pointer events - only what a component puts in it does - so it
+        changes nothing for a portal that never mounts an application.
+      */}
+      <div id="portal-overlay-root" class="portal-overlay-root"></div>
+    </div>
+
+    <div
+      id="portal-status"
+      class="portal-visually-hidden"
+      role="status"
+      aria-live="polite"
+    >
+    </div>
+    <script>import "virtual:portal-entry";</script>
+  </body>
+</html>

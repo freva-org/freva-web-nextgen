@@ -1,0 +1,224 @@
+---
+/**
+ * The header: brand lockup as the route home, a tab list, an overflow `More` menu, a compact
+ * `Menu` for narrow viewports, the theme toggle, and the account control when auth is enabled.
+ *
+ * The nodes are written at build time from validated configuration. The interactions that must
+ * stay interactive - opening a menu, measuring overflow, switching theme - are re-attached by the
+ * shell island to markup that already exists.
+ */
+import type { ResolvedPortalModel } from "../../../src/model/types.js";
+import NavPanel from "./NavPanel.astro";
+
+interface Props {
+  model: ResolvedPortalModel;
+  currentPath: string;
+}
+
+const { model, currentPath } = Astro.props;
+const { site, chrome, navigation } = model;
+const homeHref = site.basePath;
+const authEnabled = model.enabledComponents.some((c) => c.kind === "auth");
+
+/** The lockup's name, and the monogram drawn when there is no logo. */
+const brandName = site.institution?.name ?? site.title;
+const monogram = brandName
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((word) => word[0]!.toUpperCase())
+  .join("");
+
+/**
+ * The tab list. The brand lockup *is* Home, so a tab pointing at the site root is not drawn a
+ * second time. A consumer that declares one has not lost it - the lockup is the same destination,
+ * and the entry is still in the compact menu below.
+ */
+const declared = [...navigation.header, ...chrome.header.links];
+const tabs = declared.filter((link) => link.href !== homeHref);
+const isActive = (href: string): boolean =>
+  href === currentPath || (href !== homeHref && currentPath.startsWith(href));
+
+/**
+ * Both navigation levels, as one tree, for the phone drill-down. Read from the model rather than
+ * derived here: the panel has to know a section's pages while standing on a page in a different
+ * section, which nothing in the rendered header knows, and a template may import a TYPE from the
+ * model and nothing else, because the published package ships `dist/` and not `src/`.
+ */
+const outlineSections = model.navOutline;
+---
+
+{
+  chrome.header.enabled && (
+    <header class="portal-header" id="portal-header" data-scrolled="false" data-branding="on">
+      <a class="portal-brand" href={homeHref} aria-label={`${brandName} - portal home`}>
+        <span class="portal-brand-mark" aria-hidden="true" data-kind={site.identity.logo.url ? "logo" : "monogram"}>
+          {site.identity.logo.url ? (
+            <img class="portal-brand-logo" alt="" src={site.identity.logo.url} />
+          ) : (
+            monogram
+          )}
+        </span>
+        <span class="portal-brand-text">
+          <span class="portal-brand-name">{brandName}</span>
+          {site.subtitle && <span class="portal-brand-tagline">{site.subtitle}</span>}
+        </span>
+      </a>
+
+      <nav class="portal-nav" aria-label="Portal">
+        <ul class="portal-nav-list">
+          {tabs.map((link) => (
+            <li class="portal-nav-li">
+              <a
+                class="portal-nav-item"
+                href={link.href}
+                data-active={isActive(link.href) ? "true" : undefined}
+                aria-current={link.href === currentPath ? "page" : undefined}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noopener noreferrer" : undefined}
+                data-portal-external={link.external ? "true" : undefined}
+              >
+                {link.label}
+                {link.external && (
+                  <span class="portal-visually-hidden"> (opens in a new tab)</span>
+                )}
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        <div class="portal-menu portal-more">
+          <button
+            type="button"
+            class="portal-nav-item portal-more-button"
+            aria-expanded="false"
+            aria-haspopup="true"
+            aria-label="More navigation entries"
+            hidden
+          >
+            More
+          </button>
+          <div class="portal-panel" role="menu" hidden />
+        </div>
+
+        {/*
+          The compact control, deliberately NOT a `.portal-menu`: that class is what `initMenus()`
+          binds the dropdown behaviour to, and this button opens the full-screen drill-down
+          instead. Its panel stays in the markup as the no-script fallback, so a phone without the
+          island still gets every destination.
+        */}
+        <div class="portal-compact">
+          <button
+            type="button"
+            class="portal-nav-item portal-compact-button"
+            aria-expanded="false"
+            aria-haspopup="dialog"
+            aria-controls="portal-navpanel"
+            hidden
+          >
+            <Fragment set:html={`<svg class="portal-compact-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`} />
+            <span>Menu</span>
+          </button>
+          <noscript>
+            <div class="portal-panel portal-compact-fallback" role="menu">
+            {declared.map((link) => (
+              <a
+                class="portal-panel-item"
+                role="menuitem"
+                href={link.href}
+                data-active={isActive(link.href) ? "true" : undefined}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noopener noreferrer" : undefined}
+              >
+                {link.label}
+                {link.external && (
+                  <span class="portal-visually-hidden"> (opens in a new tab)</span>
+                )}
+              </a>
+            ))}
+            </div>
+          </noscript>
+        </div>
+      </nav>
+
+      <div class="portal-header-controls">
+        {/*
+          The day/night control, in the Data Browser's own shape: a track with a knob that slides.
+          Which icon shows and where the knob sits are decided by `:root[data-theme]` in the
+          stylesheet, so it is correct on the first paint rather than rewritten by a script.
+        */}
+        <button
+          type="button"
+          class="portal-theme-toggle"
+          role="switch"
+          aria-checked="false"
+          aria-label="Switch to dark theme"
+          title="Toggle day / night"
+        >
+          <span class="portal-theme-knob" aria-hidden="true">
+            <Fragment set:html={`<svg class="portal-theme-icon portal-theme-icon-moon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1111.2 3a6.5 6.5 0 009.8 9.8z"/></svg><svg class="portal-theme-icon portal-theme-icon-sun" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>`} />
+          </span>
+        </button>
+        <span class="portal-header-divider" aria-hidden="true" />
+        {authEnabled && (
+          <div
+            class="portal-menu portal-account"
+            data-portal-account
+            data-portal-signed-in="false"
+            hidden
+          >
+            <button
+              type="button"
+              class="portal-account-button"
+              aria-expanded="false"
+              aria-haspopup="true"
+              aria-label="Account"
+            >
+              <span class="portal-avatar" aria-hidden="true">?</span>
+              <span class="portal-account-label" data-portal-signed-out>Sign in</span>
+              <span class="portal-account-label" data-portal-signed-in-label>Account</span>
+              <span class="portal-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="portal-panel" role="menu" hidden>
+              <button
+                type="button"
+                class="portal-panel-item"
+                role="menuitem"
+                data-portal-auth-action="login"
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                class="portal-panel-item portal-panel-item-danger"
+                role="menuitem"
+                data-portal-auth-action="logout"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </header>
+  )
+}
+
+{
+  chrome.header.enabled && (
+    <NavPanel
+      sections={outlineSections}
+      currentPath={currentPath}
+      homeHref={homeHref}
+      brandName={brandName}
+    />
+  )
+}
+
+{
+  chrome.header.prose && (
+    <div class="portal-header-prose portal-prose">
+      <Fragment set:html={chrome.header.prose.html} />
+    </div>
+  )
+}

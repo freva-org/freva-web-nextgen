@@ -1,0 +1,56 @@
+---
+/**
+ * The links in one section, written once: a long section is a `<details>` and a short one is a
+ * heading and a list, but the list itself is identical in both, so it lives here rather than being
+ * typed twice in the route template, where the two copies would drift.
+ *
+ * The model does not say which item is the current page - one frozen section object is shared by
+ * every route in it, and a `current` flag would fork it into N differently-shaped copies of the
+ * same list. The comparison is made here on `source`: an identity check on a file, not a string
+ * comparison between URLs that a base path, a trailing slash or a percent-encoding could make
+ * differ while naming the same page.
+ *
+ * The page's own headings hang UNDER its entry rather than in a second list below it. Two stacked
+ * lists in one rail - the section, then "On this page" - make a reader work out which column they
+ * are in, and put the current page's headings further from its title than other pages' titles.
+ * Nested, the rail reads as one outline: the section's pages, opened at the one being read.
+ */
+import type { ResolvedSectionNavigationItem } from "../../../src/model/types.js";
+
+interface Props {
+  items: readonly ResolvedSectionNavigationItem[];
+  /** The source path of the page being rendered. */
+  current?: string;
+  /** The current page's own headings, nested under its entry. Empty when there are too few. */
+  toc?: readonly { id: string; text: string; level: number }[];
+}
+
+const { items, current, toc = [] } = Astro.props as Props;
+---
+
+<ul class="portal-section-nav-list">
+  {
+    items.map((item) => (
+      <li class="portal-section-nav-item">
+        <a
+          class="portal-section-nav-link"
+          href={item.href}
+          aria-current={item.source === current ? "page" : undefined}
+        >
+          {item.title}
+        </a>
+        {item.source === current && toc.length > 0 && (
+          <ul class="portal-toc-list">
+            {toc.map((heading) => (
+              <li class="portal-toc-item" data-depth={heading.level}>
+                <a class="portal-toc-link" href={`#${heading.id}`}>
+                  {heading.text}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </li>
+    ))
+  }
+</ul>

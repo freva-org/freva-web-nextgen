@@ -30,17 +30,25 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      # the portal builder type-checks against the other workspaces'
+      # compiled declarations.
+      - name: Build
+        run: npm run build
+
       - name: Type-check
         run: npm run typecheck
 
+      # Every workspace but the portal builder
+      - name: Workspaces to test here
+        id: ws
+        run: |
+          echo "flags=$(npm query .workspace | jq -r '.[].name | select(. != "@freva-org/portal-builder") | "-w \(.)"' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
       - name: Test
-        run: npm test
+        run: npm test ${{ steps.ws.outputs.flags }} --if-present
 
       - name: Coverage
-        run: npm run test:coverage --workspaces --if-present
-
-      - name: Build
-        run: npm run build
+        run: npm run test:coverage ${{ steps.ws.outputs.flags }} --if-present
 
   # A hand-bumped version would be released by the next push to main without ever
   # going through the version PR. Skipped for the changesets bot's own branch.
@@ -250,3 +258,123 @@ jobs:
       # console layer's weight (no jQuery in the ROOT bundle) and the README figures.
       - name: Package and size
         run: npm run check:package -w $PKG
+
+  portal-builder:
+    name: portal-builder
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/portal-builder/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned RST helper
+        run: pip install ./tools/portal-rst-renderer
+
+      # Diagrams render at build time. A missing browser is a failure here.
+      - name: Install the pinned browser
+        run: npm exec -w @freva-org/portal-builder -- playwright install --with-deps chromium
+
+      - name: Runtime manifest id
+        id: runtime
+        run: |
+          echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Pyodide distribution
+        uses: actions/cache@v4
+        with:
+          path: packages/browser-python/.runtime
+          key: pyodide-${{ steps.runtime.outputs.id }}
+
+      - name: Assemble the runtime
+        run: node packages/browser-python/scripts/prepare-runtime.mjs
+
+      - name: Freva wheel id
+        id: freva
+        run: |
+          echo "id=$(node packages/browser-python/scripts/freva-wheelhouse-key.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the derived Freva wheel
+        uses: actions/cache@v4
+        with:
+          path: packages/browser-python/.freva-wheels
+          key: freva-wheel-${{ steps.freva.outputs.id }}
+
+      - name: Build workspace dependencies
+        run: npm run build
+
+      # The example portal enables the STAC Browser component, so the suites that build it need
+      # the prepared materials. Preparing them compiles a third-party application and its ~800
+      # dependencies, so the result is cached on the recipe's own key.
+      - name: STAC materials id
+        id: stac
+        run: |
+          echo "id=$(npm run --silent stac:cache-key)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the prepared STAC materials
+        uses: actions/cache@v4
+        with:
+          path: packages/stac-browser/materials
+          key: stac-materials-${{ steps.stac.outputs.id }}
+
+      - name: Prepare the STAC materials
+        run: npm run stac:prepare
+
+      - name: Test
+        run: npm test -w @freva-org/portal-builder
+
+      - name: Coverage
+        run: npm run test:coverage -w @freva-org/portal-builder
+
+      - name: Browser gate
+        run: npm run test:browser:strict -w @freva-org/portal-builder
+
+      - name: Python playground gate
+        run: npm run test:browser:python -w @freva-org/portal-builder
+
+      - name: Packaging gate
+        run: npm run test:packaging -w @freva-org/portal-builder
+
+      - name: Freva playground under its generated policy (needs a public package index)
+        run: npm run test:browser:package-index -w @freva-org/portal-builder
+
+      - name: Build the fictional consumers
+        run: |
+          node packages/portal-builder/bin/freva-portal-builder.mjs build \
+            --source-root examples/minimal-portal \
+            --config examples/minimal-portal/portal.yaml \
+            --out build/minimal --quiet
+          node packages/portal-builder/bin/freva-portal-builder.mjs verify --dir build/minimal
+          node packages/portal-builder/bin/freva-portal-builder.mjs build \
+            --source-root examples/full-portal \
+            --config examples/full-portal/portal.yaml \
+            --out build/full --quiet \
+            --effective-at 2026-01-07T12:00:00Z \
+            --stac-materials packages/stac-browser/materials
+          node packages/portal-builder/bin/freva-portal-builder.mjs verify --dir build/full
+        env:
+          SOURCE_DATE_EPOCH: 1760000000
+
+      - name: Source closure
+        run: npm run closure
+
+      - name: Licence report and SBOM
+        run: |
+          npm run licenses
+          npm run sbom
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portal-builder-supply-chain
+          path: packages/portal-builder/reports/

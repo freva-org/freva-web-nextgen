@@ -1,0 +1,51 @@
+{
+  "case": "standard",
+  "input": {
+    "options": {
+      "chrome": {
+        "title": "Example Catalog",
+        "footerLinks": [
+          {
+            "label": "Institute",
+            "href": "https://www.example.org/"
+          }
+        ]
+      },
+      "access": {
+        "externalCatalogs": "deny"
+      },
+      "rootPage": {},
+      "linkPolicy": {
+        "canonicalizeAdvertisedRoot": true,
+        "hiddenRelations": ["service-desc"]
+      },
+      "historyMode": "hash",
+      "pathPrefix": "/site/catalog/",
+      "catalogUrl": "https://catalog.example.org/stac/"
+    },
+    "entryUrl": "/site/stac/assets/index.js",
+    "styleUrls": ["/site/stac/assets/index.css"],
+    "mountId": "stac-browser-mount"
+  },
+  "config": {
+    "catalogUrl": "https://catalog.example.org/stac/",
+    "catalogTitle": "Example Catalog",
+    "footerLinks": [
+      {
+        "label": "Institute",
+        "url": "https://www.example.org/"
+      }
+    ],
+    "allowExternalAccess": false,
+    "allowedDomains": [],
+    "historyMode": "hash",
+    "pathPrefix": "/site/catalog/",
+    "showKeywordsInItemCards": false,
+    "showThumbnailsAsAssets": false
+  },
+  "hiddenRelations": ["service-desc"],
+  "canonicalizeAdvertisedRoot": true,
+  "entryUrl": "/site/stac/assets/index.js",
+  "styleUrls": ["/site/stac/assets/index.css"],
+  "mountId": "stac-browser-mount"
+}

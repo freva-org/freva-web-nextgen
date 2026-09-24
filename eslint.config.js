@@ -26,7 +26,7 @@ export default tseslint.config(
   // verdict to stdout. A few of them install jsdom globals and then drive the component, so both
   // global sets are legitimate here for the same reason they are in browser-tests.
   {
-    files: ["**/scripts/**/*.mjs", "*.config.js"],
+    files: ["**/scripts/**/*.mjs", "*.config.js", "**/astro.config.mjs"],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: { "no-console": "off" },
   },
@@ -47,11 +47,35 @@ export default tseslint.config(
   {
     files: [
       "packages/*/playground/**/*.js",
+      // The fictional consumer sites carry their own page scripts, written the way a
+      // consumer would write them.
+      "examples/**/*.js",
       // Deliberately plain, unbundled browser JavaScript
       "packages/*/demo/**/*.js",
     ],
     languageOptions: { globals: { ...globals.browser } },
     rules: { "no-console": "off" },
+  },
+  // A CommonJS preload: it must be CJS, because it monkeypatches Node's own modules before any
+  // ESM graph is evaluated.
+  {
+    files: ["**/*.cjs"],
+    languageOptions: { sourceType: "commonjs", globals: { ...globals.node } },
+    rules: { "@typescript-eslint/no-require-imports": "off", "no-console": "off" },
+  },
+  {
+    files: ["packages/portal-builder/client/components/cosmos/scene.js"],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: {
+      "@typescript-eslint/no-unused-vars": "off",
+      "no-empty": "off",
+      "no-console": "off",
+    },
+  },
+  {
+    files: ["packages/portal-builder/client/components/cosmos/art/*.mjs"],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: { "no-empty": "off", "no-console": "off" },
   },
   {
     ignores: [
@@ -66,6 +90,14 @@ export default tseslint.config(
       // A fetched third-party checkout and the prepared STAC tree: neither is ours to lint.
       "packages/stac-browser/.upstream/**",
       "packages/stac-browser/materials/**",
+      // Astro's generated type shims, written by `astro check`.
+      "packages/portal-builder/.astro/**",
+      "packages/portal-builder/astro/.astro/**",
+      "packages/portal-builder/astro/src/env.d.ts",
+      "packages/portal-builder/.portal-build/**",
+      "packages/portal-builder/reports/**",
+      // The RST helper's virtualenv from `npm run bootstrap`: docutils ships its own JavaScript.
+      "**/.venv/**",
     ],
   },
 );

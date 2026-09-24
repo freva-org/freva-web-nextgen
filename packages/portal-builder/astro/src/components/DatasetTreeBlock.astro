@@ -1,0 +1,116 @@
+---
+/**
+ * The `dataset-tree` landing block.
+ *
+ * The panel, the heading and the catalogue are emitted here; the tree itself is drawn by
+ * `@freva-org/dataset-tree` once the island runs. A tree is an interactive control - it expands,
+ * it filters, it announces - and server-rendering a static approximation would put a thing on the
+ * page that looks operable and is not. A scriptless visitor gets the `<noscript>` line instead,
+ * and the block is one entry point among several by design, so the page still works without it.
+ *
+ * THE WRAPPER IS QUIET: no border, no radius, no shadow, no padding. The component already draws
+ * a complete bordered panel with its own toolbar and footer, and a second bordered panel around
+ * it reads as two nested frames with two radii and costs the tree the width it needs. This
+ * element contributes a heading and a summary when the configuration supplies them, and nothing
+ * when it does not - with both omitted the block begins at the tree's own toolbar.
+ *
+ * THE CATALOGUE IS DATA, NOT CODE. It travels in a `<script type="application/json">`, which no
+ * browser executes and which therefore needs nothing from `script-src` - the same mechanism a
+ * JSON-LD block uses. The model's own helper escapes it so a value containing `</script>` cannot
+ * end the element early.
+ */
+import type { ResolvedBlock } from "../../../src/model/types.js";
+
+interface Props {
+  block: ResolvedBlock;
+}
+
+const { block } = Astro.props;
+const data = block.datasetTree!;
+---
+
+<section class="portal-dataset-tree-block" data-block="dataset-tree" data-portal-tree-panel>
+  <div class="portal-dataset-tree-bar">
+    <div class="portal-dataset-tree-head">
+      {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
+      {block.summary && <p class="portal-dataset-tree-summary">{block.summary}</p>}
+    </div>
+    {/*
+      ONE control, and never a word the tree's own toolbar already uses: `Maximize` / `Exit full
+      screen`, not `Expand` / `Collapse`, because the toolbar's Collapse folds branches and two
+      controls saying "Collapse" on one screen would do entirely different things. The
+      window-chrome triad is out too - a permanently disabled button reads as broken rather than
+      unavailable, and minimise and close mean nothing for a block that is part of the page.
+
+      Icon at rest, label on hover: the control sits in a panel header beside a status pill and a
+      permanent word would crowd both. `aria-label` carries the name at all times, and where there
+      is no hover - a touch screen - the label is always shown, because a glyph alone is not a name.
+    */}
+    <button
+      type="button"
+      class="portal-tree-expand"
+      data-portal-tree-expand
+      aria-expanded="false"
+      aria-label="Maximize the dataset browser"
+    >
+      {/*
+        FOUR directions, not two. A diagonal pair reads as "resize"; arrows to all four corners is
+        the glyph a visitor knows from a video player, and it is the whole affordance at rest - the
+        label beside it is collapsed to nothing until the control is hovered. Drawn as SVG rather
+        than typed as a fullscreen-symbol character, whose shape is whatever font the reader's
+        operating system has for that codepoint.
+      */}
+      <svg class="portal-tree-expand-icon" data-icon="grow" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 4h6v6M20 4l-6.5 6.5M10 4H4v6M4 4l6.5 6.5M14 20h6v-6M20 20l-6.5-6.5M10 20H4v-6M4 20l6.5-6.5" />
+      </svg>
+      {/* Its mirror: the same four arrows, pointing back in. */}
+      <svg class="portal-tree-expand-icon" data-icon="shrink" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 4l-6.5 6.5M13.5 4.5v6h6M4 4l6.5 6.5M10.5 4.5v6h-6M20 20l-6.5-6.5M13.5 19.5v-6h6M4 20l6.5-6.5M10.5 19.5v-6h-6" />
+      </svg>
+      <span class="portal-tree-expand-text">Maximize</span>
+    </button>
+  </div>
+  <div
+    class="portal-dataset-tree"
+    id={`portal-dataset-tree-${data.instanceId}`}
+    data-portal-dataset-tree={data.instanceId}
+    data-portal-dataset-tree-expand={JSON.stringify(data.expandedIds)}
+    data-portal-dataset-tree-status={data.statusLabel}
+    data-portal-dataset-tree-generated={data.generatedAt}
+    data-portal-dataset-tree-source={data.sourceLabel}
+    {/*
+      The playground's configuration, or nothing at all. Absent means the island never reads it,
+      never imports the coordinator, and the page contains no interpreter - the state a portal
+      that did not ask for one has to be in. The digests are the build's; the SOURCES are already
+      in the catalogue below.
+    */}
+    data-portal-dataset-tree-python={data.python ? JSON.stringify(data.python) : undefined}
+    {/*
+      WHICH SOURCE, on the element, so the island never has to guess from what is present. A live
+      block carries its gateway configuration here and no catalogue; a snapshot block carries a
+      catalogue and no gateway. Both travel as data the browser does not execute.
+    */}
+    data-portal-dataset-tree-mode={data.mode}
+    data-portal-dataset-tree-s3={data.s3 ? JSON.stringify(data.s3) : undefined}
+  >
+    {
+      data.mode === "snapshot" && (
+        <script
+          type="application/json"
+          data-portal-dataset-tree-catalog
+          is:inline
+          set:html={data.catalogScriptJson}
+        />
+      )
+    }
+    <noscript>
+      <p class="portal-note">
+        {
+          data.mode === "snapshot"
+            ? `The dataset browser needs JavaScript. Its catalogue lists ${data.rootCount} collections and ${data.nodeCount} entries in total.`
+            : `The dataset browser needs JavaScript. It lists ${data.rootCount} collections from ${data.source} as they are opened.`
+        }
+      </p>
+    </noscript>
+  </div>
+</section>

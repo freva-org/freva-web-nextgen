@@ -27,3 +27,23 @@ packages/browser-python/.addons/
 packages/stac-browser/.upstream/
 # Prepared third-party STAC materials.
 packages/stac-browser/materials/
+
+# The builder's Astro type shims and its generated inventories.
+packages/portal-builder/.astro/
+packages/portal-builder/astro/.astro/
+packages/portal-builder/reports/
+
+# The showcase is authored in MkDocs admonition syntax, whose bodies are indentation-delimited.
+# Prettier does not know that syntax and reflows the indentation away, changing what the
+# document means.
+examples/full-portal/content/showcase.md
+
+# Bootstrapped Python environment for the pinned RST helper, see
+# tools/portal-rst-renderer/README.md. Third-party, and never committed.
+**/.venv/
+
+# The Cosmos scene builder is a verbatim port of the supplied redesign, its changes enumerated
+# in the file's own header and its boundary declared in `scene.d.ts`. Reformatting it would
+# destroy the only cheap way to diff it against the source it came from, which is what makes
+# the port auditable. ESLint has a matching override for the same file.
+packages/portal-builder/client/components/cosmos/scene.js

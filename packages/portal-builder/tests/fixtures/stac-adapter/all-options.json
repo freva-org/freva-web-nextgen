@@ -1,0 +1,63 @@
+{
+  "case": "all-options",
+  "input": {
+    "options": {
+      "chrome": {
+        "title": "Every Option Catalog",
+        "imageUrl": "/site/_portal/logo.a1b2c3d4.svg",
+        "footerLinks": [
+          {
+            "label": "Institute",
+            "href": "https://www.example.org/"
+          },
+          {
+            "label": "Imprint",
+            "href": "/site/imprint/"
+          }
+        ]
+      },
+      "access": {
+        "externalCatalogs": "deny"
+      },
+      "rootPage": {
+        "introHtml": "<p>Catalog <strong>intro</strong>.</p>"
+      },
+      "linkPolicy": {
+        "canonicalizeAdvertisedRoot": true,
+        "hiddenRelations": ["service-desc", "service-doc", "alternate"]
+      },
+      "historyMode": "hash",
+      "pathPrefix": "/site/browse/stac/",
+      "catalogUrl": "https://catalog.example.org/stac/v1/"
+    },
+    "entryUrl": "/site/stac/assets/index-GCdk_m02.js",
+    "styleUrls": ["/site/stac/assets/index-zQuljNHR.css"],
+    "mountId": "stac-browser-mount"
+  },
+  "config": {
+    "catalogUrl": "https://catalog.example.org/stac/v1/",
+    "catalogTitle": "Every Option Catalog",
+    "catalogImage": "/site/_portal/logo.a1b2c3d4.svg",
+    "footerLinks": [
+      {
+        "label": "Institute",
+        "url": "https://www.example.org/"
+      },
+      {
+        "label": "Imprint",
+        "url": "/site/imprint/"
+      }
+    ],
+    "allowExternalAccess": false,
+    "allowedDomains": [],
+    "historyMode": "hash",
+    "pathPrefix": "/site/browse/stac/",
+    "showKeywordsInItemCards": false,
+    "showThumbnailsAsAssets": false
+  },
+  "hiddenRelations": ["service-desc", "service-doc", "alternate"],
+  "canonicalizeAdvertisedRoot": true,
+  "entryUrl": "/site/stac/assets/index-GCdk_m02.js",
+  "styleUrls": ["/site/stac/assets/index-zQuljNHR.css"],
+  "mountId": "stac-browser-mount"
+}

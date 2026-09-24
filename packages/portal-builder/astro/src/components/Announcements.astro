@@ -1,0 +1,41 @@
+---
+/**
+ * Announcements: one `portal-announcement` row per notice, its level on `data-level`, the text in
+ * a paragraph that may wrap to any length, and a 26px icon button to dismiss it. The button starts
+ * hidden - without JavaScript there is nothing to dismiss, and a button that does nothing is worse
+ * than no button.
+ *
+ * Which announcements exist is decided during the build against the recorded effective instant;
+ * nothing here can invent one.
+ */
+import type { ResolvedAnnouncement } from "../../../src/model/types.js";
+
+interface Props {
+  announcements: readonly ResolvedAnnouncement[];
+}
+
+const { announcements } = Astro.props;
+---
+
+{
+  announcements.map((announcement) => (
+    <div
+      class="portal-announcement"
+      data-level={announcement.level}
+      data-portal-announcement={announcement.id}
+    >
+      <p class="portal-announcement-text">{announcement.message}</p>
+      {announcement.dismissible && (
+        <button
+          class="portal-icon-button portal-announcement-dismiss"
+          type="button"
+          aria-label="Dismiss this announcement"
+          hidden
+          data-portal-dismiss
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  ))
+}

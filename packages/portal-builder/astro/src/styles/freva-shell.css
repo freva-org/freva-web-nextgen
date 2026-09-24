@@ -1,0 +1,3647 @@
+/*
+ * The portal shell.
+ *
+ * Proportions, spacing, radii, shadows and responsive behaviour follow the design handoff. Two
+ * structural rules from it drive most of what follows: header and footer are full-bleed and
+ * fixed, only *content* is capped at 1440px; and the fixed footer's height is measured at runtime
+ * and written back as the content container's padding-bottom, so the expanded site index can
+ * never sit on top of content that cannot be scrolled clear.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/*
+ * Scrollbars, everywhere the portal scrolls. The platform default is a wide bar with a painted
+ * track, which on a page that caps its reading column reads as furniture rather than a control.
+ * This is a thin thumb over nothing: no track, no buttons, and a transparent border so it has
+ * air around it. Set on `:root` rather than on the elements that scroll, because both standard
+ * properties inherit - a component that makes its own scroll container gets the same one. A
+ * visitor whose system asks for always-visible scrollbars still gets them.
+ */
+:root {
+  /*
+   * THE THUMB CARRIES THE BRAND, quietly. A scrollbar is furniture, often several at once, so the
+   * full accent everywhere would be the loudest thing on the page: `--scrollbar-thumb` is the
+   * accent mixed most of the way into the page background, and grabbing it gives the full accent.
+   * Mixed against `--bg` rather than fixed, so it re-derives from whatever `colorAccent` a
+   * consumer set and stays correct in both themes.
+   */
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 38%, var(--bg));
+  --scrollbar-thumb-hover: var(--accent);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+/*
+ * Dark mode mixes the other way: `--accent` is already lighter than the surface, so blending
+ * toward the background darkens it into the panel. A stronger blend keeps it visible on `#10161d`.
+ */
+:root[data-theme="dark"] {
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 46%, var(--bg));
+}
+/*
+ * Firefox has no `:hover` for `scrollbar-color`, so the standard property gets the resting colour
+ * and the WebKit rules below add the interaction; both engines agree at rest.
+ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  /* Without this the border paints in the thumb's colour and the thin thumb is wide again. */
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+/*
+ * The chrome is a flat sheet of the accent, so an accent thumb on it would be invisible. Anything
+ * scrolling inside the header or the footer uses the chrome's own ink instead.
+ */
+.portal-header ::-webkit-scrollbar-thumb,
+.portal-footer ::-webkit-scrollbar-thumb {
+  background: var(--chrome-line-hi);
+  background-clip: padding-box;
+}
+.portal-header,
+.portal-footer {
+  scrollbar-color: var(--chrome-line-hi) transparent;
+}
+
+/*
+ * `hidden` must actually hide. The UA stylesheet's `[hidden] { display: none }` loses to any
+ * author rule that sets `display` - every flex and inline-block rule below - so without this the
+ * shell's own hiding (overflowed tabs, the compact nav, closed menus) is silently inert: the
+ * element stays visible, clickable and in the tab order.
+ */
+[hidden] {
+  display: none !important;
+}
+
+html {
+  /* The header is fixed; anchor jumps must not land underneath it. */
+  scroll-padding-top: calc(var(--header-h) + 12px);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Nothing in the portal may scroll the document sideways. */
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5em;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.portal-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.portal-skip-link {
+  position: absolute;
+  left: 8px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.portal-skip-link:focus {
+  top: 8px;
+}
+
+/*
+ * The main colour, everywhere it means "this thing is selected, or will act". Text selection,
+ * focus rings and accent-coloured text read from one pair: `--accent` is the fill, `--accent-text`
+ * that hue moved only in lightness until readable on the current theme's page. A consumer sets
+ * one token and all of these follow.
+ */
+::selection {
+  background: color-mix(in srgb, var(--accent-text, var(--accent)) 26%, transparent);
+  color: var(--ink);
+}
+
+/* Header. */
+
+.portal-header {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--header-h);
+  /*
+   * Full-bleed bar, centred contents. Below `--chrome-max` this is exactly `var(--shell-pad)` and
+   * nothing moves; above it the extra width goes into the gutters, so the brand and the
+   * navigation stay in the column the page's own text is in rather than drifting to the edges.
+   */
+  padding: 0 max(var(--shell-pad), calc((100% - var(--chrome-max)) / 2 + var(--shell-pad)));
+  background: var(--header-bg);
+  color: var(--chrome-ink);
+  /* A hairline of the chrome's own ink, not the page's border colour: the bar
+     is the main colour now, and a page-coloured rule on it reads as a seam. */
+  border-bottom: 1px solid var(--chrome-line);
+  transition: height 0.22s ease;
+}
+.portal-header[data-scrolled="true"] {
+  height: var(--header-h-scrolled);
+}
+.portal-shell[data-view="application"] .portal-header {
+  height: var(--header-h-app);
+}
+.portal-shell[data-view="application"] .portal-header[data-scrolled="true"] {
+  height: var(--header-h-app-scrolled);
+}
+
+.portal-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 38vw;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+.portal-brand-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-8);
+  background: var(--chrome-chip);
+  color: var(--chrome-ink);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+}
+.portal-brand-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.portal-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.portal-brand-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.portal-brand-tagline {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--chrome-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The tagline is landing-page chrome; an application view drops it for height. */
+.portal-shell[data-view="application"] .portal-brand-tagline {
+  display: none;
+}
+
+/*
+ * `flex: 1 1 0%`, not `1 1 auto`, on both the nav and its list - load-bearing, not cosmetic.
+ *
+ * With an `auto` basis the element's width follows its content. The overflow controller measures
+ * that width as its budget, then hides tabs to fit it, which shrinks the content, which shrinks
+ * the budget, which hides more tabs: a feedback loop that collapses the bar to a single tab at
+ * any viewport size. A zero basis makes the budget the space actually available - header width
+ * minus the brand and the controls - however many tabs happen to be visible right now.
+ * `justify-content: flex-end` keeps the design's right alignment.
+ */
+.portal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.portal-nav-list {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  /* The overflow controller measures this element's clientWidth as the budget. */
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+.portal-nav-li[hidden] {
+  display: none;
+}
+
+.portal-nav-item {
+  display: inline-block;
+  padding: 7px clamp(8px, 1.1vw, 13px);
+  border-radius: var(--r-8);
+  font-size: 13.5px;
+  color: var(--chrome-ink-2);
+  text-decoration: none;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.portal-nav-item:hover {
+  background: var(--chrome-chip);
+  color: var(--chrome-ink);
+}
+.portal-nav-item[data-active="true"] {
+  background: var(--chrome-chip-hi);
+  color: var(--chrome-ink);
+  font-weight: 600;
+}
+
+.portal-menu {
+  position: relative;
+}
+.portal-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 208px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-12);
+  box-shadow: var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+  z-index: 60;
+}
+.portal-panel[hidden] {
+  display: none;
+}
+.portal-panel-item {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--r-8);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.portal-panel-item:hover {
+  background: var(--chip);
+}
+.portal-panel-item-danger {
+  color: var(--danger);
+}
+.portal-panel-item-danger:hover {
+  background: var(--danger-bg);
+}
+
+.portal-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+/*
+ * The divider separates the account control from everything else, so it is drawn only when there
+ * is an account control to separate.
+ */
+.portal-header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--chrome-line-hi);
+}
+.portal-header-controls:not(:has(.portal-account)) .portal-header-divider {
+  display: none;
+}
+/*
+ * The day/night switch, in the Data Browser's shape: a track and a knob that slides. The icon is
+ * not swapped by script - both are in the markup and the stylesheet shows one - so the control is
+ * right on the first paint.
+ */
+.portal-theme-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 54px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--chrome-line-hi);
+  background: var(--chrome-chip);
+  cursor: pointer;
+  transition:
+    background-color 0.35s,
+    border-color 0.35s;
+}
+.portal-theme-toggle:hover {
+  background: var(--chrome-chip-hi);
+}
+.portal-theme-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--chrome-ink);
+  color: var(--chrome-bg);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+:root[data-theme="dark"] .portal-theme-knob {
+  transform: translateX(24px);
+}
+.portal-theme-icon {
+  grid-area: 1 / 1;
+}
+.portal-theme-icon-sun,
+:root[data-theme="dark"] .portal-theme-icon-moon {
+  display: none;
+}
+:root[data-theme="dark"] .portal-theme-icon-sun {
+  display: block;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-theme-toggle,
+  .portal-theme-knob {
+    transition: none;
+  }
+}
+
+/* The compact disclosure says what it is with a mark as well as a word. */
+.portal-compact-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.portal-compact-icon {
+  flex: 0 0 auto;
+}
+
+/*
+ * The page's small round control. Used on page surfaces - the announcement's dismiss - so it
+ * keeps the page's palette; the header overrides it below, where it sits on the main colour.
+ */
+.portal-icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+}
+.portal-icon-button:hover {
+  background: var(--chip);
+}
+.portal-header .portal-icon-button {
+  border-color: var(--chrome-line-hi);
+  background: var(--chrome-chip);
+  color: var(--chrome-ink);
+}
+.portal-header .portal-icon-button:hover {
+  background: var(--chrome-chip-hi);
+}
+.portal-account-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--chrome-line-hi);
+  border-radius: var(--r-pill);
+  background: var(--chrome-chip);
+  color: var(--chrome-ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.portal-avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--chrome-ink);
+  color: var(--chrome-bg);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+@media (max-width: 1119px) {
+  .portal-account-label {
+    display: none;
+  }
+}
+/*
+ * One static control in two states. The build cannot know whether a visitor is signed in, so both
+ * labels and both actions are in the markup and the auth bridge flips one attribute; nothing is
+ * rebuilt or injected. It stays `hidden` until the bridge is live, so a visitor without
+ * JavaScript is never shown a control that cannot work.
+ */
+.portal-account[data-portal-signed-in="false"] [data-portal-signed-in-label],
+.portal-account[data-portal-signed-in="false"] [data-portal-auth-action="logout"],
+.portal-account[data-portal-signed-in="true"] [data-portal-signed-out],
+.portal-account[data-portal-signed-in="true"] [data-portal-auth-action="login"] {
+  display: none;
+}
+
+/* Structure. */
+
+.portal-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * The header is fixed, so it occupies no space in flow and whatever comes first has to reserve
+ * it. Announcements come before main in the document, so the clearance belongs to whichever is
+ * actually first; on `.portal-main` unconditionally it would put a banner *under* the header.
+ */
+.portal-announcements:not(:empty) {
+  padding-top: var(--header-h);
+}
+.portal-announcements:not(:empty) + .portal-main {
+  padding-top: 0;
+}
+.portal-shell[data-view="application"] .portal-announcements:not(:empty) {
+  padding-top: var(--header-h-app);
+}
+.portal-announcement {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  /*
+   * The same centred column the header and footer bar keep their contents in. The band stays
+   * full-bleed - a notice that stops short of the edges reads as a card missing its radius - but
+   * its *text* starts under the brand. Identical formula to the header's, so the alignment holds
+   * at every width and in every view.
+   */
+  padding-block: 10px;
+  padding-inline: max(var(--shell-pad), calc((100% - var(--chrome-max)) / 2 + var(--shell-pad)));
+  /*
+   * Ruled top and bottom rather than bottom only. In light mode the chip is a warm grey on a
+   * near-white page and the band is obvious either way; in dark mode the chip is within a few
+   * percent of both the page and the header bar, and a single hairline underneath leaves the
+   * notice reading as a lighter part of the chrome.
+   */
+  border-block: 1px solid var(--line-2);
+  background: var(--chip);
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.portal-announcement + .portal-announcement {
+  /* Consecutive notices share one rule instead of stacking two. Width only - the `border-top`
+     shorthand would reset the colour to `currentColor`, the notice's ink, not the line. */
+  border-top-width: 0;
+}
+.portal-announcement[data-level="warning"] {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: var(--warning);
+}
+.portal-announcement[data-level="critical"] {
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 600;
+  border-color: var(--danger);
+}
+.portal-announcement-text {
+  margin: 0;
+  flex: 1 1 auto;
+  /* Runtime text of unknown length must never widen the document. */
+  overflow-wrap: anywhere;
+}
+.portal-announcement-dismiss {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.portal-main {
+  /* Clears the fixed header. */
+  padding-top: var(--header-h);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/*
+ * And clears the fixed footer, so the last lines of a document are never under it. The reserve is
+ * the collapsed bar plus the site index's own height, which is also the band the index unrolls
+ * through, so the reserve is never visible as empty room.
+ */
+.portal-shell[data-view="document"] .portal-main {
+  padding-bottom: calc(var(--footer-h) + var(--footer-index-h, 0px));
+}
+.portal-main:focus {
+  outline: none;
+}
+/*
+ * Application views are viewport-locked: the document itself never scrolls.
+ *
+ * A document view is a page - it grows with its content and the visitor scrolls it, so a fixed
+ * header and footer with a measured clearance is right. An application view is not: the Data
+ * Browser is a three-row grid that fills its target and gives *each panel* its own bounded
+ * scroll, which needs a target with a definite height. In the document layout it measures
+ * `height: 100%` against a container with none, grows to its content (4268px against a 900px
+ * viewport) and the whole page scrolls, so its three panels scroll as one long column.
+ *
+ * So here the shell becomes the viewport: an exact-height flex column with the header and footer
+ * back *in flow* as fixed-size rows, and the application region taking what is left. Taking the
+ * chrome out of `position: fixed` also drops the clearance padding, which the announcement bar
+ * has already reserved.
+ */
+.portal-shell[data-view="application"] {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.portal-shell[data-view="application"] .portal-header,
+.portal-shell[data-view="application"] .portal-footer {
+  position: static;
+  flex: 0 0 auto;
+}
+.portal-shell[data-view="application"] .portal-announcements:not(:empty) {
+  padding-top: 0;
+  flex: 0 0 auto;
+}
+.portal-shell[data-view="application"] .portal-main {
+  padding-top: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  /*
+   * The application fills this box. `auto` vertically, so a viewport shorter than a widget's own
+   * minimum height degrades to one scrollbar instead of clipping - but never horizontally: a
+   * hosted application that overflows its box by a few pixels (Bootstrap's negative row margins
+   * are the usual culprit) would drag the whole shell, header included, off to the left.
+   */
+  overflow-y: auto;
+  overflow-x: hidden;
+  /*
+   * A hosted application's stacking contexts stop here. STAC Browser's own header is
+   * `position: sticky` with a Bootstrap z-index in the thousands; unisolated it competes with the
+   * shell's own - header 50, menus 60 - and paints over the portal's navigation. `isolate` makes
+   * every z-index inside the application relative to this box, so no shell chrome must out-number
+   * it.
+   */
+  isolation: isolate;
+  /*
+   * And its *fixed* elements stop here too. A hosted application's dialogs are `position: fixed`,
+   * sized to the viewport - so a tall one, the Data Browser's file inspector, begins behind the
+   * portal header and ends behind the footer with its first and last rows unreachable. Layout
+   * containment makes this box the containing block for fixed descendants, so a dialog is as tall
+   * as the region the application has. `contain: layout` rather than a transform: it does that
+   * without promoting the application to its own compositing layer, which would cost memory on
+   * every map and 3-D view inside it.
+   */
+  contain: layout;
+}
+
+/* Document views are capped and centred; application views are full-bleed. */
+.portal-landing,
+.portal-document,
+.portal-sandbox,
+.portal-error {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: clamp(28px, 4vw, 56px) var(--shell-pad) 40px;
+}
+.portal-feature {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.portal-feature-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* The Data Browser fills its target and needs a definite height. */
+  height: 100%;
+}
+
+/* Landing. */
+
+.portal-eyebrow {
+  margin: 0 0 22px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.portal-hero-heading {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(38px, 3.6vw, 64px);
+  line-height: 1.04;
+  letter-spacing: -0.028em;
+  max-width: 17ch;
+  text-wrap: pretty;
+}
+.portal-hero-text {
+  font-size: clamp(16.5px, 1.1vw, 18.5px);
+  line-height: 1.62;
+  color: var(--ink-2);
+  max-width: 52ch;
+}
+.portal-block-heading {
+  font-size: 17px;
+  margin-bottom: 18px;
+}
+
+/*
+ * The hero's calls to action: a flex row with a gap. As a plain block box the inline-flex buttons
+ * touch edge to edge and read as one control with a line down the middle. The row wraps rather
+ * than overflowing when a third action or a narrow column leaves no room.
+ */
+.portal-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.portal-intro,
+.portal-hero,
+.portal-search-block,
+.portal-content-block,
+.portal-cards,
+.portal-links,
+.portal-feature-link {
+  margin-bottom: clamp(28px, 3.4vw, 56px);
+}
+
+/*
+ * The landing hero: text left, entry points right, in the design handoff's proportions. The
+ * second column exists only when the manifest put something in it - `data-columns="one"`
+ * collapses rather than reserving empty space.
+ */
+.portal-hero-row {
+  display: grid;
+  gap: clamp(32px, 4vw, 88px);
+  align-items: start;
+  padding: clamp(24px, 4vw, 72px) 0 clamp(16px, 2vw, 32px);
+}
+.portal-hero-row[data-columns="two"] {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+}
+/*
+ * An aside carrying a dataset tree takes the larger share. A search box is one field and a button,
+ * comfortable in a column narrower than the prose beside it; a tree is a hierarchy - names,
+ * descriptions, right-aligned metrics, a detail panel under a row - and its own layout drops the
+ * descriptions below 30rem, which in an even split happens around a 1100px window.
+ */
+.portal-hero-row[data-columns="two"][data-aside="wide"] {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+.portal-hero-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* Inside the hero column the cards fill their column rather than a fixed cap. */
+.portal-hero-aside .portal-search-block,
+.portal-hero-aside .portal-feature-link-anchor {
+  max-width: none;
+  margin-bottom: 0;
+}
+.portal-hero-aside .portal-feature-link {
+  margin-bottom: 0;
+}
+/* The hero's own spacing is the row's; only the last child keeps a gap. */
+.portal-hero-lead > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  /*
+   * One column, whichever way the row splits on a desktop. The wide variant is a more specific
+   * selector, so it is named here too: specificity beats source order.
+   */
+  .portal-hero-row[data-columns="two"],
+  .portal-hero-row[data-columns="two"][data-aside="wide"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(24px, 4vw, 40px);
+  }
+}
+
+.portal-search-block {
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-16);
+  padding: 26px 26px 22px;
+  box-shadow: var(--shadow-card);
+  max-width: 620px;
+}
+.portal-search-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/*
+ * The suggestion popup is positioned against this box rather than the form, so it lines up with
+ * the input and not with the Search button beside it.
+ */
+.portal-search-field {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+}
+/*
+ * "The box heard you", while the first suggestion lookup is in flight. The first keystroke costs
+ * a round-trip to the facet index; until it lands there is no list, and an input that answers a
+ * cold API with nothing reads as broken rather than busy. The mark is inside the field, on the
+ * trailing edge, so it does not move the input or the button beside it. The fade is delayed:
+ * once the facets are cached the ranking is local and finishes within a frame, and a spinner
+ * that blinks on every keystroke is worse than none.
+ */
+.portal-search-suggesting {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  pointer-events: none;
+  opacity: 0;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  color: var(--muted);
+  transition: opacity 140ms linear;
+}
+.portal-search-field[data-portal-suggesting="true"] .portal-search-suggesting {
+  opacity: 0.75;
+  transition-delay: 260ms;
+  animation: portal-spin 0.7s linear infinite;
+}
+/* Room for the mark, so a long value never runs underneath it. */
+.portal-search-field[data-portal-suggesting="true"] .portal-search-input {
+  padding-right: 34px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-search-field[data-portal-suggesting="true"] .portal-search-suggesting {
+    animation: none;
+    border-top-color: currentColor;
+  }
+}
+.portal-suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-10);
+  box-shadow: var(--shadow-card);
+}
+.portal-suggest-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-8, 8px);
+  cursor: pointer;
+  font-size: 14px;
+}
+.portal-suggest-item.is-active,
+.portal-suggest-item:hover {
+  background: var(--chip);
+}
+.portal-suggest-key {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.portal-suggest-value {
+  /* Never wrapped: the value is the thing being chosen, and a two-line `cmip5` makes an eight-row
+     list unreadable. The description beside it takes the slack instead. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+/*
+ * The shared climate description, the same string the Data Browser puts in its rows. It takes the
+ * slack and truncates rather than wrapping, so an eight-row list stays eight rows tall.
+ */
+.portal-suggest-desc {
+  /* Grows into the slack, and gives it all back first: the shrink factor is
+     what keeps a narrow box truncating the prose rather than the value. */
+  flex: 1 1000 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.portal-suggest-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+}
+
+.portal-search-input {
+  flex: 1 1 auto;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-10);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14.5px;
+  min-width: 0;
+}
+.portal-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  padding: 0 22px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-10);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.portal-button-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+/* The hover fill is a different colour from the rest fill, so it carries its own measured ink. */
+.portal-button-primary:hover {
+  background: var(--accent-hi);
+  color: var(--accent-hi-ink);
+}
+
+/*
+ * The search button, while the search is on its way. The form is a plain GET that navigates to
+ * the Data Browser, so between the click and the new document there is a gap the page cannot
+ * fill, long enough on a cold route to look like nothing happened. The button keeps its size -
+ * the label stays in flow, just invisible - so the row does not reflow under the pointer.
+ */
+.portal-search-submit {
+  position: relative;
+}
+.portal-search-spinner {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 16px;
+  height: 16px;
+  display: none;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: portal-spin 0.7s linear infinite;
+}
+.portal-search-form[data-portal-searching="true"] .portal-search-submit {
+  cursor: progress;
+}
+.portal-search-form[data-portal-searching="true"] .portal-search-submit-label {
+  visibility: hidden;
+}
+.portal-search-form[data-portal-searching="true"] .portal-search-spinner {
+  display: block;
+}
+@keyframes portal-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+/* No spin for a visitor who asked for less motion: the label still goes, so
+   the button still says the click landed. */
+@media (prefers-reduced-motion: reduce) {
+  .portal-search-spinner {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.55;
+  }
+}
+
+.portal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.portal-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--chip);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+
+/*
+ * The hairline tile grid.
+ *
+ * The dividers come from the tiles, not from a 1px gap over a line-coloured container: a gap only
+ * works when the items exactly fill every row, and the moment a row wraps with a remainder - four
+ * cards in three columns - the leftover area is a line-coloured rectangle that reads as an empty
+ * bordered tile. So there is no gap, and each tile casts a 1px shadow to its right and below.
+ * Neighbours overlap into one crisp line, `overflow: hidden` clips the outermost ones against the
+ * container border, and a partly-filled last row simply extends the tile surface.
+ */
+.portal-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-14);
+  overflow: hidden;
+}
+.portal-card {
+  background: var(--surface-2);
+  padding: 24px 22px 26px;
+  box-shadow:
+    1px 0 0 var(--line),
+    0 1px 0 var(--line);
+}
+.portal-card:hover {
+  background: var(--surface);
+}
+.portal-card-link {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14.5px;
+  text-decoration: none;
+}
+.portal-card-text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.portal-feature-link-anchor {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 22px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-16);
+  text-decoration: none;
+  max-width: 620px;
+}
+.portal-feature-link-anchor:hover {
+  border-color: var(--accent);
+}
+.portal-feature-link-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  flex: 1 1 auto;
+}
+.portal-feature-link-open {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  padding: 8px 14px;
+  color: var(--muted);
+}
+
+/* Content. */
+
+.portal-document-title {
+  font-size: clamp(28px, 2.4vw, 40px);
+  letter-spacing: -0.02em;
+  /*
+   * The prose's line-height, not the document's: in the design the page title sits inside
+   * `.portal-prose` and inherits 1.65, and hoisted out it would be half a line tighter.
+   */
+  line-height: 1.65;
+}
+.portal-prose {
+  /*
+   * The measure. 72ch is the classic book column, but a technical document carries wide tables,
+   * code and figures, and forcing those into a book measure wastes half the page and makes every
+   * one of them scroll. Half as wide again gives them room while keeping paragraphs short of the
+   * line lengths that hurt.
+   */
+  max-width: 108ch;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  /*
+   * A long unbroken token - an autolinked URL, a DOI, an absolute archive path - has no break
+   * opportunity, so it runs past the column. The page cannot scroll sideways (`body` hides the
+   * overflow), so without this the end of it is *clipped* rather than wrapped.
+   */
+  overflow-wrap: break-word;
+}
+.portal-prose a {
+  /* `anywhere` rather than `break-word`: a URL is one word, so only breaking
+     inside it wraps at all. */
+  overflow-wrap: anywhere;
+}
+.portal-prose h1,
+.portal-prose h2,
+.portal-prose h3,
+.portal-prose h4 {
+  color: var(--ink);
+  margin-top: 1.6em;
+}
+
+/*
+ * A heading's own link, in the document from the start rather than added by a script, so it works
+ * with JavaScript off and a screen reader can reach it - hence only visually hidden, never
+ * `display: none`. It appears on hover and on focus, so a keyboard reaches it as a mouse does.
+ */
+.portal-heading-anchor {
+  margin-left: 0.4em;
+  padding: 0 0.15em;
+  color: var(--accent-text, var(--accent));
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+:is(h1, h2, h3, h4, h5, h6):hover > .portal-heading-anchor,
+.portal-heading-anchor:focus-visible {
+  opacity: 1;
+}
+.portal-heading-anchor:hover {
+  text-decoration: underline;
+}
+/* A touch screen has no hover, so the mark is simply always there. */
+@media (hover: none) {
+  .portal-heading-anchor {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-heading-anchor {
+    transition: none;
+  }
+}
+/*
+ * Clearing the fixed header is `scroll-padding-top` on the document, set once near the top of
+ * this file. A `scroll-margin-top` here would *add* to it: the anchor would land 164px down
+ * instead of 80px, and the contents list - which reads position from where the headings are -
+ * would stay one section behind every click.
+ */
+/* The document supplies the page heading, so it should not be pushed down. */
+.portal-prose > :first-child {
+  margin-top: 0;
+}
+.portal-prose-leads > h1:first-child {
+  font-size: clamp(28px, 2.4vw, 40px);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5em;
+}
+/*
+ * The rule above zeroes the first child's top margin because there the first child *is* the page
+ * heading. When the heading is `.portal-document-title` instead - the build-time shape, since the
+ * renderer hoists a leading heading into the page title - the prose's first child is a *section*
+ * heading and keeps the separation it would have had inside the prose: 1.6em, 38.4px at 24px.
+ */
+.portal-document-title + .portal-prose > h2:first-child,
+.portal-document-title + .portal-prose > h3:first-child,
+.portal-document-title + .portal-prose > h4:first-child {
+  margin-top: 1.6em;
+}
+.portal-document-title + .portal-prose > p:first-child {
+  margin-top: 1em;
+}
+.portal-prose a {
+  /* Derived at runtime from the manifest accent and the current theme; falls
+     back to the accent when no manifest has been applied yet. */
+  color: var(--accent-text, var(--accent));
+  /* Underlined regardless, so colour is never the only distinguishing cue. */
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.portal-prose code,
+.portal-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--chip);
+  border-radius: var(--r-6);
+}
+.portal-prose pre {
+  padding: 14px 16px;
+  /*
+   * Code keeps its own whitespace and scrolls; it never re-wraps. A wrapped shell command or a
+   * re-flowed Fortran continuation is a different command and different code, so the horizontal
+   * scrollbar is the honest answer.
+   */
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 4;
+}
+.portal-prose img,
+.portal-prose table {
+  max-width: 100%;
+}
+/*
+ * A wide table scrolls itself rather than widening the page. The API hands over a bare `<table>`
+ * and the portal may not wrap it, so the scroll container has to be the table: `display: block`
+ * makes it one and `width: max-content` keeps its columns at their natural width inside that box.
+ * Without this a table with more columns than fit can push the whole layout sideways.
+ */
+.portal-prose table {
+  border-collapse: collapse;
+  display: block;
+  width: max-content;
+  overflow-x: auto;
+  /* Enough of a hint that the box is scrollable, without a scrollbar always on. */
+  overscroll-behavior-x: contain;
+  /*
+   * And a table NARROWER than the measure is centred, like every other figure-like block here.
+   * `width: max-content` above is what makes a wide table scroll, and it is also what would leave
+   * a three-column one flush left in a column two-thirds wider than it - 615px inside 1099px on a
+   * real page - beside a centred diagram and a full-width card row.
+   *
+   * The scroll behaviour survives it: auto margins only have something to distribute while the
+   * box is narrower than its container, so at `max-width: 100%` both resolve to 0 and the table
+   * scrolls exactly as before.
+   */
+  margin-inline: auto;
+}
+.portal-prose td,
+.portal-prose th {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+}
+
+/* Figures and captions. */
+
+/*
+ * A figure is one thing: what it shows and the caption that describes it. The caption is inside
+ * the `<figure>`, which associates the two for a screen reader without an id to keep in step. It
+ * is smaller and quieter than the body, but not so quiet that it stops being readable.
+ */
+.portal-prose .portal-figure {
+  margin: 1.8em 0;
+  padding: 0;
+}
+.portal-prose .portal-figure > img,
+.portal-prose .portal-figure > a > img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  border-radius: var(--r-9);
+}
+/*
+ * DIAGRAMS: centred, and one palette at a time.
+ *
+ * Centred here rather than through `[data-portal-align="center"]`, because the content profile
+ * only permits that attribute on `img` - and it is not a consumer decision anyway: a diagram is
+ * generated by the framework.
+ *
+ * The two copies are the light and dark renders of the same diagram. Mermaid writes its colours
+ * into the SVG at build time and cannot follow a theme chosen later, so the page carries both and
+ * shows the one that matches. `display: none` rather than `visibility` or opacity, so the other
+ * takes no space and is out of the accessibility tree.
+ */
+.portal-prose .portal-diagram > svg,
+.portal-prose .portal-diagram > .portal-diagram-copy > svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+.portal-prose .portal-diagram > .portal-diagram-copy {
+  display: block;
+}
+.portal-prose .portal-diagram > .portal-diagram-dark {
+  display: none;
+}
+[data-theme="dark"] .portal-prose .portal-diagram > .portal-diagram-light {
+  display: none;
+}
+[data-theme="dark"] .portal-prose .portal-diagram > .portal-diagram-dark {
+  display: block;
+}
+
+.portal-prose .portal-figcaption,
+.portal-prose figcaption {
+  margin-top: 0.7em;
+  color: var(--ink-2);
+  font-size: 0.9em;
+  line-height: 1.55;
+  /* A caption is prose: it wraps, and it stays wrapped at 200% zoom. */
+  text-wrap: pretty;
+}
+.portal-prose .portal-figcaption > :first-child,
+.portal-prose figcaption > :first-child {
+  margin-top: 0;
+}
+.portal-prose .portal-figcaption > :last-child,
+.portal-prose figcaption > :last-child {
+  margin-bottom: 0;
+}
+/*
+ * The longer body of a docutils or MyST figure. Quieter and smaller again than the caption, which
+ * names the picture where this explains it; the left rule stops the two reading as one paragraph.
+ */
+.portal-prose .portal-figure-legend {
+  margin-top: 0.6em;
+  padding-left: 0.9em;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.86em;
+}
+.portal-prose .portal-figure-legend > :first-child {
+  margin-top: 0;
+}
+.portal-prose .portal-figure-legend > :last-child {
+  margin-bottom: 0;
+}
+.portal-prose .portal-figure[data-portal-align="left"] > img {
+  margin-inline: 0 auto;
+}
+.portal-prose .portal-figure[data-portal-align="right"] > img {
+  margin-inline: auto 0;
+}
+/*
+ * The same alignment, on an image that has no caption and so no figure. An inline image has to
+ * become a block before centring it means anything.
+ */
+.portal-prose img[data-portal-align] {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.portal-prose img[data-portal-align="center"] {
+  margin-inline: auto;
+}
+.portal-prose img[data-portal-align="right"] {
+  margin-inline: auto 0;
+}
+
+/*
+ * A light/dark image pair is one figure with two images, and the theme shows one. Written as
+ * `#only-dark` / `#only-light` on the URL, the convention the consumer's own documentation uses;
+ * the fragment is inert to the browser and the variant is on the element as data. `display: none`
+ * rather than visibility or opacity: the hidden one must take no space, must not be read out, and
+ * must not be the thing a click lands on.
+ */
+.portal-prose img[data-portal-only="dark"] {
+  display: none;
+}
+:root[data-theme="dark"] .portal-prose img[data-portal-only="dark"] {
+  display: block;
+}
+:root[data-theme="dark"] .portal-prose img[data-portal-only="light"] {
+  display: none;
+}
+
+/*
+ * A table's caption belongs to the table, so it is a `<caption>`, not a card wrapped around it.
+ * Above the table rather than below: it is the table's name, needed before the columns.
+ */
+.portal-prose caption {
+  caption-side: top;
+  padding: 0 0 0.55em;
+  color: var(--ink-2);
+  font-size: 0.9em;
+  font-weight: 600;
+  text-align: left;
+  text-wrap: pretty;
+}
+.portal-prose caption > :first-child {
+  margin-top: 0;
+}
+.portal-prose caption > :last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * A code block's title is part of the code, not a caption: it names the file or command the
+ * snippet *is*. It sits in the block's header, in the block's typeface, with the language in a
+ * quiet tag beside the copy control.
+ */
+.portal-code-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.portal-code-lang-secondary {
+  margin-left: auto;
+  opacity: 0.75;
+}
+.portal-code-figure > .portal-code-head:has(.portal-code-title) {
+  gap: 10px;
+}
+
+/*
+ * The rest of what the renderer emits. Above this point is the markup a Markdown document usually
+ * produces; below it are constructs from reStructuredText - figures, captions, field lists, line
+ * blocks, rubrics, epigraphs - which otherwise reach the page with a class and no rule, as
+ * undifferentiated paragraphs. Each selector names markup checked against the real pipeline's
+ * output.
+ */
+
+/*
+ * docutils wraps every table cell, list item, caption and definition body in a paragraph, which
+ * with the document's paragraph margins turns a three-row table tall and a tight list loose. The
+ * margins are removed where the paragraph *is* the content.
+ */
+.portal-prose td > p,
+.portal-prose th > p,
+.portal-prose dd > p,
+.portal-prose li > p,
+.portal-prose figcaption > p {
+  margin: 0;
+}
+.portal-prose td > p + p,
+.portal-prose dd > p + p,
+.portal-prose li > p + p,
+.portal-prose figcaption > p + p {
+  margin-top: 0.6em;
+}
+
+.portal-prose th {
+  background: var(--chip);
+  color: var(--ink);
+  text-align: left;
+}
+/* A table caption is a label for the table, so it goes above it and reads as
+   one - docutils puts `<caption>` first, the UA centres it underneath. */
+.portal-prose caption {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 8px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.portal-prose figure {
+  margin: 1.8em 0;
+}
+.portal-prose figure img {
+  /* Only inside a figure: an inline substitution image is inline text. */
+  display: block;
+  border-radius: var(--r-9);
+}
+.portal-prose figcaption {
+  margin-top: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Definition lists, field lists and glossaries all arrive as dl/dt/dd. */
+.portal-prose dt {
+  margin-top: 1.1em;
+  font-weight: 600;
+  color: var(--ink);
+}
+.portal-prose dd {
+  margin: 0.3em 0 0 1.4em;
+}
+
+/*
+ * A line block is verse: the author's line breaks are the content. docutils emits a blank line as
+ * an empty `div.line`, which collapses to zero height without a floor, running the stanzas
+ * together.
+ */
+.portal-prose .line-block {
+  margin: 1.5em 0;
+}
+.portal-prose .line {
+  min-height: 1.65em;
+}
+
+.portal-prose blockquote {
+  margin: 1.6em 0;
+  padding-left: 18px;
+  border-left: 3px solid var(--line-2);
+  color: var(--ink-2);
+}
+.portal-prose blockquote.epigraph {
+  font-size: 1.05em;
+}
+.portal-prose .attribution {
+  margin-top: 0.7em;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/*
+ * A heading is not a link, whatever docutils wrapped it in. `.. contents::` makes every heading a
+ * back-reference to the table it generates; the portal removes that table - its `nav` wrapper is
+ * not on the allow-list - but the back-references stay, so without this every section title on
+ * such a page is underlined, accent-coloured and inert.
+ */
+.portal-prose h1 > a.toc-backref,
+.portal-prose h2 > a.toc-backref,
+.portal-prose h3 > a.toc-backref,
+.portal-prose h4 > a.toc-backref,
+.portal-prose h5 > a.toc-backref,
+.portal-prose h6 > a.toc-backref {
+  color: inherit;
+  text-decoration: none;
+  cursor: text;
+}
+
+/* A rubric is a heading that starts no section; it still has to look like one. */
+.portal-prose .rubric {
+  margin: 1.8em 0 0.4em;
+  font-weight: 600;
+  font-size: 1.08em;
+  color: var(--ink);
+}
+
+/*
+ * The title of an admonition, a topic or a sidebar. Only the title survives: docutils wraps all
+ * three in `<aside>`, which is not on the API's allow-list, so the box is removed and the title
+ * lands as an ordinary paragraph. Making it a label is the most this side can do until `aside` is
+ * allow-listed.
+ */
+.portal-prose .admonition-title,
+.portal-prose .topic-title,
+.portal-prose .sidebar-title {
+  margin: 1.6em 0 0.2em;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-text, var(--accent));
+}
+
+/*
+ * rst inline literals are a span, not a `<code>`: ``like this`` becomes `<span class="docutils
+ * literal">`, which without this rule looks like ordinary text.
+ */
+.portal-prose .literal {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--chip);
+  border-radius: var(--r-6);
+}
+/* Inline code needs the padding that makes its background read as a chip;
+   `pre > code` must not have it, or the first line sits off the block. */
+.portal-prose .literal,
+.portal-prose :not(pre) > code {
+  padding: 0.12em 0.36em;
+}
+
+/* Footnote markers. The links are inert until the API can emit ids, but the
+   brackets should still read as a reference rather than as stray digits. */
+.portal-prose .fn-bracket,
+.portal-prose .label {
+  color: var(--muted);
+}
+
+.portal-prose hr {
+  margin: 2.4em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Keep an exponent or an index out of the line's own height: `W m^-2` in a
+   paragraph must not open a gap above it. */
+.portal-prose sub,
+.portal-prose sup {
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+/*
+ * Boxed asides: admonitions, sidebars, topics and footnotes. These are the shapes docutils wraps
+ * in `<aside>` and the Markdown fenced directive wraps in `<section>`, both carrying the variant
+ * in the class. The portal styles them by class, never by element, so one set of rules covers
+ * both writers.
+ *
+ * Written against the allow-list that admits `aside` and `class` on `section`. A document that
+ * has not been re-rendered still arrives in the stripped-wrapper shape - a bare
+ * `p.admonition-title` - so the standalone title rule above stays and these override it.
+ */
+.portal-prose .admonition,
+.portal-prose .topic {
+  margin: 1.8em 0;
+  padding: 14px 18px;
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--r-9);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.portal-prose .admonition > :first-child,
+.portal-prose .topic > :first-child,
+.portal-prose .sidebar > :first-child {
+  margin-top: 0;
+}
+.portal-prose .admonition > :last-child,
+.portal-prose .topic > :last-child,
+.portal-prose .sidebar > :last-child {
+  margin-bottom: 0;
+}
+/* Inside a box the title is the box's label, so it loses the standalone
+   rule's leading margin and takes the variant's colour. */
+.portal-prose .admonition > .admonition-title,
+.portal-prose .topic > .topic-title,
+.portal-prose .sidebar > .sidebar-title {
+  margin: 0 0 0.6em;
+}
+
+/*
+ * The variants, in three families rather than nine colours. docutils emits nine admonition names
+ * and an author may add their own with `.. admonition::`; what a reader needs is the *severity*,
+ * so the names collapse to advice, caution and stop. Anything unrecognised keeps the neutral box.
+ */
+.portal-prose .admonition > .admonition-title,
+.portal-prose .topic > .topic-title,
+.portal-prose .sidebar > .sidebar-title {
+  color: var(--accent-text, var(--accent));
+}
+.portal-prose .admonition.note,
+.portal-prose .admonition.tip,
+.portal-prose .admonition.hint,
+.portal-prose .admonition.important,
+.portal-prose .admonition.seealso {
+  border-left-color: var(--accent-text, var(--accent));
+}
+.portal-prose .admonition.warning,
+.portal-prose .admonition.caution,
+.portal-prose .admonition.attention {
+  border-left-color: var(--warning);
+  background: var(--warning-bg);
+}
+.portal-prose .admonition.warning > .admonition-title,
+.portal-prose .admonition.caution > .admonition-title,
+.portal-prose .admonition.attention > .admonition-title {
+  color: var(--warning);
+}
+.portal-prose .admonition.danger,
+.portal-prose .admonition.error {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+.portal-prose .admonition.danger > .admonition-title,
+.portal-prose .admonition.error > .admonition-title {
+  color: var(--danger);
+}
+
+/*
+ * A sidebar is a genuine aside: it sits beside the text it belongs to, where there is room. Below
+ * the breakpoint it is an ordinary box in the flow, because a 40%-wide float on a phone is two
+ * words per line. Headings clear it, so a float never pushes the next section's title sideways.
+ */
+.portal-prose .sidebar {
+  margin: 0.4em 0 1.4em;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-9);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 14.5px;
+}
+@media (min-width: 720px) {
+  .portal-prose .sidebar {
+    float: right;
+    clear: right;
+    width: min(300px, 42%);
+    margin-left: 28px;
+  }
+  .portal-prose h1,
+  .portal-prose h2,
+  .portal-prose h3,
+  .portal-prose h4,
+  .portal-prose table,
+  .portal-prose figure,
+  .portal-prose pre {
+    clear: right;
+  }
+}
+
+/*
+ * Footnotes. The links are inert until the renderer can emit ids, so these rules only make the
+ * block read as footnotes: set off by a rule, quieter, markers in their own column.
+ */
+.portal-prose .footnote-list {
+  display: block;
+  margin-top: 2.4em;
+  padding-top: 1.2em;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.portal-prose .footnote {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 10px;
+  margin: 0.7em 0;
+  color: var(--ink-2);
+}
+.portal-prose .footnote > p {
+  /* Every paragraph of the note goes in the second column, or the second starts under the
+     marker. */
+  grid-column: 2;
+  margin: 0 0 0.4em;
+}
+.portal-prose .footnote > .label {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The portal's own footnotes: a citation in the text, and a numbered note. The number is the
+ * label, in citation order, and the identifier the author chose is only the link - `[^snyder]`
+ * reads as "1" where it is cited and "1" where it is answered. Printed as the label it would put
+ * the word "snyder" in superscript beside an unnumbered list.
+ */
+.portal-prose .portal-footnote-ref {
+  font-variant-numeric: tabular-nums;
+  line-height: 0;
+}
+.portal-prose .portal-footnote-ref > a {
+  padding: 0 0.15em;
+  color: var(--accent-text, var(--accent));
+  text-decoration: none;
+  font-size: 0.78em;
+  font-weight: 600;
+}
+.portal-prose .portal-footnote-ref > a::before {
+  content: "[";
+}
+.portal-prose .portal-footnote-ref > a::after {
+  content: "]";
+}
+.portal-prose .portal-footnote-ref > a:hover,
+.portal-prose .portal-footnote-ref > a:focus-visible {
+  text-decoration: underline;
+}
+/* The cited note, highlighted when a reader follows a citation to it. */
+.portal-prose .portal-footnote:target {
+  background: color-mix(in srgb, var(--accent-text, var(--accent)) 10%, transparent);
+  border-radius: var(--r-6);
+}
+/*
+ * The list itself. The first note draws the rule that separates the apparatus from the body, so a
+ * document with no notes gets no stray line.
+ */
+.portal-prose .portal-footnote {
+  display: grid;
+  grid-template-columns: 2.1em minmax(0, 1fr);
+  gap: 0 0.4em;
+  margin: 0.55em 0;
+  color: var(--ink-2);
+  font-size: 0.9em;
+}
+.portal-prose .portal-footnote:first-of-type {
+  margin-top: 2.4em;
+  padding-top: 1.2em;
+  border-top: 1px solid var(--line);
+}
+.portal-prose .portal-footnote-number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+}
+.portal-prose .portal-footnote-number::before {
+  content: "[";
+}
+.portal-prose .portal-footnote-number::after {
+  content: "]";
+}
+.portal-prose .portal-footnote-body > :first-child {
+  margin-top: 0;
+  display: inline;
+}
+.portal-prose .portal-footnote-body > :last-child {
+  margin-bottom: 0;
+}
+/*
+ * Back to the place that cited this note. It sits at the end of the note's own prose, so colour
+ * alone would not distinguish it; it is drawn as the small control it is, a bordered chip.
+ */
+.portal-prose .portal-footnote-back {
+  display: inline-block;
+  margin-left: 0.45em;
+  padding: 0 0.35em;
+  border: 1px solid var(--line);
+  border-radius: var(--r-6);
+  color: var(--ink-2);
+  text-decoration: none;
+  line-height: 1.4;
+}
+.portal-prose .portal-footnote-back:hover,
+.portal-prose .portal-footnote-back:focus-visible {
+  border-color: var(--accent-text, var(--accent));
+  color: var(--accent-text, var(--accent));
+}
+
+/*
+ * The document rail sits beside the document, not above it.
+ *
+ * Only a layout that actually got a rail becomes two columns. A short document with neither a
+ * section nor a contents list keeps a plain centred column rather than one with an empty gutter
+ * beside it, which is why the capping and padding live on `[data-rail]` and on the bare article
+ * separately instead of on the wrapper unconditionally.
+ *
+ * The rail exists when EITHER group has something to say, not when there is a contents list: a
+ * section introduction usually has fewer than two eligible headings, and keying on the contents
+ * list would drop the whole left column on exactly the page where the section's other pages help
+ * most.
+ */
+.portal-doc-layout[data-rail="true"] {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: clamp(28px, 4vw, 56px) var(--shell-pad) 40px;
+  display: grid;
+  /* The list is sized to hold a heading and the document takes the rest; both tracks may shrink
+     below their content, so a long heading or a wide table cannot widen the page. */
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
+  gap: clamp(24px, 3vw, 56px);
+  align-items: start;
+}
+.portal-doc-layout[data-rail="true"] > .portal-document {
+  /* The wrapper is the capped, padded block now. */
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+/*
+ * ONE rail, two groups, one scroll region. The sticky positioning and the scrolling live here
+ * rather than on either list, so a long section and a long contents list scroll together: two
+ * independently scrolling boxes in a 16rem gutter is a thing a pointer gets stuck in. The bottom
+ * reserve clears the fixed footer and the Freva badge above it; the top clears the fixed header
+ * at its FULL height, so the rail does not move when the header shrinks on scroll.
+ */
+.portal-doc-rail {
+  position: sticky;
+  top: calc(var(--header-h) + 20px);
+  /*
+   * FULL available height, not just as much as the list happens to need. With `max-height` alone
+   * the rail is exactly as tall as its own content, so a short section ends in mid-air with the
+   * article running on beside it. `height` claims the whole column between the header and the
+   * footer and `max-height` keeps it inside the viewport; a list shorter than that simply has
+   * space underneath, which is what a sidebar is supposed to look like.
+   *
+   * THE RESERVE clears the fixed footer BAR, on screen at every scroll position, and the top
+   * clears the header at its FULL height so the rail does not move when the header shrinks.
+   *
+   * It does NOT clear the site index. `--footer-index-h` is the index's natural height, measured
+   * once on load whether or not any of it is on screen; reserving that would give away several
+   * hundred pixels of viewport on every page to a panel closed for all of the reading. The
+   * geometry already handles the one moment it matters: this element is `position: sticky` inside
+   * `.portal-doc-layout` and cannot leave its containing block, and the layout ends where the
+   * document does, above the band `.portal-main` reserves for the index.
+   */
+  height: calc(100dvh - var(--header-h) - var(--footer-h, 0px) - 48px);
+  max-height: calc(100dvh - var(--header-h) - var(--footer-h, 0px) - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /*
+   * A rule down the whole column, so the rail reads as a full-height sidebar rather than a list
+   * that happens to be on the left. Without it the eye has nothing telling it where the
+   * navigation stops and the document starts.
+   */
+  border-right: 1px solid var(--line);
+  padding-right: clamp(12px, 1.4vw, 20px);
+  font-size: 13.5px;
+  line-height: 1.45;
+  /* A long page title in either group wraps; it never widens the track and never pushes the
+     document narrower, because the grid track is `minmax(0, 16rem)`. */
+  min-width: 0;
+}
+
+/* Section. */
+
+/*
+ * The section list: ordinary document navigation, not an application tree widget. `<details>`
+ * because the mobile disclosure has to work with no JavaScript, and because one element can be
+ * both the group's heading and its control - which also stops the title being announced twice.
+ */
+.portal-section-nav {
+  margin-bottom: 20px;
+}
+.portal-section-nav-body {
+  margin: 0;
+}
+.portal-section-nav-title {
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/*
+ * A long section's heading is also its control, and looks like one at every width. The disclosure
+ * carries `open` in the markup rather than being revealed by a desktop stylesheet rule, which
+ * would leave links visible while the control announced itself collapsed.
+ */
+summary.portal-section-nav-title {
+  display: list-item;
+  list-style: disclosure-open inside;
+  cursor: pointer;
+}
+.portal-section-nav-body:not([open]) > summary.portal-section-nav-title {
+  list-style: disclosure-closed inside;
+}
+.portal-section-nav-title:focus-visible {
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+  border-radius: var(--r-6);
+}
+.portal-section-nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 1px solid var(--line);
+}
+.portal-section-nav-link {
+  display: block;
+  /* A comfortable target on a touch screen without making a three-item list a screenful. */
+  padding: 7px 0 7px 14px;
+  min-height: 24px;
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  color: var(--ink-2, var(--muted));
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.portal-section-nav-link:hover {
+  color: var(--ink);
+}
+.portal-section-nav-link:focus-visible {
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+  border-radius: var(--r-6);
+}
+/*
+ * The current page. `aria-current="page"` is the selector as well as the semantics: one fact
+ * stated once, so a page cannot be highlighted without being announced, or the reverse.
+ */
+.portal-section-nav-link[aria-current="page"] {
+  color: var(--accent-text, var(--accent));
+  border-left-color: var(--accent-text, var(--accent));
+  font-weight: 600;
+}
+
+/* Contents list. */
+
+/*
+ * A standalone outline - a page with no section list to hang under - is ruled off from whatever
+ * precedes it. Inside a section list the headings ARE the open entry, and a line across them
+ * would cut the page's title away from its contents.
+ */
+.portal-section-nav + .portal-toc {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+/*
+ * The current page's headings, nested under its entry: indented past the section list's own rail
+ * and given a rail of their own, so the outline reads as one thing opened at one place. The
+ * heading list's own `data-depth` indent still applies inside it.
+ */
+.portal-section-nav-item > .portal-toc-list {
+  margin: 2px 0 6px 14px;
+}
+.portal-section-nav-item > .portal-toc-list .portal-toc-link {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 0.94em;
+}
+.portal-toc-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.portal-toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* The rail the active marker rides; it reads as one list rather than as a
+     stack of unrelated links. */
+  border-left: 1px solid var(--line);
+}
+.portal-toc-item[data-depth="1"] {
+  padding-left: 14px;
+}
+.portal-toc-link {
+  display: block;
+  padding: 5px 0 5px 14px;
+  /* Sits on top of the list's rail, so the active entry replaces that segment
+     of it instead of drawing a second line beside it. */
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.portal-toc-link:hover {
+  color: var(--ink);
+}
+.portal-toc-link:focus-visible {
+  /* The readable accent, not the raw one: a dark institutional navy is a ring
+     nobody can see against the dark theme's page. */
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+  border-radius: var(--r-6);
+}
+.portal-toc-link[aria-current="true"] {
+  color: var(--accent-text, var(--accent));
+  border-left-color: var(--accent-text, var(--accent));
+  font-weight: 600;
+}
+
+/*
+ * Narrow: one column, and the rail leads the document. It is already first in the DOM - the grid
+ * is what put it to the side - so stacking needs nothing but the column count. Sticky is dropped
+ * because a rail pinned to the top of a phone screen covers the text it points at, and the scroll
+ * region goes with it so no box inside the page scrolls separately from the page.
+ */
+@media (max-width: 1023px) {
+  .portal-doc-layout[data-rail="true"] {
+    display: block;
+  }
+  /*
+   * THE RAIL STANDS DOWN, because the breadcrumb bar above the article carries both of its lists.
+   * As a boxed panel here it would put a full screen of contents between the header and the first
+   * sentence.
+   *
+   * Hidden rather than removed from the markup: the same document serves every width, so the list
+   * has to still be there when the viewport grows. `display: none` also takes it out of the
+   * accessibility tree, which is correct - the bar's dropdown is the same links, and offering
+   * both to a screen reader would be the outline twice.
+   */
+  .portal-doc-rail {
+    display: none;
+  }
+  .portal-section-nav {
+    margin-bottom: 0;
+  }
+  /*
+   * On a phone the rail leads the document, so a collapsed long section is worth more here than
+   * anywhere else. Same control as the desktop's; only the spacing differs.
+   */
+  .portal-section-nav-body[open] > summary.portal-section-nav-title {
+    margin-bottom: 8px;
+  }
+  .portal-section-nav-list,
+  .portal-toc-list {
+    border-left: 0;
+  }
+  .portal-section-nav-link,
+  .portal-toc-link {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
+  .portal-section-nav-link[aria-current="page"],
+  .portal-toc-link[aria-current="true"] {
+    border-left: 0;
+  }
+  .portal-section-nav + .portal-toc {
+    margin-top: 16px;
+  }
+}
+
+.portal-note {
+  padding: 10px 14px;
+  border-radius: var(--r-9);
+  background: var(--chip);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.portal-note-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.portal-loading {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.portal-sandbox-frame {
+  width: 100%;
+  min-height: min(72vh, 720px);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-12);
+  background: var(--surface);
+}
+
+/* Error. */
+
+.portal-error-title {
+  font-size: clamp(24px, 2vw, 34px);
+}
+.portal-error-detail {
+  color: var(--ink-2);
+  max-width: 64ch;
+  overflow-wrap: anywhere;
+}
+
+/* Footer. */
+
+.portal-footer {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 40;
+  background: var(--footer-bg);
+  color: var(--footer-text);
+  box-shadow: var(--shadow-footer);
+}
+.portal-footer[hidden] {
+  display: none;
+}
+/*
+ * Prose inside the footer sits on the chrome, not the page, so the surfaces it would borrow - the
+ * code chip, the rules - come from the chrome palette too. Left alone, an inline `code` keeps the
+ * page's near-white chip and draws the footer's light text on it.
+ */
+.portal-footer .portal-prose {
+  color: var(--chrome-ink-2);
+}
+.portal-footer .portal-prose code,
+.portal-footer .portal-prose pre {
+  background: var(--chrome-chip);
+  color: var(--chrome-ink);
+}
+.portal-footer .portal-prose :is(h1, h2, h3, h4, h5, h6),
+.portal-footer .portal-prose strong {
+  color: var(--chrome-ink);
+}
+.portal-footer .portal-prose a {
+  color: var(--chrome-ink);
+}
+
+.portal-footer-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: var(--footer-h);
+  /* The same centred column as the header, so the credit line starts under
+     the brand rather than under the screen's edge. */
+  padding: 8px max(var(--shell-pad), calc((100% - var(--chrome-max)) / 2 + var(--shell-pad)));
+}
+/*
+ * A document page gets the same slim bar an application does. The bar is a credit line, not a
+ * section of the page: on a page you read, every row it takes is a row of prose you cannot see.
+ */
+.portal-footer[data-mode="application"] .portal-footer-bar,
+.portal-shell[data-view="document"] .portal-footer-bar {
+  min-height: var(--footer-h-app);
+  padding: 0 max(var(--shell-pad), calc((100% - var(--chrome-max)) / 2 + var(--shell-pad)));
+}
+.portal-footer[data-mode="application"] .portal-footer-institution,
+.portal-footer[data-mode="application"] .portal-footer-expanded {
+  display: none;
+}
+
+/*
+ * The Freva mark, with nothing drawn around it: the bar already separates the credit line from
+ * the page, and without a box the mark can be larger in the same height.
+ */
+.portal-freva-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.portal-freva-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--footer-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: visible;
+}
+/*
+ * On an application view the bar is slimmer, so the mark overflows it upwards rather than
+ * shrinking. It sits in the bar's own padding, above the text's baseline, so the mark gets larger
+ * without the footer getting taller.
+ */
+.portal-footer[data-mode="application"] .portal-freva-mark,
+.portal-shell[data-view="document"] .portal-freva-mark {
+  width: 44px;
+  height: 44px;
+  margin-top: -12px;
+  margin-bottom: -10px;
+}
+.portal-freva-logo,
+.portal-freva-glyph {
+  grid-area: 1 / 1;
+}
+.portal-freva-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+/*
+ * An animated image cannot be paused from CSS, so a visitor who asked for reduced motion is shown
+ * the static mark instead of a still frame of the animated one.
+ */
+.portal-freva-glyph {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-freva-logo {
+    display: none;
+  }
+  .portal-freva-glyph {
+    display: block;
+  }
+}
+
+.portal-freva-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.portal-freva-kicker {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--footer-muted);
+}
+.portal-freva-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--footer-strong);
+}
+.portal-footer[data-mode="application"] .portal-freva-name {
+  font-size: 12px;
+}
+
+/*
+ * The badge's reserved footprint in the bar. The badge draws itself `position: fixed`, which is
+ * right - it has to escape the bar to open a panel - and so it takes no space in the flow: left
+ * alone, the institution name is laid out from the bar's left padding and the mark is printed on
+ * top of it. This span is the space the badge occupies, given a real width by the adapter once
+ * the badge has been measured; the fallback below is close enough that nothing overlaps first.
+ *
+ * It is deliberately not `hidden`: a zero-width box would collapse the gap and put the name back
+ * under the mark for one frame.
+ */
+.portal-footer-badge {
+  flex: 0 0 auto;
+  width: 212px;
+  max-width: 60%;
+  height: 1px;
+  align-self: center;
+}
+
+.portal-footer-institution {
+  font-size: 12.5px;
+  color: var(--footer-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * The site index unrolls as the visitor scrolls into it. The page reserves exactly the index's
+ * height below its content, and `--footer-open` is how far into that reserved band the visitor
+ * has scrolled - 0 at the top, 1 at the bottom. The panel's height is that fraction of its own
+ * height, so the index rises out of the bar at the same rate the page moves and is fully open by
+ * the time the last line of content has cleared it. Nothing snaps and nothing is hidden, because
+ * the space it ends up occupying was reserved for it.
+ *
+ * Height rather than transform: the bar stays pinned to the bottom edge while the panel above it
+ * grows, and the panel's content must not be squashed - `--footer-index-h` is its natural height,
+ * measured once.
+ */
+.portal-footer-expanded {
+  height: calc(var(--footer-open, 0) * var(--footer-index-h, 0px));
+  overflow: hidden;
+  /* Fades in over the first two-thirds, so the words are readable before the
+     panel has finished growing rather than arriving with it. */
+  opacity: clamp(0, calc(var(--footer-open, 0) * 1.6), 1);
+}
+.portal-footer-expanded[hidden] {
+  display: none;
+}
+.portal-footer-inner-wrap {
+  /* Same centred column as the bar below it. */
+  padding: 26px max(var(--shell-pad), calc((100% - var(--chrome-max)) / 2 + var(--shell-pad))) 22px;
+  /* A little travel of its own, so the content rises into place rather than
+     being revealed by a moving edge alone. */
+  transform: translateY(calc((1 - var(--footer-open, 0)) * 14px));
+}
+/*
+ * Measuring pass: the shell sets this for one frame to read the panel's natural height, then
+ * removes it. Off-screen rather than `display: none`, which has no height to measure.
+ */
+.portal-footer-expanded[data-measuring] {
+  height: auto;
+  opacity: 0;
+  position: absolute;
+  visibility: hidden;
+  inset: auto 0 0 0;
+}
+.portal-footer-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 24px 40px;
+}
+.portal-footer-org {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--footer-strong);
+  margin: 0 0 6px;
+}
+.portal-footer-group-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--footer-muted);
+  margin: 0 0 10px;
+}
+.portal-footer-links,
+.portal-footer-legal {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.portal-footer-legal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  max-width: var(--content-max);
+  margin: 18px auto 0;
+}
+.portal-footer-link {
+  font-size: 12.5px;
+  color: var(--footer-text);
+  text-decoration: none;
+}
+.portal-footer-link:hover {
+  color: var(--footer-strong);
+  text-decoration: underline;
+}
+.portal-footer-content {
+  max-width: var(--content-max);
+  margin: 18px auto 0;
+  color: var(--footer-text);
+}
+
+/* Accessibility and motion. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    /*
+     * `transition: none`, NOT A 0.01ms DURATION. The near-zero duration is the widely copied
+     * idiom and is kept for ANIMATIONS, because a script that waits on `animationend` still gets
+     * its event. For transitions it is the wrong trade: this selector is `*`, the initial value
+     * of `transition-property` is `all`, and a duration alone therefore turns EVERY property
+     * change on EVERY element into a transition that briefly exists - measured on the Cosmos
+     * landing, 250 CSSTransition objects in the first style pass, `scrollbar-color` alone on
+     * every element in the scene, for a reader who asked for no motion.
+     *
+     * The one place the portal listens for `transitionend` - the navigation panel's close - arms
+     * a 320ms timeout beside the listener, so nothing waits forever for an event that never
+     * fires.
+     */
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --line: var(--ink-2);
+    --line-2: var(--ink-2);
+  }
+}
+
+/* Highlighted code spans. */
+
+/*
+ * Syntax highlighting for code the *API* highlighted.
+ *
+ * The portal ships no highlighter, for the same reason it ships no Markdown parser: highlighting
+ * is a property of the rendered document, produced once on write rather than in every visitor's
+ * browser. When freva-rest runs Pygments, its token spans (`<span class="k">`, `class="s2">` and
+ * so on) survive the sanitiser untouched - `span` carries `class` in the allow-list - so all that
+ * is missing is what a colour means. Nothing here does anything until the API highlights.
+ *
+ * Pygments has upwards of eighty token classes, folded onto six roles: more than that is not
+ * legible at a glance, and each extra colour is another to keep readable in both themes.
+ */
+
+/* Comments */
+.portal-prose .c,
+.portal-prose .c1,
+.portal-prose .ch,
+.portal-prose .cm,
+.portal-prose .cp,
+.portal-prose .cs,
+.portal-prose .cd {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+
+/* Keywords, operators-as-words, and declarations */
+.portal-prose .k,
+.portal-prose .kc,
+.portal-prose .kd,
+.portal-prose .kn,
+.portal-prose .kp,
+.portal-prose .kr,
+.portal-prose .kt,
+.portal-prose .ow,
+.portal-prose .cpf {
+  color: var(--syn-keyword);
+  font-weight: 600;
+}
+
+/* Strings, in all their Pygments spellings */
+.portal-prose .s,
+.portal-prose .s1,
+.portal-prose .s2,
+.portal-prose .sa,
+.portal-prose .sb,
+.portal-prose .sc,
+.portal-prose .sd,
+.portal-prose .se,
+.portal-prose .sh,
+.portal-prose .si,
+.portal-prose .sr,
+.portal-prose .ss,
+.portal-prose .sx {
+  color: var(--syn-string);
+}
+
+/* Numbers and literals. YAML scalars arrive as `class="l l-Scalar l-Scalar-Plain"`: Pygments
+ * keeps the base class alongside every subtype, so `.l` is enough and the hyphenated names need
+ * no rules of their own. The same is true of `p-Indicator`. */
+.portal-prose .l,
+.portal-prose .m,
+.portal-prose .mb,
+.portal-prose .mf,
+.portal-prose .mh,
+.portal-prose .mi,
+.portal-prose .mo,
+.portal-prose .il {
+  color: var(--syn-number);
+}
+
+/* Names: functions, classes, builtins, attributes, tags, variables. `.n` - bare `Token.Name` -
+ * is the commonest token Pygments emits; without it identifiers render as body text while
+ * everything around them is coloured. */
+.portal-prose .n,
+.portal-prose .nx,
+.portal-prose .bp,
+.portal-prose .na,
+.portal-prose .nb,
+.portal-prose .nc,
+.portal-prose .nd,
+.portal-prose .ne,
+.portal-prose .nf,
+.portal-prose .ni,
+.portal-prose .nl,
+.portal-prose .nn,
+.portal-prose .no,
+.portal-prose .nt,
+.portal-prose .nv,
+.portal-prose .fm,
+.portal-prose .vc,
+.portal-prose .vg,
+.portal-prose .vi,
+.portal-prose .vm {
+  color: var(--syn-name);
+}
+
+/* Punctuation and bare operators stay quiet. */
+.portal-prose .p,
+.portal-prose .o {
+  color: var(--syn-punct);
+}
+
+/* An error token is a lexer failure, not content: mark it, do not shout. */
+.portal-prose .err {
+  color: var(--danger);
+}
+
+/*
+ * Pygments emits `<span class="w">` for whitespace. It must stay exactly as wide as the space it
+ * replaces, so it inherits everything.
+ */
+.portal-prose .w {
+  color: inherit;
+}
+
+/* Diff, console and docutils math. */
+
+/*
+ * Generic tokens: what a diff and a shell session are made of. These are the only Pygments tokens
+ * that carry meaning rather than syntax - a removed line and an added line have to read as
+ * removed and added, not as two shades of punctuation - so they are the one place a background is
+ * warranted.
+ */
+.portal-prose .gd {
+  color: var(--syn-removed);
+  background: var(--syn-removed-bg);
+  display: inline-block;
+  width: 100%;
+}
+.portal-prose .gi {
+  color: var(--syn-added);
+  background: var(--syn-added-bg);
+  display: inline-block;
+  width: 100%;
+}
+/* A session prompt is chrome; its output is not the code the reader is reading. */
+.portal-prose .gp {
+  color: var(--syn-punct);
+  user-select: none;
+}
+.portal-prose .go {
+  color: var(--syn-output);
+}
+.portal-prose .gu,
+.portal-prose .gh {
+  color: var(--syn-name);
+  font-weight: 600;
+}
+.portal-prose .ge {
+  font-style: italic;
+}
+.portal-prose .gs {
+  font-weight: 600;
+}
+.portal-prose .gr,
+.portal-prose .gt {
+  color: var(--danger);
+}
+
+/*
+ * docutils' `math.css`, scoped to rendered content. With `math_output = "HTML math.css"` the API
+ * emits equations as ordinary elements carrying positional classes - no MathML, no JavaScript -
+ * but the markup is *only* an equation once these rules position it: untouched, a fraction reads
+ * as the literal text `(a)/(b)`.
+ *
+ * `.ignored` is the load-bearing one and the least obvious: docutils writes the ASCII fallback -
+ * the parentheses and the slash - into the markup so the equation still parses without CSS, and
+ * expects the stylesheet to hide it.
+ */
+.portal-prose .formula {
+  font-style: normal;
+  line-height: 1.9;
+}
+div.formula,
+.portal-prose div.formula {
+  margin: 1.1em 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.portal-prose .ignored {
+  display: none;
+}
+.portal-prose .fraction {
+  display: inline-block;
+  vertical-align: middle;
+  text-align: center;
+  margin: 0 0.15em;
+}
+.portal-prose .numerator {
+  display: block;
+  padding: 0 0.35em;
+  border-bottom: 1px solid currentColor;
+}
+.portal-prose .denominator {
+  display: block;
+  padding: 0 0.35em;
+}
+/* A sum or an integral with bounds above and below its operator. */
+.portal-prose .limits {
+  display: inline-block;
+  vertical-align: middle;
+  text-align: center;
+  margin: 0 0.15em;
+}
+.portal-prose .limits > .limit {
+  display: block;
+  font-size: 0.72em;
+  line-height: 1.1;
+}
+.portal-prose .bigoperator {
+  font-size: 1.5em;
+  line-height: 1;
+}
+/* An integral sign is already tall; it needs the height, not the scale. */
+.portal-prose .bigoperator.integral {
+  font-size: 1.8em;
+}
+/* Variables are italic in both writers; this keeps them from inheriting prose italics twice over
+ * inside an already-italic block. */
+.portal-prose .formula i {
+  font-style: italic;
+}
+/*
+ * `\mathrm{d}` and friends: upright by definition, and the whole reason an author writes it
+ * rather than a bare `d`. Without this the differential is italic and reads as another variable.
+ */
+.portal-prose .mathrm {
+  font-style: normal;
+}
+/*
+ * An accent - `\bar{x}`, `\hat{p}` - is a `<sup>` stacked over its base. Left alone it sits after
+ * the letter at superscript height, so `x̄` reads as "x to the minus".
+ */
+.portal-prose .embellished {
+  display: inline-block;
+  position: relative;
+  text-align: center;
+}
+.portal-prose .embellished > sup {
+  display: block;
+  position: absolute;
+  inset: -0.55em 0 auto 0;
+  font-size: 1em;
+  line-height: 1;
+}
+.portal-prose .embellished > .base {
+  display: block;
+}
+
+/* Diagrams. */
+
+/*
+ * A rendered Mermaid diagram, scaled to the column rather than cropped: Mermaid is configured
+ * with `useMaxWidth`, which gives the SVG a width of 100% and a viewBox, so it shrinks with the
+ * page instead of forcing it sideways. A diagram wider than the text column is fine; a page that
+ * scrolls sideways is not.
+ */
+.portal-mermaid {
+  margin: 1.8em 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-9);
+  background: var(--surface-2);
+  overflow-x: auto;
+  text-align: center;
+}
+.portal-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+/*
+ * The diagram carries a fixed neutral palette, which sits on white. On the dark theme the panel
+ * keeps that palette legible instead of leaving dark text on a dark page: a picture on a card,
+ * rather than a recolouring this side cannot do correctly.
+ */
+[data-theme="dark"] .portal-mermaid {
+  background: #f7f7f5;
+  border-color: var(--line-2);
+}
+.portal-mermaid-note {
+  margin-top: 8px;
+}
+
+/* Admonitions. */
+/*
+ * Admonitions are theme-owned, not a box with a coloured left border: the design's own surface,
+ * hairline, corner radius and mono label. What each kind adds is one colour - held in `--adm` so
+ * the header, the icon and the rule cannot drift apart - and one icon, drawn as a mask so the
+ * markup carries no artwork and the sanitizer has no drawing to inspect.
+ *
+ * `<details>` is used verbatim for a collapsible block, because it already has the behaviour, the
+ * keyboard support and the announced state. A div with a click handler would be a worse copy that
+ * stops working when the script does.
+ */
+.portal-prose .portal-admonition,
+.portal-admonition {
+  --adm: var(--accent);
+  --adm-bg: color-mix(in srgb, var(--adm) 8%, var(--surface));
+  margin: 1.6em 0;
+  border: 1px solid color-mix(in srgb, var(--adm) 26%, var(--line));
+  border-left: 3px solid var(--adm);
+  border-radius: var(--r-10);
+  background: var(--adm-bg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.portal-admonition-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 10px 16px;
+  /* 10%, not more: the title is set in the same colour, and a heavier tint drops the pair below
+     4.5:1 for the lighter kinds. */
+  background: color-mix(in srgb, var(--adm) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--adm) 18%, transparent);
+  color: var(--adm);
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+}
+
+.portal-admonition-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 18px 18px;
+  mask-size: 18px 18px;
+}
+
+.portal-admonition-body {
+  padding: 12px 16px 14px;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.portal-admonition-body > :first-child {
+  margin-top: 0;
+}
+.portal-admonition-body > :last-child {
+  margin-bottom: 0;
+}
+/* A nested admonition sits inside the body and keeps its own colour. */
+.portal-admonition-body .portal-admonition {
+  margin: 1em 0;
+  box-shadow: none;
+}
+
+/* Collapsible: the summary is the header, with a marker that turns. */
+details.portal-admonition > summary.portal-admonition-title {
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+  padding-right: 40px;
+}
+details.portal-admonition > summary.portal-admonition-title::-webkit-details-marker {
+  display: none;
+}
+details.portal-admonition > summary.portal-admonition-title::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+}
+details.portal-admonition[open] > summary.portal-admonition-title::after {
+  transform: rotate(-135deg);
+  margin-top: -2px;
+}
+details.portal-admonition > summary.portal-admonition-title:focus-visible {
+  outline: 2px solid var(--adm);
+  outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  details.portal-admonition > summary.portal-admonition-title::after {
+    transition: none;
+  }
+}
+
+.portal-admonition.portal-admonition-note {
+  --adm: #1b4f72;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-note {
+  --adm: #8fc4f0;
+}
+.portal-admonition-note .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 4h16v12H7l-3 3z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 4h16v12H7l-3 3z'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-abstract {
+  --adm: #4a5c6b;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-abstract {
+  --adm: #aab5c1;
+}
+.portal-admonition-abstract .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 3h14v18H5zM8 8h8M8 12h8M8 16h5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 3h14v18H5zM8 8h8M8 12h8M8 16h5'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-info {
+  --adm: #1a6984;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-info {
+  --adm: #7fc9e0;
+}
+.portal-admonition-info .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm0 5a1.2 1.2 0 110 2.4A1.2 1.2 0 0112 7zm1.2 11h-2.4v-7h2.4z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm0 5a1.2 1.2 0 110 2.4A1.2 1.2 0 0112 7zm1.2 11h-2.4v-7h2.4z'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-tip {
+  --adm: #2f6e4e;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-tip {
+  --adm: #90d6ab;
+}
+.portal-admonition-tip .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2zM9 19h6v2H9z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2zM9 19h6v2H9z'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-success {
+  --adm: #2f6e4e;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-success {
+  --adm: #90d6ab;
+}
+.portal-admonition-success .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-question {
+  --adm: #5b4b8a;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-question {
+  --adm: #bda9f0;
+}
+.portal-admonition-question .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm0 15.5a1.3 1.3 0 110 2.6 1.3 1.3 0 010-2.6zM9 9a3 3 0 116 0c0 2-2.2 2.2-2.2 4h-1.6C11.2 10.6 13.4 10.4 13.4 9A1.4 1.4 0 0012 7.6 1.4 1.4 0 0010.6 9z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm0 15.5a1.3 1.3 0 110 2.6 1.3 1.3 0 010-2.6zM9 9a3 3 0 116 0c0 2-2.2 2.2-2.2 4h-1.6C11.2 10.6 13.4 10.4 13.4 9A1.4 1.4 0 0012 7.6 1.4 1.4 0 0010.6 9z'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-warning {
+  --adm: #795e18;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-warning {
+  --adm: #d8bd77;
+}
+.portal-admonition-warning .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l10 18H2zM11 9h2v6h-2zm0 8h2v2h-2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l10 18H2zM11 9h2v6h-2zm0 8h2v2h-2z'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-failure {
+  --adm: #8c4a3d;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-failure {
+  --adm: #e39a90;
+}
+.portal-admonition-failure .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zM8 8l8 8m0-8l-8 8'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zM8 8l8 8m0-8l-8 8'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-danger {
+  --adm: #8c2f2f;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-danger {
+  --adm: #f0a09a;
+}
+.portal-admonition-danger .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2l10 6v8l-10 6-10-6V8zM11 7h2v7h-2zm0 9h2v2h-2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2l10 6v8l-10 6-10-6V8zM11 7h2v7h-2zm0 9h2v2h-2z'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-bug {
+  --adm: #6b3f7a;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-bug {
+  --adm: #d3a2e8;
+}
+.portal-admonition-bug .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4l1.5 2h3L15 4M7 10h10v5a5 5 0 01-10 0zM4 12h3m10 0h3M5 8l2 1m10-1l-2 1M5 17l2-1m10 1l-2-1'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4l1.5 2h3L15 4M7 10h10v5a5 5 0 01-10 0zM4 12h3m10 0h3M5 8l2 1m10-1l-2 1M5 17l2-1m10 1l-2-1'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-example {
+  --adm: #4a5c6b;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-example {
+  --adm: #aab5c1;
+}
+.portal-admonition-example .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16M4 12h16M4 19h10'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16M4 12h16M4 19h10'/%3E%3C/svg%3E");
+}
+.portal-admonition.portal-admonition-quote {
+  --adm: #5a636f;
+}
+:root[data-theme="dark"] .portal-admonition.portal-admonition-quote {
+  --adm: #9aa5b1;
+}
+.portal-admonition-quote .portal-admonition-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7h5v5a5 5 0 01-5 5zm10 0h5v5a5 5 0 01-5 5z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7h5v5a5 5 0 01-5 5zm10 0h5v5a5 5 0 01-5 5z'/%3E%3C/svg%3E");
+}
+
+/* Code copy. */
+/*
+ * The copy control belongs to this theme, not the browser. It sits in the block's top-right
+ * corner, quiet until the block is hovered or the button focused - always visible to a keyboard,
+ * which cannot find a control that only appears on hover.
+ */
+.portal-code-figure {
+  position: relative;
+  margin: 1.4em 0;
+}
+/* The figure owns the spacing; the header carries the language and the control. */
+.portal-code-figure > .portal-code-block {
+  margin: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.portal-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 10px 0 16px;
+  background: color-mix(in srgb, var(--ink) 6%, var(--chip));
+  border-radius: var(--r-6) var(--r-6) 0 0;
+  border-bottom: 1px solid var(--line);
+}
+.portal-code-lang {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.portal-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.portal-code-figure:hover .portal-code-copy,
+.portal-code-figure:focus-within .portal-code-copy,
+.portal-code-copy:focus-visible,
+.portal-code-copy[data-state] {
+  opacity: 1;
+}
+.portal-code-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.portal-code-copy:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+.portal-code-copy[data-state="copied"] {
+  opacity: 1;
+  color: var(--syn-added);
+  border-color: var(--syn-added);
+}
+.portal-code-copy[data-state="failed"] {
+  opacity: 1;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.portal-code-copy-icon {
+  width: 13px;
+  height: 13px;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 13px 13px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='9' y='9' width='11' height='11' rx='2'/%3E%3Cpath d='M5 15V5a2 2 0 012-2h10'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='9' y='9' width='11' height='11' rx='2'/%3E%3Cpath d='M5 15V5a2 2 0 012-2h10'/%3E%3C/svg%3E");
+}
+.portal-code-copy[data-state="copied"] .portal-code-copy-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-code-copy {
+    transition: none;
+  }
+}
+/* A touch device has no hover, so the control is simply always there. */
+@media (hover: none) {
+  .portal-code-copy {
+    opacity: 1;
+  }
+}
+
+/*
+ * Copy and Try in Python, as one group and not two loose buttons: the head already carries a title
+ * and a language, and a bare second control would read as a third label. The group exists ONLY on
+ * a runnable block.
+ */
+.portal-code-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.portal-code-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  /* The accent, because this is the action with a consequence: it starts an interpreter. */
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.portal-code-figure:hover .portal-code-run,
+.portal-code-figure:focus-within .portal-code-run,
+.portal-code-run:focus-visible {
+  opacity: 1;
+}
+.portal-code-run:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.portal-code-run:hover {
+  border-color: var(--accent);
+}
+.portal-code-run-icon {
+  width: 13px;
+  height: 13px;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 13px 13px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M7 4l12 8-12 8z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M7 4l12 8-12 8z'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-code-run {
+    transition: none;
+  }
+}
+@media (hover: none) {
+  .portal-code-run {
+    opacity: 1;
+  }
+}
+
+/* Overlay layer. */
+
+/*
+ * Where a hosted application's global surfaces go. The application region is a contained,
+ * scrolling box - `contain: layout` on `.portal-main` - which keeps an application's own fixed
+ * dialogs from running under the header and the footer. That containment is right for the
+ * application's dialogs and wrong for a window meant to float over the whole portal, so there is
+ * one layer outside it for the second kind.
+ *
+ * The layer is a viewport-sized box that catches no pointer events; only what a component puts
+ * inside it does. That is what lets it sit over the page permanently without a portal that hosts
+ * nothing noticing it exists.
+ *
+ * Its z-index is 70: above the header's 50 and the footer's 40, below the skip link's 100 - a
+ * number taken from the three already in use, not one picked to win. Anything that has to be
+ * above *everything* - the File Inspector - is a modal `<dialog>` in the browser's top layer,
+ * where z-index does not apply at all.
+ */
+.portal-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+.portal-overlay-root:empty {
+  display: none;
+}
+.portal-overlay-root > * {
+  pointer-events: auto;
+}
+
+/* HTTP status documents. */
+
+/*
+ * A status page is the one page with nothing on it, so it is centred and allowed to be quiet. The
+ * reader has just been stopped: the three things they need are what happened, whether it was
+ * their fault, and a way back.
+ *
+ * The Freva mark is here at a size it never gets anywhere else. On every other page it is a
+ * credit line in the footer; here it is the page's only identity, and someone who has just hit a
+ * 502 should still be able to tell whose site they are on.
+ */
+.portal-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 46rem;
+  margin: clamp(24px, 9vh, 96px) auto;
+  padding: 0 var(--shell-pad);
+  text-align: center;
+}
+.portal-status-mark {
+  display: grid;
+  place-items: center;
+  width: clamp(96px, 18vw, 148px);
+  height: clamp(96px, 18vw, 148px);
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 30px;
+  letter-spacing: 0.08em;
+}
+.portal-status-logo,
+.portal-status-logo-still {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+/* An animated image cannot be paused from CSS, so reduced motion is served the artwork's own
+   first frame - a second file - rather than a still frame of the animated one. */
+.portal-status-logo-still {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-status-logo {
+    display: none;
+  }
+  .portal-status-logo-still {
+    display: block;
+  }
+}
+/*
+ * The code and its specification name, on one line: the number is what the visitor reads out, the
+ * name is what whoever they report it to will search for.
+ */
+.portal-status-code {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--font-mono);
+}
+.portal-status-number {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-text, var(--accent));
+  letter-spacing: 0.04em;
+}
+.portal-status-reason {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.portal-status-title {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 1.1rem + 2vw, 2.4rem);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.portal-status-summary {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--ink-2);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.portal-status-actions {
+  margin: 14px 0 0;
+}
+
+/*
+ * The narrow-width navigation: a phone drill-down panel and a tablet outline bar. Two navigation
+ * levels have to collapse below desktop, and these are the two answers - a full-screen panel
+ * where nothing fits beside the brand, and a breadcrumb bar where the sections fit but the page's
+ * own structure does not.
+ */
+
+/* The phone panel. */
+
+.portal-navpanel {
+  position: fixed;
+  inset: 0;
+  /*
+   * Above the header's 50, the footer's 40 and the overlay root's 70, below the skip link's 100:
+   * a full-screen panel with the Freva badge showing through it looks like a rendering bug.
+   */
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  /*
+   * THE PAGE'S SURFACE, not the chrome's. In the header's colours the panel reads as an extension
+   * of the bar it comes out of, and it inherits the bar's contrast: at an accent of #009688 white
+   * is 3.67:1, a documented, accepted failure for a slim band of large text and not one worth
+   * extending across a full screen of navigation. On the page's own surface the same list is
+   * `--ink` on `--surface`, a pairing the theme already contrast-checks.
+   */
+  background: var(--surface);
+  color: var(--ink);
+  /* Slides from the right and is inert until it arrives. `visibility` rather than `hidden` alone,
+     so the transition has something to run on. */
+  transform: translateX(100%);
+  transition:
+    transform 0.22s ease,
+    visibility 0.22s;
+  visibility: hidden;
+}
+.portal-navpanel[data-open="true"] {
+  transform: translateX(0);
+  visibility: visible;
+}
+/* The page behind must not scroll under the panel. */
+:root[data-navpanel-open="true"] body {
+  overflow: hidden;
+}
+
+.portal-navpanel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--header-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.portal-navpanel-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.portal-navpanel-back,
+.portal-navpanel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: var(--r-9);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.portal-navpanel-back:hover,
+.portal-navpanel-close:hover {
+  background: var(--surface-2);
+}
+.portal-navpanel-back:focus-visible,
+.portal-navpanel-close:focus-visible,
+.portal-navpanel-drill:focus-visible,
+.portal-navpanel-link:focus-visible,
+.portal-navpanel-summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.portal-navpanel-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 8px 32px;
+}
+.portal-navpanel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.portal-navpanel-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.portal-navpanel-row > .portal-navpanel-link {
+  flex: 1 1 auto;
+}
+.portal-navpanel-link {
+  display: block;
+  padding: 13px 12px;
+  border-radius: var(--r-9);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.portal-navpanel-link:hover {
+  background: var(--surface-2);
+}
+/*
+ * The current entry: accent text and a marker, on the panel's own surface. No `--chip` tint
+ * under it - `--accent-text` is derived to clear 4.5:1 against `--bg`, and `--chip` is darker
+ * than that, so the guarantee does not hold there (axe measures 4.12:1). The marker is the same
+ * language the docs rail uses for the same meaning; the edge it marks is square, because an inset
+ * shadow follows the corner radius and a rounded row would draw it as a curved bracket.
+ */
+.portal-navpanel-link[data-active="true"],
+.portal-navpanel-summary[data-active="true"] {
+  color: var(--accent-text);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 0 var(--accent);
+  border-radius: 0 var(--r-9) var(--r-9) 0;
+}
+.portal-navpanel-drill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* A 44px target, which is the smallest a thumb reliably hits. */
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-9);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.portal-navpanel-drill:hover {
+  background: var(--surface-2);
+}
+.portal-navpanel-ext {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+.portal-navpanel-overview {
+  color: var(--ink-2);
+}
+
+/* Nested groups. The marker is our own chevron, so the native triangle goes. */
+.portal-navpanel-group > summary::-webkit-details-marker {
+  display: none;
+}
+.portal-navpanel-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 13px 12px;
+  border-radius: var(--r-9);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.portal-navpanel-summary:hover {
+  background: var(--surface-2);
+}
+.portal-navpanel-summary-text {
+  min-width: 0;
+}
+.portal-navpanel-chev {
+  flex: 0 0 auto;
+  transition: transform 0.16s ease;
+}
+.portal-navpanel-group[open] > .portal-navpanel-summary > .portal-navpanel-chev {
+  transform: rotate(180deg);
+}
+.portal-navpanel-sublist {
+  /* The rule is the nesting made visible; the indent alone reads as an accident. */
+  margin: 2px 0 6px 18px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+.portal-navpanel-sublist .portal-navpanel-link,
+.portal-navpanel-summary-inner {
+  font-size: 15px;
+  font-weight: 500;
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+.portal-navpanel-heading {
+  color: var(--ink-2);
+}
+.portal-navpanel-heading[data-depth="1"] {
+  padding-left: 24px;
+  font-size: 14.5px;
+}
+.portal-navpanel-pagelink {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-navpanel {
+    transition: none;
+  }
+  .portal-navpanel-chev {
+    transition: none;
+  }
+}
+
+/* The tablet outline bar. */
+
+.portal-outlinebar {
+  /* Hidden by default: desktop has the rail, phone has the panel. Only the band between them
+     needs this, and that band is exactly where the rail stops being a column. */
+  display: none;
+  position: sticky;
+  top: var(--header-h);
+  z-index: 20;
+  align-items: center;
+  gap: 12px;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 8px var(--shell-pad);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+/*
+ * EVERY width below the desktop rail, phone included: this is the only outline below 1024px. The
+ * drill-down panel has one too, but behind a button and behind JavaScript.
+ */
+@media (max-width: 1023px) {
+  .portal-outlinebar {
+    display: flex;
+  }
+}
+.portal-outlinebar-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.portal-outlinebar-crumb {
+  white-space: nowrap;
+}
+.portal-outlinebar-sep {
+  opacity: 0.6;
+}
+.portal-outlinebar-current {
+  color: var(--ink);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.portal-outlinebar-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+.portal-outlinebar-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.portal-outlinebar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* 44px, because on a phone this is the only way into the outline and it is hit with a thumb. */
+  min-height: 44px;
+  padding: 0 12px;
+  list-style: none;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.portal-outlinebar-button:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.portal-outlinebar-menu[open] > .portal-outlinebar-button > .portal-outlinebar-chev {
+  transform: rotate(180deg);
+}
+.portal-outlinebar-chev {
+  flex: 0 0 auto;
+  transition: transform 0.16s ease;
+}
+.portal-outlinebar-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  width: min(22rem, calc(100vw - 2 * var(--shell-pad)));
+  max-height: min(60dvh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  background: var(--surface);
+  box-shadow: var(--shadow-panel);
+}
+.portal-outlinebar-block + .portal-outlinebar-block {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.portal-outlinebar-blocktitle {
+  margin: 2px 0 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Comfortable thumb targets: this list is reached by touch far more often than by pointer. */
+.portal-outlinebar-item {
+  display: block;
+  min-height: 44px;
+  padding: 12px 8px;
+  border-radius: var(--r-6);
+  color: var(--ink);
+  text-decoration: none;
+}
+.portal-outlinebar-item:hover {
+  background: var(--chip);
+}
+.portal-outlinebar-item[data-depth="1"] {
+  padding-left: 26px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.portal-outlinebar-summary {
+  min-height: 44px;
+}
+.portal-outlinebar-item[data-active="true"] {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.portal-outlinebar-group > summary::-webkit-details-marker {
+  display: none;
+}
+.portal-outlinebar-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--r-6);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  list-style: none;
+  cursor: pointer;
+}
+.portal-outlinebar-summary:hover {
+  background: var(--chip);
+}
+.portal-outlinebar-group[open] > .portal-outlinebar-summary > .portal-outlinebar-chev {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-outlinebar-chev {
+    transition: none;
+  }
+}
+
+/*
+ * A heading that is also a disclosure. The link fills the summary so the whole row is a target,
+ * and the chevron toggles - a `<summary>` toggles on any click inside it, so the anchor navigates
+ * and the group opens at once, harmless because both panels close on navigation.
+ */
+.portal-outlinebar-summary-link,
+.portal-navpanel-summary-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}

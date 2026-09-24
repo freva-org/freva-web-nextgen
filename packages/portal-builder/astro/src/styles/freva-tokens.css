@@ -1,0 +1,184 @@
+/*
+ * Design tokens.
+ *
+ * Four values differ from the design handoff, and only these four. Each is measured against WCAG
+ * 2.2 contrast minima by `tests/contrast.test.ts`, which recomputes every pairing the stylesheet
+ * actually produces:
+ *
+ *   * light `--muted`      #7c7c73 -> #6f6f66  (3.86:1 -> 4.65:1 on --bg)
+ *   * dark  `--accent`     #3f7fb8 -> #4285bd  (4.46:1 -> 4.81:1 for button text)
+ *   * light `--warning`    a Freva addition, set to 5.13:1 rather than 4.30:1
+ *   * `--danger` / `--warning` backgrounds are Freva additions the handoff does not specify.
+ *
+ * Hue and character are preserved; only the lightness moved, by the smallest step that clears the
+ * threshold. `--muted` carries 10-11px uppercase mono labels: small text, no large-text
+ * allowance. Everything else is the handoff's, verbatim. The tokens live here as custom
+ * properties so the manifest can override the three theme colours it owns (`--accent`,
+ * `--accent-hi`, `--line-2`) and its `extra_colors` (`--x-*`) at runtime, without any stylesheet
+ * knowing about a particular deployment.
+ *
+ * Fonts: the handoff specifies Archivo, Public Sans and IBM Plex Mono from Google Fonts; nothing
+ * remote is loaded, because a third-party CDN font sends every visitor's IP to that CDN on every
+ * page view, which is not a decision a distributed package gets to make for a deployment. The
+ * stacks below reach for those families if the operating system or the deployment provides them,
+ * and otherwise fall back to the platform UI stack, metrically close enough that the layout does
+ * not shift. docs/licensing.md records that no font is redistributed.
+ */
+
+:root {
+  /* Palette: light. */
+  --bg: #f6f5f1;
+  --surface: #fffef9;
+  --surface-2: #fbfaf5;
+  --line: #e2e0d8;
+  --line-2: #d8d6cd;
+  --ink: #14202c;
+  --ink-2: #4d5560;
+  --muted: #6f6f66;
+  --accent: #17324d;
+  --accent-hi: #0d2438;
+  --accent-ink: #f6f5f1;
+  /*
+   * The ink for text sitting on `--accent-hi`, a DIFFERENT fill from `--accent` and so needing
+   * its own measured ink: a deployment accent derives a darkened hover fill, and reusing
+   * `--accent-ink` there leaves the primary button unreadable under the pointer.
+   */
+  --accent-hi-ink: #f6f5f1;
+  /*
+   * Syntax-highlighting tokens, for code the API highlighted server-side. Six roles rather than
+   * Pygments' full set: a palette a reader can parse at a glance that stays legible in both
+   * themes. Every Pygments class maps onto one of these in `shell.css`.
+   */
+  --syn-comment: #6b7a6b;
+  --syn-keyword: #7a3b8f;
+  --syn-string: #2f6f4f;
+  --syn-number: #a2542a;
+  --syn-name: #1b4f72;
+  --syn-punct: #5b6470;
+  /* Diff and console output: `gd`/`gi` in a diff, `gp`/`go` in a session. */
+  --syn-removed: #8c4a3d;
+  --syn-removed-bg: #f6ece9;
+  --syn-added: #2f6f4f;
+  --syn-added-bg: #e9f2ec;
+  --syn-output: #6f6f66;
+  --chip: #eceae2;
+  --tile: #eef1f4;
+  --danger: #8c4a3d;
+  --danger-bg: #f6ece9;
+  --warning: #7d6119;
+  --warning-bg: #f7f0dc;
+  --header-bg: var(--chrome-bg);
+
+  /*
+   * Chrome. The header and the footer are one surface in two places, and that surface is the
+   * deployment's main colour, flat: `--chrome-bg` is `--accent`, not something computed from it,
+   * and the ink on it is white. Rules, chips and hover states are that one fill and that one ink,
+   * so a consumer that changes `colorAccent` repaints both bars, in both themes.
+   */
+  --chrome-bg: var(--accent);
+  --chrome-ink: #ffffff;
+  --chrome-ink-2: color-mix(in srgb, #ffffff 76%, var(--chrome-bg));
+  --chrome-muted: color-mix(in srgb, #ffffff 56%, var(--chrome-bg));
+  --chrome-line: color-mix(in srgb, #ffffff 20%, var(--chrome-bg));
+  --chrome-line-hi: color-mix(in srgb, #ffffff 38%, var(--chrome-bg));
+  /*
+   * Chips move *away* from the ink, not towards it: a chip that drifts towards the text drawn on
+   * it takes that text's contrast with it. Fallbacks - the theme block replaces them with the
+   * same mixes taken against the deployment's own accent.
+   */
+  --chrome-chip: color-mix(in srgb, #000 14%, var(--chrome-bg));
+  --chrome-chip-hi: color-mix(in srgb, #000 26%, var(--chrome-bg));
+  --chrome-surface: color-mix(in srgb, #000 16%, var(--chrome-bg));
+
+  /* The footer palette is the chrome palette; both bars are the main colour. */
+  --footer-bg: var(--chrome-bg);
+  --footer-surface: var(--chrome-surface);
+  --footer-chip: var(--chrome-chip);
+  --footer-line: var(--chrome-line);
+  --footer-line-hi: var(--chrome-line-hi);
+  --footer-text: var(--chrome-ink-2);
+  --footer-muted: var(--chrome-muted);
+  --footer-strong: var(--chrome-ink);
+
+  /* Type. */
+  --font-ui:
+    "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Archivo", var(--font-ui);
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Shape. */
+  --r-6: 6px;
+  --r-8: 8px;
+  --r-9: 9px;
+  --r-10: 10px;
+  --r-11: 11px;
+  --r-12: 12px;
+  --r-14: 14px;
+  --r-16: 16px;
+  --r-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgba(20, 32, 44, 0.04), 0 18px 40px -28px rgba(20, 32, 44, 0.28);
+  --shadow-panel: 0 14px 34px rgba(20, 32, 44, 0.12);
+  --shadow-footer: 0 -14px 34px -24px rgba(20, 32, 44, 0.55);
+
+  /* Layout. */
+  --shell-pad: clamp(16px, 2.4vw, 48px);
+  --content-max: 1440px;
+  /*
+   * The column the header and footer bars keep their contents in. The bars stay full-bleed - the
+   * chrome colour runs edge to edge - but on a wide display their *contents* should not, or the
+   * brand ends up in one corner and the navigation in the other. Same column as the page content,
+   * so the brand sits over the first character of the first paragraph.
+   */
+  --chrome-max: var(--content-max);
+  --header-h: 68px;
+  --header-h-scrolled: 54px;
+  --header-h-app: 48px;
+  --header-h-app-scrolled: 44px;
+  /* The collapsed footer bar, and the space the page reserves so it never hides the last lines. */
+  --footer-h: 52px;
+  --footer-h-app: 34px;
+}
+
+:root[data-theme="dark"] {
+  --bg: #10161d;
+  --surface: #171f28;
+  --surface-2: #141b23;
+  --line: #263140;
+  --line-2: #2f3b4a;
+  --ink: #e9eef3;
+  --ink-2: #aab5c1;
+  --muted: #8794a1;
+  --accent: #4285bd;
+  --accent-hi: #4e93cf;
+  --accent-ink: #0b1117;
+  --accent-hi-ink: #0b1117;
+  --syn-comment: #8b9c8b;
+  --syn-keyword: #d3a2e8;
+  --syn-string: #90d6ab;
+  --syn-number: #eaa77a;
+  --syn-name: #8fc4f0;
+  --syn-punct: #9aa5b1;
+  --syn-removed: #e39a90;
+  --syn-removed-bg: #2b1d1a;
+  --syn-added: #90d6ab;
+  --syn-added-bg: #16261d;
+  --syn-output: #8794a1;
+  --chip: #202a36;
+  --tile: #1c2634;
+  --danger: #d9948a;
+  --danger-bg: #2b1d1a;
+  --warning: #d8bd77;
+  --warning-bg: #2a2317;
+  --header-bg: var(--chrome-bg);
+
+  /* Same rule in the dark theme: the bars stay the deployment's main colour. */
+  --footer-bg: var(--chrome-bg);
+  --footer-surface: var(--chrome-surface);
+  --footer-chip: var(--chrome-chip);
+  --footer-line: var(--chrome-line);
+  --footer-line-hi: var(--chrome-line-hi);
+  --footer-text: var(--chrome-ink-2);
+  --footer-muted: var(--chrome-muted);
+  --footer-strong: var(--chrome-ink);
+}

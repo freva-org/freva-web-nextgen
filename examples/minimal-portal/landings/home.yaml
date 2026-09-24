@@ -1,0 +1,14 @@
+schemaVersion: 1
+title: Minimal Example Portal
+blocks:
+  - type: hero
+    heading: A portal with nothing switched on
+    summary: Every route below is a real HTML file. Nothing here needs JavaScript.
+    actions:
+      - label: Read the guide
+        href: /docs/guide/
+  - type: cards
+    items:
+      - title: Guide
+        summary: One prose page, rendered by portal-content-v1.
+        href: /docs/guide/
