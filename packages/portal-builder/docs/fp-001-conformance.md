@@ -3,8 +3,8 @@
 Where each fixed decision and each Definition-of-Done item is implemented, and
 which test settles it. Paths are relative to `packages/portal-builder` unless
 stated otherwise, and every path in this file exists in the repository, except
-those under `packages/stac-browser/`, `packages/portal/` and `delivery/`, which
-this repository does not carry yet.
+those under `packages/portal/` and `delivery/`, which this repository does not
+carry yet.
 
 This table says where the evidence lives. It is not itself the evidence. What
 actually ran, with exit statuses, tool versions and artifact digests, is in

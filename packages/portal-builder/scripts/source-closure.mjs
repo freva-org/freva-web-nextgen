@@ -110,6 +110,11 @@ function resolveSpecifier(fromFile, specifier) {
   return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
 }
 
+function inComment(text, index) {
+  const before = text.slice(text.lastIndexOf("\n", index) + 1, index);
+  return /^\s*\*/.test(before) || before.includes("//");
+}
+
 const sourceFiles = SOURCE_ROOTS.flatMap((root) => walk(join(PKG, root)));
 let importCount = 0;
 
@@ -125,6 +130,7 @@ for (const file of sourceFiles) {
   for (const match of text.matchAll(IMPORT_RE)) {
     const specifier = match[1] ?? match[2] ?? match[3];
     if (!specifier || !specifier.startsWith(".")) continue;
+    if (inComment(text, match.index)) continue;
     importCount += 1;
     // An executable may import its own build output; `prepack` makes it, so check the source.
     const compiled = /(^|\/)dist\//.exec(specifier);
@@ -185,6 +191,7 @@ const exportTargets = (value, label) => {
 exportTargets(manifest.exports ?? {}, "exports");
 
 for (const entry of manifest.files ?? []) {
+  if (entry.startsWith("!")) continue;
   const absolute = resolve(PKG, entry);
   if (existsSync(absolute)) continue;
   // `dist` is produced by `prepack`; what must exist in the tree is its source.
@@ -220,7 +227,7 @@ for (const config of ["tsconfig.json", "tsconfig.test.json", "tsconfig.client.js
   }
 }
 
-// The conformance map claims evidence; a citation pointing at nothing is worse than none.
+const NOT_CARRIED_YET = ["packages/portal/", "delivery/"];
 const conformance = join(PKG, "docs", "fp-001-conformance.md");
 if (existsSync(conformance)) {
   const text = readFileSync(conformance, "utf8");
@@ -228,6 +235,7 @@ if (existsSync(conformance)) {
     /`((?:src|tests|client|astro|schema|scripts|bin|browser-tests|tools|packages|examples)\/[^`\s|]+)`/g,
   )) {
     const cited = match[1];
+    if (NOT_CARRIED_YET.some((prefix) => cited.startsWith(prefix))) continue;
     const candidates = [resolve(PKG, cited), resolve(REPO, cited)];
     // A citation may name a directory, a file, or a glob of sibling files.
     const found = candidates.some((candidate) => {

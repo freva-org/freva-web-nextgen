@@ -367,12 +367,12 @@ jobs:
           SOURCE_DATE_EPOCH: 1760000000
 
       - name: Source closure
-        run: npm run closure -w @freva-org/portal-builder
+        run: npm run closure
 
       - name: Licence report and SBOM
         run: |
-          npm run licenses -w @freva-org/portal-builder
-          npm run sbom -w @freva-org/portal-builder
+          npm run licenses
+          npm run sbom
 
       - uses: actions/upload-artifact@v4
         with:
