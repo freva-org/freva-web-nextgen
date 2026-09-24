@@ -7,7 +7,7 @@
  * arrows - simply absent. What matters is that tap, type, Enter, see the answer still works,
  * and that the console does not overflow a 390px screen into a sideways scroll.
  */
-import { consolePage } from "./console-fixture.mjs";
+import { consolePage, waitForConsole } from "./console-fixture.mjs";
 import { bundleConsole, inBrowser, report, requireDist, serve } from "./harness.mjs";
 
 requireDist();
@@ -64,7 +64,9 @@ const result = await inBrowser(
           text: "x".repeat(400),
         }),
       );
-      await page.waitForTimeout(80);
+      await waitForConsole(page, () =>
+        window.__c.q('.bp-stdout[data-execution-id="e0"]')?.textContent.includes("x".repeat(400)),
+      );
       const afterLongLine = await page.evaluate(() => ({
         doc: document.documentElement.scrollWidth,
         view: window.innerWidth,
@@ -155,7 +157,6 @@ const result = await inBrowser(
       await page.evaluate(() =>
         window.__mock.emit({ type: "result", executionId: "e0", text: "42" }),
       );
-      await page.waitForTimeout(80);
       checks.push({
         name: "the result is visible in the transcript",
         pass: (await page.evaluate(() => window.__c.text())).includes("42"),

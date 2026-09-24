@@ -8,6 +8,16 @@
  * `console-real-engine.mjs` runs the same component against the real interpreter.
  */
 
+export async function waitForConsole(page, condition, arg = null) {
+  try {
+    await page.waitForFunction(condition, arg, { polling: 50, timeout: 30_000 });
+    return true;
+  } catch (error) {
+    if (error.name !== "TimeoutError") throw error;
+    return false;
+  }
+}
+
 /** A mock BrowserPython, in the page. Scriptable from the test through `window.__mock`. */
 export const MOCK_ENGINE = `
 class MockEngine {

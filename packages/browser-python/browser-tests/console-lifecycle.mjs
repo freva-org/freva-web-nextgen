@@ -104,7 +104,7 @@ const result = await inBrowser(
       // The engine's status detail is whatever it failed with, and for a failed start that is a
       // Python traceback. Verbatim in the toolbar's status span it measured 13 lines and 87px,
       // growing the toolbar from 40px to 134px and wrapping around its own buttons.
-      const multiline = await page.evaluate(async () => {
+      const multiline = await page.evaluate(() => {
         const toolbar = window.__el.shadowRoot.querySelector(".bp-toolbar");
         const healthy = Math.round(toolbar.getBoundingClientRect().height);
         window.__c.mock._emitStatus(
@@ -116,7 +116,6 @@ const result = await inBrowser(
             "the Pyodide distribution, but it is not installed.\nYou can install it by calling:\n" +
             '  await micropip.install("fsspec") in Python',
         );
-        await new Promise((resolve) => setTimeout(resolve, 120));
         const status = window.__el.shadowRoot.querySelector(".bp-status");
         return {
           healthy,
@@ -159,7 +158,7 @@ const result = await inBrowser(
       // A console inside somebody else's window chrome arrives with three buttons that chrome
       // likely already offers, and hiding the whole strip takes the status line with it - the one
       // place "Loading Python…" and a failed start are ever said.
-      const toolbarModes = await page.evaluate(async () => {
+      const toolbarModes = await page.evaluate(() => {
         const root = window.__el.shadowRoot;
         const read = () => {
           const bar = root.querySelector(".bp-toolbar");
@@ -175,13 +174,10 @@ const result = await inBrowser(
         };
         const full = read();
         window.__el.toolbarMode = "status";
-        await new Promise((r) => setTimeout(r, 20));
         const status = read();
         window.__el.toolbarMode = "none";
-        await new Promise((r) => setTimeout(r, 20));
         const none = read();
         window.__el.toolbarMode = "full";
-        await new Promise((r) => setTimeout(r, 20));
         return { full, status, none, back: read() };
       });
       checks.push({
