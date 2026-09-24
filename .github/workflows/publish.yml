@@ -102,6 +102,15 @@ jobs:
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: npm exec -- playwright install --with-deps chromium firefox webkit
 
+      - uses: actions/setup-python@v5
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned RST helper
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: pip install ./tools/portal-rst-renderer
+
       - name: Build
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: npm run build
