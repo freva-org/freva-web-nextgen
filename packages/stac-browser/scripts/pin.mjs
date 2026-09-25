@@ -55,6 +55,25 @@ export function setReadmePin(text, commit) {
   );
 }
 
+export const NOTICE_FILE = resolve(PKG_ROOT, "THIRD_PARTY_NOTICES.md");
+
+export function setNoticePin(text, commit, tag) {
+  let out = text;
+  for (const [label, value] of [
+    ["Version", tag],
+    ["Commit", commit],
+  ]) {
+    const row = new RegExp(`^\\| ${label}( +)\\| \`[^\`]*\`( *)\\|$`, "gm");
+    const hits = [...out.matchAll(row)];
+    if (hits.length !== 1) throw new Error(`expected one ${label} row, found ${hits.length}`);
+    const [whole, gap] = hits[0];
+    const head = `| ${label}${gap}| `;
+    const cell = `\`${value}\``.padEnd(whole.length - head.length - 1, " ");
+    out = out.replace(row, () => `${head}${cell}|`);
+  }
+  return out;
+}
+
 function rewrite(file, fields) {
   let text = readFileSync(file, "utf-8");
   for (const [key, value] of Object.entries(fields)) text = setField(text, key, value);
@@ -87,6 +106,7 @@ function pinRelease(commit, tag) {
     rewrite(RECIPE_FILE, { commit, tag, lockfileDigest });
     rewrite(CONTRACT_FILE, { commit, tag });
     writeFileSync(README_FILE, setReadmePin(readFileSync(README_FILE, "utf-8"), commit));
+    writeFileSync(NOTICE_FILE, setNoticePin(readFileSync(NOTICE_FILE, "utf-8"), commit, tag));
 
     output("lockfile", lockfileDigest === recipe.lockfileDigest ? "unchanged" : "changed");
     output("licence", licenseDigest === recipe.licenseDigest ? "unchanged" : "changed");
