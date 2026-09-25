@@ -5,8 +5,8 @@
   "recipeVersion": "2609.3.0",
   "name": "@radiantearth/stac-browser",
   "repository": "https://github.com/radiantearth/stac-browser.git",
-  "tag": "v5.0.0",
-  "commit": "ae1956e8cb2067ce27938b3ae70c00515ac0ff33",
+  "tag": "v5.1.0",
+  "commit": "c78b78f3434fdd34d4192f7044194dae6a15172d",
   "license": "ISC",
   "licenseFile": "LICENSE",
   "buildMode": "minimal",
@@ -16,7 +16,7 @@
     "catalogTitle": "STAC Browser"
   },
   "lockfile": "package-lock.json",
-  "lockfileDigest": "sha256:5985fa481e9e0da6caa9bd76e6e0a83b444468c2ea0591b535d16ce8aba2cc36",
+  "lockfileDigest": "sha256:65215464a28a0cfc982fd9ef6ce1b087ee10347780d59bbf236a4ff23837b7c2",
   "licenseDigest": "sha256:1e8db07d8b22c7259397a6395be7c939bf02b178c601ae4326efa13d929bca86",
   "noticeFile": "THIRD_PARTY_NOTICES.md",
   "toolchain": {
@@ -178,7 +178,7 @@
   },
   "expected": {
     "$comment": "The tree digest a verified preparation from these inputs produces on the recorded toolchain. It is an expectation, not a gate: upstream's bundler is not byte-reproducible across every environment, so preparation reports a mismatch loudly and the portal build still verifies the manifest it was actually given. A mismatch means 'find out why before shipping', not 'stop'.",
-    "materialsTreeDigest": "sha256:d857436e0964a3c825010909c735f4bc727cdfe55437070caec121165910093d",
-    "fileCount": 657
+    "materialsTreeDigest": "sha256:a9bb256ca49750ac5f42ff61ccfb28d220c6b04b815ee2f98a6d044286b326e8",
+    "fileCount": 667
   }
 }
