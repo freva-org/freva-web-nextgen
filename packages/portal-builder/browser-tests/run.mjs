@@ -1186,7 +1186,10 @@ try {
         { timeout: 30_000 },
       );
 
-      await page.locator("#stac-browser .btn", { hasText: "Browse" }).first().click();
+      await page
+        .locator('#stac-browser .btn[title="Browse"], #stac-browser .btn:has-text("Browse")')
+        .first()
+        .click();
       await page.waitForSelector("#stac-browser .offcanvas.show", { timeout: 10_000 });
       // The panel slides in, and a rectangle read during the transition is the animated one.
       await page.evaluate(() => {

@@ -10,8 +10,8 @@ This is not an official Radiant Earth release.
 | ----------------------------- | ------------------------------------------------------------------------------------- |
 | Package                       | `@radiantearth/stac-browser`                                                          |
 | Upstream                      | <https://github.com/radiantearth/stac-browser>                                        |
-| Version                       | `v5.0.0`                                                                              |
-| Commit                        | `ae1956e8cb2067ce27938b3ae70c00515ac0ff33`                                            |
+| Version                       | `v5.1.0`                                                                              |
+| Commit                        | `c78b78f3434fdd34d4192f7044194dae6a15172d`                                            |
 | Licence                       | ISC — full text in [`LICENSES/stac-browser-ISC.txt`](./LICENSES/stac-browser-ISC.txt) |
 | Copyright                     | Copyright 2018-2018 Radiant Earth Foundation                                          |
 | Freva source patches retained | none — see [`PATCH_PROVENANCE.md`](./PATCH_PROVENANCE.md)                             |

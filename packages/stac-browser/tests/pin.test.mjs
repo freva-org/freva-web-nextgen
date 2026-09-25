@@ -8,7 +8,14 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { README_FILE, README_PIN, setField, setReadmePin } from "../scripts/pin.mjs";
+import {
+  NOTICE_FILE,
+  README_FILE,
+  README_PIN,
+  setField,
+  setNoticePin,
+  setReadmePin,
+} from "../scripts/pin.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -56,4 +63,18 @@ test("moving the README link keeps the table's width", () => {
     after,
     /\[`1111111`\]\(https:\/\/github\.com\/radiantearth\/stac-browser\/tree\/1{40}\)/,
   );
+});
+
+test("moving the notice's pin keeps the table's width", () => {
+  const before = readFileSync(NOTICE_FILE, "utf-8");
+  const after = setNoticePin(before, "1".repeat(40), "v9.9.9");
+  assert.equal(after.length, before.length);
+  assert.match(after, /\| Version +\| `v9\.9\.9` +\|/);
+  assert.match(after, new RegExp(`\\| Commit +\\| \`1{40}\` +\\|`));
+  const changed = before.split("\n").filter((line, i) => line !== after.split("\n")[i]);
+  assert.equal(changed.length, 2);
+});
+
+test("a notice with no row to move is refused, not rewritten", () => {
+  assert.throws(() => setNoticePin("# nothing here\n", "0".repeat(40), "v1.0.0"), /found 0/);
 });

@@ -217,6 +217,7 @@ jobs:
           add-paths: |
             packages/stac-browser/upstream.json
             packages/stac-browser/adapter-contract.json
+            packages/stac-browser/THIRD_PARTY_NOTICES.md
             README.md
           branch: bump-stac-browser/${{ steps.resolve.outputs.new }}
           delete-branch: true
@@ -248,6 +249,7 @@ jobs:
           add-paths: |
             packages/stac-browser/upstream.json
             packages/stac-browser/adapter-contract.json
+            packages/stac-browser/THIRD_PARTY_NOTICES.md
             README.md
           branch: stac-browser-candidate/${{ steps.resolve.outputs.new }}
           delete-branch: false
