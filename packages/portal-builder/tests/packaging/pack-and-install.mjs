@@ -180,11 +180,15 @@ try {
   //
   // This list has to hold every workspace package the builder depends on. It is not derived from
   // `package.json` on purpose - a tarball has to be *built* as well as packed, and not every
-  // workspace can be - at the cost that adding a dependency and forgetting this line sends the
-  // install to the public registry for a package that was never published, and it fails on a 404.
-  const dependencyTarballs = [
+  // workspace can be. A package missing here is installed from the public registry instead: while
+  // the registry has that exact version (on a feature PR) the gate silently tests the OLD published
+  // copy, and once a release bumps it (the release PR) the install fails with ETARGET. The check
+  // below turns both into an immediate failure that names the package.
+  const dependencyWorkspaces = [
     "freva-client-terminal",
     "databrowser",
+    // Imported by the builder's tree inspector, and by the databrowser.
+    "data-inspector",
     "ts-oidc-auth-client",
     "freva-badge",
     // Carried by the dataset-tree landing block, at a prerelease version the registry has never
@@ -192,7 +196,38 @@ try {
     "dataset-tree",
     // The interpreter behind the block's Python playground, on the same terms.
     "browser-python",
-  ].map((name) => {
+  ];
+
+  await check("every workspace package the builder installs is packed from this checkout", () => {
+    const readPkg = (dir) => JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    const workspaceDir = new Map(
+      readdirSync(join(REPO, "packages"))
+        .filter((d) => existsSync(join(REPO, "packages", d, "package.json")))
+        .map((d) => [readPkg(join(REPO, "packages", d)).name, d]),
+    );
+    // The builder's own workspace dependencies, and theirs in turn: npm installs all of them.
+    const needed = new Set();
+    const visit = (dir) => {
+      const pkg = readPkg(dir);
+      for (const name of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) {
+        const d = workspaceDir.get(name);
+        if (d && !needed.has(d)) {
+          needed.add(d);
+          visit(join(REPO, "packages", d));
+        }
+      }
+    };
+    visit(PKG);
+    const missing = [...needed].filter((d) => !dependencyWorkspaces.includes(d));
+    assert.deepEqual(
+      missing,
+      [],
+      `not packed, so npm would take them from the registry: ${missing.join(", ")}`,
+    );
+  });
+  if (results.some((r) => !r.ok)) throw new Error("the packed dependency list is incomplete");
+
+  const dependencyTarballs = dependencyWorkspaces.map((name) => {
     const dir = join(REPO, "packages", name);
     execFileSync("npm", ["run", "build"], { cwd: dir, stdio: "inherit" });
     // `npm pack --json` prints JSON, and a `prepack` script prints whatever it likes FIRST.
@@ -305,19 +340,15 @@ try {
   });
 
   await check("the consumer got THESE workspace versions, not the registry's older copies", () => {
-    // The failure this exists for is quiet and expensive: npm resolves
-    // `@freva-org/browser-python` from the public registry because the workspace copy was never
-    // packed, and the build fails on an export that release does not have - or worse, succeeds
-    // against an older protocol. The install above packs every workspace dependency; this checks
-    // that the packed one is what landed.
-    for (const name of [
-      "browser-python",
-      "dataset-tree",
-      "freva-client-terminal",
-      "databrowser",
-      "ts-oidc-auth-client",
-      "freva-badge",
-    ]) {
+    // The failure this exists for is quiet and expensive: npm resolves a `@freva-org/*` package
+    // from the public registry because the workspace copy was never packed, and the build fails on
+    // an export that release does not have - or worse, succeeds against an older protocol. The
+    // version alone cannot tell: before a release bumps it, the registry has the SAME version
+    // number with older code. So this checks where each package came from, too: the tarball.
+    const lock = JSON.parse(
+      readFileSync(join(project, "node_modules", ".package-lock.json"), "utf8"),
+    );
+    for (const name of dependencyWorkspaces) {
       const workspace = JSON.parse(
         readFileSync(join(REPO, "packages", name, "package.json"), "utf8"),
       );
@@ -328,6 +359,11 @@ try {
         installed.version,
         workspace.version,
         `@freva-org/${name}: the consumer has ${installed.version}, the workspace is ${workspace.version}`,
+      );
+      const resolved = String(lock.packages?.[`node_modules/@freva-org/${name}`]?.resolved ?? "");
+      assert.ok(
+        resolved.startsWith("file:") && resolved.endsWith(".tgz"),
+        `@freva-org/${name} was installed from ${resolved || "an unknown source"}, not its packed tarball`,
       );
     }
   });
