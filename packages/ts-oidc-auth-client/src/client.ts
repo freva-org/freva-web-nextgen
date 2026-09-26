@@ -535,16 +535,18 @@ export class PyOidcAuthClient {
     this.acknowledgeNoRevocation = config.security?.acknowledgeNoRevocation ?? false;
     this.acknowledgeMissingIssuer = config.security?.acknowledgeMissingIssuer ?? false;
     this.acknowledgeNoLoginTransaction = config.security?.acknowledgeNoLoginTransaction ?? false;
-    // The expected issuer is itself security configuration: an http or
-    // query-bearing "issuer" cannot be what RFC 9207 compares against.
+    // Freva IDP has an http issuer and stamps it on every authorization response, and
+    // refusing it would make login impossible against it
     if (config.security?.expectedIssuer !== undefined) {
       const iss = validateConfigUrl(config.security.expectedIssuer, "security.expectedIssuer", {
         allowRelative: false,
+        allowInsecure: this.allowInsecureTransport,
       });
-      if (iss && iss.protocol !== "https:") {
+      if (iss && !isSecureTransport(iss) && !this.allowInsecureTransport) {
         throw new AuthError(
           "security.expectedIssuer must be an https URL (RFC 9207 issuer " +
-            "identifiers are https origins).",
+            "identifiers are https origins); plain http is accepted only for a " +
+            "loopback host or with security.allowInsecureTransport.",
         );
       }
     }

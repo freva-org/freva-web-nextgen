@@ -216,6 +216,95 @@ describe("3. issuer policy is strict", () => {
     ).not.toThrow();
   });
 
+  it("accepts an http issuer only on loopback or with allowInsecureTransport", async () => {
+    const loopback = "http://localhost:8080/realms/freva";
+    const { client } = localClient({
+      storage: new MemoryStorage(),
+      fetchImpl: (async () =>
+        jsonRes({
+          access_token: "a.b.c",
+          refresh_token: "a.b.c",
+          token_type: "Bearer",
+          expires: NOW + 3600,
+        })) as typeof fetch,
+      security: {
+        expectedIssuer: loopback,
+        requireLoginTransaction: false,
+        acknowledgeNoLoginTransaction: true,
+      },
+    });
+    await expect(
+      client.handleCallback(
+        `http://app.test/cb?code=a&state=s&iss=${encodeURIComponent(loopback)}`,
+      ),
+    ).resolves.toBeTruthy();
+    client.destroy();
+
+    expect(() =>
+      secureClient({
+        storage: new MemoryStorage(),
+        security: { expectedIssuer: "http://idp.test/realms/freva" },
+      }),
+    ).toThrow(/https/);
+    expect(() =>
+      secureClient({
+        storage: new MemoryStorage(),
+        security: { expectedIssuer: "http://idp.test/realms/freva", allowInsecureTransport: true },
+      }),
+    ).not.toThrow();
+  });
+
+  it("accepts a loopback http issuer under the DEFAULT policy - no insecure-transport opt-out", async () => {
+    // `secureClient` sets no `allowInsecureTransport`: loopback acceptance must come from the
+    // transport rule itself, not from the global opt-out.
+    for (const issuer of [
+      "http://localhost:8080/realms/freva",
+      "http://127.0.0.1:8080/realms/freva",
+      "http://[::1]:8080/realms/freva",
+      "http://keycloak.localhost/realms/freva",
+    ]) {
+      expect(
+        () => secureClient({ storage: new MemoryStorage(), security: { expectedIssuer: issuer } }),
+        issuer,
+      ).not.toThrow();
+    }
+    // A name that merely starts with "localhost" is a remote host: still refused.
+    expect(() =>
+      secureClient({
+        storage: new MemoryStorage(),
+        security: { expectedIssuer: "http://localhost.idp.test/realms/freva" },
+      }),
+    ).toThrow(/https/);
+
+    // ...and a callback carrying that loopback `iss` completes, with no insecure-transport warning.
+    const loopback = "http://localhost:8080/realms/freva";
+    const { client, events } = secureClient({
+      storage: new MemoryStorage(),
+      fetchImpl: (async () =>
+        jsonRes({
+          access_token: "a.b.c",
+          refresh_token: "a.b.c",
+          token_type: "Bearer",
+          expires: NOW + 3600,
+        })) as typeof fetch,
+      security: {
+        expectedIssuer: loopback,
+        requireLoginTransaction: false,
+        acknowledgeNoLoginTransaction: true,
+      },
+    });
+    await expect(
+      client.handleCallback(
+        `${SECURE_REDIRECT}?code=a&state=s&iss=${encodeURIComponent(loopback)}`,
+      ),
+    ).resolves.toBeTruthy();
+    const codes = events.flatMap((e) =>
+      e.type === "security-warning" ? [(e as { code: SecurityWarningCode }).code] : [],
+    );
+    expect(codes).not.toContain("insecure-transport");
+    client.destroy();
+  });
+
   it("requires iss once expectedIssuer is configured", async () => {
     const { client } = localClient({
       storage: new MemoryStorage(),
