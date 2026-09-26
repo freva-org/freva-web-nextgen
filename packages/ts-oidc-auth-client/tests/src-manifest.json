@@ -2,9 +2,9 @@
   "note": "sha256 of every file under src/. Refresh with `npm run manifest:refresh` in the same commit as any intentional src/ change.",
   "generatedFrom": "@freva-org/ts-oidc-auth-client@2608.0.0",
   "fileCount": 14,
-  "treeSha256": "fedbcfdff76adf613b21b96455b0eddc334264b05d10cc4d131d9227d1623590",
+  "treeSha256": "dd4c7c011dce031515710047d357b13fabfbc189cb4aa8c880699405849e23c5",
   "files": {
-    "src/client.ts": "0bd30560bd0ea8a74faaa5cf19fb34eeb1f693b78c0a57dced2be4f65c5776a2",
+    "src/client.ts": "b8c0fe6d272223e3c2c50150740ca943241139aff50876aeb58496b29209aaaf",
     "src/crosstab.ts": "0a6e0656fb39de481e8885ccc099c7b5919e4ee06a2d05c17220218c3a7262ff",
     "src/index.ts": "7ead47dd9b33efd88d21b44cec2c02a4b52a23dea2c278c488929cc207e3d482",
     "src/jwt.ts": "ad0dd8e9627d56449a8cf244f2e3e7cc06b4918345a732690d1adb1f52cfc405",
