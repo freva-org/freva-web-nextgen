@@ -1,5 +1,11 @@
 # @freva-org/data-inspector
 
+## 2609.1.0
+
+### Minor Changes
+
+- aed46e3: add new attachInspector to read zarr stores in the browser, converts anything else via freva-rest, and makes share links for the 3D viewer. Also aggregation becomes active as well.
+
 ## 2609.0.2
 
 ### Patch Changes
