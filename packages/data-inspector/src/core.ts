@@ -18,6 +18,7 @@ export {
   buildXarrayRepr,
   injectXarrayCss,
   loadZarrMetadataHtml,
+  ZarrMetadataError,
 } from "./zarr-metadata";
 export type {
   ZarrVariable,
@@ -27,6 +28,14 @@ export type {
   InjectCssOptions,
   LoadMetadataOptions,
 } from "./zarr-metadata";
+
+// The inspect pipeline: drives a <data-inspector> through direct reads and the data-loader.
+export { attachInspector, looksLikeStore, convertOptions } from "./pipeline";
+export type { AttachInspectorOptions, InspectorController } from "./pipeline";
+
+// Per-request auth, so a credential reaches only the origins it belongs to.
+export { scopedBearerAuth } from "./internal/http";
+export type { AuthHeaders, GetAuthHeaders, ScopedBearerAuthOptions } from "./internal/http";
 
 // Shared constants and types
 export { NcDumpDialogState } from "./types";

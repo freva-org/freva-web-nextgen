@@ -13,13 +13,21 @@
  *   zarr-url          Presigned Zarr URL
  *   zarr-status-code  Number (backend status code from ZarrPoller)
  *   is-aggregation    Boolean
+ *   error-action      Label of an extra button beside Retry (e.g. "Sign in")
+ *   viewer-disabled   Why GridLook cannot open this store; disables its tab, shown as tooltip
  *
  * ── JS-only properties ─────────────────────────────────────────────────────
  *   output            string | null  (trusted xarray-repr HTML; too large for an attribute)
+ *   aggregationConfig Partial<AggregationConfigValues> | null - what Aggregate / Retry submit
+ *                     until the user edits the form; null restores its defaults
+ *   loadOptions       Record<string, unknown> | null - the loader options of the current
+ *                     single-file read (e.g. `{ reload: true }`); Retry re-submits them while
+ *                     the field still holds that file. Cleared when `file` changes.
  *
  * ── Events fired ───────────────────────────────────────────────────────────
  *   inspector-close   -
  *   inspector-submit  CustomEvent<{ file, aggregationConfig }>
+ *   inspector-error-action  -
  *
  * Rendering model: the static chrome, the metadata output container and the
  * GridLook iframe are built ONCE per open session; subsequent state changes
@@ -30,6 +38,7 @@
 
 import type { AggregationConfigValues } from "../types";
 import { NcDumpDialogState } from "../types";
+import type { AggregationConfigElement } from "./aggregation-config";
 
 const DEFAULT_AGG_CONFIG: AggregationConfigValues = {
   aggregate: "auto",
@@ -142,11 +151,11 @@ data-inspector{
 .di-backdrop{position:fixed;inset:0;z-index:1050;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(15,23,42,.55);}
 .di-modal{display:flex;flex-direction:column;width:min(1100px,96vw);max-height:95vh;overflow:hidden;background:var(--_di-bg);color:var(--_di-fg);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.5;}
 .di-header{flex-shrink:0;border-bottom:1px solid var(--_di-border);padding:16px 16px 12px;}
-.di-header-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
-.di-header-main{flex:1;min-width:0;}
-.di-title{margin:0 0 12px;font-size:clamp(16px,4vw,20px);font-weight:600;display:flex;align-items:center;gap:8px;}
+.di-header-row{position:relative;}
+.di-header-main{min-width:0;}
+.di-title{margin:0 0 12px;padding-right:40px;font-size:clamp(16px,4vw,20px);font-weight:600;display:flex;align-items:center;gap:8px;}
 .di-title-ico{color:var(--_di-accent);display:inline-flex;align-items:center;font-size:16px;}
-.di-close{flex-shrink:0;width:32px;height:32px;font-size:28px;line-height:1;background:transparent;border:none;border-radius:6px;color:var(--_di-muted);cursor:pointer;}
+.di-close{position:absolute;top:-4px;right:-4px;width:32px;height:32px;font-size:28px;line-height:1;background:transparent;border:none;border-radius:6px;color:var(--_di-muted);cursor:pointer;}
 .di-close:hover{background:var(--_di-surface);color:var(--_di-fg);}
 .di-muted{color:var(--_di-muted);}
 .di-center{text-align:center;padding:24px 12px;}
@@ -187,6 +196,8 @@ data-inspector{
 .di-error-title{display:block;margin-bottom:6px;}
 .di-error-msg{word-wrap:break-word;overflow-wrap:anywhere;white-space:pre-wrap;}
 .di-btn-danger{background:#dc2626;border-color:#dc2626;color:#fff;font-size:12px;padding:6px 12px;margin-top:8px;}
+.di-error-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.di-error-actions .di-btn-primary{font-size:12px;padding:6px 12px;margin-top:8px;}
 .di-metadata{display:flex;justify-content:flex-start;width:100%;overflow-x:auto;}
 .di-metadata>*{width:100%;min-width:0;}
 .di-metadata dd,.di-metadata .xr-attrs td,.di-metadata .xr-var-attrs td{overflow-wrap:anywhere;word-break:break-word;}
@@ -231,11 +242,15 @@ function injectChromeCss(): void {
 export class DataInspectorElement extends HTMLElement {
   // ── Internal state ────────────────────────────────────────────────────────
   private _pathInput = "";
+  // Loader options of the current single-file read, re-submitted by Retry.
+  private _loadOptions: Record<string, unknown> | null = null;
   private _copied = false;
   private _gridlookCopied = false;
   private _activeTab: "metadata" | "gridlook" = "metadata";
   private _dropdownOpen = false;
-  private _aggregationConfig: AggregationConfigValues = { ...DEFAULT_AGG_CONFIG };
+  // What Aggregate / Retry submit: the form's full values once the user touches it, or exactly
+  // what a host set - a read's own options are re-submitted as given, not mixed with defaults.
+  private _aggregationConfig: Partial<AggregationConfigValues> = { ...DEFAULT_AGG_CONFIG };
   private _output: string | null = null;
 
   // ── Render bookkeeping ────────────────────────────────────────────────────
@@ -250,7 +265,17 @@ export class DataInspectorElement extends HTMLElement {
 
   // ── Observed attributes ───────────────────────────────────────────────────
   static get observedAttributes(): string[] {
-    return ["open", "file", "status", "error", "zarr-url", "zarr-status-code", "is-aggregation"];
+    return [
+      "open",
+      "file",
+      "status",
+      "error",
+      "zarr-url",
+      "zarr-status-code",
+      "is-aggregation",
+      "error-action",
+      "viewer-disabled",
+    ];
   }
 
   // ── Attribute accessors ───────────────────────────────────────────────────
@@ -316,6 +341,27 @@ export class DataInspectorElement extends HTMLElement {
       : this.setAttribute("zarr-status-code", String(v));
   }
 
+  get loadOptions(): Record<string, unknown> | null {
+    return this._loadOptions ? { ...this._loadOptions } : null;
+  }
+  set loadOptions(v: Record<string, unknown> | null) {
+    this._loadOptions = v && Object.keys(v).length ? { ...v } : null;
+  }
+
+  get aggregationConfig(): Partial<AggregationConfigValues> {
+    return { ...this._aggregationConfig };
+  }
+  set aggregationConfig(v: Partial<AggregationConfigValues> | null) {
+    const next = v ? { ...v } : { ...DEFAULT_AGG_CONFIG };
+    if (JSON.stringify(next) === JSON.stringify(this._aggregationConfig)) return;
+    this._aggregationConfig = next;
+    const form = this._q<AggregationConfigElement>("#nc-agg-config");
+    if (form) {
+      form.setAttribute("initial-config", JSON.stringify(next));
+      if ("config" in form) form.config = next;
+    }
+  }
+
   get isAggregation(): boolean {
     return this.hasAttribute("is-aggregation");
   }
@@ -358,9 +404,15 @@ export class DataInspectorElement extends HTMLElement {
     }
 
     if (name === "file") {
-      if (val && !val.startsWith("[")) this._pathInput = val;
+      if (val && !val.startsWith("[")) {
+        this._pathInput = val;
+        // The field is built once per open session, so update it here.
+        const input = this._q<HTMLInputElement>("#nc-path-input");
+        if (input && input.value !== val) input.value = val;
+      }
       // A genuine file change invalidates everything derived from the old file.
       if (oldVal !== null && oldVal !== val) {
+        this._loadOptions = null;
         this._output = null;
         this._domOutput = undefined;
         this._activeTab = "metadata";
@@ -417,11 +469,28 @@ export class DataInspectorElement extends HTMLElement {
     if (this.isAggregation) {
       this._emit("inspector-submit", {
         file: this.file,
-        aggregationConfig: this._aggregationConfig,
+        aggregationConfig: { ...this._aggregationConfig },
       });
     } else if (this._pathInput.trim()) {
       this._emit("inspector-submit", { file: this._pathInput.trim(), aggregationConfig: null });
     }
+  }
+
+  /**
+   * Repeat the failed read with its options: an aggregation's config, or `loadOptions` while the
+   * field still holds the file that was read (an edited path is a new read).
+   */
+  private _handleRetry(): void {
+    const path = this._pathInput.trim();
+    if (this.isAggregation || !path) {
+      this._handleInspect();
+      return;
+    }
+    const same = path === this.getAttribute("file");
+    this._emit("inspector-submit", {
+      file: path,
+      aggregationConfig: same && this._loadOptions ? { ...this._loadOptions } : null,
+    });
   }
 
   private _handleInspectReload(): void {
@@ -562,7 +631,10 @@ export class DataInspectorElement extends HTMLElement {
               <div class="di-error-body">
                 <strong class="di-error-title">Error loading metadata</strong>
                 <div id="nc-error-msg" class="di-error-msg"></div>
-                <button id="nc-retry-btn" class="di-btn di-btn-danger">${ico(IC.refresh, true)}Retry</button>
+                <div class="di-error-actions">
+                  <button id="nc-retry-btn" class="di-btn di-btn-danger">${ico(IC.refresh, true)}Retry</button>
+                  <button id="nc-error-action" class="di-btn di-btn-primary" hidden></button>
+                </div>
               </div>
             </div>
           </div>
@@ -614,12 +686,13 @@ export class DataInspectorElement extends HTMLElement {
         </div>
       </div>`;
 
-    // Aggregation config: set initial-config via the DOM API (no HTML parsing
-    // of the JSON, so config string values cannot inject markup).
-    this._q("#nc-agg-config")?.setAttribute(
-      "initial-config",
-      JSON.stringify(this._aggregationConfig),
-    );
+    // Via the DOM API, so config strings cannot inject markup. The form already connected during
+    // the `innerHTML` above, so it gets the values as a property too, not only the attribute.
+    const formEl = this._q<AggregationConfigElement>("#nc-agg-config");
+    if (formEl) {
+      formEl.setAttribute("initial-config", JSON.stringify(this._aggregationConfig));
+      if ("config" in formEl) formEl.config = this._aggregationConfig;
+    }
 
     // Create the GridLook iframe on first use and keep it for the life of the
     // session. It is never recreated by `_update`, so its browsing context
@@ -689,7 +762,10 @@ export class DataInspectorElement extends HTMLElement {
     this._q("#nc-cancel-btn")?.addEventListener("click", () => this._emit("inspector-close", null));
     this._q("#nc-load-btn")?.addEventListener("click", () => this._handleInspect());
     this._q("#nc-aggregate-btn")?.addEventListener("click", () => this._handleInspect());
-    this._q("#nc-retry-btn")?.addEventListener("click", () => this._handleInspect());
+    this._q("#nc-retry-btn")?.addEventListener("click", () => this._handleRetry());
+    this._q("#nc-error-action")?.addEventListener("click", () =>
+      this._emit("inspector-error-action", null),
+    );
 
     const pathInput = this._q<HTMLInputElement>("#nc-path-input");
     if (pathInput) {
@@ -811,7 +887,8 @@ export class DataInspectorElement extends HTMLElement {
     // Top-level regions
     if (agg) this._toggle(this._q("#nc-agg-form"), isReady && !hasOutput);
     this._toggle(this._q("#nc-pre-loading"), !zarrUrl && isLoading);
-    this._toggle(this._q("#nc-tabs-wrap"), !!zarrUrl && (hasOutput || isLoading || isError));
+    // An error shows even before a store URL exists (refused conversion, sign-in needed).
+    this._toggle(this._q("#nc-tabs-wrap"), (!!zarrUrl && (hasOutput || isLoading)) || isError);
     this._toggle(this._q("#nc-empty-main"), !zarrUrl && !isLoading && isReady && !hasOutput);
 
     const preText = this._q("#nc-pre-loading-text");
@@ -826,9 +903,14 @@ export class DataInspectorElement extends HTMLElement {
       metaTab.classList.toggle("di-tab-active", active);
       metaTab.setAttribute("aria-selected", String(active));
     }
+    // `viewer-disabled`: the tab stays visible but disabled, with the reason as its tooltip.
+    const viewerBlocked = this.getAttribute("viewer-disabled");
+    if (viewerBlocked !== null && this._activeTab === "gridlook") this._activeTab = "metadata";
     if (gridTab) {
       const active = this._activeTab === "gridlook";
-      gridTab.disabled = status !== NcDumpDialogState.READY || !hasOutput;
+      gridTab.disabled = status !== NcDumpDialogState.READY || !hasOutput || viewerBlocked !== null;
+      if (viewerBlocked) gridTab.setAttribute("title", viewerBlocked);
+      else gridTab.removeAttribute("title");
       gridTab.classList.toggle("di-tab-active", active);
       gridTab.setAttribute("aria-selected", String(active));
     }
@@ -837,6 +919,13 @@ export class DataInspectorElement extends HTMLElement {
     this._toggle(this._q("#nc-error"), isError && this._activeTab === "metadata");
     const errMsg = this._q("#nc-error-msg");
     if (errMsg) errMsg.textContent = this.error ?? "";
+    // Optional host button beside Retry; label set as text, never HTML.
+    const errAction = this._q<HTMLButtonElement>("#nc-error-action");
+    if (errAction) {
+      const label = this.getAttribute("error-action");
+      errAction.hidden = !label;
+      errAction.textContent = label ?? "";
+    }
 
     // Body: loading
     this._toggle(this._q("#nc-loading"), isLoading);

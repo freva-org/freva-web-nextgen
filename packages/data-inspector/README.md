@@ -12,54 +12,75 @@ npm install @freva-org/data-inspector
 
 ## Quick start
 
+`attachInspector` drives the element: zarr stores are read in the browser, anything else goes
+through freva-rest's data-loader (convert, poll, read), with a share link for the 3D viewer.
+
+```js
+import { attachInspector, scopedBearerAuth } from "@freva-org/data-inspector";
+
+const el = document.createElement("data-inspector");
+document.body.append(el);
+
+const inspector = attachInspector(el, {
+  dataPortalBase: "/api/freva-nextgen/data-portal", // omit to read zarr stores only
+  getAuthHeaders: scopedBearerAuth({
+    getToken: async () => (await auth.getToken())?.accessToken ?? null,
+  }),
+  signIn: () => auth.login({ next: location.pathname + location.search }),
+});
+el.addEventListener("inspector-close", () => {
+  inspector.detach();
+  el.remove();
+});
+
+void inspector.load("https://s3.example.org/bucket/dataset.zarr"); // or a file path, or [paths]
+el.setAttribute("open", "");
+```
+
+Call `load()` before setting `open`: it sets `status="loading"`, so opening does not submit a
+second read.
+
+xarray's repr caps at 700px. To fill the modal, lift the cap in the host page:
+
+```css
+data-inspector .xr-wrap {
+  max-width: none;
+}
+```
+
+| Option            | Default                         | Description                                              |
+| ----------------- | ------------------------------- | -------------------------------------------------------- |
+| `dataPortalBase`  | none (zarr stores only)         | freva-rest data-portal URL: conversion, share links      |
+| `dataLoader`      | `true` with `dataPortalBase`    | `false`: never submit a conversion                       |
+| `getAuthHeaders`  | legacy cookie, same origin only | Per-request headers, may be async - see Auth             |
+| `signIn`          | -                               | Offered as a "Sign in" button when sign-in is missing    |
+| `isStore`         | http(s) link or `.zarr` path    | Inputs read directly instead of converted                |
+| `shareTtlSeconds` | `3600`                          | Share link lifetime                                      |
+| `pollMs`          | `1500`                          | Conversion status poll interval                          |
+| `startupGraceMs`  | `30000`                         | How long an early status `5` still means queued          |
+| `timeoutSeconds`  | `300`                           | Conversion deadline unless the aggregation form sets one |
+
+- **Zarr stores** are read in the browser. A store the auth hook sent a token to is protected: it
+  gets a share link (`/share-zarr`), or `viewer-disabled` when none can be made. On `401`/`403`
+  the store is converted if the user has a data-portal session, else `signIn` is offered.
+- **Anything else** needs `dataPortalBase` and a signed-in user. A `401` at any step offers
+  sign-in again.
+- `load()` sets `file`, `is-aggregation` and `aggregationConfig` / `loadOptions`, so Retry
+  re-submits exactly that read. A newer `load()` or `detach()` cancels every request in flight.
+
+## Driving the element yourself
+
+Without `attachInspector`, handle the events and set the state:
+
 ```js
 import "@freva-org/data-inspector";
-```
-
-```html
-<data-inspector id="inspector" file="/data/myfile.nc"></data-inspector>
-```
-
-```js
-const el = document.getElementById("inspector");
 
 el.addEventListener("inspector-submit", ({ detail: { file, aggregationConfig } }) => {
-  loadMetadata(file, aggregationConfig);
+  el.setAttribute("status", "loading");
+  // ...fetch, then set `el.output` (trusted xarray HTML), `zarr-url`, and status "ready" / "error"
 });
-
 el.addEventListener("inspector-close", () => el.removeAttribute("open"));
-
-el.setAttribute("open", ""); // open it
-```
-
-## Usage with ZarrPoller
-
-```js
-import { ZarrPoller, NcDumpDialogState } from "@freva-org/data-inspector";
-
-el.addEventListener("inspector-submit", async ({ detail: { file, aggregationConfig } }) => {
-  el.setAttribute("status", NcDumpDialogState.LOADING);
-
-  try {
-    const { html, zarrUrl } = await myBackend.inspect(file, aggregationConfig);
-
-    el.output = html;
-    el.setAttribute("zarr-url", zarrUrl);
-    el.setAttribute("status", NcDumpDialogState.READY);
-
-    const poller = new ZarrPoller(zarrUrl, {
-      onStatus: (code, reason) => {
-        el.setAttribute("zarr-status-code", String(code));
-        if (reason) console.warn("zarr status:", reason);
-      },
-      onError: (err) => console.error(err),
-    });
-    poller.start();
-  } catch (e) {
-    el.setAttribute("status", NcDumpDialogState.ERROR);
-    el.setAttribute("error", String(e));
-  }
-});
+el.setAttribute("open", "");
 ```
 
 ## Framework examples
@@ -116,16 +137,22 @@ export function Inspector({ file }: { file: string }) {
 | `zarr-url`         | `string`                    | Presigned Zarr URL for GridLook                   |
 | `zarr-status-code` | `number`                    | Status code from `ZarrPoller.onStatus`            |
 | `is-aggregation`   | boolean                     | Enables aggregation mode                          |
+| `error-action`     | `string`                    | Label of an extra button beside Retry             |
+| `viewer-disabled`  | `string`                    | Disables the 3D tab; the value is its tooltip     |
 
-### `<data-inspector>` JS property
+### `<data-inspector>` JS properties
 
-| Property | Type             | Description                                               |
-| -------- | ---------------- | --------------------------------------------------------- |
-| `output` | `string \| null` | HTML string from xarray repr (too large for an attribute) |
+| Property            | Type                                       | Description                                                  |
+| ------------------- | ------------------------------------------ | ------------------------------------------------------------ |
+| `output`            | `string \| null`                           | HTML string from xarray repr (too large for an attribute)    |
+| `aggregationConfig` | `Partial<AggregationConfigValues> \| null` | What Aggregate / Retry submit until the user edits the form  |
+| `loadOptions`       | `Record<string, unknown> \| null`          | Single-file loader options Retry re-submits; reset by `file` |
 
 `error` and `file` are rendered as **text** (never parsed as HTML). `output` is injected as HTML, so pass only trusted markup - the xarray repr from `loadZarrMetadataHtml` / `buildXarrayRepr` is safe; arbitrary remote HTML is not.
 
 #### GridLook 3D viewer
+
+GridLook cannot send a token, so `zarr-url` must be readable without one - a share link for a protected freva store. When there is none, set `viewer-disabled`.
 
 The viewer is shown in a sandboxed iframe (`sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"`, `referrerpolicy="no-referrer"`). The iframe is created once on first view and reused, so switching tabs or other re-renders no longer reload it. The Zarr URL is placed in the viewer's URL fragment **verbatim** (GridLook reads `location.hash` as-is):
 
@@ -141,10 +168,11 @@ The header shows the inspected path. A separate **Zarr:** row appears only when 
 
 ### `<data-inspector>` events
 
-| Event              | `detail`                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| `inspector-close`  | `null`                                                                                      |
-| `inspector-submit` | `{ file: string \| string[], aggregationConfig: Partial<AggregationConfigValues> \| null }` |
+| Event                    | `detail`                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| `inspector-close`        | `null`                                                                                      |
+| `inspector-submit`       | `{ file: string \| string[], aggregationConfig: Partial<AggregationConfigValues> \| null }` |
+| `inspector-error-action` | `null`                                                                                      |
 
 ### Theming
 
@@ -189,14 +217,32 @@ poller.stop();
 | Option           | Type                                                   | Default                             |
 | ---------------- | ------------------------------------------------------ | ----------------------------------- |
 | `intervalMs`     | `number`                                               | `2000`                              |
-| `getAuthHeaders` | `() => Record<string, string>`                         | reads `freva_auth_token` cookie     |
+| `getAuthHeaders` | `(url) => headers \| Promise<headers>`                 | cookie, same origin only (see Auth) |
 | `getStatusUrl`   | `(encoded: string) => string`                          | Freva `/zarr-utils/status` endpoint |
 | `onStatus`       | `(statusCode: number, reason: string \| null) => void` | -                                   |
 | `onError`        | `(error: string) => void`                              | -                                   |
 
-**Backend status codes:** `0` ok · `1` failed · `2` not found · `3` waiting · `4` processing · `5` gone
+**Backend status codes:** `0` ok · `1` failed · `2` not found · `3` waiting · `4` processing · `5` gone · `6` permission denied
 
 The second `onStatus` argument carries the optional `reason` string returned by the status endpoint (e.g. a human-readable explanation for a failed/not-found conversion), or `null` when none was provided.
+
+### Auth (`getAuthHeaders`, `scopedBearerAuth`)
+
+Every fetcher (`ZarrPoller`, `detectZarrStore`, `openDatasetMeta`, `loadZarrMetadataHtml`) awaits
+`getAuthHeaders(url)` once per request, with the absolute URL, so a credential goes only where it
+belongs. A provider that throws sends the request anonymously. Without one, the legacy
+`freva_auth_token` cookie is sent to the page's own origin only. `scopedBearerAuth` sends a bearer
+to the listed origins only (default: the page's own):
+
+```ts
+import { loadZarrMetadataHtml, scopedBearerAuth } from "@freva-org/data-inspector";
+
+const getAuthHeaders = scopedBearerAuth({
+  getToken: async () => (await auth.getToken())?.accessToken ?? null,
+  origins: ["https://freva.example.org"], // freva-rest, if not on this page's origin
+});
+const html = await loadZarrMetadataHtml(url, { getAuthHeaders });
+```
 
 ### `detectZarrStore`
 
@@ -221,10 +267,10 @@ It probes `<url>/.zmetadata` (v2 consolidated) first, then `<url>/zarr.json` (v2
 | `version`      | `2 \| 3 \| null` | Detected Zarr format version (`null` when not a store)  |
 | `consolidated` | `boolean`        | Whether consolidated metadata is available (renderable) |
 
-| Option           | Type                           | Default                         |
-| ---------------- | ------------------------------ | ------------------------------- |
-| `getAuthHeaders` | `() => Record<string, string>` | reads `freva_auth_token` cookie |
-| `timeoutMs`      | `number`                       | `5000`                          |
+| Option           | Type                                   | Default                             |
+| ---------------- | -------------------------------------- | ----------------------------------- |
+| `getAuthHeaders` | `(url) => headers \| Promise<headers>` | cookie, same origin only (see Auth) |
+| `timeoutMs`      | `number`                               | `5000`                              |
 
 ### Client-side Zarr metadata (`loadZarrMetadataHtml`)
 
@@ -242,11 +288,14 @@ Lower-level building blocks are also exported:
 | Export                 | Signature                                        | Description                                                  |
 | ---------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
 | `openDatasetMeta`      | `(url, options?) => Promise<ZarrMetadataResult>` | Fetch + parse metadata into a flat dataset or named groups   |
+| `ZarrMetadataError`    | `Error` with `status: number \| null`            | Thrown when no metadata can be read (see below)              |
 | `buildXarrayRepr`      | `(result: ZarrMetadataResult) => string`         | Render parsed metadata to the xarray HTML repr               |
 | `injectXarrayCss`      | `(options?: { mainColor?: string }) => void`     | Inject the repr CSS into `<head>` once (idempotent)          |
 | `loadZarrMetadataHtml` | `(url, options?) => Promise<string>`             | Convenience: fetch + parse + render (injects CSS by default) |
 
-`loadZarrMetadataHtml` options extend `getAuthHeaders` (same default as above) with `mainColor` (chunk-cube accent, defaults to `window.MAIN_COLOR`, then `#9b7a52`) and `injectCss` (set `false` to skip CSS injection).
+`openDatasetMeta` and `loadZarrMetadataHtml` take `getAuthHeaders` (see Auth) and `signal` (an `AbortSignal`; aborting rejects with an `AbortError`). `loadZarrMetadataHtml` adds `mainColor` (chunk-cube accent, defaults to `window.MAIN_COLOR`, then `#9b7a52`) and `injectCss` (set `false` to skip CSS injection).
+
+When neither document can be read, a `ZarrMetadataError` is thrown; its `status` is `401`, then `403`, then any other HTTP status, or `null` when nothing answered.
 
 Both v2 (`.zmetadata`) and v3 (`zarr.json`) consolidated metadata are supported, including **nested, multi-group hierarchies** at any depth. A flat store renders as a single `xarray.Dataset` repr; a hierarchical store renders one card per group, labelled with its full path (the root group is shown as `/`), each listing the variables directly under it.
 

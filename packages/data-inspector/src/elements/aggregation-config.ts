@@ -4,6 +4,10 @@
  * Attributes:
  *   initial-config   JSON string of Partial<AggregationConfigValues>
  *
+ * Properties:
+ *   config           Partial<AggregationConfigValues> - set to show other values (unset fields
+ *                    take the defaults); fires no event
+ *
  * Events fired:
  *   config-change    CustomEvent<AggregationConfigValues>
  *
@@ -41,6 +45,15 @@ const DEFAULT_CONFIG: AggregationConfigValues = {
   timeout: 120,
 };
 
+/** Escape a value for a double-quoted attribute. */
+function attr(v: unknown): string {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export class AggregationConfigElement extends HTMLElement {
   private _config: AggregationConfigValues = { ...DEFAULT_CONFIG };
   private _showAdvanced = false;
@@ -57,6 +70,24 @@ export class AggregationConfigElement extends HTMLElement {
     this._render();
     this.addEventListener("change", this._handleChange);
     this.addEventListener("click", this._handleClick);
+  }
+
+  /** The values the form shows. Setting it redraws the form (the Advanced section stays as is). */
+  get config(): AggregationConfigValues {
+    return { ...this._config };
+  }
+  set config(v: Partial<AggregationConfigValues> | null) {
+    this._config = { ...DEFAULT_CONFIG, ...(v ?? {}) };
+    if (!this.isConnected) return;
+    this._render();
+    // Set each field's DOM value too, so the form shows exactly the config whatever an engine
+    // makes of the `selected` markup.
+    const c = this._config as unknown as Record<string, unknown>;
+    this.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-field]").forEach((f) => {
+      const value = c[f.dataset["field"] ?? ""];
+      if (f instanceof HTMLInputElement && f.type === "checkbox") f.checked = Boolean(value);
+      else f.value = value === null || value === undefined ? "" : String(value);
+    });
   }
 
   disconnectedCallback(): void {
@@ -134,7 +165,7 @@ export class AggregationConfigElement extends HTMLElement {
         <div class="mb-3">
           <label class="form-label fw-semibold">Timeout (seconds)</label>
           <input type="number" class="form-control form-control-sm"
-            data-field="timeout" min="10" max="3600" value="${c.timeout ?? 120}">
+            data-field="timeout" min="10" max="3600" value="${attr(c.timeout ?? 120)}">
           <div class="form-text text-muted">
             Max wait time for the aggregation to complete (default: 120 s). Increase for large datasets.
           </div>
@@ -154,7 +185,7 @@ export class AggregationConfigElement extends HTMLElement {
           <div class="mb-3 nc-dim-field" style="display:${c.aggregate === "concat" ? "block" : "none"};">
             <label class="form-label">Dimension to Concatenate Along</label>
             <input type="text" class="form-control form-control-sm"
-              data-field="dim" placeholder="e.g., time, ensemble" value="${c.dim ?? ""}">
+              data-field="dim" placeholder="e.g., time, ensemble" value="${attr(c.dim)}">
             <div class="form-text text-muted">Leave empty to create a new dimension</div>
           </div>
 
@@ -208,7 +239,7 @@ export class AggregationConfigElement extends HTMLElement {
           <div class="mb-3">
             <label class="form-label">Group By (Optional)</label>
             <input type="text" class="form-control form-control-sm"
-              data-field="group_by" placeholder="e.g., ensemble, variable" value="${c.group_by ?? ""}">
+              data-field="group_by" placeholder="e.g., ensemble, variable" value="${attr(c.group_by)}">
             <div class="form-text text-muted">Group files by a specific attribute</div>
           </div>
 
@@ -238,7 +269,7 @@ export class AggregationConfigElement extends HTMLElement {
           <div class="mb-3">
             <label class="form-label">Target Chunk Size (MB)</label>
             <input type="number" class="form-control form-control-sm"
-              data-field="chunk_size" step="0.1" min="1" max="1000" value="${c.chunk_size ?? 16.0}">
+              data-field="chunk_size" step="0.1" min="1" max="1000" value="${attr(c.chunk_size ?? 16.0)}">
             <div class="form-text text-muted">Target size for data chunks (default: 16 MB)</div>
           </div>
 
@@ -246,7 +277,7 @@ export class AggregationConfigElement extends HTMLElement {
           <div class="mb-3 nc-map-chunksize" style="display:${c.access_pattern === "map" ? "block" : "none"};">
             <label class="form-label">Primary Dimension Chunk Size</label>
             <input type="number" class="form-control form-control-sm"
-              data-field="map_primary_chunksize" min="1" value="${c.map_primary_chunksize ?? 1}">
+              data-field="map_primary_chunksize" min="1" value="${attr(c.map_primary_chunksize ?? 1)}">
             <div class="form-text text-muted">Number of time steps per chunk (for map access pattern)</div>
           </div>
 
