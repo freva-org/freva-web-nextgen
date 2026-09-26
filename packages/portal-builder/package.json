@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/portal-builder",
-  "version": "2609.0.0",
+  "version": "2609.0.1",
   "description": "FP-001 build-time portal framework: closed YAML in, one immutable static artifact out. Astro compiles the pages; nothing about the site is fetched at runtime.",
   "type": "module",
   "repository": {
@@ -70,7 +70,7 @@
     "@freva-org/dataset-tree": "2610.0.0",
     "@freva-org/freva-badge": "2609.0.0",
     "@freva-org/freva-client-terminal": "2609.0.0",
-    "@freva-org/ts-oidc-auth-client": "2608.0.0",
+    "@freva-org/ts-oidc-auth-client": "2608.0.1",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "astro": "^7.2.1",
