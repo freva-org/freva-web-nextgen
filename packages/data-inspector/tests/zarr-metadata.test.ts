@@ -10,6 +10,7 @@ import {
   buildXarrayRepr,
   injectXarrayCss,
   loadZarrMetadataHtml,
+  ZarrMetadataError,
   type ZarrMetadataResult,
   type ZarrDataset,
 } from "../src/zarr-metadata";
@@ -326,6 +327,57 @@ describe("openDatasetMeta (v3)", () => {
     globalThis.fetch = routeFetch({ zmetadata: { ok: false }, zarrJson: { ok: false } });
 
     await expect(openDatasetMeta(URL_BASE)).rejects.toThrow(/Could not read zarr metadata/);
+  });
+
+  it("reports the store's auth refusal: 401 outranks a 404 from the other document", async () => {
+    const answers: Record<string, number> = { ".zmetadata": 404, "zarr.json": 401 };
+    globalThis.fetch = vi.fn(async (url: string) => {
+      const doc = String(url).split("/").pop() ?? "";
+      return new Response("", { status: answers[doc] ?? 404 });
+    }) as unknown as typeof fetch;
+
+    const err = await openDatasetMeta(URL_BASE).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ZarrMetadataError);
+    expect((err as ZarrMetadataError).status).toBe(401);
+    expect((err as Error).message).toMatch(/answered 401/);
+  });
+
+  it("an unreachable store has no status to report", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    }) as unknown as typeof fetch;
+    const err = await openDatasetMeta(URL_BASE).catch((e: unknown) => e);
+    expect((err as ZarrMetadataError).status).toBeNull();
+  });
+
+  it("an abort stops the read: the fetch gets the signal, and zarr.json is never asked for", async () => {
+    const seen: string[] = [];
+    globalThis.fetch = vi.fn(
+      (url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen.push(String(url));
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    ) as unknown as typeof fetch;
+    const ac = new AbortController();
+    const pending = openDatasetMeta(URL_BASE, { signal: ac.signal });
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    ac.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(seen).toEqual([`${URL_BASE}/.zmetadata`]);
+  });
+
+  it("an already-aborted signal makes no request at all", async () => {
+    const fetchMock = routeFetch({ zmetadata: { ok: true, body: V2_FLAT } });
+    globalThis.fetch = fetchMock;
+    const ac = new AbortController();
+    ac.abort();
+    await expect(loadZarrMetadataHtml(URL_BASE, { signal: ac.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses a custom getAuthHeaders provider", async () => {

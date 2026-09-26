@@ -1,3 +1,5 @@
+import type { GetAuthHeaders } from "./internal/http";
+
 /**
  * Status of the data-inspector operation.
  */
@@ -35,10 +37,10 @@ export interface ZarrPollerOptions {
   /** Whether polling is active. Default: true */
   enabled?: boolean;
   /**
-   * Override auth header injection.
-   * Default: reads a Bearer token from the `freva_auth_token` cookie.
+   * Auth headers for each request, decided per URL (may be async) - see {@link GetAuthHeaders}.
+   * Default: a Bearer token from the legacy `freva_auth_token` cookie, same-origin requests only.
    */
-  getAuthHeaders?: () => Record<string, string>;
+  getAuthHeaders?: GetAuthHeaders;
   /**
    * Override the status endpoint URL.
    * Receives the already-encoded zarr URL.

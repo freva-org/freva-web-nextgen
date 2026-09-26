@@ -14,13 +14,16 @@
  * argument to `onStatus` so hosts can show a precise error message.
  */
 
-import { defaultGetAuthHeaders } from "./internal/http";
+import { resolveAuthHeaders, type GetAuthHeaders } from "./internal/http";
 
 export interface ZarrPollerOptions {
   /** Polling interval in ms. Default: 2000 */
   intervalMs?: number;
-  /** Override auth header injection. Default: reads freva_auth_token cookie. */
-  getAuthHeaders?: () => Record<string, string>;
+  /**
+   * Auth headers for each poll, decided per URL (may be async; asked on every poll, so a
+   * refreshed token is picked up). Default: the legacy `freva_auth_token` cookie, same-origin only.
+   */
+  getAuthHeaders?: GetAuthHeaders;
   /** Override the status endpoint URL. Receives the already-encoded zarr URL. */
   getStatusUrl?: (encodedZarrUrl: string) => string;
   /**
@@ -42,7 +45,7 @@ export class ZarrPoller {
 
   private readonly zarrUrl: string;
   private readonly intervalMs: number;
-  private readonly getAuthHeaders: () => Record<string, string>;
+  private readonly getAuthHeaders: GetAuthHeaders | undefined;
   private readonly getStatusUrl: (encoded: string) => string;
   private readonly onStatus: (code: number, reason: string | null) => void;
   private readonly onError: (err: string) => void;
@@ -50,7 +53,7 @@ export class ZarrPoller {
   constructor(zarrUrl: string, options: ZarrPollerOptions = {}) {
     this.zarrUrl = zarrUrl;
     this.intervalMs = options.intervalMs ?? 2000;
-    this.getAuthHeaders = options.getAuthHeaders ?? defaultGetAuthHeaders;
+    this.getAuthHeaders = options.getAuthHeaders;
     this.getStatusUrl = options.getStatusUrl ?? defaultGetStatusUrl;
     this.onStatus = options.onStatus ?? (() => {});
     this.onError = options.onError ?? (() => {});
@@ -77,7 +80,7 @@ export class ZarrPoller {
       const url = this.getStatusUrl(encodeURIComponent(this.zarrUrl));
       const res = await fetch(url, {
         credentials: "same-origin",
-        headers: this.getAuthHeaders(),
+        headers: await resolveAuthHeaders(this.getAuthHeaders, url),
       });
 
       if (!res.ok) {

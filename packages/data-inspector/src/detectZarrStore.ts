@@ -6,7 +6,7 @@
  * stream/render the store directly.
  */
 
-import { defaultGetAuthHeaders, normalizeUrl } from "./internal/http";
+import { normalizeUrl, resolveAuthHeaders, type GetAuthHeaders } from "./internal/http";
 
 /** Result of probing a URL for a Zarr store. */
 export interface ZarrStoreInfo {
@@ -28,10 +28,10 @@ export interface ZarrStoreInfo {
 /** Options for {@link detectZarrStore}. */
 export interface DetectZarrStoreOptions {
   /**
-   * Override auth header injection.
-   * Default: reads a Bearer token from the `freva_auth_token` cookie.
+   * Auth headers for each request, decided per URL (may be async) - see {@link GetAuthHeaders}.
+   * Default: a Bearer token from the legacy `freva_auth_token` cookie, same-origin requests only.
    */
-  getAuthHeaders?: () => Record<string, string>;
+  getAuthHeaders?: GetAuthHeaders;
   /** Abort each probe request after this many ms. Default: 5000. */
   timeoutMs?: number;
 }
@@ -54,16 +54,15 @@ export async function detectZarrStore(
   // Defensive: a percent-encoded URL would be treated as a relative path by
   // the browser, so decode it before fetching.
   const base = normalizeUrl(url).replace(/\/$/, "");
-  const getAuthHeaders = options.getAuthHeaders ?? defaultGetAuthHeaders;
-  const opts: RequestInit = {
+  const opts = async (target: string): Promise<RequestInit> => ({
     credentials: "same-origin",
-    headers: getAuthHeaders(),
+    headers: await resolveAuthHeaders(options.getAuthHeaders, target),
     signal: AbortSignal.timeout(options.timeoutMs ?? 5000),
-  };
+  });
 
   // v2: .zmetadata is consolidated by definition.
   try {
-    const r = await fetch(`${base}/.zmetadata`, opts);
+    const r = await fetch(`${base}/.zmetadata`, await opts(`${base}/.zmetadata`));
     if (r.ok) return { isZarr: true, version: 2, consolidated: true };
   } catch {
     /* probe failed; fall through to zarr.json */
@@ -73,7 +72,7 @@ export async function detectZarrStore(
   // xarray does the equivalent via zarr_group.metadata.zarr_format after
   // calling zarr.open_consolidated() or zarr.open_group().
   try {
-    const r = await fetch(`${base}/zarr.json`, opts);
+    const r = await fetch(`${base}/zarr.json`, await opts(`${base}/zarr.json`));
     if (r.ok) {
       const json = (await r.json()) as { zarr_format?: number };
       const version = json.zarr_format;

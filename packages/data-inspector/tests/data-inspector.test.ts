@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { DataInspectorElement } from "../src/elements/data-inspector";
+import { AggregationConfigElement } from "../src/elements/aggregation-config";
 
 beforeAll(() => {
   if (!customElements.get("data-inspector")) {
     customElements.define("data-inspector", DataInspectorElement);
+  }
+  if (!customElements.get("aggregation-config")) {
+    customElements.define("aggregation-config", AggregationConfigElement);
   }
 });
 
@@ -136,6 +140,57 @@ describe("rendering", () => {
     expect(el.innerHTML).toContain("File not found");
   });
 
+  it("error-action: an optional host button beside Retry that fires inspector-error-action", () => {
+    const el = mount({
+      open: "",
+      status: "error",
+      error: "Sign in to inspect this file",
+      "zarr-url": "/d/b.nc",
+    });
+    const btn = el.querySelector<HTMLButtonElement>("#nc-error-action")!;
+    expect(btn.hidden).toBe(true); // absent attribute -> no button
+
+    el.setAttribute("error-action", "<b>Sign in</b>");
+    expect(btn.hidden).toBe(false);
+    expect(btn.textContent).toBe("<b>Sign in</b>"); // text, never HTML
+    expect(btn.querySelector("b")).toBeNull();
+
+    const fired = vi.fn();
+    el.addEventListener("inspector-error-action", fired);
+    btn.click();
+    expect(fired).toHaveBeenCalledTimes(1);
+
+    el.removeAttribute("error-action");
+    expect(btn.hidden).toBe(true);
+  });
+
+  it("viewer-disabled keeps the metadata but disables the 3D viewer and says why", () => {
+    const el = mount({ open: "", status: "ready", "zarr-url": "https://api.example/zarr/x.zarr" });
+    el.output = "<table>metadata</table>";
+    const grid = el.querySelector<HTMLButtonElement>("#nc-tab-gridlook")!;
+    expect(grid.disabled).toBe(false);
+    grid.click();
+    expect(el.querySelector<HTMLElement>("#nc-gridlook")!.hidden).toBe(false);
+
+    el.setAttribute("viewer-disabled", "No share link could be made");
+    expect(grid.disabled).toBe(true);
+    expect(grid.getAttribute("title")).toBe("No share link could be made");
+    expect(el.querySelector<HTMLElement>("#nc-gridlook")!.hidden).toBe(true); // back to metadata
+    expect(el.querySelector<HTMLElement>("#nc-metadata")!.hidden).toBe(false);
+    expect(el.innerHTML).toContain("metadata");
+
+    el.removeAttribute("viewer-disabled");
+    expect(grid.disabled).toBe(false);
+    expect(grid.hasAttribute("title")).toBe(false);
+  });
+
+  it("shows an error even when no store URL exists yet", () => {
+    const el = mount({ open: "", status: "error", error: "Conversion refused" });
+    expect(el.querySelector<HTMLElement>("#nc-tabs-wrap")!.hidden).toBe(false);
+    expect(el.querySelector<HTMLElement>("#nc-error")!.hidden).toBe(false);
+    expect(el.querySelector("#nc-error-msg")!.textContent).toBe("Conversion refused");
+  });
+
   it("output setter triggers re-render", () => {
     const el = mount({ open: "", "zarr-url": "https://z.example.com" });
     el.output = "<table>metadata</table>";
@@ -173,6 +228,40 @@ describe("events", () => {
 
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0][0].detail.file).toBe("/data/my.nc");
+  });
+
+  it("aggregationConfig values are shown as text in the form, never as markup", () => {
+    const el = mount({ open: "", "is-aggregation": "", file: '["/a.nc","/b.nc"]' });
+    const dim = '"><img src=x id=injected>';
+    el.aggregationConfig = { aggregate: "concat", dim };
+    expect(el.querySelector("#injected")).toBeNull();
+    expect((el.querySelector('[data-field="dim"]') as HTMLInputElement).value).toBe(dim);
+    expect(el.aggregationConfig).toEqual({ aggregate: "concat", dim });
+    el.aggregationConfig = null; // back to the form's defaults
+    expect(el.aggregationConfig.aggregate).toBe("auto");
+  });
+
+  it("loadOptions go with Retry for the same file, and are cleared by a new file", () => {
+    const el = mount({ open: "", file: "/data/a.nc", status: "error", error: "boom" });
+    el.loadOptions = { reload: true };
+    const handler = vi.fn();
+    el.addEventListener("inspector-submit", handler);
+    el.querySelector<HTMLButtonElement>("#nc-retry-btn")!.click();
+    expect(handler.mock.calls[0][0].detail).toEqual({
+      file: "/data/a.nc",
+      aggregationConfig: { reload: true },
+    });
+    el.setAttribute("file", "/data/b.nc");
+    expect(el.loadOptions).toBeNull();
+  });
+
+  it("a new file shows in the open dialog's path field", () => {
+    const el = mount({ open: "", file: "/data/a.nc" });
+    const input = el.querySelector<HTMLInputElement>("#nc-path-input")!;
+    expect(input.value).toBe("/data/a.nc");
+    el.setAttribute("file", "/data/b.nc");
+    expect(el.querySelector("#nc-path-input")).toBe(input); // the same field, not a rebuild
+    expect(input.value).toBe("/data/b.nc");
   });
 
   it("emits inspector-submit on Enter key in path input", () => {

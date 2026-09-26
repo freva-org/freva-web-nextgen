@@ -36,12 +36,17 @@ describe("the built package root", () => {
       "DataInspectorElement",
       "NcDumpDialogState",
       "ZarrLoadingStepsElement",
+      "ZarrMetadataError",
       "ZarrPoller",
+      "attachInspector",
       "buildXarrayRepr",
+      "convertOptions",
       "detectZarrStore",
       "injectXarrayCss",
       "loadZarrMetadataHtml",
+      "looksLikeStore",
       "openDatasetMeta",
+      "scopedBearerAuth",
     ]);
   });
 

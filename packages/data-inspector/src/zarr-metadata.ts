@@ -10,7 +10,7 @@
  * are plain functions, usable from any framework or none.
  */
 
-import { defaultGetAuthHeaders, normalizeUrl } from "./internal/http";
+import { normalizeUrl, resolveAuthHeaders, type GetAuthHeaders } from "./internal/http";
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -44,10 +44,25 @@ export type ZarrMetadataResult =
 /** Options shared by the metadata fetchers. */
 export interface ZarrMetadataOptions {
   /**
-   * Override auth header injection.
-   * Default: reads a Bearer token from the `freva_auth_token` cookie.
+   * Auth headers for each request, decided per URL (may be async) - see {@link GetAuthHeaders}.
+   * Default: a Bearer token from the legacy `freva_auth_token` cookie, same-origin requests only.
    */
-  getAuthHeaders?: () => Record<string, string>;
+  getAuthHeaders?: GetAuthHeaders;
+  /** Cancels the read: no further request is made and the call rejects with an `AbortError`. */
+  signal?: AbortSignal;
+}
+
+/**
+ * The store's metadata could not be read. `status` is the most telling HTTP status (401, then
+ * 403, then any other), or null when nothing answered.
+ */
+export class ZarrMetadataError extends Error {
+  readonly status: number | null;
+  constructor(message: string, status: number | null) {
+    super(message);
+    this.name = "ZarrMetadataError";
+    this.status = status;
+  }
 }
 
 /** Options for {@link injectXarrayCss}. */
@@ -334,37 +349,54 @@ export async function openDatasetMeta(
   // Defensive: a percent-encoded URL would be treated as a relative path by
   // the browser. Normalize so the fetch lands at the real origin.
   const base = normalizeUrl(url).replace(/\/$/, "");
-  const getAuthHeaders = options.getAuthHeaders ?? defaultGetAuthHeaders;
-  const opts: RequestInit = { credentials: "same-origin", headers: getAuthHeaders() };
+  const { signal } = options;
+  const checkAborted = (): void => {
+    if (!signal?.aborted) return;
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new DOMException("The metadata read was aborted.", "AbortError");
+  };
+  // Most telling failure status: 401 > 403 > anything else.
+  let status: number | null = null;
+  const rank = (s: number): number => (s === 401 ? 2 : s === 403 ? 1 : 0);
 
-  // Try v2 first, then v3.
-  let json: unknown = null;
-  let version = 0;
-
-  try {
-    const r = await fetch(`${base}/.zmetadata`, opts);
-    if (r.ok) {
-      json = await r.json();
-      version = 2;
-    }
-  } catch {
-    /* fall through to v3 */
-  }
-
-  if (!json) {
+  /** One metadata document, or null when this one is not there (the other may be). */
+  const read = async (doc: string): Promise<unknown> => {
+    checkAborted();
+    const target = `${base}/${doc}`;
+    const headers = await resolveAuthHeaders(options.getAuthHeaders, target);
+    checkAborted();
     try {
-      const r = await fetch(`${base}/zarr.json`, opts);
-      if (r.ok) {
-        json = await r.json();
-        version = 3;
+      const r = await fetch(target, {
+        credentials: "same-origin",
+        headers,
+        ...(signal ? { signal } : {}),
+      });
+      if (!r.ok) {
+        const got = typeof r.status === "number" ? r.status : null;
+        if (got !== null && (status === null || rank(got) > rank(status))) status = got;
+        return null;
       }
+      return await r.json();
     } catch {
-      /* fall through to error */
+      checkAborted();
+      return null; // unreachable, or not JSON: try the other document
     }
+  };
+
+  let version = 2;
+  let json = await read(".zmetadata");
+  if (!json) {
+    version = 3;
+    json = await read("zarr.json");
   }
 
   if (!json) {
-    throw new Error("Could not read zarr metadata (.zmetadata or zarr.json)");
+    const answered = status === null ? "" : ` - the store answered ${status}`;
+    throw new ZarrMetadataError(
+      `Could not read zarr metadata (.zmetadata or zarr.json)${answered}`,
+      status,
+    );
   }
 
   return version === 2
@@ -818,6 +850,9 @@ export async function loadZarrMetadataHtml(
   options: LoadMetadataOptions = {},
 ): Promise<string> {
   if (options.injectCss !== false) injectXarrayCss({ mainColor: options.mainColor });
-  const ds = await openDatasetMeta(url, { getAuthHeaders: options.getAuthHeaders });
+  const ds = await openDatasetMeta(url, {
+    getAuthHeaders: options.getAuthHeaders,
+    signal: options.signal,
+  });
   return buildXarrayRepr(ds);
 }
