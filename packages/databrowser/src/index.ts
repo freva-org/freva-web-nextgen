@@ -4,7 +4,7 @@
 // never let a stale response overwrite a newer one). destroy() flushes the Disposables
 // registry (every listener/timer/in-flight request) and removes the root, leaving nothing behind.
 
-import { Api, ApiError } from "./api.js";
+import { Api, ApiError, type RequestMeta } from "./api.js";
 import type { AppContext, LogSeverity, Roots } from "./context.js";
 import { Disposables, el, makeDebounce, svgIcon } from "./dom.js";
 import { brandSprite } from "./brand.js";
@@ -98,6 +98,14 @@ const DEFAULT_API_BASE = "/api/freva-nextgen/databrowser";
 const SEARCH_DEBOUNCE_MS = 250;
 const RECOUNT_DEBOUNCE_MS = 300;
 
+/** The data-portal sits beside the databrowser API: `…/databrowser` -> `…/data-portal`. */
+function defaultDataPortalBase(apiBase: string): string {
+  const trimmed = apiBase.replace(/\/+$/, "");
+  return /\/databrowser$/.test(trimmed)
+    ? trimmed.replace(/\/databrowser$/, "/data-portal")
+    : "/api/freva-nextgen/data-portal";
+}
+
 function resolveConfig(config: DataBrowserConfig): ResolvedConfig {
   const map = { ...DEFAULT_MAP_CONFIG, ...(config.map ?? {}) };
   return {
@@ -105,6 +113,9 @@ function resolveConfig(config: DataBrowserConfig): ResolvedConfig {
     ...(config.inspectorUrl ? { inspectorUrl: config.inspectorUrl } : {}),
     ...(config.overlayRoot ? { overlayRoot: config.overlayRoot } : {}),
     apiBase: config.apiBase ?? DEFAULT_API_BASE,
+    dataPortalBase:
+      config.dataPortalBase ?? defaultDataPortalBase(config.apiBase ?? DEFAULT_API_BASE),
+    signIn: typeof config.signIn === "function" ? config.signIn : null,
     flavour: config.flavour ?? "freva",
     devNotes: config.devNotes ?? false,
     authEnabled: config.authEnabled ?? false,
@@ -1433,6 +1444,11 @@ export function mountDataBrowser(
     syncAll();
     commitSearch();
   }
+  /** The lens to fall back to when `user` is not available: the configured one, else a builtin. */
+  function publicFlavour(): FlavourName {
+    if (cfg.flavour !== "user" && state.flavours.includes(cfg.flavour)) return cfg.flavour;
+    return state.flavours.find((f) => f !== "user") ?? "freva";
+  }
   function setFlavour(f: FlavourName): void {
     state.externalEdits++; // not typed in the terminal -> the terminal must re-sync
     if (f === state.flavour) return;
@@ -1651,6 +1667,8 @@ export function mountDataBrowser(
     log: (severity, message) => console_?.log(severity, message),
     toast: (severity, message) => console_?.toast(severity, message),
     openInspect: (file) => inspector.open(file),
+    openAggregate: (files) => inspector.openAggregate(files),
+    isSignedIn: () => api.isSignedIn(),
     openHelp: () => toggleHelp(true),
   };
 
@@ -1759,7 +1777,7 @@ export function mountDataBrowser(
     const pop = region("popover"); // per-open bucket; flushed when the next popover opens
     const items: HTMLElement[] = [];
     for (const f of state.flavours) {
-      if (f === "user" && !cfg.authEnabled) continue;
+      if (f === "user" && !api.isSignedIn()) continue; // the user's own index
       const active = f === state.flavour;
       const item = el("button", { class: `pop-item${active ? " check on" : ""}`, type: "button" }, [
         el("span", { class: "desc", text: f }),
@@ -1877,12 +1895,15 @@ export function mountDataBrowser(
       a.remove();
     };
 
-    // No auth header needed -> the browser streams it itself (same-origin cookies still ride along).
-    // But a direct <a download> can't see the response, so a 413/5xx would be saved AS the file. Do a
-    // cheap HEAD preflight first; if the probe is unsupported (405) or itself fails (offline/CORS), we
-    // don't block - the browser's own download + error UI takes over. (Assumes HEAD is cheap on the
-    // catalogue endpoint; if a backend recomputes the catalogue for HEAD, this doubles that cost.)
-    if (!cfg.getAuthToken()) {
+    // The same lookup every API request makes, so both paths agree on whether a bearer exists.
+    // Without one the browser streams the file itself (same-origin cookies still ride along), but a
+    // direct <a download> can't see the response, so a 413/5xx would be saved AS the file: a cheap
+    // HEAD preflight runs first. If the probe is unsupported (405) or fails (offline/CORS), the
+    // browser's own download + error UI takes over. (Assumes HEAD is cheap on the catalogue
+    // endpoint; a backend that recomputes the catalogue for HEAD doubles that cost.)
+    const bearer = await api.bearer();
+    if (destroyed) return;
+    if (!bearer) {
       const ctrl = new AbortController();
       const off = dis.add(() => ctrl.abort()); // destroy() aborts the probe so nothing fires afterward
       try {
@@ -1953,6 +1974,73 @@ export function mountDataBrowser(
       // wipe the very 413/error message we just surfaced).
     }
   }
+
+  /**
+   * What one load of a user-scoped list did: `gen` is the authentication generation its request was
+   * sent under (Api.authGeneration), `applied` whether its answer was used. null = the load failed.
+   */
+  type ScopedLoad = { gen: number; applied: boolean } | null;
+
+  /**
+   * Keeps a user-scoped list (/overview, /flavours carry private flavours) in step with sign-in:
+   *   - an answer applies only if sent under the current authentication generation, so a slow
+   *     answer from an earlier session is discarded;
+   *   - a finished load out of step with the current generation loads again, so a sign-in during
+   *     bootstrap is never lost;
+   *   - a sign-in/out during a load starts no second one; the running load is judged when it
+   *     lands (so the token found at mount never loads the lists twice).
+   * A failed load keeps what is shown, unless the session changed meanwhile: then it loads again.
+   */
+  function keepInStep(load: (refresh: boolean) => Promise<ScopedLoad>): {
+    start(): void;
+    authChanged(): void;
+  } {
+    let inflight = false;
+    let loadedGen: number | null = null;
+    const run = async (): Promise<void> => {
+      inflight = true;
+      try {
+        for (;;) {
+          const sentGen = api.authGeneration();
+          // "refresh" = something is shown: a failure then keeps it (no bootstrap fallback).
+          const r = await load(loadedGen !== null);
+          if (destroyed) return;
+          if (r === null) {
+            // Failed. A sign-in/out that arrived meanwhile was left to this load: serve it now.
+            if (api.authGeneration() !== sentGen) continue;
+            return;
+          }
+          if (r.applied) loadedGen = r.gen;
+          if (loadedGen === api.authGeneration()) return;
+        }
+      } finally {
+        inflight = false;
+      }
+    };
+    return {
+      start: () => void run(),
+      authChanged: () => {
+        if (!inflight && loadedGen !== api.authGeneration()) void run();
+      },
+    };
+  }
+  const overviewList = keepInStep((refresh) => loadOverview(refresh));
+  const flavourList = keepInStep(() => loadFlavours());
+
+  // Sign-in/out changes what the server scopes to a user: re-render the dependent controls and
+  // bring the user-scoped lists in step. The lens menu reads isSignedIn() whenever it opens.
+  dis.add(
+    api.onSignedInChange(() => {
+      if (destroyed) return;
+      // `user` is a builtin, so no flavour list drops it: leave it on sign-out, or the searches
+      // carry on against it anonymously and fail with 401.
+      if (!api.isSignedIn() && state.flavour === "user") setFlavour(publicFlavour());
+      renderPickbar(ctx);
+      if (state.detailsOpen) renderDetails(ctx);
+      overviewList.authChanged();
+      flavourList.authChanged();
+    }),
+  );
 
   // initial paint + bootstrap
   applyTheme();
@@ -2029,14 +2117,27 @@ export function mountDataBrowser(
       : [...new Set(Object.values(a).flat())]; // unknown flavour -> union of every flavour's keys
   }
 
-  void (async (): Promise<void> => {
+  /**
+   * GET /overview: the flavour list and each flavour's facet keys. A signed-in user also gets their
+   * private flavours, so `keepInStep` re-loads it on sign-in/out; `refresh` marks such a re-load.
+   */
+  async function loadOverview(refresh = false): Promise<ScopedLoad> {
     try {
-      const ov = await api.overview();
-      if (destroyed) return; // settled after teardown - don't touch the detached tree
+      const meta: RequestMeta = {};
+      const ov = await api.overview(meta);
+      const gen = meta.authGen ?? api.authGeneration();
+      if (destroyed) return null; // settled after teardown - don't touch the detached tree
+      if (gen !== api.authGeneration()) return { gen, applied: false }; // an earlier session's list
       const flavs = Array.isArray(ov.flavours) ? ov.flavours : [];
       const merged = [...BUILTIN_FLAVOURS];
       for (const f of flavs) if (!merged.includes(f)) merged.push(f);
+      const wasListed = state.flavours.includes(state.flavour);
       state.flavours = merged;
+      // Signed out while a private flavour was active: fall back to the default lens. Only a
+      // flavour that WAS listed can vanish; a custom flavour awaiting its first listing is kept.
+      if (refresh && wasListed && !merged.includes(state.flavour)) {
+        setFlavour(merged.includes(cfg.flavour) ? cfg.flavour : merged[0]);
+      }
       // A custom flavour named in the URL was rejected at mount (only builtins were known then). Now
       // that /overview has listed it, apply it: the deep-linked facet keys are already in that
       // flavour's naming, so no re-key - just switch, sync the URL, and re-query.
@@ -2060,20 +2161,27 @@ export function mountDataBrowser(
       applyAttributeKeys();
       reconcileUrlImports(); // attributeKeys now known -> drop any non-facet URL params before/independent of the first search
       renderCommand(); // key hints in the terminal may have widened
+      return { gen, applied: true };
     } catch {
-      /* overview is optional context; search still works anonymously */
+      // overview is optional context; search still works anonymously
+      if (refresh) return null; // a failed RE-load keeps the lists we already have
       overviewFailed = true;
       reconcileUrlImports(true); // /overview failed - if the search also failed, release stuck host params
+      return null;
     }
-  })();
+  }
+  overviewList.start();
 
-  // The per-flavour freva↔flavour translation table (GET /flavours). Only globally-visible flavours
-  // come back for an anonymous caller, which is exactly the no-auth scope we support. Needed to
-  // re-key the active selection when the lens changes.
-  void (async (): Promise<void> => {
+  // The per-flavour freva↔flavour translation table (GET /flavours), needed to re-key the active
+  // selection when the lens changes. Signed-in users also get their private flavours' tables, so it
+  // is re-loaded on sign-in/out.
+  async function loadFlavours(): Promise<ScopedLoad> {
     try {
-      const res = await api.listFlavours();
-      if (destroyed) return;
+      const meta: RequestMeta = {};
+      const res = await api.listFlavours(meta);
+      const gen = meta.authGen ?? api.authGeneration();
+      if (destroyed) return null;
+      if (gen !== api.authGeneration()) return { gen, applied: false }; // stale session's tables
       const list = Array.isArray(res.flavours) ? res.flavours : [];
       const before = JSON.stringify(state.flavourMaps[state.flavour]?.forward ?? null);
       const beforeQ = facetQueryString(state); // the wire query as it stands under the current map
@@ -2088,7 +2196,7 @@ export function mountDataBrowser(
           renderCommand();
           startInitialSearch();
         } else failScopedBootstrap();
-        return;
+        return { gen, applied: true };
       }
       // A URL-driven or interactive switch INTO a custom flavour reaches commitSearch before the map
       // exists, so it is held (never fired mis-keyed). Now that the map set is final, run it once -
@@ -2101,7 +2209,7 @@ export function mountDataBrowser(
         renderOverviewIf();
         renderCommand();
         commitSearch();
-        return;
+        return { gen, applied: true };
       }
       if (before !== after) {
         // The current flavour's mapping just changed (a custom flavour's table arrived, or the server
@@ -2125,6 +2233,7 @@ export function mountDataBrowser(
         // round-trip is pure latency on the common path.
         if (beforeQ !== afterQ) commitSearch();
       }
+      return { gen, applied: true };
     } catch {
       // flavour maps are optional for a builtin flavour; the lens still switches, selection just won't
       // re-key. But a scoped custom flavour that held its search cannot be keyed correctly without the
@@ -2135,8 +2244,10 @@ export function mountDataBrowser(
         heldScopedSearch = false;
         failScope();
       }
+      return null;
     }
-  })();
+  }
+  flavourList.start();
 
   return {
     destroy(): void {
@@ -2157,7 +2268,7 @@ export function mountDataBrowser(
   };
 }
 
-export type { DataBrowserConfig, DataBrowserHandle } from "./types.js";
+export type { AuthTokenSupplier, DataBrowserConfig, DataBrowserHandle } from "./types.js";
 export {
   SEARCH_INTENT_VERSION,
   SEARCH_INTENT_VERSION_KEY,

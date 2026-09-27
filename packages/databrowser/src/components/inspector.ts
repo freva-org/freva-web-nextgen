@@ -1,15 +1,16 @@
-// components/inspector.ts - per-file Inspect via @freva-org/data-inspector.
+// components/inspector.ts - Inspect and Aggregate via @freva-org/data-inspector.
 // A normal dependency, imported lazily on first use ONLY, so it never enters the main bundle.
 // `cfg.inspectorUrl` overrides that with an explicit ESM URL, for a host serving its own copy.
 //
-// Two paths, matching what the package can actually do:
-//   • ALREADY ZARR (no auth): detectZarrStore() probes the file URL for a zarr store; if it is one,
-//     loadZarrMetadataHtml() renders the xarray repr CLIENT-SIDE with no token. This needs only
-//     features.inspect - no sign-in, no data-portal.
-//   • NOT ZARR (needs conversion): that requires the server data-portal, so it stays gated behind
-//     authEnabled + enableHeavyOps and shows an honest reason when the gate is closed.
+// The read itself is the package's `attachInspector`. This module adds the Data Browser's side:
+//   • the modal <dialog> the element lives in, its placement and dismissal;
+//   • the bearer only on freva-rest's origins (Api.authHeadersFor, which also updates the
+//     signed-in state), and the host's `signIn` for the "Sign in" button;
+//   • conversion only when enabled (`enableHeavyOps` + `dataPortalBase`);
+//   • the Aggregate gate shared by the pickbar and the details panel.
 
 import type { AppContext } from "../context.js";
+import { MAX_AGGREGATE_FILES } from "../types.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type InspectorModule = any;
@@ -68,44 +69,95 @@ export function inspectDisabledReason(ctx: AppContext): string {
   return ctx.cfg.features.inspect ? "" : "Inspect is disabled for this deployment";
 }
 
-/** True when the server-backed (non-zarr) inspection path is usable. */
-function serverPathOpen(ctx: AppContext): boolean {
-  return ctx.cfg.authEnabled && ctx.cfg.enableHeavyOps;
+/** Whether Aggregate can be pressed for `n` selected files, and what to say when it cannot. */
+export interface AggregateGate {
+  disabled: boolean;
+  /** Tooltip. */
+  why: string;
+  /** A one-line note under a disabled button (null when enabled). */
+  note: string | null;
 }
-function serverPathReason(ctx: AppContext): string {
-  return !ctx.cfg.authEnabled
-    ? "This file isn\u2019t a zarr store - inspecting it needs sign-in"
-    : "This file isn\u2019t a zarr store - inspecting it needs the data-portal";
+
+/**
+ * Aggregate converts server-side, so it needs the data-portal and a signed-in user; with a host
+ * `signIn` the dialog still opens and offers "Sign in". Shared by the pickbar and details panel.
+ */
+export function aggregateGate(ctx: AppContext, n: number): AggregateGate {
+  // Aggregate opens the inspector dialog, so it is gated exactly like Inspect.
+  if (!inspectEnabled(ctx)) {
+    return {
+      disabled: true,
+      why: `Aggregate - ${inspectDisabledReason(ctx).toLowerCase()}`,
+      note: "Aggregate is disabled",
+    };
+  }
+  if (n > MAX_AGGREGATE_FILES) {
+    return {
+      disabled: true,
+      why: `Aggregation handles up to ${MAX_AGGREGATE_FILES} files - deselect ${n - MAX_AGGREGATE_FILES} to enable it`,
+      note: `Aggregate: max ${MAX_AGGREGATE_FILES} files`,
+    };
+  }
+  const signedIn = ctx.isSignedIn();
+  if (!signedIn && !ctx.cfg.signIn) {
+    return { disabled: true, why: "Aggregate - needs sign-in", note: "Aggregate needs sign-in" };
+  }
+  if (!ctx.cfg.enableHeavyOps) {
+    return {
+      disabled: true,
+      why: "Aggregate - data-portal not enabled",
+      note: "Aggregate needs the data-portal",
+    };
+  }
+  return {
+    disabled: false,
+    why: signedIn
+      ? "Combine the selected files into one dataset"
+      : "Combine the selected files into one dataset (you will be asked to sign in)",
+    note: null,
+  };
 }
 
 export interface InspectorController {
   open(file: string): Promise<void>;
   /** Open the inspector with no file - the empty state prompts the user to enter a store URL. */
   openEmpty(): Promise<void>;
+  /** Open the aggregation dialog for several files: the user configures, then aggregates. */
+  openAggregate(files: string[]): Promise<void>;
 }
 
 export function createInspector(ctx: AppContext): InspectorController {
   const dis = ctx.dis;
 
-  async function open(file: string | null): Promise<void> {
+  async function open(target: string | string[] | null): Promise<void> {
     if (!inspectEnabled(ctx)) {
       ctx.toast("warn", inspectDisabledReason(ctx));
       return;
     }
+    const files = Array.isArray(target) ? target : null;
+    const file = typeof target === "string" ? target : null;
     ctx.log(
       "info",
-      file ? `Inspecting ${file.split("/").pop() ?? file}\u2026` : "Opening the inspector\u2026",
+      files
+        ? `Aggregating ${files.length} files…`
+        : file
+          ? `Inspecting ${file.split("/").pop() ?? file}…`
+          : "Opening the inspector…",
     );
     let mod: InspectorModule;
     try {
       mod = await loadInspector(ctx.cfg.inspectorUrl);
     } catch {
-      ctx.toast(
-        "error",
-        "Inspector unavailable \u2014 the data-inspector module could not be loaded.",
-      );
+      ctx.toast("error", "Inspector unavailable — the data-inspector module could not be loaded.");
       return;
     }
+
+    // An `inspectorUrl` pointing at a copy that predates the pipeline cannot drive a read.
+    if (typeof mod.attachInspector !== "function") {
+      ctx.toast("error", "Inspector unavailable \u2014 this data-inspector build is too old.");
+      return;
+    }
+
     // The widget may have been destroyed WHILE the module import was in flight. Adding to a
     // disposed registry flushes synchronously, so continuing would build a dialog into a detached
     // root and wire listeners that never clean up. Bail instead.
@@ -145,7 +197,6 @@ export function createInspector(ctx: AppContext): InspectorController {
 
     const scope = dis.child();
     let closed = false;
-    let generation = 0; // supersede stale loads: only the newest runLoad may commit
     // Whatever had focus when the Inspector opened gets it back when it closes,
     // even if the element inside never reaches its own restoration path.
     const returnFocusTo = document.activeElement as HTMLElement | null;
@@ -196,45 +247,21 @@ export function createInspector(ctx: AppContext): InspectorController {
       pressedBackdrop = false;
     });
 
-    // Load metadata for `target` and drive the component's state.
-    //
-    // THE CRITICAL BIT: the component only reveals its tabs/metadata/error region when `zarr-url` is
-    // set (#nc-tabs-wrap is gated on it). Setting `output` alone leaves the dialog stuck on the path
-    // bar. For an already-zarr file the store URL IS the file URL.
-    //
-    // We read the store CLIENT-SIDE with no token (getAuthHeaders -> {}); loadZarrMetadataHtml probes
-    // the store itself and throws if it isn't one, so no separate detect step is needed. dlg.output
-    // is a trusted-HTML sink fed ONLY by the package's own parse of a same-origin zarr store.
-    const noAuth = { getAuthHeaders: (): Record<string, string> => ({}) };
-    const runLoad = async (target: string): Promise<void> => {
-      const mine = ++generation;
-      dlg.setAttribute("zarr-url", target); // reveal the tabs/metadata region (and any error inside it)
-      dlg.setAttribute("status", "loading");
-      dlg.error = null;
-      try {
-        if (typeof mod.loadZarrMetadataHtml !== "function")
-          throw new Error("inspector build lacks loadZarrMetadataHtml");
-        const html = await mod.loadZarrMetadataHtml(target, noAuth);
-        if (closed || mine !== generation) return; // superseded by a newer load, or the dialog closed
-        dlg.output = typeof html === "string" ? html : (html?.html ?? "");
-        dlg.setAttribute("status", "ready");
-      } catch (err) {
-        if (closed || mine !== generation) return;
-        const detail = err instanceof Error ? err.message : String(err);
-        dlg.error = serverPathOpen(ctx)
-          ? `Could not read this as a zarr store (${detail}). Server-side inspection isn\u2019t wired in this build.`
-          : serverPathReason(ctx);
-        dlg.setAttribute("status", "error");
-      }
-    };
-    // The Load button (and an edited path) re-drive the same loader via inspector-submit.
-    dlg.addEventListener("inspector-submit", (e: Event) => {
-      const detail = (e as CustomEvent<{ file?: string }>).detail;
-      const target = detail?.file ?? file;
-      if (target) void runLoad(target);
+    // Listens to the element's Load / Retry / Aggregate / "Sign in" events; closing the dialog
+    // detaches it, cancelling whatever is in flight.
+    const inspector = mod.attachInspector(dlg, {
+      // Share links always go through the data-portal; files are converted only with heavy ops.
+      dataPortalBase: ctx.cfg.dataPortalBase,
+      dataLoader: ctx.cfg.enableHeavyOps,
+      getAuthHeaders: (url: string) => ctx.api.authHeadersFor(url),
+      signIn: ctx.cfg.signIn,
     });
+    scope.add(() => inspector.detach());
 
-    if (file) dlg.file = file;
+    if (files) {
+      dlg.setAttribute("is-aggregation", "");
+      dlg.setAttribute("file", JSON.stringify(files));
+    } else if (file) dlg.file = file;
     /*
      * Appended to the overlay root - the component root unless a host gave us
      * somewhere better. Where the dialog *sits* in the tree and where it is
@@ -242,16 +269,19 @@ export function createInspector(ctx: AppContext): InspectorController {
      * the second, so this decides only which part of the document owns it.
      */
     ctx.roots.overlay.appendChild(modal);
-    // With a file: drive the initial load ourselves, THEN open (status is 'loading' by the time the
-    // `open` attribute lands, so the component's own open->auto-submit is suppressed - no double load).
-    // Empty: leave the store URL unset and mark 'ready' so the component shows its "enter a path"
-    // empty state (the path bar + Load are always visible) for the user to type any store URL.
-    if (file) void runLoad(file);
+    // With a file: load, THEN open - status is already 'loading', so the element's own
+    // open->auto-submit does not start a second read. Otherwise 'ready': the path prompt or the
+    // aggregation form waits for the user.
+    if (file) void inspector.load(file);
     else dlg.setAttribute("status", "ready");
     dlg.setAttribute("open", "");
     if (typeof modal.showModal === "function") modal.showModal();
     else modal.setAttribute("open", ""); // a browser without dialog support still sees it
   }
 
-  return { open: (file: string) => open(file), openEmpty: () => open(null) };
+  return {
+    open: (file: string) => open(file),
+    openEmpty: () => open(null),
+    openAggregate: (files: string[]) => open([...files]),
+  };
 }

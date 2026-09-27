@@ -12,6 +12,7 @@
 
 import type { OverviewResult, SearchResult, UniqKey } from "../types.js";
 import { buildSearchUrl } from "./query.js";
+import { resolveAuthToken, type AuthTokenSupplier } from "../auth-token.js";
 import { SearchAborted, type SearchClient, type SearchRequest } from "./engine.js";
 
 export class SearchHttpError extends Error {
@@ -50,8 +51,8 @@ export interface RestSearchClientOptions {
   apiBase: string;
   /** Injectable for tests and for hosts that wrap fetch; defaults to the global. */
   fetchImpl?: typeof fetch;
-  /** Optional bearer supplier. Called per request; the token is never retained. */
-  getAuthToken?: () => string | null | undefined;
+  /** Optional bearer supplier (sync or async). Called per request; the token is never retained. */
+  getAuthToken?: AuthTokenSupplier;
 }
 
 export interface RestSearchClient extends SearchClient {
@@ -69,7 +70,7 @@ export function createRestSearchClient(opts: RestSearchClientOptions): RestSearc
 
   const request = async (url: string, signal?: AbortSignal): Promise<Response> => {
     const headers: Record<string, string> = {};
-    const token = opts.getAuthToken?.();
+    const token = await resolveAuthToken(opts.getAuthToken);
     if (token) headers["Authorization"] = `Bearer ${token}`;
     let res: Response;
     try {

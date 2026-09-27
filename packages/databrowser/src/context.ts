@@ -58,6 +58,11 @@ export interface AppContext {
   readonly cfg: ResolvedConfig;
   readonly roots: Roots;
   readonly popover: PopoverManager;
+  /**
+   * True while a signed-in user's token is available (see `Api.bearer`). Unlocks only what the
+   * server scopes to a user: the `user` flavour, private flavours, the data-portal operations.
+   */
+  isSignedIn(): boolean;
 
   // search lifecycle
   commitSearch(): void; // debounced extended-search for the current query, resets paging
@@ -124,6 +129,8 @@ export interface AppContext {
   setStatus(msg: string): void;
   /** Open the lazy, gated per-file Inspect (ncdump) dialog for a file path. */
   openInspect(file: string): Promise<void>;
+  /** Open the aggregation dialog for these files (combined into one dataset by the data-loader). */
+  openAggregate(files: string[]): Promise<void>;
   /** Open the app-level Help panel (install/setup for the freva-client CLI + python library). */
   openHelp(): void;
   /** Append an event to the footer console ring buffer (and reflect it in the one-line bar). */

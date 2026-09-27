@@ -403,6 +403,8 @@ test("(pure): facetQueryString encodes keys as well as values", () => {
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,
+    dataPortalBase: "/api/freva-nextgen/data-portal",
+    signIn: null,
   });
   state.selected = { "weird&key": ["a b"] };
   assert.equal(facetQueryString(state), "weird%26key=a%20b");
@@ -712,6 +714,8 @@ test("filterCommittable / selectionsEqual behave as the single commit guard", ()
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,
+    dataPortalBase: "/api/freva-nextgen/data-portal",
+    signIn: null,
   });
   // no metadata -> nothing commits
   let r = filterCommittable(state, { project: ["x"] });

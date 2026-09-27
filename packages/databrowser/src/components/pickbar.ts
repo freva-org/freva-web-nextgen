@@ -16,6 +16,7 @@ import { ICONS } from "../icons.js";
 import { MAX_AGGREGATE_FILES, MAX_SELECTED_FILES, type FileRow } from "../types.js";
 import { downloadFilename, partitionDownloadable } from "../downloads.js";
 import { exportMenu, exportMenuItem, selectionHeading } from "./exportMenu.js";
+import { aggregateGate } from "./inspector.js";
 
 /** A catalogue/manifest download scoped to the picked files via file= (streaming export). */
 function runDownload(ctx: AppContext, kind: "intake" | "stac" | "uris"): void {
@@ -51,6 +52,12 @@ function downloadMenu(ctx: AppContext, anchor: HTMLElement): void {
       onClose: () => anchor.setAttribute("aria-expanded", "false"),
     },
   );
+}
+
+/** What Aggregate sends to the data-loader: each selected row's file (its key when not loaded). */
+export function aggregatePaths(ctx: AppContext): string[] {
+  const byKey = new Map(ctx.state.rows.map((r) => [r.key, r]));
+  return [...ctx.state.pickedKeys].map((k) => byKey.get(k)?.file ?? k);
 }
 
 /** The selected rows, in SELECTION order (not result order) - the order the user built. */
@@ -190,49 +197,26 @@ export function renderPickbar(ctx: AppContext): void {
   );
   reg.listen(download, "click", () => downloadMenu(ctx, download));
 
-  // Aggregate - the heavy op. Auth-gated AND capped at its OWN, lower limit: past
-  // MAX_AGGREGATE_FILES it locks while the selection (up to MAX_SELECTED_FILES) stays valid, so
-  // everything else in the bar keeps working.
-  const authOk = ctx.cfg.authEnabled && ctx.cfg.enableHeavyOps;
+  // Aggregate has its own, lower cap: past MAX_AGGREGATE_FILES it locks while the rest of the bar
+  // keeps working (selection up to MAX_SELECTED_FILES). Opens the inspector's aggregation dialog.
+  const gate = aggregateGate(ctx, n);
   const overCap = n > MAX_AGGREGATE_FILES;
-  const disabled = !authOk || overCap;
-  const why = overCap
-    ? `Aggregation handles up to ${MAX_AGGREGATE_FILES} files - deselect ${n - MAX_AGGREGATE_FILES} to enable it`
-    : !ctx.cfg.authEnabled
-      ? "Aggregate - needs sign-in"
-      : !ctx.cfg.enableHeavyOps
-        ? "Aggregate - data-portal not enabled"
-        : "Aggregation isn\u2019t wired up in this build yet";
   const aggregate = el(
     "button",
     {
       class: `btn primary${overCap ? " locked" : ""}`,
       type: "button",
-      disabled: disabled ? "true" : null,
-      title: why,
+      disabled: gate.disabled ? "true" : null,
+      title: gate.why,
     },
     [svgIcon(ICONS.aggregate, { size: 15 }), el("span", { text: "Aggregate" })],
   );
-  if (!disabled)
-    reg.listen(aggregate, "click", () =>
-      ctx.toast("warn", "Aggregation isn\u2019t wired up in this build yet."),
-    );
+  if (!gate.disabled)
+    reg.listen(aggregate, "click", () => void ctx.openAggregate(aggregatePaths(ctx)));
 
   replaceChildren(host, clear, count, el("div", { class: "spacer" }), details, download, aggregate);
 
   // A one-line reason under the bar keeps the disabled Aggregate from looking broken.
-  if (overCap) {
-    host.append(
-      el("span", {
-        class: "scope-note",
-        style: "margin:0 0 0 4px",
-        text: `Aggregate: max ${MAX_AGGREGATE_FILES} files`,
-      }),
-    );
-  } else if (!authOk) {
-    const note = !ctx.cfg.authEnabled
-      ? "Aggregate needs sign-in"
-      : "Aggregate needs the data-portal";
-    host.append(el("span", { class: "scope-note", style: "margin:0 0 0 4px", text: note }));
-  }
+  if (gate.note)
+    host.append(el("span", { class: "scope-note", style: "margin:0 0 0 4px", text: gate.note }));
 }

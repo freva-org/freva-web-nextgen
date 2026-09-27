@@ -210,7 +210,11 @@ test("metadata failures do not turn a multi-file action into a single-file one",
     }
     return { body: searchResponse({ total: 3, rows }) };
   };
-  const { handle, root } = await mount(r, { authEnabled: true, enableHeavyOps: true });
+  const { handle, root } = await mount(r, {
+    authEnabled: true,
+    getAuthToken: () => "tok", // signed in
+    enableHeavyOps: true,
+  });
   q<HTMLButtonElement>(root, '.seg [aria-label="List view"]')?.click();
   await tick();
   for (const cb of qa<HTMLElement>(root, "#fdb-results .cb")) {
@@ -243,6 +247,7 @@ test("with 25 selected, Aggregate asks for 15 to be deselected", async () => {
   const rows = Array.from({ length: 30 }, (_, i) => ({ file: `/f_${i}.nc` }));
   const { handle, root } = await mount(router(rows), {
     authEnabled: true,
+    getAuthToken: () => "tok", // signed in
     enableHeavyOps: true,
   });
   (q<HTMLElement>(root, ".selall") as HTMLElement).click();

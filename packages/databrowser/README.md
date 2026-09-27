@@ -20,8 +20,8 @@ import { mountDataBrowser } from "@freva-org/databrowser";
 const handle = mountDataBrowser(document.getElementById("app")!, {
   apiBase: "/api/freva-nextgen/databrowser", // default
   flavour: "freva", // default lens
-  authEnabled: false, // heavy ops show disabled placeholders when off
-  getAuthToken: () => null, // OIDC bearer supplier when authEnabled
+  authEnabled: false, // true = this deployment offers sign-in (browsing never needs it)
+  getAuthToken: () => null, // bearer supplier (sync or async) when authEnabled
   // carve-outs, off by default until verified against a live backend:
   enableStrictBBoxModes: false, // strict/file time+bbox semantics
   devNotes: false, // opt-in developer drawer
@@ -38,6 +38,42 @@ handle.setTheme("night"); // drive light/dark from a host control (fires theme.o
 The mount target must have a definite height (the component fills it); a full-viewport host uses
 `100vh`.
 
+### Authentication
+
+Browsing needs no sign-in. A token only adds what the server scopes to a user: the `user` flavour,
+private flavours, and the data-portal operations (inspecting a non-zarr file, aggregation).
+
+- `authEnabled: true` - this deployment **offers** sign-in, so `getAuthToken` is consulted.
+- `getAuthToken` - asked (and awaited) before every request: a token means signed in, `null`
+  anonymous. A throw or rejection sends that request anonymously.
+
+With [`@freva-org/ts-oidc-auth-client`](../ts-oidc-auth-client), pass its async accessor, not a
+copy of the token - a copy goes stale when the broker token expires (one hour):
+
+```ts
+const auth = new PyOidcAuthClient({
+  authBaseUrl: "/api/freva-nextgen/auth/v2",
+  redirectUri: `${location.origin}/auth/callback`,
+  storage: new MemoryStorage(),
+  security: { expectedIssuer: "https://idp.example/realms/freva" }, // the IDP's RFC 9207 `iss`
+});
+if (auth.isCallbackUrl()) await auth.handleCallback();
+
+mountDataBrowser(el, {
+  authEnabled: true,
+  getAuthToken: async () => (await auth.getToken())?.accessToken ?? null, // null = anonymous
+});
+```
+
+**Inspect and Aggregate** run `attachInspector` from [`@freva-org/data-inspector`](../data-inspector).
+A single http(s) link or `.zarr` path is read in the browser; anything else is converted by
+freva-rest's data-loader (`dataPortalBase`), which needs `enableHeavyOps` and a signed-in user -
+pass `signIn` to offer a "Sign in" button there. Protected stores get a share link for GridLook,
+and the bearer goes only to the `apiBase` and `dataPortalBase` origins.
+
+A runnable example against the freva-nextgen dev Keycloak is in
+[`examples/keycloak-auth`](./examples/keycloak-auth).
+
 ### Teardown exception (page globals)
 
 `destroy()` returns the mount to a clean state - DOM removed, listeners/timers/requests flushed -
@@ -53,10 +89,12 @@ page-global is ever installed.
 | Option                  | Type                                                                                                 | Default                          | Description                                                                                                           |
 | ----------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `apiBase`               | `string`                                                                                             | `/api/freva-nextgen/databrowser` | Base URL of the `freva-nextgen` databrowser REST API                                                                  |
+| `dataPortalBase`        | `string`                                                                                             | sibling of `apiBase`             | freva-rest data-portal (convert / status / share links)                                                               |
 | `flavour`               | `FlavourName`                                                                                        | `freva`                          | Default metadata lens                                                                                                 |
-| `authEnabled`           | `boolean`                                                                                            | `false`                          | When off, heavy/auth-gated operations render as disabled placeholders                                                 |
-| `getAuthToken`          | `() => string \| null`                                                                               | `() => null`                     | OIDC bearer-token supplier, used when `authEnabled`                                                                   |
-| `enableHeavyOps`        | `boolean`                                                                                            | `false`                          | Data-portal heavy ops (load / zarr convert / status / share / inspect) require this in addition to `authEnabled`      |
+| `authEnabled`           | `boolean`                                                                                            | `false`                          | The deployment offers sign-in (not "is signed in")                                                                    |
+| `getAuthToken`          | `() => string \| null \| Promise<…>`                                                                 | `() => null`                     | Bearer supplier, awaited per request when `authEnabled` - see [Authentication](#authentication)                       |
+| `signIn`                | `() => void`                                                                                         | -                                | Starts the host's sign-in when an action needs it                                                                     |
+| `enableHeavyOps`        | `boolean`                                                                                            | `false`                          | Allow converting non-zarr files (Inspect / Aggregate); also needs a signed-in user                                    |
 | `getCsrfToken`          | `() => string \| null`                                                                               | -                                | Optional; sends `X-CSRFToken` on mutating requests only when provided                                                 |
 | `enableStrictBBoxModes` | `boolean`                                                                                            | `false`                          | Config back-compat flag for strict/file bbox semantics                                                                |
 | `syncUrl`               | `boolean`                                                                                            | `true`                           | Mirror the active query into the page URL and read it back on load (deep links)                                       |
@@ -172,7 +210,7 @@ but it is a fallback, not the intended layout).
 | `onStateChange` | `(state: PickerState) => void`               | -                                 | Serialisable snapshot whenever the question or the selection changes             |
 | `onCommit`      | `(ref: DataReference) => void`               | -                                 | The primary action, or a drag the host accepted                                  |
 | `client`        | `SearchClient`                               | freva-rest                        | Inject a transport (mock, proxy, cache)                                          |
-| `getAuthToken`  | `() => string \| null`                       | -                                 | Bearer supplier for the **default** client only; never stored in picker state    |
+| `getAuthToken`  | `() => string \| null \| Promise<…>`         | -                                 | Bearer supplier for the **default** client only; never stored in picker state    |
 | `features`      | `{ flavour, time, bbox, allFiltered, drag }` | `false, false, false, true, true` | Optional controls                                                                |
 | `theme`         | `"day" \| "night"`                           | `day`                             | Initial mode; `handle.setTheme` switches it later                                |
 | `overlayRoot`   | `HTMLElement`                                | the picker root                   | Where anchored overlays go. The default survives transformed/clipped hosts       |

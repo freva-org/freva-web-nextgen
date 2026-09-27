@@ -6,6 +6,7 @@
 import type { Disposables } from "./dom.js";
 import type { OverviewResult, ResolvedConfig, SearchResult, UniqKey } from "./types.js";
 import { STREAM_TOO_BIG_DETAIL } from "./types.js";
+import { resolveAuthToken } from "./auth-token.js";
 import { buildSearchUrl } from "./search/query.js";
 
 const enc = encodeURIComponent;
@@ -46,25 +47,52 @@ export function mapError(status: number, detail?: string): string {
   }
 }
 
-export interface ZarrStatus {
-  status: number; // ready when === 0
-  reason: string;
+/** Origin of `url` resolved against the document, or null (no DOM, or an opaque origin). */
+export function originOf(url: string): string | null {
+  try {
+    const base =
+      typeof document !== "undefined" && document.baseURI
+        ? document.baseURI
+        : typeof location !== "undefined"
+          ? location.href
+          : undefined;
+    const u = base ? new URL(url, base) : new URL(url);
+    return u.origin === "null" ? null : u.origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Filled in by a request: the authentication generation it was sent under. */
+export interface RequestMeta {
+  authGen?: number;
 }
 
 export class Api {
   private readonly base: string;
+  private readonly portal: string;
+  private readonly authOrigins: string[];
   private readonly cfg: ResolvedConfig;
   private readonly channels = new Map<string, AbortController>();
   private readonly oneOffSet = new Set<AbortController>();
   private reqCounter = 0;
+  private signedIn = false;
+  /** Bumped on every sign-in / sign-out: the "session" a request was sent under. */
+  private authGen = 0;
+  private readonly signedInListeners = new Set<(signedIn: boolean) => void>();
 
   constructor(cfg: ResolvedConfig, dis: Disposables) {
     this.cfg = cfg;
     this.base = cfg.apiBase.replace(/\/+$/, "");
+    this.portal = cfg.dataPortalBase.replace(/\/+$/, "");
+    this.authOrigins = [originOf(this.base), originOf(this.portal)].filter(
+      (o): o is string => o !== null,
+    );
     // destroy() aborts every controller this Api ever handed out.
     dis.add(() => {
       for (const ac of this.channels.values()) ac.abort();
       for (const ac of this.oneOffSet) ac.abort();
+      this.signedInListeners.clear();
     });
   }
 
@@ -101,28 +129,72 @@ export class Api {
     }
   }
 
-  private headers(extra?: Record<string, string>): Record<string, string> {
-    const h: Record<string, string> = { ...extra };
-    if (this.cfg.authEnabled) {
-      const tok = this.cfg.getAuthToken();
-      if (tok) h["Authorization"] = `Bearer ${tok}`;
+  /**
+   * The current bearer, or null when signed out (or `authEnabled` is off). Asked per request and
+   * awaited, so an OIDC client can refresh a near-expiry token. The answer is also what "signed
+   * in" means: there is no separate flag.
+   */
+  async bearer(): Promise<string | null> {
+    const tok = this.cfg.authEnabled ? await resolveAuthToken(this.cfg.getAuthToken) : null;
+    this.noteSignedIn(tok !== null);
+    return tok;
+  }
+
+  /** Whether the last token lookup found a signed-in user. False until the first lookup settles. */
+  isSignedIn(): boolean {
+    return this.signedIn;
+  }
+
+  /** Called when the signed-in state flips (sign-in, sign-out, a session that ended). */
+  onSignedInChange(listener: (signedIn: boolean) => void): () => void {
+    this.signedInListeners.add(listener);
+    return () => this.signedInListeners.delete(listener);
+  }
+
+  /**
+   * Bumped on every sign-in and sign-out. A request records the generation it was sent under (see
+   * {@link RequestMeta}), so a slow answer from an earlier session can be discarded.
+   */
+  authGeneration(): number {
+    return this.authGen;
+  }
+
+  private noteSignedIn(now: boolean): void {
+    if (now === this.signedIn) return;
+    this.signedIn = now;
+    this.authGen++;
+    for (const l of [...this.signedInListeners]) {
+      try {
+        l(now);
+      } catch {
+        // one bad listener must not break the request path
+      }
     }
+  }
+
+  private async headers(extra?: Record<string, string>): Promise<Record<string, string>> {
+    const h: Record<string, string> = { ...extra };
+    const tok = await this.bearer();
+    if (tok) h["Authorization"] = `Bearer ${tok}`;
     // OIDC is bearer-only; CSRF header is opt-in and sent only when a token is supplied.
     const csrf = this.cfg.getCsrfToken();
     if (csrf) h["X-CSRFToken"] = csrf;
     return h;
   }
 
-  private async request(url: string, init?: RequestInit): Promise<Response> {
+  private async request(url: string, init?: RequestInit, meta?: RequestMeta): Promise<Response> {
     let res: Response;
     const { headers, ...rest } = init ?? {};
+    const merged = await this.headers(headers as Record<string, string> | undefined);
+    // Read AFTER the token lookup: that lookup is what may have just flipped the state.
+    if (meta) meta.authGen = this.authGen;
     try {
       res = await fetch(url, {
         ...rest,
         credentials: "same-origin",
         // headers MUST be merged last: spreading `...rest` first lets an init-supplied
         // headers object (e.g. Content-Type on a JSON POST) drop the Authorization bearer.
-        headers: this.headers(headers as Record<string, string> | undefined),
+        headers: merged,
       });
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
@@ -143,8 +215,8 @@ export class Api {
     return res;
   }
 
-  private async json<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await this.request(url, init);
+  private async json<T>(url: string, init?: RequestInit, meta?: RequestMeta): Promise<T> {
+    const res = await this.request(url, init, meta);
     return (await res.json()) as T;
   }
 
@@ -209,9 +281,14 @@ export class Api {
     return this.json<SearchResult>(url, { signal });
   }
 
-  /** overview returns { flavours, attributes } ONLY - no facet_mapping. */
-  overview(): Promise<OverviewResult> {
-    return this.oneOff((signal) => this.json<OverviewResult>(`${this.base}/overview`, { signal }));
+  /**
+   * { flavours, attributes } ONLY - no facet_mapping. `meta` (optional) receives the
+   * authentication generation the request was sent under.
+   */
+  overview(meta?: RequestMeta): Promise<OverviewResult> {
+    return this.oneOff((signal) =>
+      this.json<OverviewResult>(`${this.base}/overview`, { signal }, meta),
+    );
   }
 
   /**
@@ -281,55 +358,28 @@ export class Api {
     return res.text();
   }
 
-  /** Aggregation is a parameter of convert (aggregate: auto|merge|concat). */
-  zarrConvert(body: {
-    path: string[];
-    aggregate?: "auto" | "merge" | "concat";
-    dim?: string;
-    compat?: string;
-    ttl_seconds?: number;
-    public?: boolean;
-  }): Promise<{ urls: string[] }> {
-    return this.oneOff((signal) =>
-      this.json<{ urls: string[] }>(`${this.base}/data-portal/zarr/convert`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal,
-      }),
-    );
-  }
+  // Data-portal (cfg.dataPortalBase): data-inspector's pipeline makes its requests; this class only
+  // decides which origins get the bearer.
 
-  /** Poll conversion status; ready when status === 0. */
-  zarrStatus(streamUrl: string): Promise<ZarrStatus> {
-    return this.oneOff((signal) =>
-      this.json<ZarrStatus>(`${this.base}/data-portal/zarr-utils/status?url=${enc(streamUrl)}`, {
-        signal,
-      }),
-    );
-  }
-
-  shareZarr(body: { path: string; ttl_seconds?: number }): Promise<{ url: string }> {
-    return this.oneOff((signal) =>
-      this.json<{ url: string }>(`${this.base}/data-portal/share-zarr`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal,
-      }),
-    );
-  }
-
-  zarrHtmlUrl(streamUrl: string): string {
-    return `${this.base}/data-portal/zarr-utils/html?url=${enc(streamUrl)}`;
+  /**
+   * Auth headers for an arbitrary URL (a zarr store read in the browser): the bearer goes only to
+   * freva-rest's origins (databrowser API, data-portal); any other URL is anonymous and triggers
+   * no token lookup. The broker token is also the refresh credential, and object stores reject it.
+   */
+  async authHeadersFor(url: string): Promise<Record<string, string>> {
+    const target = originOf(url);
+    if (!target || !this.authOrigins.includes(target)) return {};
+    const tok = await this.bearer();
+    return tok ? { Authorization: `Bearer ${tok}` } : {};
   }
 
   // Flavours (read)
 
-  listFlavours(): Promise<{
+  /** `meta` (optional) receives the authentication generation the request was sent under. */
+  listFlavours(meta?: RequestMeta): Promise<{
     flavours?: Array<{ flavour_name?: string; mapping?: Record<string, string>; owner?: string }>;
   }> {
-    return this.oneOff((signal) => this.json(`${this.base}/flavours`, { signal }));
+    return this.oneOff((signal) => this.json(`${this.base}/flavours`, { signal }, meta));
   }
 }
 
