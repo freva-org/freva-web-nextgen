@@ -1,5 +1,11 @@
 # @freva-org/databrowser
 
+## 2609.1.0
+
+### Minor Changes
+
+- addc8ca: Enable authentication on databrowser: `authEnabled` now means the deployment offers sign-in, and a token from `getAuthToken` means signed in.
+
 ## 2609.0.3
 
 ### Patch Changes
