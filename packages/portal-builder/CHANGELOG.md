@@ -1,5 +1,12 @@
 # @freva-org/portal-builder
 
+## 2609.0.3
+
+### Patch Changes
+
+- Updated dependencies [addc8ca]
+  - @freva-org/databrowser@2609.1.0
+
 ## 2609.0.2
 
 ### Patch Changes
