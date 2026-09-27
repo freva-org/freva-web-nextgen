@@ -56,6 +56,17 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser } },
     rules: { "no-console": "off" },
   },
+  // Package examples: browser scripts (.js) and a Node dev server (.mjs).
+  {
+    files: ["packages/*/examples/**/*.js"],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: { "no-console": "off" },
+  },
+  {
+    files: ["packages/*/examples/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { "no-console": "off" },
+  },
   // A CommonJS preload: it must be CJS, because it monkeypatches Node's own modules before any
   // ESM graph is evaluated.
   {

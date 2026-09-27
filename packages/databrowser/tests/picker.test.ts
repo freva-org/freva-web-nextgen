@@ -1099,6 +1099,29 @@ test("no credential ever reaches picker state or a drag payload, even with a tok
   }
 });
 
+test("the default client awaits an async token supplier", async () => {
+  const reset = installFetch(({ url }) => {
+    if (url.includes("/overview")) return { body: overviewResponse(["freva"], { freva: [] }) };
+    if (url.includes("/flavours")) return { body: { flavours: [] } };
+    return { body: searchResponse({ total: 1, rows: rows(1), facets: FACETS }) };
+  });
+  const host = makeHost();
+  const handle = mountDataPicker(host, {
+    debounceMs: 1,
+    apiBase: "/api/x",
+    getAuthToken: async () => "async-token",
+  });
+  try {
+    await wait(40);
+    const auth = fetchCalls.map((c) => (c.init?.headers ?? {}) as Record<string, string>);
+    assert.ok(auth.length > 0 && auth.every((h) => h["Authorization"] === "Bearer async-token"));
+  } finally {
+    handle.destroy();
+    host.remove();
+    reset();
+  }
+});
+
 test("onStateChange reports a serialisable snapshot the host can store and replay", async () => {
   const client = scriptedClient(() => result(3));
   const seen: PickerState[] = [];

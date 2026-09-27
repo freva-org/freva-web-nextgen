@@ -58,6 +58,7 @@ test("Inspect is gated: without auth+heavyOps it warns and never imports the pac
 test("Inspect enabled: the lazy import is attempted and never throws out of the click", async () => {
   const { root, statusMsg, destroy } = await openMenuInspect({
     authEnabled: true,
+    getAuthToken: () => "tok", // signed in
     enableHeavyOps: true,
   });
   await wait(60);

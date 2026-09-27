@@ -63,6 +63,8 @@ function cfg(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
     terminal: { host: null, shell: null, os: null },
     getAuthToken: () => null,
     getCsrfToken: () => null,
+    dataPortalBase: "/api/freva-nextgen/data-portal",
+    signIn: null,
     ...over,
   };
 }

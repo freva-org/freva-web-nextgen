@@ -3913,12 +3913,6 @@ body.fdb-dragging * {
   --xr-chunk-side: color-mix(in srgb, var(--accent) 80%, #000);
   --xr-chunk-edge: color-mix(in srgb, var(--accent) 38%, #fff);
 }
-/* For a direct zarr store the resolved URL IS the file path, so the component's "Zarr:" row
-   just duplicates the path bar above it. Our inspector only ever loads zarr stores, so suppress it.
-   (If server-side non-zarr->zarr conversion is ever wired, revisit - then the URLs genuinely differ.) */
-.freva-db data-inspector .di-zarr-row {
-  display: none !important;
-}
 .freva-db data-inspector .di-header {
   background: var(--accent);
   border-bottom: none;

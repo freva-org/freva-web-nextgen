@@ -20,6 +20,7 @@ import {
 } from "./helpers.js";
 import { mountDataBrowser } from "../src/index.js";
 import { setInspectorImporterForTests } from "../src/components/inspector.js";
+import { attachInspector as realAttachInspector } from "@freva-org/data-inspector/core";
 import { Disposables, el } from "../src/dom.js";
 import type { DataBrowserConfig, DataBrowserHandle } from "../src/types.js";
 
@@ -70,7 +71,7 @@ async function mount(
   host: HTMLElement;
   root: HTMLElement;
 }> {
-  installFetch(router);
+  installFetch(withZarrStores(router));
   const host = makeHost();
   const handle = mountDataBrowser(host, { syncUrl: false, ...cfg }); // URL sync off unless a test opts in
   await wait(30); // overview + first (non-debounced) search
@@ -309,6 +310,71 @@ test('flavour dropdown: label reads "Flavour" and the Manage entry is gone', asy
     !items.some((b) => /manage/i.test(b.textContent ?? "")),
     'no "Manage naming flavours" entry',
   );
+  handle.destroy();
+});
+
+async function lensItems(root: HTMLElement): Promise<string[]> {
+  q<HTMLButtonElement>(root, ".lens")!.click();
+  await tick();
+  const items = qa<HTMLElement>(root, ".lens-pop .pop-item .desc").map((d) => d.textContent ?? "");
+  q<HTMLButtonElement>(root, ".lens")!.click(); // close again
+  await tick();
+  return items;
+}
+
+test("sign-in: authEnabled only offers sign-in - anonymous browsing works and hides `user`", async () => {
+  // The deployment has sign-in, nobody is signed in: search runs anonymously, no bearer is sent,
+  // and the user's own flavour is not offered (there is nothing to show without a user).
+  const { handle, root } = await mount(defaultRouter(), {
+    authEnabled: true,
+    getAuthToken: async () => null,
+  });
+  const search = fetchCalls.find((c) => c.url.includes("/extended-search/"));
+  assert.ok(search, "the anonymous search ran");
+  const h = (search!.init?.headers ?? {}) as Record<string, string>;
+  assert.ok(!("Authorization" in h), "no bearer while signed out");
+  assert.ok(!(await lensItems(root)).includes("user"), "`user` hidden while signed out");
+  handle.destroy();
+});
+
+test("sign-in: a token makes the user signed in - bearer on search and flavours, `user` offered", async () => {
+  const { handle, root } = await mount(defaultRouter(), {
+    authEnabled: true,
+    getAuthToken: async () => "tok",
+  });
+  for (const path of ["/extended-search/", "/flavours"]) {
+    const call = fetchCalls.find((c) => c.url.includes(path));
+    assert.ok(call, `${path} was requested`);
+    const h = (call!.init?.headers ?? {}) as Record<string, string>;
+    assert.equal(h["Authorization"], "Bearer tok", `${path} carries the bearer (user flavours)`);
+  }
+  assert.ok((await lensItems(root)).includes("user"), "`user` offered while signed in");
+  handle.destroy();
+});
+
+test("sign-in: the signed-in state follows the token supplier without a remount", async () => {
+  // A session that ends (or starts) mid-page is picked up by the next request, and the controls
+  // that depend on it re-render: Aggregate's hint switches between "needs sign-in" and the rest.
+  let token: string | null = null;
+  const rows = Array.from({ length: 3 }, (_, i) => ({ file: `/f_${i}.nc` }));
+  const { handle, root } = await mount(defaultRouter({ total: 3, rows }), {
+    authEnabled: true,
+    enableHeavyOps: true,
+    getAuthToken: () => token,
+  });
+  qa<HTMLElement>(root, "#fdb-results .cb")[0].click();
+  await tick();
+  const aggregateTitle = (): string =>
+    qa<HTMLButtonElement>(root, ".pickbar .btn")
+      .find((b) => (b.textContent ?? "").includes("Aggregate"))
+      ?.getAttribute("data-tip") ?? "";
+  assert.match(aggregateTitle(), /needs sign-in/, "signed out: Aggregate asks for sign-in");
+
+  token = "tok";
+  // The next request asks the supplier again; opening Details fetches the picked file's metadata.
+  q<HTMLButtonElement>(root, '[aria-label="Details panel"]')!.click();
+  await wait(80);
+  assert.doesNotMatch(aggregateTitle(), /needs sign-in/, "signed in: the sign-in hint is gone");
   handle.destroy();
 });
 
@@ -1844,6 +1910,7 @@ test("selection is capped at 25; the 26th is refused without changing state", as
   const rows = Array.from({ length: 30 }, (_, i) => ({ file: `/f_${i}.nc` }));
   const { handle, root } = await mount(defaultRouter({ total: 30, rows }), {
     authEnabled: true,
+    getAuthToken: () => "tok", // signed in
     enableHeavyOps: true,
   });
   const cbs = (): HTMLElement[] => qa<HTMLElement>(root, "#fdb-results .cb");
@@ -1890,6 +1957,7 @@ test("the pickbar shows N / 25 and Aggregate keeps its own lower 10-file cap", a
   const rows = Array.from({ length: 30 }, (_, i) => ({ file: `/f_${i}.nc` }));
   const { handle, root } = await mount(defaultRouter({ total: 30, rows }), {
     authEnabled: true,
+    getAuthToken: () => "tok", // signed in
     enableHeavyOps: true,
   });
   for (let i = 0; i < 11; i++) {
@@ -1910,6 +1978,40 @@ test("the pickbar shows N / 25 and Aggregate keeps its own lower 10-file cap", a
   assert.equal(handle.getState().pickedKeys.size, 10);
   assert.ok(!find("Aggregate")!.getAttribute("disabled"), "Aggregate unlocks at exactly its cap");
   handle.destroy();
+});
+
+test("features.inspect:false disables Aggregate too - it opens the same dialog", async () => {
+  const { handle, root } = await mount(
+    defaultRouter({ total: 2, rows: [{ file: "/d/a.nc" }, { file: "/d/b.nc" }] }),
+    {
+      authEnabled: true,
+      getAuthToken: () => "tok",
+      enableHeavyOps: true,
+      features: { inspect: false },
+    },
+  );
+  try {
+    qa<HTMLElement>(root, "#fdb-results .cb")[0].click();
+    await tick();
+    qa<HTMLElement>(root, "#fdb-results .cb")[1].click();
+    await tick();
+    const aggregate = qa<HTMLButtonElement>(root, ".pickbar .btn").find((b) =>
+      (b.textContent ?? "").includes("Aggregate"),
+    )!;
+    assert.equal(aggregate.getAttribute("disabled"), "true", "the pickbar's Aggregate is locked");
+    assert.match(aggregate.getAttribute("data-tip") ?? "", /disabled for this deployment/);
+    assert.match(q<HTMLElement>(root, ".pickbar .scope-note")?.textContent ?? "", /disabled/);
+
+    q<HTMLButtonElement>(root, '[aria-label="Details panel"]')!.click();
+    await wait(150);
+    const primary = q<HTMLButtonElement>(root, ".info-actions .btn.primary");
+    assert.match(primary?.textContent ?? "", /Aggregate/);
+    assert.equal(primary?.disabled, true, "the details panel's Aggregate is locked too");
+    assert.equal(q(root, "data-inspector"), null, "no dialog");
+    handle.destroy();
+  } finally {
+    handle.destroy();
+  }
 });
 
 test('Details: a 2xx response with no facets does not strand the panel in "loading"', async () => {
@@ -2021,8 +2123,11 @@ test("No net listener growth across many re-renders", async () => {
 
 test("Heavy ops gated: Aggregate is disabled without enableHeavyOps and issues no fetch", async () => {
   const rows = Array.from({ length: 3 }, (_, i) => ({ file: `/f_${i}.nc` }));
-  // authEnabled true but enableHeavyOps left at its default (false)
-  const { handle, root } = await mount(defaultRouter({ total: 3, rows }), { authEnabled: true });
+  // signed in, but enableHeavyOps left at its default (false)
+  const { handle, root } = await mount(defaultRouter({ total: 3, rows }), {
+    authEnabled: true,
+    getAuthToken: () => "tok",
+  });
   // pick a file so the pickbar renders
   qa<HTMLElement>(root, "#fdb-results .cb")[0].click();
   await tick();
@@ -3125,20 +3230,48 @@ test("comparison: fetches are capped past DIFF_MAX and Enlarge opens a full-scre
   handle.destroy();
 });
 
-// Inspector: the lazy @freva-org/data-inspector, driven through the import seam
-// A fake module WITHOUT DataInspectorElement (so the loader skips customElements.define); the dialog
-// is then a plain <data-inspector> element whose attributes/properties we can read. loadZarrMetadataHtml
-// probes the store itself, so it throws for a non-zarr URL.
-function fakeInspectorModule(isZarr: boolean, seen?: { auth: Record<string, string> | null }) {
+// Inspector: the lazy @freva-org/data-inspector, driven through the import seam. The fake module
+// has no DataInspectorElement (the loader skips customElements.define), so the dialog is a plain
+// <data-inspector> whose attributes/properties a test reads. Its `attachInspector` is the REAL
+// pipeline with a test-sized clock; store reads are real `fetch`es of `<store>/.zmetadata`,
+// answered by `withZarrStores` for the URLs `isZarr` accepts, so a test sees every read's headers.
+type SeenReads = {
+  auth: Record<string, string> | null;
+  reads?: Array<{ url: string; auth: Record<string, string> }>;
+};
+let zarrStoreFilter: (url: string) => boolean = () => false;
+let seenReads: SeenReads | null = null;
+let inspectorTiming: { pollMs?: number; startupGraceMs?: number } = {};
+const ZMETADATA = {
+  metadata: {
+    ".zgroup": { zarr_format: 2 },
+    "tas/.zarray": { shape: [2], chunks: [2], dtype: "<f4" },
+    "tas/.zattrs": { _ARRAY_DIMENSIONS: ["time"] },
+  },
+};
+function fakeInspectorModule(isZarr: boolean | ((url: string) => boolean), seen?: SeenReads) {
+  zarrStoreFilter = typeof isZarr === "function" ? isZarr : () => isZarr;
+  seenReads = seen ?? null;
   return {
-    loadZarrMetadataHtml: async (
-      _url: string,
-      o: { getAuthHeaders?: () => Record<string, string> },
-    ) => {
-      if (seen) seen.auth = o.getAuthHeaders ? o.getAuthHeaders() : null;
-      if (!isZarr) throw new Error("not a zarr store");
-      return '<div class="xr-repr">zarr metadata here</div>';
-    },
+    attachInspector: (el: HTMLElement, opts: Parameters<typeof realAttachInspector>[1]) =>
+      realAttachInspector(el, { pollMs: 5, ...opts, ...inspectorTiming }),
+  };
+}
+/** Answer `<store>/.zmetadata` (and `zarr.json`) for the stores the current fake accepts. */
+function withZarrStores(
+  router: Parameters<typeof installFetch>[0],
+): Parameters<typeof installFetch>[0] {
+  return (call) => {
+    const m = /^(.*)\/(\.zmetadata|zarr\.json)$/.exec(call.url);
+    if (!m) return router(call);
+    const auth = { ...((call.init?.headers ?? {}) as Record<string, string>) };
+    if (m[2] === ".zmetadata" && seenReads) {
+      seenReads.auth = auth;
+      seenReads.reads?.push({ url: m[1], auth });
+    }
+    return m[2] === ".zmetadata" && zarrStoreFilter(m[1])
+      ? { body: ZMETADATA }
+      : { status: 404, body: {} };
   };
 }
 /**
@@ -3177,7 +3310,7 @@ test("Inspect: an already-zarr file renders client-side with NO auth", async () 
     const dlg = q<HTMLElement & { output?: string; status?: string }>(root, "data-inspector");
     assert.ok(dlg, "the inspector dialog opened even without auth");
     assert.equal(dlg!.getAttribute("status"), "ready", "a zarr store renders -> ready");
-    assert.match(dlg!.output ?? "", /zarr metadata here/, "client-side xarray repr populated");
+    assert.match(dlg!.output ?? "", /xarray\.Dataset/, "client-side xarray repr populated");
     // zarr-url must be set or the component keeps its metadata region hidden
     assert.equal(
       dlg!.getAttribute("zarr-url"),
@@ -3250,22 +3383,593 @@ test("Inspect: a non-zarr file is gated (needs the data-portal) when auth is off
   }
 });
 
-test("Inspect: a non-zarr file surfaces an honest error (server ncdump not wired) even with auth on", async () => {
-  setInspectorImporterForTests(async () => fakeInspectorModule(false));
+/** A router for the data-loader route: search + convert + share + status (a scripted sequence). */
+function portalRouter(opts: {
+  rows: Array<{ file: string }>;
+  statuses?: Array<{ status: number; reason?: string }>;
+  convertStatus?: number;
+}) {
+  const statuses = [...(opts.statuses ?? [{ status: 0 }])];
+  const STORE = "https://example.test/api/freva-nextgen/data-portal/zarr/tok123.zarr";
+  const SHARE = "https://example.test/api/freva-nextgen/data-portal/share/sig/tok123.zarr";
+  const router = (call: { url: string }) => {
+    if (call.url.includes("/data-portal/zarr/convert"))
+      return opts.convertStatus
+        ? { status: opts.convertStatus, body: { detail: "nope" } }
+        : { body: { urls: [STORE] } };
+    if (call.url.includes("/data-portal/share-zarr")) return { body: { url: SHARE } };
+    if (call.url.includes("/data-portal/zarr-utils/status"))
+      return { body: statuses.length > 1 ? statuses.shift() : statuses[0] };
+    return defaultRouter({ total: opts.rows.length, rows: opts.rows })(call);
+  };
+  return { router, STORE, SHARE };
+}
+
+type Dlg = HTMLElement & { error?: string; output?: string; isAggregation?: boolean };
+const bodyOf = (url: string): Record<string, unknown> => {
+  const call = fetchCalls.find((c) => c.url.includes(url));
+  return call?.init?.body ? (JSON.parse(String(call.init.body)) as Record<string, unknown>) : {};
+};
+const authOf = (url: string): string | undefined =>
+  ((fetchCalls.find((c) => c.url.includes(url))?.init?.headers ?? {}) as Record<string, string>)[
+    "Authorization"
+  ];
+
+test("Inspect (data-loader): a non-zarr file is converted, polled, shared and rendered", async () => {
+  const seen = {
+    auth: null as Record<string, string> | null,
+    reads: [] as Array<{ url: string; auth: Record<string, string> }>,
+  };
+  setInspectorImporterForTests(async () =>
+    fakeInspectorModule((u) => u.includes("/data-portal/zarr/"), seen),
+  );
+  const { router, STORE, SHARE } = portalRouter({
+    rows: [{ file: "/d/b.nc" }],
+    statuses: [{ status: 4 }, { status: 0 }],
+  });
   try {
-    const { handle, root } = await mount(defaultRouter({ total: 1, rows: [{ file: "/d/b.nc" }] }), {
+    const { handle, root } = await mount(router, {
       authEnabled: true,
+      getAuthToken: () => "tok",
       enableHeavyOps: true,
     });
     await clickInspect(root);
-    const dlg = q<HTMLElement & { error?: string; status?: string }>(root, "data-inspector");
-    assert.ok(dlg, "dialog opened");
-    assert.equal(
-      dlg!.getAttribute("status"),
-      "error",
-      "a non-zarr file cannot be read client-side -> error",
+    await wait(1700); // one poll interval: processing -> ready
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    assert.equal(dlg.getAttribute("status"), "ready", dlg.error ?? "");
+    assert.match(dlg.output ?? "", /xarray\.Dataset/);
+    // freva-rest serves the data-portal BESIDE the databrowser API, not under it
+    assert.ok(
+      fetchCalls.some((c) => c.url.startsWith("/api/freva-nextgen/data-portal/zarr/convert")),
     );
-    assert.match(dlg!.error ?? "", /zarr store|could not read/i, "the error explains why");
+    assert.ok(!fetchCalls.some((c) => c.url.includes("/databrowser/data-portal/")));
+    assert.deepEqual(bodyOf("/zarr/convert"), { path: "/d/b.nc" });
+    assert.equal(authOf("/zarr/convert"), "Bearer tok", "convert carries the bearer");
+    assert.equal(authOf("/zarr-utils/status"), "Bearer tok", "status carries the bearer");
+    assert.equal(dlg.getAttribute("zarr-url"), SHARE, "the share link is what is shown (GridLook)");
+    const read = seen.reads.find((r) => r.url === STORE);
+    assert.ok(read, "the metadata was read from the converted store");
+    assert.equal(read!.auth.Authorization, "Bearer tok", "same-origin store read gets the bearer");
+    assert.equal(fetchCalls.filter((c) => c.url.includes("/zarr-utils/status")).length, 2);
+    handle.destroy();
+  } finally {
+    setInspectorImporterForTests(null);
+  }
+});
+
+test("Inspect (data-loader): a failed conversion shows the server's reason", async () => {
+  setInspectorImporterForTests(async () => fakeInspectorModule(false));
+  const { router } = portalRouter({
+    rows: [{ file: "/d/b.nc" }],
+    statuses: [{ status: 1, reason: "unsupported format" }],
+  });
+  try {
+    const { handle, root } = await mount(router, {
+      authEnabled: true,
+      getAuthToken: () => "tok",
+      enableHeavyOps: true,
+    });
+    await clickInspect(root);
+    await wait(40);
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    assert.equal(dlg.getAttribute("status"), "error");
+    assert.match(dlg.error ?? "", /could not convert.*unsupported format/i);
+    handle.destroy();
+  } finally {
+    setInspectorImporterForTests(null);
+  }
+});
+
+test("Inspect (data-loader): signed out, the error offers the host's sign-in - nothing is converted", async () => {
+  setInspectorImporterForTests(async () => fakeInspectorModule(false));
+  let signIns = 0;
+  const { router } = portalRouter({ rows: [{ file: "/d/b.nc" }] });
+  try {
+    const { handle, root } = await mount(router, {
+      authEnabled: true,
+      getAuthToken: () => null,
+      enableHeavyOps: true,
+      signIn: () => {
+        signIns++;
+      },
+    });
+    await clickInspect(root);
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    assert.equal(dlg.getAttribute("status"), "error");
+    assert.match(dlg.error ?? "", /needs sign-in/);
+    assert.equal(dlg.getAttribute("error-action"), "Sign in", "the error offers sign-in");
+    assert.ok(!fetchCalls.some((c) => c.url.includes("/data-portal/")), "nothing was converted");
+    dlg.dispatchEvent(new win.CustomEvent("inspector-error-action"));
+    assert.equal(signIns, 1, "the host's signIn was called");
+    handle.destroy();
+  } finally {
+    setInspectorImporterForTests(null);
+  }
+});
+
+async function inspectWith(
+  statuses: Array<{ status: number; reason?: string }>,
+  timing: { pollMs?: number; startupGraceMs?: number },
+): Promise<{ dlg: Dlg; polls: number; destroy: () => void }> {
+  setInspectorImporterForTests(async () =>
+    fakeInspectorModule((u) => u.includes("/data-portal/zarr/")),
+  );
+  inspectorTiming = timing;
+  const { router } = portalRouter({ rows: [{ file: "/d/b.nc" }], statuses });
+  const { handle, root } = await mount(router, {
+    authEnabled: true,
+    getAuthToken: () => "tok",
+    enableHeavyOps: true,
+  });
+  await clickInspect(root);
+  await wait(150);
+  return {
+    dlg: q<Dlg>(root, "data-inspector")!,
+    polls: fetchCalls.filter((c) => c.url.includes("/zarr-utils/status")).length,
+    destroy: () => {
+      handle.destroy();
+      setInspectorImporterForTests(null);
+      inspectorTiming = {};
+    },
+  };
+}
+
+test("Inspect (data-loader): 'unknown' right after convert means queued - keep polling", async () => {
+  // freva-rest answers 5 until the worker writes the job's first status entry.
+  const r = await inspectWith([{ status: 5 }, { status: 5 }, { status: 4 }, { status: 0 }], {
+    pollMs: 5,
+  });
+  try {
+    assert.equal(r.dlg.getAttribute("status"), "ready", r.dlg.error ?? "");
+    assert.equal(r.polls, 4, "it polled through the unknown phase");
+  } finally {
+    r.destroy();
+  }
+});
+
+test("Inspect (data-loader): 'unknown' after the startup grace period is terminal", async () => {
+  const r = await inspectWith([{ status: 5, reason: "Unknown" }], {
+    pollMs: 5,
+    startupGraceMs: 30,
+  });
+  try {
+    assert.equal(r.dlg.getAttribute("status"), "error");
+    assert.match(r.dlg.error ?? "", /gone/i);
+  } finally {
+    r.destroy();
+  }
+});
+
+test("Inspect (data-loader): 'unknown' once the job was picked up is terminal at once", async () => {
+  const r = await inspectWith([{ status: 4 }, { status: 5 }, { status: 0 }], { pollMs: 5 });
+  try {
+    assert.equal(r.dlg.getAttribute("status"), "error", "4 then 5: the job vanished");
+    assert.equal(r.polls, 2);
+  } finally {
+    r.destroy();
+  }
+});
+
+test("Inspect: a protected freva store read directly gets a share link before the viewer", async () => {
+  const seen = {
+    auth: null as Record<string, string> | null,
+    reads: [] as Array<{ url: string; auth: Record<string, string> }>,
+  };
+  setInspectorImporterForTests(async () => fakeInspectorModule(true, seen));
+  const { router, SHARE } = portalRouter({ rows: [{ file: "/d/b.nc" }] });
+  const PROTECTED = "https://example.test/api/freva-nextgen/data-portal/zarr/abc.zarr";
+  const PUBLIC = "https://object-store.example.org/bucket/a.zarr";
+  try {
+    const { handle, root } = await mount(router, {
+      authEnabled: true,
+      getAuthToken: () => "tok",
+    });
+    q<HTMLButtonElement>(root, '[aria-label="Inspect data"]')!.click();
+    await wait(40);
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    const submit = async (file: string): Promise<void> => {
+      dlg.dispatchEvent(
+        new win.CustomEvent("inspector-submit", { detail: { file, aggregationConfig: null } }),
+      );
+      await wait(40);
+    };
+
+    await submit(PROTECTED);
+    assert.equal(dlg.getAttribute("status"), "ready");
+    assert.equal(dlg.getAttribute("zarr-url"), SHARE, "GridLook gets the token-free share link");
+    assert.deepEqual(bodyOf("/share-zarr"), { path: PROTECTED, ttl_seconds: 3600 });
+
+    const before = fetchCalls.filter((c) => c.url.includes("/share-zarr")).length;
+    await submit(PUBLIC);
+    assert.equal(dlg.getAttribute("status"), "ready");
+    assert.equal(dlg.getAttribute("zarr-url"), PUBLIC, "a public store is shown as it is");
+    assert.equal(
+      fetchCalls.filter((c) => c.url.includes("/share-zarr")).length,
+      before,
+      "no share link is requested for a public store",
+    );
+    handle.destroy();
+  } finally {
+    setInspectorImporterForTests(null);
+  }
+});
+
+test("sign-in: signing in or out re-loads /overview and /flavours (private flavours)", async () => {
+  let token: string | null = null;
+  const signedIn = (init?: RequestInit): boolean =>
+    !!((init?.headers ?? {}) as Record<string, string>)["Authorization"];
+  const router = (call: { url: string; init?: RequestInit }) => {
+    if (call.url.includes("/overview")) {
+      const flavours = ["freva", "cmip6", "user", ...(signedIn(call.init) ? ["my-private"] : [])];
+      return { body: overviewResponse(flavours, {}) };
+    }
+    if (call.url.includes("/flavours")) {
+      return {
+        body: {
+          flavours: signedIn(call.init)
+            ? [{ flavour_name: "my-private", mapping: { project: "proj" }, owner: "me" }]
+            : [],
+        },
+      };
+    }
+    return defaultRouter()(call);
+  };
+  const { handle, root } = await mount(router, {
+    authEnabled: true,
+    getAuthToken: () => token,
+  });
+  const count = (path: string): number => fetchCalls.filter((c) => c.url.includes(path)).length;
+  assert.equal(count("/overview"), 1);
+  assert.ok(!(await lensItems(root)).includes("my-private"), "anonymous: no private flavour");
+
+  // Sign in (no reload): the next request discovers the token and the lists are re-loaded.
+  token = "tok";
+  openFacet(root, "variable");
+  byText<HTMLElement>(root, ".side-scroll .fval", "tas")!.click(); // any search asks for the token
+  await wait(350);
+  assert.equal(count("/overview"), 2, "/overview re-loaded after sign-in");
+  assert.equal(count("/flavours"), 2, "/flavours re-loaded after sign-in");
+  assert.equal(authOf("/overview"), undefined, "the first load was anonymous");
+  const last = fetchCalls.filter((c) => c.url.includes("/overview")).pop()!;
+  assert.equal(
+    ((last.init?.headers ?? {}) as Record<string, string>)["Authorization"],
+    "Bearer tok",
+  );
+  const items = await lensItems(root);
+  assert.ok(items.includes("my-private") && items.includes("user"), "private flavour offered");
+
+  // Switch to it, then sign out: the flavour disappears and the lens falls back to the default.
+  q<HTMLButtonElement>(root, ".lens")!.click();
+  await tick();
+  qa<HTMLElement>(root, ".lens-pop .pop-item")
+    .find((b) => (b.textContent ?? "").includes("my-private"))!
+    .click();
+  await wait(320);
+  assert.equal(handle.getState().flavour, "my-private");
+  token = null;
+  openFacet(root, "variable");
+  byText<HTMLElement>(root, ".side-scroll .fval", "tas")?.click();
+  await wait(350);
+  assert.equal(count("/overview"), 3, "/overview re-loaded after sign-out");
+  assert.ok(!(await lensItems(root)).includes("my-private"), "private flavour gone");
+  assert.equal(handle.getState().flavour, "freva", "fell back to the default flavour");
+  handle.destroy();
+});
+
+/** /overview + /flavours that answer per caller: signed-in callers also get "my-private". */
+function userScopedRouter(delays: { signedIn?: number; anonymous?: number } = {}) {
+  const signedIn = (init?: RequestInit): boolean =>
+    !!((init?.headers ?? {}) as Record<string, string>)["Authorization"];
+  return (call: { url: string; init?: RequestInit }) => {
+    const auth = signedIn(call.init);
+    const delayMs = (auth ? delays.signedIn : delays.anonymous) ?? 0;
+    if (call.url.includes("/overview")) {
+      const flavours = ["freva", "cmip6", "user", ...(auth ? ["my-private"] : [])];
+      return { body: overviewResponse(flavours, {}), delayMs };
+    }
+    if (call.url.includes("/flavours")) {
+      return {
+        body: {
+          flavours: auth
+            ? [{ flavour_name: "my-private", mapping: { project: "proj" }, owner: "me" }]
+            : [],
+        },
+        delayMs,
+      };
+    }
+    return defaultRouter()(call);
+  };
+}
+
+/** Long enough for a search queued behind the debounce (250 ms) to be sent. */
+const SEARCH_SETTLE_MS = 400;
+
+/** Any search: it asks for the token, which is what notices a sign-in or sign-out. */
+async function touchSearch(root: HTMLElement): Promise<void> {
+  openFacet(root, "variable");
+  byText<HTMLElement>(root, ".side-scroll .fval", "tas")?.click();
+  await wait(300);
+}
+
+test("sign-in: a slow signed-in list that lands after sign-out is discarded", async () => {
+  let token: string | null = null;
+  const { handle, root } = await mount(userScopedRouter({ signedIn: 400 }), {
+    authEnabled: true,
+    getAuthToken: () => token,
+  });
+  token = "tok";
+  await touchSearch(root); // sign-in noticed: the signed-in lists are requested (slow)
+  token = null;
+  await touchSearch(root); // sign-out noticed while those are still in flight
+  await wait(600); // the slow signed-in answers land now - and must not win
+  assert.ok(!(await lensItems(root)).includes("my-private"), "no private flavour after sign-out");
+  assert.ok(!handle.getState().flavourMaps["my-private"], "no private flavour table either");
+  const last = fetchCalls.filter((c) => c.url.includes("/overview")).pop()!;
+  assert.equal(
+    ((last.init?.headers ?? {}) as Record<string, string>)["Authorization"],
+    undefined,
+    "the lists were re-loaded for the anonymous session",
+  );
+  handle.destroy();
+});
+
+test("sign-in: signing in before the first lists land is not lost", async () => {
+  let token: string | null = null;
+  installFetch(userScopedRouter({ anonymous: 800 }));
+  const host = makeHost();
+  const handle = mountDataBrowser(host, {
+    syncUrl: false,
+    authEnabled: true,
+    getAuthToken: () => token,
+  });
+  const root = q<HTMLElement>(host, ".freva-db")!;
+  await wait(60); // the anonymous /overview and /flavours are still in flight
+  token = "tok";
+  await touchSearch(root); // sign-in noticed during bootstrap, the first lists still in flight
+  assert.equal(fetchCalls.filter((c) => c.url.includes("/overview")).length, 1, "still the first");
+  await wait(900); // the anonymous answers land (stale) -> re-loaded with the token
+  const items = await lensItems(root);
+  assert.ok(items.includes("my-private"), "the private flavour arrived after all");
+  assert.ok(handle.getState().flavourMaps["my-private"], "and its table");
+  handle.destroy();
+  host.remove();
+});
+
+test("sign-in: signing out while the `user` flavour is active falls back to a public one", async () => {
+  let token: string | null = "tok";
+  const { handle, root } = await mount(userScopedRouter(), {
+    authEnabled: true,
+    getAuthToken: () => token,
+  });
+  try {
+    q<HTMLButtonElement>(root, ".lens")!.click();
+    await tick();
+    qa<HTMLElement>(root, ".lens-pop .pop-item")
+      .find((b) => (b.querySelector(".desc")?.textContent ?? "") === "user")!
+      .click();
+    await wait(320);
+    assert.equal(handle.getState().flavour, "user");
+
+    token = null;
+    await touchSearch(root); // the search that notices the sign-out was still sent under `user`...
+    await wait(SEARCH_SETTLE_MS); // ...the switch queues the next one behind the search debounce
+    assert.equal(handle.getState().flavour, "freva", "left `user` for the default flavour");
+    const searches = fetchCalls.filter((c) => c.url.includes("/extended-search/"));
+    assert.match(
+      searches[searches.length - 1].url,
+      /\/extended-search\/freva\//,
+      "searching `freva` again",
+    );
+    assert.ok(!(await lensItems(root)).includes("user"), "and `user` is no longer offered");
+  } finally {
+    handle.destroy();
+  }
+});
+
+test("sign-in: a sign-in during a list load that then FAILS is served once it lands", async () => {
+  let token: string | null = null;
+  const scoped = userScopedRouter();
+  const signedIn = (init?: RequestInit): boolean =>
+    !!((init?.headers ?? {}) as Record<string, string>)["Authorization"];
+  // The anonymous lists are slow and fail; the signed-in ones work.
+  installFetch((call: { url: string; init?: RequestInit }) =>
+    (call.url.includes("/overview") || call.url.includes("/flavours")) && !signedIn(call.init)
+      ? { status: 500, body: { detail: "down" }, delayMs: 400 }
+      : scoped(call),
+  );
+  const host = makeHost();
+  const handle = mountDataBrowser(host, {
+    syncUrl: false,
+    authEnabled: true,
+    getAuthToken: () => token,
+  });
+  const root = q<HTMLElement>(host, ".freva-db")!;
+  try {
+    await wait(60); // the anonymous lists are in flight
+    token = "tok";
+    await touchSearch(root); // sign-in noticed: deferred to the running loads
+    await wait(500); // they fail now - and must not take the sign-in with them
+    assert.ok((await lensItems(root)).includes("my-private"), "the private flavour arrived");
+    assert.ok(handle.getState().flavourMaps["my-private"], "and its table");
+  } finally {
+    handle.destroy();
+    host.remove();
+  }
+});
+
+test("Inspect: a protected store with no share link keeps its metadata but blocks the viewer", async () => {
+  setInspectorImporterForTests(async () => fakeInspectorModule(true));
+  const PROTECTED = "https://example.test/api/freva-nextgen/data-portal/zarr/abc.zarr";
+  let shareStatus = 503;
+  const { router: base, SHARE } = portalRouter({ rows: [{ file: "/d/b.nc" }] });
+  const router = (call: { url: string; init?: RequestInit }) =>
+    call.url.includes("/share-zarr") && shareStatus !== 200
+      ? { status: shareStatus, body: { detail: "down" } }
+      : base(call);
+  try {
+    const { handle, root } = await mount(router, {
+      authEnabled: true,
+      getAuthToken: () => "tok",
+    });
+    q<HTMLButtonElement>(root, '[aria-label="Inspect data"]')!.click();
+    await wait(40);
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    const submit = async (): Promise<void> => {
+      dlg.dispatchEvent(
+        new win.CustomEvent("inspector-submit", {
+          detail: { file: PROTECTED, aggregationConfig: null },
+        }),
+      );
+      await wait(40);
+    };
+    await submit();
+    assert.equal(dlg.getAttribute("status"), "ready", "the metadata is still shown");
+    assert.match(dlg.output ?? "", /xarray\.Dataset/);
+    assert.match(dlg.getAttribute("viewer-disabled") ?? "", /share link.*503/);
+
+    shareStatus = 200; // sharing works again: loading again retries it
+    await submit();
+    assert.equal(dlg.getAttribute("viewer-disabled"), null, "the viewer is available again");
+    assert.equal(dlg.getAttribute("zarr-url"), SHARE);
+    handle.destroy();
+  } finally {
+    setInspectorImporterForTests(null);
+  }
+});
+
+test("Inspect (data-loader): a conversion with no share link blocks the viewer, not the metadata", async () => {
+  setInspectorImporterForTests(async () =>
+    fakeInspectorModule((u) => u.includes("/data-portal/zarr/")),
+  );
+  const { router: base } = portalRouter({ rows: [{ file: "/d/b.nc" }] });
+  const router = (call: { url: string; init?: RequestInit }) =>
+    call.url.includes("/share-zarr") ? { status: 503, body: { detail: "down" } } : base(call);
+  try {
+    const { handle, root } = await mount(router, {
+      authEnabled: true,
+      getAuthToken: () => "tok",
+      enableHeavyOps: true,
+    });
+    await clickInspect(root);
+    await wait(60);
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    assert.equal(dlg.getAttribute("status"), "ready", dlg.error ?? "");
+    assert.match(dlg.getAttribute("viewer-disabled") ?? "", /share link/);
+    handle.destroy();
+  } finally {
+    setInspectorImporterForTests(null);
+  }
+});
+
+test("sign-in: a token found at mount does NOT load the lists twice", async () => {
+  const { handle } = await mount(defaultRouter(), {
+    authEnabled: true,
+    getAuthToken: async () => "tok",
+  });
+  await wait(60);
+  assert.equal(fetchCalls.filter((c) => c.url.includes("/overview")).length, 1);
+  assert.equal(fetchCalls.filter((c) => c.url.includes("/flavours")).length, 1);
+  handle.destroy();
+});
+
+test("Inspect: a store read in the browser gets the bearer on freva-rest's origin only", async () => {
+  const seen = {
+    auth: null as Record<string, string> | null,
+    reads: [] as Array<{ url: string; auth: Record<string, string> }>,
+  };
+  setInspectorImporterForTests(async () => fakeInspectorModule(true, seen));
+  const FOREIGN = "https://object-store.example.org/bucket/a.zarr";
+  const SAME = "https://example.test/api/freva-nextgen/data-portal/zarr/x.zarr";
+  try {
+    const { handle, root } = await mount(defaultRouter(), {
+      authEnabled: true,
+      getAuthToken: () => "tok",
+    });
+    q<HTMLButtonElement>(root, '[aria-label="Inspect data"]')!.click(); // the header launcher
+    await wait(40);
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    for (const file of [FOREIGN, SAME]) {
+      dlg.dispatchEvent(
+        new win.CustomEvent("inspector-submit", { detail: { file, aggregationConfig: null } }),
+      );
+      await wait(30);
+    }
+    const foreign = seen.reads.find((r) => r.url === FOREIGN);
+    const same = seen.reads.find((r) => r.url === SAME);
+    assert.ok(foreign && same, "both stores were read directly");
+    assert.deepEqual(foreign!.auth, {}, "never the bearer to another host");
+    assert.equal(same!.auth.Authorization, "Bearer tok", "the bearer to freva-rest's own origin");
+    handle.destroy();
+  } finally {
+    setInspectorImporterForTests(null);
+  }
+});
+
+test("Aggregate: opens the aggregation dialog; submitting converts the files with its options", async () => {
+  setInspectorImporterForTests(async () =>
+    fakeInspectorModule((u) => u.includes("/data-portal/zarr/")),
+  );
+  const rows = [{ file: "/d/a.nc" }, { file: "/d/b.nc" }];
+  const { router } = portalRouter({ rows });
+  try {
+    const { handle, root } = await mount(router, {
+      authEnabled: true,
+      getAuthToken: () => "tok",
+      enableHeavyOps: true,
+    });
+    qa<HTMLElement>(root, "#fdb-results .cb")[0].click();
+    qa<HTMLElement>(root, "#fdb-results .cb")[1].click();
+    await tick();
+    const aggregate = qa<HTMLButtonElement>(root, ".pickbar .btn").find((b) =>
+      (b.textContent ?? "").includes("Aggregate"),
+    )!;
+    assert.notEqual(aggregate.getAttribute("disabled"), "true", "Aggregate is live");
+    aggregate.click();
+    await wait(40);
+    const dlg = q<Dlg>(root, "data-inspector")!;
+    assert.ok(dlg.hasAttribute("is-aggregation"), "the dialog opens in aggregation mode");
+    assert.equal(dlg.getAttribute("status"), "ready", "it waits for the user's settings");
+    assert.ok(!fetchCalls.some((c) => c.url.includes("/zarr/convert")), "nothing converted yet");
+
+    dlg.dispatchEvent(
+      new win.CustomEvent("inspector-submit", {
+        detail: {
+          file: ["/d/a.nc", "/d/b.nc"],
+          aggregationConfig: { aggregate: "concat", dim: "time", join: null, timeout: 60 },
+        },
+      }),
+    );
+    await wait(60);
+    assert.deepEqual(
+      bodyOf("/zarr/convert"),
+      {
+        aggregate: "concat",
+        dim: "time",
+        path: ["/d/a.nc", "/d/b.nc"],
+      },
+      "empty options and the client-side timeout are not sent",
+    );
+    assert.equal(dlg.getAttribute("status"), "ready", dlg.error ?? "");
     handle.destroy();
   } finally {
     setInspectorImporterForTests(null);

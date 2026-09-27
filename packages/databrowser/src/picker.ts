@@ -58,6 +58,7 @@ export { createSearchEngine, DEFAULT_SEARCH_DEBOUNCE_MS } from "./search/engine.
 export type { SearchClient, SearchRequest, SearchEngine } from "./search/engine.js";
 export { createRestSearchClient } from "./search/client.js";
 export type { RestSearchClientOptions } from "./search/client.js";
+export type { AuthTokenSupplier } from "./auth-token.js";
 export { rankValueMatches } from "./search/rank.js";
 export type { ValueMatch } from "./search/rank.js";
 

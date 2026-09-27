@@ -23,7 +23,7 @@ import {
 } from "../state.js";
 import { paintRect, worldSVG } from "../geo.js";
 import { mountLeafletMap } from "./leafletMap.js";
-import { inspectEnabled } from "./inspector.js";
+import { aggregateGate, inspectEnabled } from "./inspector.js";
 import type { FileRow } from "../types.js";
 import { MAX_AGGREGATE_FILES, MAX_SELECTED_FILES } from "../types.js";
 
@@ -136,30 +136,20 @@ function actionsBlock(ctx: AppContext, reg: Disposables, target: ActionTarget): 
     // 15 to reach the 10-file aggregate limit, even if only 3 of the 25 returned metadata.
     const n = target.count;
     const overCap = n > MAX_AGGREGATE_FILES;
-    const disabled = !ctx.cfg.authEnabled || !ctx.cfg.enableHeavyOps || overCap;
-    const why = overCap
-      ? `Aggregation handles up to ${MAX_AGGREGATE_FILES} files - deselect ${n - MAX_AGGREGATE_FILES} to enable it`
-      : !ctx.cfg.authEnabled
-        ? "Aggregate - needs sign-in"
-        : !ctx.cfg.enableHeavyOps
-          ? "Aggregate - data-portal not enabled"
-          : "Aggregation isn\u2019t wired up in this build yet";
+    const gate = aggregateGate(ctx, n);
     const aggregate = el(
       "button",
       {
         class: `btn primary${overCap ? " locked" : ""}`,
         type: "button",
-        disabled: disabled ? "true" : null,
-        title: why,
+        disabled: gate.disabled ? "true" : null,
+        title: gate.why,
       },
       [svgIcon(ICONS.aggregate, { size: 15 }), el("span", { text: "Aggregate" })],
     );
-    if (!disabled)
-      reg.listen(aggregate, "click", () =>
-        ctx.toast("warn", "Aggregation isn\u2019t wired up in this build yet."),
-      );
+    if (!gate.disabled) reg.listen(aggregate, "click", () => void ctx.openAggregate(files));
     primary = aggregate;
-    if (disabled) lockNote = el("p", { class: "scope-note", text: why });
+    if (gate.disabled) lockNote = el("p", { class: "scope-note", text: gate.why });
   } else {
     const canInspect = inspectEnabled(ctx);
     const inspect = el(

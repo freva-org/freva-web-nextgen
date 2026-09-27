@@ -4,6 +4,9 @@
 
 import type { MapConfig } from "./map.js";
 import type { OSKind, ShellId } from "./shell.js";
+import type { AuthTokenSupplier } from "./auth-token.js";
+
+export type { AuthTokenSupplier };
 
 export type FlavourName = string;
 
@@ -281,7 +284,8 @@ export interface FeatureFlags {
   details?: boolean;
   search?: boolean;
   lensSwitcher?: boolean;
-  /** Inspect (ncdump via @freva-org/data-inspector). Also requires authEnabled + enableHeavyOps. */
+  /** Inspect via @freva-org/data-inspector. A zarr link needs nothing more; other files need a
+   *  signed-in user + enableHeavyOps (the server converts them). */
   inspect?: boolean;
   /** The whole top-bar brand block (mark + title). Finer control: brand.showMark / brand.showTitle. */
   brand?: boolean;
@@ -348,6 +352,12 @@ export interface OverviewConfig {
 
 export interface DataBrowserConfig {
   apiBase?: string;
+  /**
+   * freva-rest's data-portal (conversion, status, share links), served beside the databrowser API.
+   * Default: `apiBase`'s sibling (`/databrowser` -> `/data-portal`), else
+   * `/api/freva-nextgen/data-portal`.
+   */
+  dataPortalBase?: string;
   flavour?: FlavourName;
   devNotes?: boolean;
   /** Optional override: load @freva-org/data-inspector from this ESM URL instead of the packaged
@@ -369,12 +379,23 @@ export interface DataBrowserConfig {
    * page needs to know nothing about this.
    */
   overlayRoot?: HTMLElement;
-  /** heavy ops (load / data-portal) are auth.required(); off -> disabled placeholders. */
+  /**
+   * The deployment offers sign-in, so `getAuthToken` is consulted - NOT "the user is signed in".
+   * Browsing works anonymously; a token unlocks what the server scopes to a user (the `user`
+   * flavour, private flavours, the data-portal operations).
+   */
   authEnabled?: boolean;
   /**
-   * Defence-in-depth gate for the data-portal heavy ops (load / zarr convert / status / share).
-   * A deployment may have auth without the data-portal service, so these stay disabled
-   * placeholders unless this is explicitly enabled IN ADDITION to authEnabled. Default false.
+   * Starts the host's sign-in, e.g. `() => auth.login({ next: location.pathname +
+   * location.search })` with `@freva-org/ts-oidc-auth-client`. Called only from an explicit
+   * "Sign in" button on an action that needs it (Inspect a non-zarr file, Aggregate); without it
+   * those actions just say sign-in is needed.
+   */
+  signIn?: () => void;
+  /**
+   * Allows converting non-zarr files (Inspect / Aggregate via freva-rest's data-loader); also
+   * needs a signed-in user. Default false: sign-in does not imply a data-loader. Zarr stores are
+   * read, and protected ones shared, either way.
    */
   enableHeavyOps?: boolean;
   /** Mirror the active query (flavour + facets + time + bbox) into the page URL so a link reproduces
@@ -463,8 +484,13 @@ export interface DataBrowserConfig {
   brand?: BrandConfig;
   /** Terminal shell / OS / host options. */
   terminal?: TerminalConfig;
-  /** supplies an OIDC bearer token when authEnabled. */
-  getAuthToken?: () => string | null | undefined;
+  /**
+   * The signed-in user's bearer (null = anonymous) when authEnabled; its answer decides who is
+   * signed in. Asked per request and may be async, e.g. `async () => (await
+   * auth.getToken())?.accessToken ?? null` with `@freva-org/ts-oidc-auth-client`, which refreshes
+   * before expiry. A throw or rejection sends that one request anonymously.
+   */
+  getAuthToken?: AuthTokenSupplier;
   /**
    * Optional CSRF token supplier. The backend is OIDC bearer-only and needs no CSRF for
    * same-origin GETs, so `X-CSRFToken` is sent ONLY when this returns a value - never by default.
@@ -479,6 +505,8 @@ export interface ResolvedConfig {
   /** The host's overlay root, if it gave one. See `DataBrowserConfig`. */
   overlayRoot?: HTMLElement;
   apiBase: string;
+  dataPortalBase: string;
+  signIn: (() => void) | null;
   flavour: FlavourName;
   devNotes: boolean;
   authEnabled: boolean;
@@ -495,7 +523,7 @@ export interface ResolvedConfig {
   theme: ThemeConfig;
   brand: Required<BrandConfig>;
   terminal: { host: string | null; shell: ShellId | null; os: OSKind | null };
-  getAuthToken: () => string | null | undefined;
+  getAuthToken: AuthTokenSupplier;
   getCsrfToken: () => string | null | undefined;
 }
 

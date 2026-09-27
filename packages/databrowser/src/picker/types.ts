@@ -10,6 +10,7 @@
 
 import type { BBoxSelection, TimeSelection, UniqKey } from "../types.js";
 import type { SearchClient } from "../search/engine.js";
+import type { AuthTokenSupplier } from "../auth-token.js";
 import type { AssetReference, DataReference } from "./reference.js";
 
 export const PICKER_STATE_VERSION = 1 as const;
@@ -111,8 +112,8 @@ export interface DataPickerConfig {
    * fails, the picker shows an error and still issues none.
    */
   resolveFlavourMaps?: () => FlavourMapping[] | Promise<FlavourMapping[]>;
-  /** Optional bearer supplier for the DEFAULT client only. Never stored in picker state. */
-  getAuthToken?: () => string | null | undefined;
+  /** Bearer supplier (sync or async) for the DEFAULT client only. Never stored in picker state. */
+  getAuthToken?: AuthTokenSupplier;
   features?: PickerFeatureFlags;
   /** Initial light/dark mode. Default "day". */
   theme?: "day" | "night";
