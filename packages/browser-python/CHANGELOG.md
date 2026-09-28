@@ -1,5 +1,11 @@
 # @freva-org/browser-python
 
+## 2609.0.3
+
+### Patch Changes
+
+- 9fbd88f: The console's `runExample({ title, source, comment? })` resolves to `{ raised }`, saying whether the program ended with an uncaught exception.
+
 ## 2609.0.2
 
 ### Patch Changes
