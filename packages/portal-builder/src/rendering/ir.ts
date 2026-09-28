@@ -74,6 +74,8 @@ export interface IrCode extends IrNodeBase {
    * a marked block in a portal with no playground renders as ordinary copyable code.
    */
   runnable?: boolean;
+  /** The fence also carried `editable`: the visitor may edit the snippet before running it. */
+  editable?: boolean;
 }
 
 export interface IrHeading extends IrParent {
@@ -116,6 +118,12 @@ export interface IrImage extends IrNodeBase {
    */
   width?: string;
   align?: "left" | "center" | "right";
+  /**
+   * Set by the card-grid reader on a card's thumbnail when the card has a title: the title names
+   * the card, so an empty `alt` is the right markup there and not the PC1014 omission it would
+   * be anywhere else.
+   */
+  decorative?: boolean;
 }
 
 export interface IrList extends IrParent {
@@ -227,6 +235,31 @@ export interface IrFigure extends IrParent {
   name?: string;
 }
 
+/**
+ * A grid of cards, from `:::cards` or Material's `<div class="grid cards" markdown>`. Its
+ * children are `card` nodes and nothing else.
+ */
+export interface IrCards extends IrParent {
+  type: "cards";
+  /** The author's column hint: at most this many columns. Absent: as many as fit. */
+  columns?: number;
+}
+
+/**
+ * One card. Children, in order: an optional `image` (or a `link` wrapping one, when the card has
+ * no title link to carry it), an optional `cardTitle`, then the summary blocks. The image and
+ * the title stay ordinary IR nodes, so the link rewriting, the asset lookup and the alt-text
+ * check see them exactly as they see any other link or image.
+ */
+export interface IrCard extends IrParent {
+  type: "card";
+}
+
+/** A card's title: inline content, usually one link. Not a heading - it is not in the TOC. */
+export interface IrCardTitle extends IrParent {
+  type: "cardTitle";
+}
+
 export interface IrLeaf extends IrNodeBase {
   type: "thematicBreak" | "break";
 }
@@ -252,6 +285,9 @@ export type IrNode =
   | IrFootnoteReference
   | IrFootnoteDefinition
   | IrTableOfContents
+  | IrCards
+  | IrCard
+  | IrCardTitle
   | IrLeaf;
 
 export interface IrDocument {

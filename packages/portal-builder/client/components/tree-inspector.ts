@@ -14,17 +14,14 @@
  * EMIT `inspector-close` and wait for whoever mounted it to act, so a host that does not listen
  * leaves a modal the reader cannot dismiss by any means.
  *
- * THE HOST ALSO DRIVES THE READ. The element is a VIEW and fetches nothing: it draws a path bar,
- * and reveals its tabs, its metadata region and its error banner only once a host has set
- * `zarr-url` and driven `status` through `loading` to `ready` with `output` filled in. The
- * reading itself is `loadZarrMetadataHtml` from the same package, which opens the store's own
- * metadata documents over HTTPS and returns the xarray repr. `components/inspector.ts` in
- * `@freva-org/databrowser` drives it in this order, and the order matters: `file` is set BEFORE
- * `zarr-url`, because a change of `file` clears `zarr-url` and the output derived from it.
+ * THE PACKAGE DRIVES THE READ: the element is a VIEW, and `attachInspector` from the same package
+ * is the pipeline - the one the Data Browser and a standalone page use - so `Load`, an edited path
+ * and Enter re-read the field, the newest read wins, and every exit settles `status`. The host sets
+ * `file` BEFORE the first read, because a change of `file` clears `zarr-url` and its output.
  *
- * NO CREDENTIALS, EVER: `getAuthHeaders` returns an empty object. The Data Browser has a second,
- * server-side path for a file that is not a store; this portal has none and does not pretend to,
- * so a failure here says so instead of blaming the reader's sign-in.
+ * NO CREDENTIALS, EVER: `getAuthHeaders` returns `{}` and there is no data-portal. The tree's
+ * stores are public zarr on object storage, and this static artifact has no server for a file
+ * that is not a store, so a failure says so instead of blaming the reader's sign-in.
  */
 
 import { mountLayer, type Layer } from "../layers.js";
@@ -170,26 +167,22 @@ interface InspectorElement extends HTMLElement {
   error?: string | null;
 }
 
-/** The half of `@freva-org/data-inspector` this module uses. */
+/** The part of `@freva-org/data-inspector` this module uses. */
 interface InspectorModule {
-  loadZarrMetadataHtml: (
-    url: string,
-    options: { getAuthHeaders: () => Record<string, string> },
-  ) => Promise<string>;
+  attachInspector: (
+    el: HTMLElement,
+    options: {
+      getAuthHeaders: () => Record<string, string>;
+      isStore: (target: string) => boolean;
+    },
+  ) => { load(target: string): Promise<void>; detach(): void };
 }
 
 let layer: Layer | null = null;
 let element: InspectorElement | null = null;
 let loading: Promise<InspectorModule> | null = null;
-/**
- * Which load is the current one. A reader may edit the path and press `Load` while the first read
- * is still in flight, and the answers can arrive in either order, so only the newest may write to
- * the element.
- */
-let generation = 0;
-
-/** Read as the visitor, with nothing attached. See the note at the top of the file. */
-const NO_AUTH = { getAuthHeaders: (): Record<string, string> => ({}) };
+/** The pipeline driving `element`; detached with it, which cancels a read still in flight. */
+let reader: ReturnType<InspectorModule["attachInspector"]> | null = null;
 
 /**
  * Take the open inspector off the page. The layer is released rather than hidden, so a dismissed
@@ -198,42 +191,12 @@ const NO_AUTH = { getAuthHeaders: (): Record<string, string> => ({}) };
  */
 function dismiss(): void {
   // Nothing in flight may write to an element that is on its way off the page.
-  generation += 1;
+  reader?.detach();
+  reader = null;
   element?.removeAttribute("open");
   layer?.release();
   layer = null;
   element = null;
-}
-
-/**
- * Read one store and put the result in front of the reader.
- *
- * `zarr-url` FIRST: the element gates its whole tabs-and-metadata region on that attribute, so a
- * host that sets `output` without it leaves the dialog stuck on the path bar with the answer
- * invisible behind it. Every exit path settles `status`, because a dialog left on `loading` is a
- * spinner that never stops.
- */
-async function runLoad(module: InspectorModule, url: string): Promise<void> {
-  const target = element;
-  if (!target) return;
-  const mine = ++generation;
-  target.setAttribute("zarr-url", url);
-  target.setAttribute("status", "loading");
-  target.error = null;
-  try {
-    const html = await module.loadZarrMetadataHtml(url, NO_AUTH);
-    if (mine !== generation || element !== target) return;
-    target.output = typeof html === "string" ? html : "";
-    target.setAttribute("status", "ready");
-  } catch (error) {
-    if (mine !== generation || element !== target) return;
-    const detail = error instanceof Error ? error.message : String(error);
-    // What this can and cannot say. The Data Browser offers server-side conversion for a file that
-    // is not a Zarr store and points there; this portal is a static artifact with no server, so the
-    // honest report is that the address did not answer as a store, with the reason.
-    target.error = `This address could not be read as a Zarr store: ${detail}`;
-    target.setAttribute("status", "error");
-  }
 }
 
 /**
@@ -263,13 +226,12 @@ export async function openInspector(target: InspectTarget): Promise<void> {
     // performing one is how a host keeps focus restoration and layer bookkeeping, and it only works
     // if the host listens.
     element.addEventListener("inspector-close", () => dismiss());
-    // `Load`, an edited path and Enter in the field all arrive as this, carrying whatever is in
-    // the field. A reader who pastes another store's URL is asking for that store, so the field is
-    // what is read - not the node the tree opened this with.
-    element.addEventListener("inspector-submit", (event: Event) => {
-      const detail = (event as CustomEvent<{ file?: string }>).detail;
-      const next = typeof detail?.file === "string" ? detail.file.trim() : "";
-      if (next.length > 0) void runLoad(module, next);
+    // `Load`, an edited path and Enter in the field are the pipeline's own business: a reader who
+    // pastes another store's URL is asking for that store, so the field is what is read. Every
+    // input is treated as a store (there is no second route here), read with no credentials.
+    reader = module.attachInspector(element, {
+      getAuthHeaders: () => ({}),
+      isStore: () => true,
     });
     host.append(element);
     layer = mountLayer(host, "dialog");
@@ -280,7 +242,7 @@ export async function openInspector(target: InspectTarget): Promise<void> {
   // throws away the load that was just started. It is also the value a reader needs, because the
   // field is editable and its content is what `Load` re-reads.
   element.file = target.url;
-  void runLoad(module, target.url);
+  void reader?.load(target.url);
   element.setAttribute("open", "");
 }
 

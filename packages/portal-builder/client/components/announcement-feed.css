@@ -1,0 +1,7 @@
+/* The one thing a live notice has that a build-time one does not: an optional link. */
+.portal-announcement-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

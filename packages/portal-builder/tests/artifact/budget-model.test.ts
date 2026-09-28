@@ -7,7 +7,7 @@
 // It is NOT any particular deployment's configuration: calling a local fixture by a deployment's
 // name is how a suite starts reporting somebody else's acceptance.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterAll, describe, expect, it } from "vitest";
@@ -187,30 +187,50 @@ describe("the base page's own stylesheet weight", () => {
 
 describe("what 'eager' means", () => {
   it("counts the chunks the page's script statically imports, not only the ones it names", async () => {
-    // Worth 380 KB. A page names ONE script, and that script begins with `import` statements the
-    // browser fetches before a line of it runs, so measuring the named file alone measures the
-    // first file of an eager graph and calls the rest lazy. A bundler helper module landing in
-    // the interpreter's console chunk makes every page statically import jQuery, jQuery Terminal,
-    // Prism and the whole console, all reported as a lazy chunk nobody asked for.
-    const { report } = await build({ python: true }, "portal-consumer-eager-");
+    // Worth 380 KB. A page names ONE script whose `import` statements are fetched before a line of
+    // it runs, so measuring the named file alone calls the rest of an eager graph lazy: a bundler
+    // helper in the console chunk would make every page statically import jQuery, jQuery
+    // Terminal, Prism and the console, reported as lazy. The rule is checked on a stated graph,
+    // because the real consumer entry currently has no static imports and would test nothing.
+    const dir = tempRoot("portal-eager-synthetic-");
+    writeFileSync(
+      join(dir, "index.html"),
+      '<script type="module" src="/_portal/entry.js"></script>',
+    );
+    const synthetic = measureArtifact({
+      files: [
+        { path: "_portal/entry.js", bytes: 100 },
+        { path: "_portal/helpers.js", bytes: 20 },
+        { path: "_portal/console.js", bytes: 380_000 },
+      ],
+      artifactDir: dir,
+      components: [],
+      moduleBytes: {},
+      preparedRoots: [],
+      chunkEdges: [
+        { file: "_portal/entry.js", imports: ["_portal/helpers.js"], dynamicImports: [] },
+        { file: "_portal/helpers.js", imports: [], dynamicImports: ["_portal/console.js"] },
+      ],
+    });
+    expect(synthetic.pages[0]?.javascript).toBe(120);
+    expect(synthetic.eager).toEqual(["_portal/entry.js", "_portal/helpers.js"]);
+    expect(synthetic.lazy.map((f) => f.path)).toEqual(["_portal/console.js"]);
+
+    // …and on a real consumer build, none of what is eager is the interpreter, the console or
+    // the Data Browser. Those are the properties the splits are for.
+    const { report, result } = await build({ python: true }, "portal-consumer-eager-");
     const heaviest = report.pages[0];
-    const named = new Set((heaviest?.assets ?? []).filter((a) => a.endsWith(".js")).map((a) => a));
-    expect(named.size).toBeGreaterThan(0);
-
-    // Something is eager that the HTML does not name: the entry's own static imports.
-    const html = readFileSync(
-      join((await build({ python: true }, "portal-consumer-eager2-")).out, "index.html"),
-      "utf8",
+    const named = (heaviest?.assets ?? []).filter((a) => a.endsWith(".js"));
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((a) => /console|browser-python|python-playground/.test(a))).toEqual([]);
+    const dataBrowser = (result.evidence ?? [])
+      .filter((c) => c.kind === "databrowser")
+      .flatMap((c) => c.chunks);
+    const shared = new Set(
+      (result.evidence ?? []).filter((c) => c.kind !== "databrowser").flatMap((c) => c.chunks),
     );
-    const inHtml = new Set(
-      [...html.matchAll(/(?:src|href)\s*=\s*"[^"]*?(_portal\/[^"]+\.js)"/g)].map((m) => m[1] ?? ""),
-    );
-    expect([...named].some((a) => !inHtml.has(a))).toBe(true);
-
-    // …and none of what is eager is the interpreter. That is the property the split is for.
-    expect([...named].filter((a) => /console|browser-python|python-playground/.test(a))).toEqual(
-      [],
-    );
+    // A chunk only the Data Browser claims is its island or its libraries; none is eager.
+    expect(named.filter((a) => dataBrowser.includes(a) && !shared.has(a))).toEqual([]);
   }, 600_000);
 });
 
@@ -225,18 +245,24 @@ describe("a Waterpark-shaped portal: Data Browser, a live tree, the inspector an
 
   /**
    * The inspector's emitted chunks, found by what is in them rather than by a hashed filename.
-   * Restricted to LAZY chunks: the Data Browser ships an inspector loader of its own that mentions
-   * the same custom element and fetches it from a CDN at run time, and that code is in the eager
-   * shell. Searching only what no page asks for finds the bundled package and the loader module
+   * Restricted to LAZY chunks the Data Browser's own evidence does not claim: the Data Browser
+   * ships its own inspector loader, which mentions the same custom element and fetches it from a
+   * CDN at run time, in its own lazy chunk - its cost, not the tree's. What remains is the bundled
+   * package and the loader module
    * that names it, and nothing else.
    */
   function inspectorChunks(
     out: string,
     report: ReturnType<typeof measureArtifact>,
+    result: BuildResult,
   ): { path: string; bytes: number; feature: string | null }[] {
+    const dataBrowser = new Set(
+      (result.evidence ?? []).filter((c) => c.kind === "databrowser").flatMap((c) => c.chunks),
+    );
     return report.lazy.filter(
       (file) =>
         file.path.endsWith(".js") &&
+        !dataBrowser.has(file.path) &&
         readFileSync(join(out, ...file.path.split("/")), "utf8").includes("data-inspector"),
     );
   }
@@ -247,8 +273,8 @@ describe("a Waterpark-shaped portal: Data Browser, a live tree, the inspector an
   }, 240_000);
 
   it("keeps the inspector lazy: no page asks for it, so the base page does not pay for it", async () => {
-    const { out, report } = await build(WATERPARK, "portal-waterpark-lazy-");
-    const chunks = inspectorChunks(out, report);
+    const { out, report, result } = await build(WATERPARK, "portal-waterpark-lazy-");
+    const chunks = inspectorChunks(out, report, result);
     // The bundled package and the loader that names it.
     expect(chunks.length).toBeGreaterThanOrEqual(2);
     // The package itself, not just the loader: ~43 KB when this was measured.
@@ -266,8 +292,8 @@ describe("a Waterpark-shaped portal: Data Browser, a live tree, the inspector an
   }, 240_000);
 
   it("charges the inspector to the dataset tree rather than to nobody", async () => {
-    const { out, report } = await build(WATERPARK, "portal-waterpark-attribution-");
-    const chunks = inspectorChunks(out, report);
+    const { out, report, result } = await build(WATERPARK, "portal-waterpark-attribution-");
+    const chunks = inspectorChunks(out, report, result);
     // The point of the accounting. Without the tree's evidence plan owning the inspector and its
     // loader, these bytes are lazy, real and against nobody's name, and the tree's cost reads as
     // its island alone.

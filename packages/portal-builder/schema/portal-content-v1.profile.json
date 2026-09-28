@@ -61,6 +61,16 @@
       "quote",
       "cite"
     ],
+    "cardGrid": {
+      "$comment": "A responsive grid of linked cards: `:::cards` around a Markdown list, or Material for MkDocs' own spelling, `<div class=\"grid cards\" markdown>` ... `</div>`, which is recognized the way `!!!` and `/// caption` are and is not raw HTML. Each list item is one card: an optional leading image (linked or not), an optional title (a link, or strong text holding one), and the rest of the item as its summary. Added under the same rule as `navOrder`: both spellings were refused before (the HTML as PC1002, the directive as an unknown admonition), so no document that rendered cleanly renders differently.",
+      "directive": "cards",
+      "materialClassLists": ["grid cards", "cards grid"],
+      "materialMarkdownAttribute": ["markdown", "markdown=\"1\"", "markdown=\"block\""],
+      "$columnsComment": "An optional column HINT, a maximum: `:::cards{columns=2}`, or `cols-2` in the Material class list. Closed: only these values; anything else is PC1023. It becomes a class, never an inline style, and the grid still drops to fewer columns - and to one on a phone - when it is narrow.",
+      "columns": [2, 3, 4],
+      "columnsAttribute": "columns",
+      "materialColumnsClassPrefix": "cols-"
+    },
     "leafDirectives": [],
     "textDirectives": [],
     "directiveAttributes": {
@@ -205,7 +215,10 @@
       "container",
       "tableOfContents",
       "subscript",
-      "superscript"
+      "superscript",
+      "cards",
+      "card",
+      "cardTitle"
     ],
     "locationProvenance": {
       "kinds": ["parser", "inherited", "generated"],
@@ -507,7 +520,13 @@
       "li": ["value", "data-portal-task"],
       "section": ["aria-label", "aria-labelledby"],
       "nav": ["aria-label", "aria-labelledby"],
-      "div": ["aria-label", "aria-labelledby", "data-portal-code"],
+      "div": [
+        "aria-label",
+        "aria-labelledby",
+        "data-portal-code",
+        "data-portal-controls",
+        "data-portal-editable"
+      ],
       "span": ["aria-hidden", "data-portal-marker", "aria-label"],
       "code": ["data-portal-language"],
       "pre": ["tabindex", "data-portal-language"],
@@ -1121,7 +1140,8 @@
       "PC1019": "Unreferenced static file",
       "PC1020": "Fragment source used as a discovered page",
       "PC1021": "Unsupported code fence metadata",
-      "PC1022": "Runnable code marker misused"
+      "PC1022": "Runnable code marker misused",
+      "PC1023": "Invalid card grid"
     }
   }
 }

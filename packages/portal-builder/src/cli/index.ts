@@ -26,6 +26,7 @@ import { migrateFile } from "./migrate.js";
 import { packageInfo } from "../util/package.js";
 import { runDev } from "./dev.js";
 import { preparePlayground } from "./prepare-playground.js";
+import { prepareStac } from "./prepare-stac.js";
 import { runSmoke, smokeOptions } from "./smoke.js";
 import { validateAgainst } from "../config/schema.js";
 import type { ManifestInputs } from "../artifact/manifests.js";
@@ -250,6 +251,30 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
         );
       }
 
+      // `prepare-stac` - the STAC Browser preparation stage, from an installed package. Like
+      // `prepare-playground` it opens sockets; unlike it, it needs no portal.yaml, because the
+      // recipe is Freva's and a deployment has nothing to say about how STAC is built.
+      case "prepare-stac": {
+        const cacheKeyOnly = args.flags["cache-key"] === true;
+        const out = cacheKeyOnly
+          ? typeof args.flags.out === "string"
+            ? args.flags.out
+            : "."
+          : requireFlag(args, "out", "Where the prepared STAC materials should be written.");
+        return await prepareStac(
+          {
+            outDir: out,
+            force: args.flags.force === true,
+            cacheKeyOnly,
+            ...(typeof args.flags.upstream === "string" ? { upstream: args.flags.upstream } : {}),
+            ...(typeof args.flags["checkout-dir"] === "string"
+              ? { checkoutDir: args.flags["checkout-dir"] }
+              : {}),
+          },
+          io,
+        );
+      }
+
       // `stac-plan` - does this configuration need the preparation stage, and with what? The
       // deployment routine asks before deciding whether to run a network-enabled job. It is
       // deliberately a question about the CONFIGURATION and not a second feature flag: the
@@ -284,7 +309,7 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
         } else if (plan.preparationRequired) {
           io.out(
             `stac-browser '${plan.component?.id}' is enabled: prepare materials before building.\n` +
-              `  npm run stac:prepare -- --out <dir>\n` +
+              `  freva-portal-builder prepare-stac --out <dir>\n` +
               `  freva-portal-builder build ... --stac-materials <dir>\n`,
           );
         } else {

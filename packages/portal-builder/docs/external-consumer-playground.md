@@ -118,11 +118,18 @@ separate, network-enabled stage produced, and it consumes the directory you name
 looking. The recipe below enables STAC, so this step is not optional for it; a build without it
 stops with `FP1604` and tells you the two commands.
 
-Freva owns the recipe centrally. You do not fork it, copy its patches or pin your own upstream:
+Freva owns the recipe centrally. You do not fork it, copy its patches or pin your own upstream.
+`@freva-org/portal-builder` ships a copy of it, so an npm install is enough (it needs `git` and
+`npm` on PATH):
 
 ```console
-npm run stac:prepare -- --out /tmp/stac-materials
+npx freva-portal-builder prepare-stac --out /tmp/stac-materials
 ```
+
+From a checkout of this repository, `npm run stac:prepare -- --out /tmp/stac-materials` runs the
+same recipe. `prepare-stac --cache-key` prints the key for these inputs without doing anything,
+so a CI cache can be keyed on it; a directory whose provenance carries that key and whose files
+verify is reused rather than rebuilt (`--force` rebuilds anyway).
 
 That fetches the pinned commit, verifies it against `packages/stac-browser/upstream.json`, applies
 the reviewed patch series, installs upstream's own dependency tree from upstream's own lockfile,

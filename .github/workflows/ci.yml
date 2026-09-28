@@ -343,6 +343,24 @@ jobs:
       - name: Python playground gate
         run: npm run test:browser:python -w @freva-org/portal-builder
 
+      - name: Runnable snippet controls and editing gate
+        run: npm run test:browser:snippets -w @freva-org/portal-builder
+
+      - name: Cosmos landing ending gate (theme.backdrop.tail)
+        run: npm run test:browser:cosmos-tail -w @freva-org/portal-builder
+
+      - name: Footer bar shortcuts gate (chrome.footer.bar)
+        run: npm run test:browser:footer-bar -w @freva-org/portal-builder
+
+      - name: Responsive navigation and maths overflow gate
+        run: npm run test:browser:nav -w @freva-org/portal-builder
+
+      - name: Live announcements gate
+        run: npm run test:browser:announcements -w @freva-org/portal-builder
+
+      - name: Per-mode page palette gate (a white light page)
+        run: npm run test:browser:paper -w @freva-org/portal-builder
+
       - name: Packaging gate
         run: npm run test:packaging -w @freva-org/portal-builder
 

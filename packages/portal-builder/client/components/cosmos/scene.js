@@ -328,21 +328,16 @@ function drop(parent, b, cls, extra) {
    LAYOUT — the source engine's own three-band budget, solved together
    ==================================================================== */
 let G = {};
-/*
- * The allocator, unchanged from the previous renderer.
- *
- * The ONE difference is where `H` comes from. The standalone study had no
- * page to measure, so it took its story height to be 4.28 viewports. Here
- * the story is told down a real element - the Cosmos shell, which is as
- * tall as the landing that sits on it - and `H` is that element's height,
- * which is what the previous renderer measured too. Fed a real Waterpark
- * landing (1440x900, H=4751) the three bands below solve to 1658.099,
- * 1685.099, 3811 and 4725: the previous renderer's own numbers, exactly.
- */
-function geometry(hostH) {
+// The allocator. `H` is the story height: the Cosmos shell's, which is as tall as the landing on
+// it. A 1440x900 Waterpark landing (H=4751) solves the bands below to 1658.099, 1685.099, 3811 and
+// 4725.
+function geometry(hostH, fitPage) {
   const w = Math.max(320, window.innerWidth),
     h = Math.max(420, window.innerHeight);
-  const H = Math.max(Math.round(h * 1.6), Math.round(hostH));
+  // `fitPage`: `theme.backdrop.tail` is short or none, so the page is only as long as its content;
+  // the story is told down exactly that height (the allocator compresses the bands), with one
+  // screen as the floor rather than 1.6.
+  const H = Math.max(Math.round(h * (fitPage ? 1 : 1.6)), Math.round(hostH));
   const gap = h * 0.03,
     tail = 26,
     budget = H - gap - tail;
@@ -2619,7 +2614,7 @@ function buildScene(host, keepGeom) {
        before it asks for a build and before every rebuild, so this is read
        once per build and is constant for the whole of it. */
     NIGHT = host.dataset.sky !== "day";
-    if (!keepGeom || !G.sceneH) G = geometry(host.clientHeight);
+    if (!keepGeom || !G.sceneH) G = geometry(host.clientHeight, "portalCosmosTail" in host.dataset);
 
     /*
      * NO ASSET MAP. The scene draws no packaged bodies, so there is nothing to resolve to a URL

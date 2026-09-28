@@ -51,8 +51,12 @@ export interface ConsumerOptions {
     addonBaseUrl?: string;
     connectOrigins?: string[];
     persistCredentials?: boolean;
+    controls?: "always" | "hover";
+    editableSnippets?: boolean;
   };
   runnableDocs?: boolean;
+  /** Mark each page's runnable block `editable` too. Implies nothing without `runnableDocs`. */
+  editableDocs?: boolean;
   runnableProse?: boolean;
   /** YAML for the second block's `python` stanza, already indented six spaces. */
   secondBlockPython?: string;
@@ -109,10 +113,11 @@ export function catalogue(prefix = "cmip6", collections = 6, datasets = 5): unkn
   };
 }
 
-const PAGE = (name: string, runnable = false): string =>
+const PAGE = (name: string, runnable = false, editable = false): string =>
   `---\ntitle: ${name}\n---\n\n# ${name}\n\nProse a reader is here for.\n\n` +
   (runnable
-    ? '```python try-in-python title="quickstart.py"\nimport xarray as xr\nprint(xr.__version__)\n```\n\n'
+    ? `\`\`\`python try-in-python${editable ? " editable" : ""} title="quickstart.py"\n` +
+      "import xarray as xr\nprint(xr.__version__)\n```\n\n"
     : "") +
   "```python\nimport xarray as xr\n\nds = xr.open_zarr(URL)\n```\n\n" +
   "```bash\ns5cmd ls s3://example/\n```\n\n" +
@@ -176,6 +181,8 @@ function playgroundYaml(options: ConsumerOptions): string {
     (playground.addonBaseUrl ? `  addonBaseUrl: ${playground.addonBaseUrl}\n` : "") +
     list("connectOrigins", playground.connectOrigins) +
     (playground.persistCredentials ? `  persistCredentials: true\n` : "") +
+    (playground.controls ? `  controls: ${playground.controls}\n` : "") +
+    (playground.editableSnippets ? `  editableSnippets: true\n` : "") +
     `  terminal:\n` +
     `    style: freva-client-terminal\n` +
     `    osControls: auto\n` +
@@ -215,7 +222,11 @@ export function writeConsumerSite(options: ConsumerOptions = {}): string {
     );
   }
   for (let i = 0; i < (options.pages ?? 6); i += 1) {
-    write(root, `content/page-${i}.md`, PAGE(`Page ${i}`, options.runnableDocs === true));
+    write(
+      root,
+      `content/page-${i}.md`,
+      PAGE(`Page ${i}`, options.runnableDocs === true, options.editableDocs === true),
+    );
   }
   if (options.runnableProse) {
     write(

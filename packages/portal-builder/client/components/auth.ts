@@ -17,7 +17,6 @@ let client: PyOidcAuthClient | undefined;
 
 export function createAuth(runtime: AuthRuntime): AuthBridge {
   if (bridge) return bridge;
-  let current: string | null = null;
 
   client = new PyOidcAuthClient({
     authBaseUrl: runtime.authBaseUrl,
@@ -26,17 +25,27 @@ export function createAuth(runtime: AuthRuntime): AuthBridge {
     security: {
       allowedResourceOrigins: runtime.allowedResourceOrigins,
       allowedRedirectUris: [runtime.redirectUri],
+      // Keycloak stamps RFC 9207 `iss` on every authorization response; without the expected
+      // issuer the client rejects that response as `issuer-unexpected`.
+      ...(runtime.expectedIssuer ? { expectedIssuer: runtime.expectedIssuer } : {}),
     },
     onEvent: (event) => {
-      if (event.type === "session-cleared") {
-        current = null;
+      if (event.type === "session-cleared" || event.type === "session-expired") {
         reflectSignedIn(false);
       }
     },
   });
 
   bridge = {
-    token: () => current,
+    // Asked per request, never cached here: getToken() refreshes the broker token before it
+    // expires, where a copy taken at page load would go stale after an hour.
+    token: async () => {
+      try {
+        return (await client?.getToken())?.accessToken ?? null;
+      } catch {
+        return null;
+      }
+    },
     login: () => {
       void client?.login({ next: window.location.pathname + window.location.search });
     },
@@ -45,16 +54,7 @@ export function createAuth(runtime: AuthRuntime): AuthBridge {
     },
   };
 
-  void client
-    .getToken({ refresh: "auto" })
-    .then((token) => {
-      current = token?.accessToken ?? null;
-      reflectSignedIn(Boolean(current));
-    })
-    .catch(() => {
-      current = null;
-      reflectSignedIn(false);
-    });
+  void bridge.token().then((token) => reflectSignedIn(Boolean(token)));
 
   wireAccountControl(bridge);
   return bridge;

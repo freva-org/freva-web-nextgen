@@ -38,6 +38,10 @@ const KNOWN_FLAGS = new Set([
   // `prepare-playground`: fetch again despite a current cache, and describe without doing.
   "force",
   "dry-run",
+  // `prepare-stac`: print the cache key only, use a mirror, keep the checkout somewhere else.
+  "cache-key",
+  "upstream",
+  "checkout-dir",
 ]);
 
 /** Flags that may be given more than once, collected in order. */

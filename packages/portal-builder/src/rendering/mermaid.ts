@@ -59,17 +59,77 @@ function mermaidBundlePath(): string {
   return require_.resolve("mermaid/dist/mermaid.min.js");
 }
 
+/** Thrown when the `playwright` package itself cannot be imported. */
+export class PlaywrightMissing extends Error {}
+
+/**
+ * What to do about a browser that would not start, by cause. The canonical image carries both
+ * Playwright and a pinned Chromium; an npm install of this package carries neither - Playwright
+ * is an optional peer dependency and its browsers are a separate download - so the two commands
+ * an npm consumer needs are named rather than left for them to find.
+ */
+export function browserHint(error: unknown, pinned = process.env.FREVA_PORTAL_CHROMIUM): string {
+  const install =
+    "  npm install --save-dev playwright\n" +
+    "  npx playwright install --with-deps chromium   # --with-deps: the system libraries, on Linux (needs root)\n" +
+    "or point FREVA_PORTAL_CHROMIUM at a Chromium you already have, or build in the canonical " +
+    "image (ghcr.io/freva-org/portal-builder), which carries both.";
+  if (error instanceof PlaywrightMissing) {
+    return (
+      "Mermaid diagrams are drawn at build time in Chromium, driven by Playwright, and the " +
+      "`playwright` package is not installed next to @freva-org/portal-builder (it is an " +
+      "optional peer dependency, needed only by a site with diagrams). Install it and a " +
+      `browser:\n${install}`
+    );
+  }
+  const text = error instanceof Error ? error.message : String(error);
+  if (pinned) {
+    return (
+      `FREVA_PORTAL_CHROMIUM is set to '${pinned}', and that browser did not start. Point it at ` +
+      "a Chromium executable, or unset it to use Playwright's own."
+    );
+  }
+  if (
+    /Executable doesn't exist|browserType\.launch: .*not found|please run the following command/i.test(
+      text,
+    )
+  ) {
+    return `Playwright is installed, but its Chromium has not been downloaded. Run:\n${install}`;
+  }
+  if (
+    /error while loading shared libraries|Host system is missing dependencies|libnss|libatk/i.test(
+      text,
+    )
+  ) {
+    return (
+      "Chromium is installed but the system libraries it needs are missing. Run " +
+      "`npx playwright install --with-deps chromium` (as root, or with sudo), or build in the " +
+      "canonical image."
+    );
+  }
+  return `The browser could not start. To install one:\n${install}`;
+}
+
 /**
  * A container image may pin a browser at a fixed path, not the revision directory the
  * installed Playwright expects. `FREVA_PORTAL_CHROMIUM` names it explicitly; otherwise the
  * default lookup is used.
  */
 async function launch(): Promise<BrowserLike> {
-  const playwright = (await import("playwright")) as unknown as {
+  let playwright: {
     chromium: {
       launch(options: { args: string[]; executablePath?: string }): Promise<BrowserLike>;
     };
   };
+  try {
+    playwright = (await import("playwright")) as unknown as typeof playwright;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
+      throw new PlaywrightMissing("Cannot find package 'playwright'.");
+    }
+    throw error;
+  }
   const args = ["--no-sandbox", "--disable-dev-shm-usage"];
   const pinned = process.env.FREVA_PORTAL_CHROMIUM;
   if (pinned) return playwright.chromium.launch({ args, executablePath: pinned });
@@ -103,10 +163,10 @@ export async function renderDiagrams(
         {
           code: "FP1702",
           severity: "error",
-          message: `Mermaid renders at build time and needs the pinned browser, which could not start: ${message}`,
+          message: `Mermaid renders at build time and needs a Chromium browser, which could not start: ${message.split("\n")[0]}`,
           file: r.file,
           ...(r.line !== undefined ? { position: { line: r.line } } : {}),
-          hint: "Use the canonical builder image, or install the repository's pinned Playwright Chromium.",
+          hint: browserHint(err),
         } satisfies Diagnostic,
       ],
     }));

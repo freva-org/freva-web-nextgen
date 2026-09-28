@@ -77,6 +77,18 @@ function writeFixture() {
     `${front("Why Zarr and S3?")}${body(2)}\n\n## Chunks\n\n${body(4)}\n\n## Object storage\n\n${body(4)}\n`,
   );
 
+  // Published outside the section's URL prefix by frontmatter, as Waterpark's
+  // `technical-decisions` is: still in `concepts/`, so still in the section on every width.
+  put(
+    "content/concepts/moved.md",
+    `---\ntitle: "Moved out"\npath: /docs/moved-out/\n---\n\n${body(2)}\n`,
+  );
+  // Long display maths: KaTeX sets it `nowrap`, so without its own scroller it widens the page.
+  put(
+    "content/concepts/equations.md",
+    `${front("Latitudes")}${body(1)}\n\n$$\n\\varphi-\\xi \\approx \\frac{e^2}{3} \\sin 2\\varphi\\ (\\max 7.7' \\approx 14\\ \\mathrm{km}),\\ \\varphi-\\psi \\approx \\frac{e^2}{2} \\sin 2\\varphi\\ (\\max 11.5' \\approx 21\\ \\mathrm{km}),\\ \\varphi-\\beta \\approx \\frac{e^2}{4} \\sin 2\\varphi\n$$\n\n${body(1)}\n`,
+  );
+
   for (let i = 1; i <= 9; i += 1) {
     put(
       `content/long/${i === 1 ? "index" : `page-${String(i).padStart(2, "0")}`}.md`,
@@ -241,6 +253,15 @@ async function withPage(path, theme, viewport, fn, options = {}) {
   } finally {
     await context.close();
   }
+}
+
+/** Evaluate `fn` on a page and return its result. */
+async function withPageResult(path, viewport, fn) {
+  let result;
+  await withPage(path, "light", viewport, async (page) => {
+    result = await page.evaluate(fn);
+  });
+  return result;
 }
 
 async function axeOn(page, label) {
@@ -517,6 +538,95 @@ try {
       { js: false },
     ),
   );
+
+  // section membership and horizontal overflow
+
+  await check("the phone outline lists every page the desktop rail lists", async () => {
+    const rail = await withPageResult("docs/concepts/why-healpix/", DESKTOP, () =>
+      [...document.querySelectorAll(".portal-doc-rail a")].map((a) => a.getAttribute("href")),
+    );
+    const outline = await withPageResult("docs/concepts/why-healpix/", PHONE, () => {
+      const drill = document.querySelector("[data-portal-navpanel-drill]");
+      const level = document.querySelector(
+        `[data-portal-navpanel-section="${drill.dataset.portalNavpanelDrill}"]`,
+      );
+      return [
+        ...level.querySelectorAll(
+          ".portal-navpanel-overview, .portal-navpanel-pagelink, " +
+            ":scope > ul > li > a.portal-navpanel-link",
+        ),
+      ].map((a) => a.getAttribute("href"));
+    });
+    const railPages = [
+      ...new Set(rail.filter((href) => !href.startsWith("#")).map((href) => href.split("#")[0])),
+    ];
+    assert.ok(
+      railPages.includes("/docs/moved-out/"),
+      `the rail lacks the moved page: ${railPages}`,
+    );
+    assert.deepEqual(
+      [...new Set(outline)],
+      railPages,
+      "the phone outline and the desktop rail disagree about the section",
+    );
+  });
+
+  for (const path of [
+    "",
+    "docs/concepts/",
+    "docs/concepts/why-healpix/",
+    "docs/concepts/equations/",
+    "docs/moved-out/",
+    "docs/long/",
+    "docs/alone/",
+  ]) {
+    await check(`no horizontal overflow on /${path} at 390px`, () =>
+      withPage(path, "light", PHONE, async (page) => {
+        const seen = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          bodyScrollWidth: document.body.scrollWidth,
+          innerWidth: window.innerWidth,
+        }));
+        assert.equal(
+          seen.scrollWidth,
+          seen.innerWidth,
+          `the document is ${seen.scrollWidth}px wide`,
+        );
+        assert.equal(
+          seen.bodyScrollWidth,
+          seen.innerWidth,
+          `the body is ${seen.bodyScrollWidth}px wide`,
+        );
+      }),
+    );
+  }
+
+  await check("long display maths scrolls inside its own box on a phone", () =>
+    withPage("docs/concepts/equations/", "light", PHONE, async (page) => {
+      const seen = await page.evaluate(() => {
+        const block = document.querySelector(".portal-math-block");
+        const box = block.getBoundingClientRect();
+        const mathml = block.querySelector(".katex-mathml").getBoundingClientRect();
+        return {
+          overflowX: getComputedStyle(block).overflowX,
+          scrolls: block.scrollWidth > block.clientWidth,
+          right: Math.round(box.right),
+          mathmlWidth: Math.round(mathml.width),
+          innerWidth: window.innerWidth,
+        };
+      });
+      assert.equal(seen.overflowX, "auto");
+      assert.ok(seen.scrolls, "the fixture equation no longer overflows; make it longer");
+      assert.ok(seen.right <= seen.innerWidth, `the math block ends at ${seen.right}px`);
+      assert.ok(seen.mathmlWidth <= 1, `the hidden MathML is ${seen.mathmlWidth}px wide`);
+    }),
+  );
+
+  for (const theme of ["light", "dark"]) {
+    await check(`the maths page is clean to axe at 390x844, ${theme}`, () =>
+      withPage("docs/concepts/equations/", theme, PHONE, (page) => axeOn(page, `maths ${theme}`)),
+    );
+  }
 
   // both themes
 

@@ -50,10 +50,12 @@ async function copy(text: string): Promise<boolean> {
 export function initCodeCopy(): void {
   const buttons = document.querySelectorAll<HTMLButtonElement>("[data-portal-copy]");
   for (const button of buttons) {
-    const source = button.dataset.portalCopy ?? "";
     button.hidden = false;
     let timer: number | undefined;
     button.addEventListener("click", () => {
+      // Read at the press, not at load: an editable snippet keeps this attribute in step with
+      // what is in the editor, and Copy copies what the visitor sees.
+      const source = button.dataset.portalCopy ?? "";
       void copy(source).then((ok) => {
         setState(button, ok ? "Copied" : "Press Ctrl+C", ok ? "copied" : "failed");
         button.setAttribute("aria-label", ok ? "Code copied" : "Copying is unavailable");

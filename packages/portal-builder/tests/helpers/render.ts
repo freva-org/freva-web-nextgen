@@ -18,6 +18,8 @@ export interface RenderOutcome {
   headings: { depth: number; id: string; text: string }[];
   codeCss?: string;
   runnable?: RegisteredContentExample[];
+  /** Snippets that asked to be editable where editing is not available. */
+  editableRefused: number;
 }
 
 /** Render one Markdown or RST source and return its sanitized fragment. */
@@ -25,7 +27,10 @@ export async function renderOne(
   filename: string,
   source: string,
   extras: Record<string, string> = {},
-  options: { runnable?: boolean } = {},
+  options: {
+    runnable?: boolean;
+    presentation?: ConstructorParameters<typeof ContentPipeline>[4];
+  } = {},
 ): Promise<RenderOutcome> {
   const root = tempRoot("portal-render-");
   mkdir(root, "content");
@@ -42,7 +47,13 @@ export async function renderOne(
     },
   ];
   const discovered = discoverPages(specs, new Set());
-  const pipeline = new ContentPipeline(profile, profile.limits, options.runnable ?? false);
+  const pipeline = new ContentPipeline(
+    profile,
+    profile.limits,
+    options.runnable ?? false,
+    {},
+    options.presentation,
+  );
   const result = await pipeline.run(
     discovered.docs,
     [],
@@ -61,6 +72,7 @@ export async function renderOne(
     html: page?.fragment.html ?? "",
     diagnostics: [...discovered.diagnostics, ...result.diagnostics],
     headings: page ? [...page.fragment.headings] : [],
+    editableRefused: pipeline.editableRefused,
     ...(page?.fragment.runnable ? { runnable: page.fragment.runnable } : {}),
     ...(result.codeCss ? { codeCss: result.codeCss } : {}),
   };

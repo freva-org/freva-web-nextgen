@@ -46,6 +46,7 @@ export async function runAuthCallback(runtime: AuthRuntime): Promise<void> {
     security: {
       allowedResourceOrigins: runtime.allowedResourceOrigins,
       allowedRedirectUris: [runtime.redirectUri],
+      ...(runtime.expectedIssuer ? { expectedIssuer: runtime.expectedIssuer } : {}),
     },
   });
 

@@ -440,7 +440,8 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
             // not name the coordinator even in a dynamic `import()`: that is still an edge in the
             // module graph, and the bundler would emit the interpreter's chunk for every portal
             // with a tree. The bridge keeps "has a tree" and "has an interpreter" separate claims.
-            onTry: (event: TryPythonEvent) => tryPython(event),
+            // A refusal is already said in the window; the tree has no run state to show.
+            onTry: (event: TryPythonEvent) => void tryPython(event).catch(() => undefined),
           },
         }
       : {}),

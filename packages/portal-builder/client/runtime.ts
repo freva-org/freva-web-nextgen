@@ -42,8 +42,8 @@ export interface PortalRuntime {
 }
 
 export interface AuthBridge {
-  /** Current bearer, or null when anonymous. Never stored in build output. */
-  token(): string | null;
+  /** Current bearer (refreshed near expiry), or null when anonymous. Never in build output. */
+  token(): Promise<string | null>;
   login(): void;
   logout(): void;
 }

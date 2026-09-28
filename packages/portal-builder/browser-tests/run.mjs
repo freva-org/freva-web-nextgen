@@ -1531,6 +1531,9 @@ try {
     // The same page again in the dark theme: admonition headers and syntax colours have a
     // different background there, and a contrast decision that only holds in one theme is not one.
     { path: "docs/showcase/", exclude: [], theme: "dark" },
+    // …and at phone width, where the card grid is one column and the wide equation scrolls in its
+    // own, keyboard-reachable box.
+    { path: "docs/showcase/", exclude: [], viewport: { width: 390, height: 844 } },
     { path: "workshop/", exclude: [] },
     { path: "data/", exclude: ["#portal-databrowser-mount"] },
     // `catalog/` is deliberately NOT in this list: scanning it here would run before the
@@ -1538,9 +1541,11 @@ try {
     // measure an empty box. It gets its own pair of checks below, against a loaded catalogue.
   ];
 
-  for (const { path, exclude, theme } of SCAN) {
-    await check(`accessibility scan of /${path}${theme ? ` (${theme})` : ""}`, () =>
+  for (const { path, exclude, theme, viewport } of SCAN) {
+    const label = theme ?? (viewport ? `${viewport.width}px` : "");
+    await check(`accessibility scan of /${path}${label ? ` (${label})` : ""}`, () =>
       withPage(async (page) => {
+        if (viewport) await page.setViewportSize(viewport);
         if (theme) {
           await page.addInitScript(
             (mode) => window.localStorage.setItem("freva.portal.theme", mode),
@@ -1843,6 +1848,384 @@ try {
       }
     }),
   );
+
+  await check(
+    "no page scrolls sideways on a phone: wide maths and card grids stay in their boxes",
+    () =>
+      withPage(async (page) => {
+        // No horizontal overflow on the widest pages: KaTeX display maths is `nowrap`, so a long
+        // equation (and its hidden MathML copy) would widen the document; a card grid must reflow
+        // to one column.
+        await page.setViewportSize({ width: 390, height: 844 });
+        for (const path of ["", "docs/guide/", "docs/showcase/", "docs/reference/", "workshop/"]) {
+          await page.goto(`${base}${path}`, { waitUntil: "load" });
+          const seen = await page.evaluate(() => ({
+            document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            body: document.body.scrollWidth - document.body.clientWidth,
+          }));
+          assert(seen.document === 0, `/${path} is ${seen.document}px wider than a 390px phone`);
+          assert(seen.body === 0, `/${path}: the body scrolls ${seen.body}px sideways`);
+        }
+        await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+        const maths = await page.evaluate(() => {
+          const block = [...document.querySelectorAll(".portal-math-block")].find(
+            (b) => b.scrollWidth > b.clientWidth + 1,
+          );
+          if (!block) return undefined;
+          const box = block.getBoundingClientRect();
+          const hidden = block.querySelector(".katex-mathml")?.getBoundingClientRect();
+          return {
+            overflowX: getComputedStyle(block).overflowX,
+            right: Math.round(box.right),
+            focusable: block.tabIndex === 0,
+            hiddenWidth: hidden ? Math.round(hidden.width) : 0,
+          };
+        });
+        assert(maths, "the showcase's wide equation does not overflow its box at 390px any more");
+        assert(maths.overflowX === "auto", `the math block is overflow-x: ${maths.overflowX}`);
+        assert(maths.right <= 390, `the math block ends at ${maths.right}px`);
+        assert(maths.hiddenWidth <= 1, `the hidden MathML copy is ${maths.hiddenWidth}px wide`);
+        assert(maths.focusable, "a scrolling equation is not reachable from the keyboard");
+
+        const columns = async () =>
+          page.evaluate(() => {
+            const cards = [...document.querySelectorAll(".portal-cardgrid-card")];
+            return {
+              count: cards.length,
+              columns: new Set(cards.map((c) => Math.round(c.getBoundingClientRect().left))).size,
+            };
+          });
+        const phone = await columns();
+        assert(phone.count === 8, `the showcase has ${phone.count} cards`);
+        assert(phone.columns === 1, `${phone.columns} card columns at 390px`);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+        const desktop = await columns();
+        assert(desktop.columns >= 2, `${desktop.columns} card column at 1440px`);
+      }),
+  );
+
+  await check("card grids: at most three columns beside the rail, a hint is a maximum", () =>
+    withPage(async (page) => {
+      // Per grid: how many distinct columns its cards sit in, and whether anything overflows.
+      const grids = () =>
+        page.evaluate(() => ({
+          grids: [...document.querySelectorAll(".portal-cardgrid")].map((grid) => ({
+            hint: /portal-cardgrid-max-(\d)/.exec(grid.className)?.[1] ?? null,
+            columns: new Set(
+              [...grid.children].map((card) => Math.round(card.getBoundingClientRect().left)),
+            ).size,
+            style: grid.getAttribute("style"),
+          })),
+          rail: Boolean(document.querySelector(".portal-doc-rail")?.getClientRects().length),
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        }));
+      for (const [width, height] of [
+        [1440, 900],
+        [1920, 1080],
+        [1280, 800],
+      ]) {
+        await page.setViewportSize({ width, height });
+        await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+        const seen = await grids();
+        assert(seen.rail, `no document rail at ${width}px: not the standard docs width`);
+        const plain = seen.grids.find((g) => g.hint === null);
+        const two = seen.grids.find((g) => g.hint === "2");
+        assert(plain && two, "the showcase lost one of its two grids");
+        // A card is a picture and a paragraph: two or three across the docs column, never four.
+        assert(plain.columns >= 2 && plain.columns <= 3, `${plain.columns} columns at ${width}px`);
+        assert(two.columns === 2, `a columns=2 grid has ${two.columns} columns at ${width}px`);
+        assert(
+          seen.grids.every((g) => g.style === null),
+          "a grid carries an inline style",
+        );
+        assert(seen.overflow === 0, `the page scrolls ${seen.overflow}px sideways at ${width}px`);
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+      const phone = await grids();
+      assert(
+        phone.grids.every((g) => g.columns === 1),
+        `phone columns: ${phone.grids.map((g) => g.columns).join(", ")}`,
+      );
+      assert(phone.overflow === 0, `the page scrolls ${phone.overflow}px sideways at 390px`);
+    }),
+  );
+
+  await check("a card is one target, and a thumbnail with its own link stays its own", () =>
+    withPage(async (page) => {
+      await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+      const stops = await page.evaluate(() =>
+        [...document.querySelectorAll(".portal-cardgrid-card")].map((card) => ({
+          stops: [...card.querySelectorAll("a, [tabindex]")].filter((el) => el.tabIndex >= 0)
+            .length,
+          ownMedia: Boolean(card.querySelector(".portal-cardgrid-media a")),
+        })),
+      );
+      // One tab stop per card, plus one for a thumbnail the author linked somewhere else.
+      assert(
+        stops.every((card) => card.stops === 1 + (card.ownMedia ? 1 : 0)),
+        `tab stops per card: ${stops.map((c) => c.stops).join(", ")}`,
+      );
+      assert(
+        stops.filter((card) => card.ownMedia).length === 1,
+        "the showcase's distinct-thumbnail card is missing",
+      );
+      // Keyboard: the title link takes focus and the card draws the ring.
+      await page.locator(".portal-cardgrid-title a").first().focus();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      const ring = await page.evaluate(() => {
+        const card = document.querySelector(".portal-cardgrid-card");
+        return getComputedStyle(card).outlineStyle;
+      });
+      assert(ring !== "none", "the focused card draws no focus ring");
+      // Pointer: a click on the summary text goes where the title goes.
+      const target = await page.locator(".portal-cardgrid-title a").first().getAttribute("href");
+      await Promise.all([
+        page.waitForURL((url) => url.pathname === target),
+        // `force`: Playwright would otherwise refuse, because the title link's overlay - the
+        // very thing under test - intercepts the pointer over the summary.
+        page.locator(".portal-cardgrid-body").first().click({ force: true }),
+      ]);
+      // …and a click on a thumbnail with its own link goes to THAT link, not the title's. No
+      // `force` here: the thumbnail must be the element that actually receives the pointer.
+      await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+      const media = page.locator(".portal-cardgrid-media a");
+      const mediaTarget = await media.getAttribute("href");
+      await Promise.all([page.waitForURL((url) => url.pathname === mediaTarget), media.click()]);
+    }),
+  );
+
+  await check("the wheel over the document rail scrolls the rail, then the document", () =>
+    // A viewport short enough that the rail overflows, scrolled so the rail is pinned under the
+    // header: the wheel scrolls the rail to its end, then the document beside it.
+    withPage(
+      async (page) => {
+        await page.goto(`${base}docs/guide/`, { waitUntil: "load" });
+        await page.evaluate(() => window.scrollTo(0, 400));
+        await page.waitForTimeout(150);
+        const rail = await page.evaluate(() => {
+          const el = document.querySelector(".portal-doc-rail");
+          const r = el.getBoundingClientRect();
+          return {
+            x: r.left + r.width / 2,
+            y: r.top + r.height / 2,
+            overflow: el.scrollHeight - el.clientHeight,
+          };
+        });
+        assert(rail.overflow > 0, "the rail fits at this height; the check needs one that scrolls");
+        await page.mouse.move(rail.x, rail.y);
+        for (let i = 0; i < 4; i++) {
+          await page.mouse.wheel(0, 300);
+          await page.waitForTimeout(120);
+        }
+        const after = await page.evaluate(() => {
+          const el = document.querySelector(".portal-doc-rail");
+          return { rail: el.scrollHeight - el.clientHeight - el.scrollTop, page: window.scrollY };
+        });
+        assert(after.rail <= 1, `the rail stopped ${after.rail}px short of its end`);
+        assert(after.page > 400 + 300, `the document stayed at ${after.page}px under the rail`);
+      },
+      { viewport: { width: 1440, height: 400 } },
+    ),
+  );
+
+  await check("a control inside a card takes its own click, not the card's", () =>
+    withPage(async (page) => {
+      await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+      const copy = page.locator(".portal-cardgrid-card .portal-code-copy").first();
+      assert((await copy.count()) === 1, "the showcase has no card with a code example");
+      const before = page.url();
+      // No `force`: Playwright refuses a click another element would intercept - here, the title
+      // link's stretched overlay, which is what this checks is kept off the card's controls.
+      await copy.click({ timeout: 5000 });
+      await page.waitForTimeout(200);
+      assert(page.url() === before, `clicking Copy inside a card went to ${page.url()}`);
+      assert(await copy.getAttribute("data-state"), "the card's Copy button did not get its click");
+    }),
+  );
+
+  await check("Enter follows the query in the field, even inside the search debounce", () =>
+    withPage(async (page) => {
+      await page.goto(`${base}docs/guide/`, { waitUntil: "load" });
+      await page.locator("[data-portal-sitesearch-open]").click();
+      await page.locator("dialog.portal-sitesearch").waitFor({ state: "visible" });
+      // Their best results differ: `workshop` is the showcase's, `strikethrough` the guide's.
+      await page.keyboard.type("workshop");
+      await page.locator(".portal-sitesearch-result").first().waitFor();
+      // The new query and Enter in ONE task, so the 60 ms debounce cannot have run in between -
+      // typed key by key, a slow machine can let it fire and hide the bug. The list on screen
+      // still answers `workshop` when Enter arrives.
+      await Promise.all([
+        page.waitForNavigation(),
+        page.evaluate(() => {
+          const input = document.querySelector(".portal-sitesearch-input");
+          input.value = "strikethrough";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+          );
+        }),
+      ]);
+      const url = new URL(page.url());
+      assert(
+        url.searchParams.get("h") === "strikethrough",
+        `followed with ?h=${url.searchParams.get("h")}`,
+      );
+      assert(
+        url.pathname.endsWith("/docs/guide/"),
+        `Enter followed ${url.pathname}, a result for the previous query`,
+      );
+    }),
+  );
+
+  // freva-web-nextgen#17: no keyboard shortcut, so no key a visitor types elsewhere (a `/` in the
+  // Python console, Firefox's Ctrl+Shift+K) is taken by the search.
+  await check("no key opens the header search", () =>
+    withPage(async (page) => {
+      await page.goto(`${base}docs/guide/`, { waitUntil: "load" });
+      const opener = page.locator("[data-portal-sitesearch-open]");
+      assert(await opener.isVisible(), "the search control is not visible once the island ran");
+      assert(
+        (await opener.getAttribute("aria-keyshortcuts")) === null,
+        "the control still announces a shortcut",
+      );
+      assert((await opener.locator("kbd").count()) === 0, "the control still shows a key hint");
+      const dialog = page.locator("dialog.portal-sitesearch");
+      // The window's bubble listener runs last, so it sees whether anything took the key.
+      await page.evaluate(() => {
+        window.__taken = [];
+        window.addEventListener("keydown", (e) => e.defaultPrevented && window.__taken.push(e.key));
+      });
+      for (const key of ["/", "Control+k", "Control+Shift+K", "Meta+k"]) {
+        await page.keyboard.press(key);
+        assert(!(await dialog.isVisible()), `${key} opened the search`);
+      }
+      const taken = await page.evaluate(() => window.__taken);
+      assert(taken.length === 0, `the page took ${taken.join(", ")}`);
+      // A field inside a shadow root, like the Python console's: its keydown reaches the document
+      // retargeted to the host, which a "not typing" check on the target misses.
+      await page.evaluate(() => {
+        const host = document.body.appendChild(document.createElement("div"));
+        host.attachShadow({ mode: "open" }).appendChild(document.createElement("textarea")).focus();
+      });
+      await page.keyboard.type("a/b");
+      assert(!(await dialog.isVisible()), "a / typed in a shadow-root field opened the search");
+      const value = await page.evaluate(
+        () => document.body.lastElementChild.shadowRoot.querySelector("textarea").value,
+      );
+      assert(value === "a/b", `the shadow-root field got ${JSON.stringify(value)}`);
+    }),
+  );
+
+  await check("the header search finds, highlights, follows with the keyboard, and closes", () =>
+    withPage(async (page, violations) => {
+      await page.goto(`${base}docs/guide/`, { waitUntil: "load" });
+      const opener = page.locator("[data-portal-sitesearch-open]");
+      assert(await opener.isVisible(), "the search control is not visible once the island ran");
+      // The control opens it; focus lands in the field.
+      await opener.click();
+      const dialog = page.locator("dialog.portal-sitesearch");
+      await dialog.waitFor({ state: "visible" });
+      assert(
+        await page.evaluate(() =>
+          document.activeElement?.classList.contains("portal-sitesearch-input"),
+        ),
+        "focus is not in the search field",
+      );
+      await page.keyboard.type("admonition");
+      await page.locator(".portal-sitesearch-result").first().waitFor();
+      const seen = await page.evaluate(() => ({
+        results: document.querySelectorAll(".portal-sitesearch-result").length,
+        marks: document.querySelectorAll(".portal-sitesearch-result .portal-sitesearch-mark")
+          .length,
+        expanded: document.querySelector(".portal-sitesearch-input").getAttribute("aria-expanded"),
+        status: document.querySelector(".portal-sitesearch-status").textContent,
+      }));
+      assert(seen.results >= 1, "no results for a word the showcase uses");
+      assert(seen.marks >= 1, "the results do not mark the matched word");
+      assert(seen.expanded === "true", "the combobox does not say it is expanded");
+      assert(/result/.test(seen.status), `the live status says '${seen.status}'`);
+      // Arrow keys move the active option; the field keeps focus.
+      await page.keyboard.press("ArrowDown");
+      const activeId = await page.evaluate(() =>
+        document.querySelector(".portal-sitesearch-input").getAttribute("aria-activedescendant"),
+      );
+      assert(activeId, "ArrowDown set no active option");
+      const selected = await page.evaluate(
+        (id) => document.getElementById(id)?.getAttribute("aria-selected"),
+        activeId,
+      );
+      assert(selected === "true", "the active option is not aria-selected");
+      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("ArrowDown");
+      // Enter follows it, and the destination marks the searched word in its article.
+      await Promise.all([page.waitForNavigation(), page.keyboard.press("Enter")]);
+      const arrived = await page.evaluate(() => ({
+        query: new URLSearchParams(location.search).get("h"),
+        marks: document.querySelectorAll(".portal-prose .portal-sitesearch-mark").length,
+      }));
+      assert(arrived.query === "admonition", `arrived with ?h=${arrived.query}`);
+      assert(arrived.marks >= 1, "the destination page marks nothing");
+      // Escape closes it and focus returns to the control that opened it.
+      await page.locator("[data-portal-sitesearch-open]").click();
+      await dialog.waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
+      assert(
+        await page.evaluate(() =>
+          document.activeElement?.hasAttribute("data-portal-sitesearch-open"),
+        ),
+        "focus did not return to the search control",
+      );
+      assert(violations.length === 0, `CSP or script errors: ${violations.join(" | ")}`);
+    }),
+  );
+
+  for (const [label, viewport, theme] of [
+    ["desktop, light", { width: 1440, height: 900 }, "light"],
+    ["phone, dark", { width: 390, height: 844 }, "dark"],
+  ]) {
+    await check(`the open search dialog is clean to axe (${label})`, () =>
+      withPage(async (page) => {
+        await page.setViewportSize(viewport);
+        await page.addInitScript(
+          (mode) => window.localStorage.setItem("freva.portal.theme", mode),
+          theme,
+        );
+        await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });
+        const seen = await page.evaluate(() => ({
+          header: Math.round(
+            document.querySelector(".portal-header").getBoundingClientRect().height,
+          ),
+          scroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        }));
+        assert(seen.header <= 96, `the header wrapped: ${seen.header}px tall`);
+        assert(seen.scroll === 0, `the page scrolls ${seen.scroll}px sideways`);
+        await page.locator("[data-portal-sitesearch-open]").click();
+        await page.keyboard.type("code");
+        await page.locator(".portal-sitesearch-result").first().waitFor();
+        await page.keyboard.press("ArrowDown");
+        await page.addScriptTag({ url: AXE_URL });
+        const report = await page.evaluate(async () =>
+          window.axe.run(document.querySelector("dialog.portal-sitesearch"), {
+            runOnly: {
+              type: "tag",
+              values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
+            },
+          }),
+        );
+        const serious = report.violations.filter(
+          (v) => v.impact === "serious" || v.impact === "critical",
+        );
+        assert(
+          serious.length === 0,
+          `axe: ${serious.map((v) => `${v.id} ${v.nodes[0]?.target.join(" ")}`).join(", ")}`,
+        );
+      }),
+    );
+  }
 
   await check("every heading carries a permalink that lands on it", () =>
     withPage(async (page) => {

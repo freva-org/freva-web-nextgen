@@ -171,7 +171,7 @@ describe("the prepared materials manifest", () => {
       expect(loaded.diagnostics[0]!.code).toBe("FP1604");
       // The remedy names the preparation stage and the flag that hands its result over; "not
       // found" alone leaves an operator guessing where to put a directory.
-      expect(loaded.diagnostics[0]!.hint).toContain("npm run prepare:upstream");
+      expect(loaded.diagnostics[0]!.hint).toContain("freva-portal-builder prepare-stac");
       expect(loaded.diagnostics[0]!.hint).toContain("--stac-materials");
     } finally {
       if (previous !== undefined) process.env.FREVA_PORTAL_STAC_MATERIALS = previous;

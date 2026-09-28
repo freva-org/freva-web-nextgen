@@ -32,9 +32,28 @@ npm install --save-dev @freva-org/portal-builder
 npx freva-portal-builder validate --source-root . --config portal/portal.yaml
 ```
 
-The npm path does not install Python. Rendering reStructuredText requires the
-pinned `freva-portal-rst` helper with its exact Docutils, which the image
-provides; the builder checks the whole handshake and stops if it does not match.
+The npm path installs neither Python nor a browser; the image provides both.
+
+- **reStructuredText** needs the pinned `freva-portal-rst` helper with its exact
+  Docutils. The builder checks the whole handshake and stops (`FP1701`) if it does
+  not match.
+- **Mermaid diagrams** are drawn at build time in Chromium, driven by Playwright.
+  Playwright is an optional peer dependency and its browsers are a separate
+  download, so a site with diagrams needs both:
+
+  ```console
+  npm install --save-dev playwright
+  npx playwright install --with-deps chromium   # --with-deps: Chromium's system libraries (Linux, root)
+  ```
+
+  Or set `FREVA_PORTAL_CHROMIUM` to an existing Chromium executable. Without a
+  browser the build stops with `FP1702`, and its hint names the command for the
+  cause it hit (no Playwright, no downloaded browser, or missing system
+  libraries). A site with no diagram never starts a browser.
+
+- **STAC Browser materials**, for a portal that enables the component, are
+  prepared by `freva-portal-builder prepare-stac --out <dir>` (below). It needs
+  `git`, `npm` and the network; `build` never does.
 
 ## The commands
 
@@ -46,6 +65,8 @@ freva-portal-builder preview    --dir build/portal
 freva-portal-builder verify     --dir build/portal
 freva-portal-builder host-check --dir build/portal --url https://portal.example.org/
 freva-portal-builder migrate    --from ui-manifest.json --out portal/
+freva-portal-builder prepare-stac --out .stac-materials        # only if stac-browser is enabled
+freva-portal-builder prepare-playground --source-root . --config portal/portal.yaml --out .python-materials
 ```
 
 `--source-root` is the trust anchor and is mandatory for `validate` and `build`:

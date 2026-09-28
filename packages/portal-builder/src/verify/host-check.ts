@@ -7,6 +7,19 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DiagnosticBag } from "../diagnostics.js";
+import { redirectLocation } from "../model/redirects.js";
+
+/**
+ * The query the checks send, to see that a redirect keeps it. Named so it cannot collide with a
+ * parameter a site uses: a redirect target that already carries `?probe=…` is a real case, and
+ * a probe that shares its name cannot tell "kept" from "replaced".
+ */
+const PROBE_KEY = "freva-portal-host-check";
+const PROBE = `${PROBE_KEY}=1`;
+
+/** A query string as a sorted list of `key=value` pairs, repeats kept: order is not meaning. */
+const pairs = (params: URLSearchParams): string[] =>
+  [...params].map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).sort();
 
 interface HostPolicyDocument {
   mount: { canonicalUrl: string; basePath: string };
@@ -22,6 +35,7 @@ interface HostPolicyDocument {
   }[];
   cache: { classes: Record<string, string> };
   authCallback?: { path: string; headers: Record<string, string> };
+  redirects?: { from: string; to: string; status: number; preserveQuery: boolean }[];
 }
 
 interface PortalManifestLite {
@@ -108,7 +122,7 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
     r.kind === "content" || r.kind === "landing" ? r.path !== "/" : false,
   );
   if (sample) {
-    const withoutSlash = `${at(sample.path).replace(/\/$/, "")}?probe=1`;
+    const withoutSlash = `${at(sample.path).replace(/\/$/, "")}?${PROBE}`;
     const response = await get(withoutSlash);
     if (response) {
       if (response.status !== 301 && response.status !== 308) {
@@ -118,7 +132,7 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
         );
       } else {
         const location = response.headers.get("location") ?? "";
-        if (!location.includes("probe=1")) {
+        if (!location.includes(PROBE)) {
           bag.error("FP1603", `The slash redirect for ${withoutSlash} dropped the query string.`);
         }
       }
@@ -197,6 +211,63 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
     const cache = (response?.headers.get("cache-control") ?? "").toLowerCase();
     if (response && cache.includes("immutable")) {
       bag.error("FP1603", `'${stable.path}' must never be served with immutable caching.`);
+    }
+  }
+
+  // 8. Declared redirects: a real HTTP redirect, with the declared status, to the declared
+  // target, keeping the query. A host that serves the artifact's fallback page instead answers
+  // with a 200, which works for a reader and fails the contract: a crawler sees a page, not a move.
+  for (const redirect of (policy.redirects ?? []).slice(0, 50)) {
+    const probe = `${at(redirect.from.slice(policy.mount.basePath.length - 1))}?${PROBE}`;
+    const response = await get(probe);
+    if (!response) continue;
+    if (response.status !== redirect.status) {
+      bag.error(
+        "FP1603",
+        response.status === 200
+          ? `GET ${probe} returned 200 (the fallback page); host-policy.json asks for a ${redirect.status} redirect to '${redirect.to}'.`
+          : `GET ${probe} returned ${response.status}; host-policy.json asks for a ${redirect.status} redirect to '${redirect.to}'.`,
+      );
+      continue;
+    }
+    const location = response.headers.get("location") ?? "";
+    let resolved: URL | undefined;
+    try {
+      resolved = new URL(location, probe);
+    } catch {
+      resolved = undefined;
+    }
+    // What a conforming host sends: the target with the probe's query merged into its own.
+    const expected = new URL(
+      redirect.preserveQuery ? redirectLocation(redirect.to, `?${PROBE}`) : redirect.to,
+      base,
+    );
+    if (!resolved || resolved.origin + resolved.pathname !== expected.origin + expected.pathname) {
+      bag.error(
+        "FP1603",
+        `GET ${probe} redirects to '${location}'; host-policy.json says '${redirect.to}'.`,
+      );
+      continue;
+    }
+    // The whole query, compared as a whole: the target's own parameters - including one that
+    // happens to share a name with anything the request carried - and the request's, each once.
+    const want = pairs(expected.searchParams);
+    const got = pairs(resolved.searchParams);
+    if (redirect.preserveQuery && !resolved.searchParams.getAll(PROBE_KEY).includes("1")) {
+      bag.error("FP1603", `The redirect from '${redirect.from}' dropped the query string.`);
+    } else if (want.join("&") !== got.join("&")) {
+      bag.error(
+        "FP1603",
+        `GET ${probe} redirects to '${location}', whose query is not ` +
+          (redirect.preserveQuery ? "the target's merged with the request's" : "the target's") +
+          ` (expected '${expected.search}').`,
+      );
+    }
+    if (expected.hash && resolved.hash !== expected.hash) {
+      bag.error(
+        "FP1603",
+        `GET ${probe} redirects to '${location}', which loses the target's fragment '${expected.hash}'.`,
+      );
     }
   }
 

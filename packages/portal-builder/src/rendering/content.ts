@@ -183,8 +183,20 @@ export class ContentPipeline {
      * of an unmarked block does not depend on this either way.
      */
     private readonly runnableEnabled = false,
+    /** The code background of a colour mode the theme repainted (`theme.tokens.light|dark`). */
+    codeBackgrounds: Partial<Record<"light" | "dark", string>> = {},
+    /**
+     * How runnable snippets are presented. `editing` is whether the interpreter is on the
+     * portal's own origin - the only place edited source can be run - and `editableAll` is
+     * `pythonPlayground.editableSnippets`.
+     */
+    private readonly presentation: {
+      controls?: "always" | "hover";
+      editableAll?: boolean;
+      editing?: boolean;
+    } = {},
   ) {
-    this.codeSheet = new CodeStyleSheet(profile.highlighting.colorClassPrefix);
+    this.codeSheet = new CodeStyleSheet(profile.highlighting.colorClassPrefix, codeBackgrounds);
     this.rst = new RstHelper(profile);
   }
 
@@ -197,17 +209,31 @@ export class ContentPipeline {
   }
 
   /**
+   * How many snippets asked to be editable where editing is not available (the interpreter is
+   * on another origin). The resolver reports it once, not per block.
+   */
+  editableRefused = 0;
+
+  /**
    * One counter per file, and the identity a marked block gets from it. The counter advances
    * for EVERY code block, marked or not: an id meaning "the third runnable block" would change
    * meaning the moment a marker was added above it, and a manifest already deployed to a
    * separate origin would then describe a different snippet under the same name. "The third
    * code block of guide.md" survives that, and is what a person counting would say.
    */
+
   private codeRegistrar(file: string): (node: IrCode) => RunnableExample | undefined {
     let occurrence = 0;
     return (node) => {
       occurrence += 1;
       if (!this.runnableEnabled || node.runnable !== true) return undefined;
+      const asked = node.editable === true || this.presentation.editableAll === true;
+      const editing = this.presentation.editing !== false;
+      if (asked && !editing) this.editableRefused += 1;
+      const presentation = {
+        ...(asked && editing ? { editable: true } : {}),
+        ...(this.presentation.controls === "hover" ? { controls: "hover" as const } : {}),
+      };
       const sha256 = createHash("sha256").update(node.value, "utf8").digest("hex");
       const id = runnableId(file, occurrence);
       const registered = this.runnable.get(file) ?? [];
@@ -218,7 +244,7 @@ export class ContentPipeline {
         source: node.value,
       });
       this.runnable.set(file, registered);
-      return { id, sha256 };
+      return { id, sha256, ...presentation };
     };
   }
 

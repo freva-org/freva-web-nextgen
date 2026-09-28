@@ -22,6 +22,8 @@ site:
 chrome:
   header:
     enabled: true
+    search:
+      enabled: true
     links:
       - label: Reference
         href: /reference/

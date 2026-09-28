@@ -8,6 +8,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join, normalize } from "node:path";
 import { CACHE_HEADERS } from "../artifact/manifests.js";
+import { redirectLocation } from "../model/redirects.js";
 
 interface ManifestFile {
   path: string;
@@ -17,6 +18,7 @@ interface ManifestFile {
 }
 
 interface HostPolicyDocument {
+  redirects?: { from: string; to: string; status: number; preserveQuery: boolean }[];
   csp?: {
     portal?: Record<string, string>;
     subsites?: { mount: string; directives: Record<string, string> }[];
@@ -58,9 +60,26 @@ export function createPreviewServer(options: PreviewOptions): Server {
     header: cspHeader(entry.directives),
   }));
 
+  // The declared redirects, answered as a conforming host must: by exact path, with or without
+  // the trailing slash, with the request's query merged into the target's (`redirectLocation`).
+  const redirects = new Map<string, { to: string; status: number; preserveQuery: boolean }>();
+  for (const redirect of policy.redirects ?? []) {
+    redirects.set(redirect.from, redirect);
+    redirects.set(redirect.from.replace(/\/$/, ""), redirect);
+  }
+
   return createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     let pathname = decodeURIComponent(url.pathname);
+
+    const redirect = redirects.get(pathname);
+    if (redirect) {
+      response.writeHead(redirect.status, {
+        location: redirect.preserveQuery ? redirectLocation(redirect.to, url.search) : redirect.to,
+      });
+      response.end();
+      return;
+    }
 
     if (basePath !== "/" && !pathname.startsWith(basePath)) {
       response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });

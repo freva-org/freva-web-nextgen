@@ -197,6 +197,18 @@ describe("3. the marker is only a marker where a block can start", () => {
     expect(out.html).toContain("/// caption");
   });
 
+  it("3.2b leaves it alone inside an indented code block in a list item", async () => {
+    // Four columns past the item's content, after a blank line: code, not a caption opener.
+    const out = await renderOne(
+      "t.md",
+      md("-   Write this under the image:\n\n        /// caption\n        literal\n        ///"),
+    );
+    expect(errorCodes(out)).toEqual([]);
+    expect(out.html).toContain('<pre class="portal-code-block"');
+    expect(out.html).toContain("/// caption\nliteral\n///");
+    expect(count(out.html, "<figcaption")).toBe(0);
+  });
+
   it("3.3 leaves it alone inside inline code", async () => {
     const out = await renderOne("t.md", md("Write `/// caption` under the image."));
     expect(errorCodes(out)).toEqual([]);

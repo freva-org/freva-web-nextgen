@@ -53,6 +53,7 @@ import { validateAgainst } from "../config/schema.js";
 import type { ComponentEvidence } from "./evidence.js";
 import { MATERIALS_MANIFEST } from "../model/python-materials.js";
 import { containStylesheet } from "../components/stac-browser/containment.js";
+import { redirectPage } from "../model/redirects.js";
 
 export interface BuildOptions extends Omit<ResolveOptions, "outDir" | "temporaryDirs"> {
   outDir: string;
@@ -224,8 +225,20 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
           // the console and its private dependencies, named because nothing else in a build
           // imports jQuery Terminal or Prism, so the group cannot take anything else with it.
           rollupOptions: {
+            // ONE warning is filtered, by code and file, because it is unreachable twice over:
+            // jQuery Terminal's direct `eval` of `[[ terminal::fn(args) ]]` runs only with
+            // `invokeMethods` on, which `@freva-org/browser-python` sets off (its
+            // `tests/console/surface-options.test.ts`), and the portal's CSP never grants
+            // `'unsafe-eval'` - `'wasm-unsafe-eval'` allows WebAssembly only (see
+            // `tests/artifact/python-playground.test.ts` and `build-warnings.test.ts`). Every other
+            // log passes through.
+            onLog(level, log, handler) {
+              if (isKnownInertEval(log)) return;
+              handler(level, log);
+            },
             output: {
-              advancedChunks: {
+              // rolldown's name for `advancedChunks` since 1.0 (the old key warns on every build).
+              codeSplitting: {
                 groups: [
                   // A module BOTH halves need, kept out of the console's chunk.
                   // `transcript-limit.js` is one number - the console's output cap - and the
@@ -342,6 +355,24 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
       cpSync(record, join(tempOut, MATERIALS_MANIFEST));
       copiedFiles.push(MATERIALS_MANIFEST);
     }
+  }
+
+  // Redirect fallback pages, LAST among the writers, so that a collision with anything the build
+  // or a copy put in the artifact is seen. The model already refused a redirect from a route or
+  // from under a mount; this catches what only the finished tree knows. Written before
+  // `collect()`, so each page is listed, hashed and checksummed like every other file.
+  for (const redirect of model.redirects) {
+    const target = join(tempOut, ...redirect.file.split("/"));
+    if (existsSync(target)) {
+      bag.error(
+        "FP1224",
+        `The redirect from '${redirect.from}' would overwrite '${redirect.file}', which the build produced.`,
+        { pointer: "/redirects" },
+      );
+      continue;
+    }
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, redirectPage(redirect, model.site.language, model.site.origin), "utf8");
   }
 
   graph.copiedFiles = [...copiedFiles].sort();
@@ -547,6 +578,17 @@ function collectInlineHashes(dir: string): { scripts: string[]; styles: string[]
     }
   }
   return { scripts: [...scripts].sort(), styles: [...styles].sort() };
+}
+
+/** jQuery Terminal's own source, the one module whose direct `eval` is known to be inert. */
+const JQUERY_TERMINAL = /[/\\]jquery\.terminal[/\\]js[/\\]jquery\.terminal(?:\.min)?\.js/;
+
+/**
+ * Whether a bundler log is the one direct-`eval` warning the build filters. See the `onLog`
+ * comment in `buildSite` for why that module's `eval` cannot run in a portal.
+ */
+export function isKnownInertEval(log: { code?: string; id?: string; message?: string }): boolean {
+  return log.code === "EVAL" && JQUERY_TERMINAL.test(`${log.id ?? ""} ${log.message ?? ""}`);
 }
 
 /** The pinned engine's own stylesheet, resolved from the installed package. */

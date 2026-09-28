@@ -46,6 +46,63 @@ Typed links only. Each link names exactly one of `landing`, `component` or
 `chrome.header.prose` and `chrome.footer.prose` point at a local Markdown or RST
 source; it is a fragment, so it owns no route.
 
+### `chrome.footer.bar`: shortcuts in the collapsed footer
+
+The collapsed footer bar is the one part of the footer on screen on every page: landings,
+documentation pages and application views (Data Browser, STAC Browser) alike. `chrome.footer.bar`
+puts a short line of links in it, between the badge and the institution:
+
+```yaml
+chrome:
+  footer:
+    enabled: true
+    bar:
+      lead: "Need support?" # optional plain text before the links, at most 40 characters
+      links: # one to three links, the same shape as groups and legalLinks
+        - label: waterpark@support.dkrz.de
+          href: mailto:waterpark@support.dkrz.de
+        - label: Newsletter
+          href: https://waterpark.dkrz.de/subscription/form
+```
+
+It renders as `Need support? · waterpark@support.dkrz.de · Newsletter`, in a
+`<nav aria-label="Footer shortcuts">`.
+
+- **Links** resolve like `legalLinks`: `https://` opens in a new tab with
+  `rel="noopener noreferrer"`; `mailto:` and site paths open in place.
+- **At most three links**; a fourth is `FP1229`. The rest belong in `groups` or `legalLinks`.
+- **One line at every width**, and the bar keeps its height. Below about 640px the lead is
+  hidden; links that still do not fit end in an ellipsis, and never wrap or scroll sideways.
+- **Styling** uses the footer's tokens: the lead in `--footer-muted`, links in `--footer-text`,
+  and `--footer-strong` with an underline on hover and focus, plus a focus ring.
+- A bar link may repeat an `href` from the open footer.
+
+### `chrome.header.search`
+
+```yaml
+chrome:
+  header:
+    enabled: true
+    search:
+      enabled: true
+      placeholder: Search Waterpark # optional; default "Search the documentation"
+```
+
+A documentation search in the header, like Material for MkDocs'. The build writes a full-text
+index of every content page - one entry per `h2`/`h3` section, with the page title, heading,
+anchor, text and section-navigation title - as one static, content-hashed file
+(`_portal/search-index.<hash>.json`), listed in the manifests, covered by `checksums.sha256` and
+`verify`, and cached `immutable`. The Search control opens a modal dialog that fetches the index
+once, same-origin, and searches it in the page: every term must match; title beats heading beats
+body text; case and accents are ignored. Arrow keys move through the results, Enter follows one,
+and the destination (`?h=<terms>`) marks the words in its article.
+
+No service and no other origin: `connect-src 'self'` covers the fetch, so the CSP and
+`host-policy.json` change only by the index's own entry. Disabled or absent, **nothing** ships -
+no index, island, stylesheet or markup - which the `site-search` evidence plan checks
+(`FP1601`/`FP1602`). Enabled with the header off is a warning (`FP1225`). Without JavaScript the
+control is not shown.
+
 ## `theme`
 
 ```yaml
@@ -68,12 +125,65 @@ landing page, and nowhere else.
   about 210 kB of object bodies and a deferred renderer chunk, both of which exist only in a
   `cosmos` build and are fetched only on a landing route.
 
+**How the `cosmos` story ends: `theme.backdrop.tail`.** By default the scene runs on after the
+last landing block, so the story ends on the ocean, and a landing is at least two screens long.
+On a content-rich landing that reads as an unfinished page, so a portal can shorten it:
+
+```yaml
+theme:
+  preset: cosmos
+  backdrop:
+    tail: short # full (the default) | short | none
+```
+
+`full` is the default. `short` ends the story 96px below the last block and `none` at it; either
+way the page is as long as its content, the scene compresses to fit, and the footer's clearance is
+unchanged. On any other preset the key does nothing and the build says so (`FP1228`).
+
 Neither adds a component, a service or a route, and neither is fetched by any other preset. On a
 documentation, Data Browser, STAC or error page a backdrop preset keeps its palette and does not
 run its scene. `tokens` is a finite
 override surface; arbitrary CSS and asset imports are not accepted in v1. A
 generally useful new token is a contribution to the framework, which then gets
 tests across every built-in component.
+
+### Page colours per colour mode: `tokens.light` and `tokens.dark`
+
+The flat colour tokens are one value for both colour modes, so the page colours
+among them - `colorBackground`, `colorSurface`, `colorText`, `colorTextMuted` -
+are not applied: a background written for the light page would repaint the dark
+one (`FP1212` says so). A mode block owns one mode's page:
+
+```yaml
+theme:
+  preset: cosmos
+  tokens:
+    colorAccent: "#00796b"
+    light:
+      colorBackground: "#ffffff" # a white page, like MkDocs Material's
+    # no `dark:` block - dark mode keeps the design's colours
+```
+
+A block accepts `colorBackground`, `colorSurface`, `colorText`, `colorTextMuted` and
+`colorBorder`; a mode without one is the design's, exactly. Set only what you want to change:
+
+- **The background is enough.** The builder measures the design's steps - raised surfaces (cards,
+  dialogs, the rail, the STAC Browser) a small step off the page, rules and chips a larger step
+  towards the text, status fills a tint of their own colour - and applies them to your page. On
+  white, where nothing is lighter, raised surfaces step a shade darker instead, still quieter than
+  a chip or a code block.
+- **Text is re-measured.** Secondary and muted text, links, status colours and code highlighting
+  are checked against every surface they land on (page, cards, admonitions, code blocks) and moved
+  in lightness just far enough to clear WCAG AA (4.5:1), also when you set only `colorSurface`.
+- **Anything you set is kept.** A combination of yours that fails (muted text under 4.5:1, a
+  surface indistinguishable from the page) is reported as `FP1226` with the pointer and the ratio.
+
+`FP1226` also reports an accent the header and footer's white text reads at under 4.5:1
+(Waterpark's `#009688` is 3.67:1; `#00796b` keeps the hue at 5.32:1) and, in a repainted mode, an
+accent neither button ink reads on.
+
+A mode block does not touch the accent, the header and footer, the Data Browser's own palette or a
+preset's backdrop: the `cosmos` sky is the same over a white page.
 
 ## `rendering`
 
@@ -92,6 +202,11 @@ rendering:
   downloads:
     - root: ./downloads
       mount: /downloads/
+    - root: ./content/examples # the scripts beside the pages that explain them
+      mount: /downloads/examples/
+      files:
+        include: ["*.py"]
+        exclude: ["_*.py"]
   diagnostics:
     warningsAsErrors: true
   limits:
@@ -109,6 +224,11 @@ rendering:
   deterministically gets `application/octet-stream`. Every download is recorded
   with `Content-Disposition: attachment` and `nosniff` requirements. Consumer
   configuration cannot make a download an active inline type.
+- **`files.include` / `files.exclude`** work on `sources`, `assets` and `downloads` alike, with
+  the same glob dialect (`**`, `*`, `?`, POSIX `/`; a dotfile matches only a segment starting with
+  `.`). On an asset or download root, no `include` means every file; a filtered-out file is not
+  published, recorded or MIME-checked. Roots may overlap, so one directory can be a content source
+  for its pages and a download root for its scripts.
 - **Limits** may only _raise_ the published operational guardrails.
 
 ## `landings`
@@ -361,6 +481,9 @@ Python-enabled block on it must declare the **same** `python` stanza apart from 
 key. Two blocks that disagree are a build error (`FP1215`) naming the key and both blocks, rather
 than a precedence rule that answers a question you did not know you had asked. A block with no
 `python` stanza beside one that has it stays Copy-only, which is not a disagreement.
+The same rule covers runnable prose on the page, which uses `pythonPlayground`; `python` is
+accepted on `dataset-tree` blocks only. See
+[Which configuration wins](./python-playground.md#which-configuration-wins).
 
 Registered examples are named `<block instance>/<node id>/<example id>`, each segment
 percent-escaped. The block instance is in there because node ids are unique within a _catalogue_
@@ -507,6 +630,86 @@ is a separate input for archive timestamps and never doubles as this.
 
 A small client island may remember that a reader dismissed an announcement. It
 cannot decide whether one exists.
+
+### `announcementFeed`: live notices, opt-in
+
+```yaml
+announcementFeed:
+  url: /api/announcements # root-relative (same origin), or https://…
+```
+
+For a notice that cannot wait for a build ("the archive is read-only until the migration
+finishes"), a deployment may name a JSON document on a server it controls. The page reads it at
+load and renders the well-formed entries live **now** as ordinary announcement rows, text only,
+with the same session-scoped dismissal. An `https://` origin is added to `connect-src` and nowhere
+else; without the key nothing ships (the `announcement-feed` evidence plan checks). An
+unreachable, empty or malformed feed shows nothing.
+
+```json
+{
+  "announcements": [
+    {
+      "id": "storage-migration",
+      "message": "The archive is read-only until the migration finishes.",
+      "level": "warning",
+      "startsAt": "2026-09-26T08:00:00Z",
+      "endsAt": "2026-09-27T00:00:00Z",
+      "dismissible": true,
+      "link": "https://status.example.org/",
+      "linkText": "Status"
+    }
+  ]
+}
+```
+
+A bare array works too, and so do a MkDocs-era Waterpark file's field names (`text`, `starts`,
+`expires`, `link_text`, and `level: outage`, drawn as `critical`), so a migrated site keeps its
+file. Every entry **must** have an end (`endsAt`/`expires`) or it is dropped: a notice nothing can
+clear is the failure to prevent. `id` is `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`, the message at most
+500 characters, a link `https://` or root-relative; at most 20 entries are read.
+
+## `redirects`
+
+For a site migrated into the portal: the old public paths, and where each went.
+
+```yaml
+redirects:
+  - from: /storage_concepts/
+    href: /docs/storage-concepts/
+  - from: /storage_concepts/why-healpix/
+    href: /docs/storage-concepts/why-healpix/
+  - from: /appendix-remapping-benchmark/
+    href: /docs/remapping-benchmark/
+  - from: /databrowser/
+    component: data # follows the component's route
+  - from: /stac-browser/
+    component: catalog
+  - from: /welcome/
+    landing: home
+  - from: /newsletter/
+    href: https://lists.example.org/subscription/form
+    status: 302 # default 301; 302, 307 and 308 are accepted
+```
+
+Each entry names `from` and exactly one target, resolved like a navigation link:
+`landing`, `component`, or `href` (an internal path that exists - a route, a
+static file or a subsite mount - or an `https://` URL).
+
+- `from` is a site-logical path in directory form (the trailing slash is added
+  if missing). It must be an **old** path: a route of this site, a path under
+  an asset, download or subsite mount, or under a directory the framework
+  writes (`/_portal/`, `/identity/`, …) is an error (`FP1224`), and so is the
+  same path twice (compared the way route collisions are: case, Unicode and
+  percent-encoding folded).
+- An unknown target is `FP1201`. Because a target must exist and a `from` never
+  can, a redirect cannot point at another redirect; there are no chains.
+- A redirect to a disabled component is omitted with `FP1202`, like a
+  navigation entry, so switching a component off does not need a second edit.
+
+The build emits each redirect three ways: into `host-policy.json` for the host
+(see [Hosting](./hosting.md#redirects)), as a static fallback page at the old
+path (meta refresh, canonical link, visible link, no script, `noindex`), and as
+a probe in `host-check`. `preview` answers them as a conforming host would.
 
 ## `trustedSubsites`
 

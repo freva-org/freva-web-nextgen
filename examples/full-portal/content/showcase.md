@@ -54,6 +54,62 @@ An unknown but safe type keeps its words and renders neutrally.
     !!! info "A nested block"
         With its own body.
 
+## Wide equations
+
+A display equation wider than a phone scrolls inside its own box; the page does
+not scroll sideways.
+
+$$
+\varphi-\xi \approx \frac{e^2}{3} \sin 2\varphi\ (\max 7.7' \approx 14\ \mathrm{km}),\ \varphi-\psi \approx \frac{e^2}{2} \sin 2\varphi\ (\max 11.5' \approx 21\ \mathrm{km})
+$$
+
+## Cards
+
+The Material for MkDocs spelling of a card grid:
+
+<div class="grid cards" markdown>
+
+-   [![](../assets/catalog-mark.svg)](guide/index.md)
+    **[The guide](guide/index.md)**
+    A tour of the Markdown constructs the profile accepts.
+
+-   [![](../assets/logo.svg)](reference.rst)
+    **[The reference](reference.rst)**
+    The same constructs, written in reStructuredText.
+
+-   **[The workshop](https://www.example.org/)**
+    A card with no image, linking off the site.
+
+-   [![The rendering reference](../assets/logo.svg)](reference.rst)
+    **[Code in the guide](guide/index.md#code)**
+    A thumbnail that goes somewhere other than its title.
+
+-   **[A card with code](guide/index.md#code)**
+    Its code example keeps its own Copy button:
+
+    ```python
+    print("hello")
+    ```
+
+</div>
+
+The same grid with a column hint, a maximum - `:::cards{columns=2}`, or
+`<div class="grid cards cols-2" markdown>`. It never uses more than two columns,
+and still drops to one on a phone:
+
+:::cards{columns=2}
+
+- **[The guide](guide/index.md)**
+  Every construct of the content profile, one at a time.
+
+- **[The reference](reference.rst)**
+  The same constructs, in reStructuredText.
+
+- **[The workshop](https://www.example.org/)**
+  A card linking off the site.
+
+:::
+
 ## Code in several languages
 
 ```python

@@ -116,6 +116,17 @@ export interface TryPythonRequest {
 }
 
 /**
+ * A press on an EDITED snippet. Unlike {@link TryPythonRequest} it carries source, because the
+ * source is the visitor's: it is not a registered example any more, and is run exactly as a cell
+ * typed at the prompt would be - on the portal's own origin only, and labelled as edited in the
+ * transcript. `exampleId` is kept only to name the snippet it started from.
+ */
+export interface EditedRunRequest {
+  exampleId: string;
+  source: string;
+}
+
+/**
  * What a launcher needs to know about the playground, and nothing more. The launcher is drawn by
  * the light entry, which exists before the coordinator is loaded and cannot read its variables.
  */
@@ -162,7 +173,10 @@ export interface PythonBlock {
 }
 
 const blocks: PythonBlock[] = [];
-let handler: ((request: TryPythonRequest) => void) | null = null;
+/** Settles when the run is over - it ran, or it was refused (rejects). See `tryPython`. */
+type Handler<T> = (request: T) => Promise<void> | void;
+let handler: Handler<TryPythonRequest> | null = null;
+let editedHandler: Handler<EditedRunRequest> | null = null;
 
 /** Called by the tree island for each block whose configuration carries a playground. */
 export function registerPythonBlock(block: PythonBlock): void {
@@ -178,8 +192,13 @@ export function pythonBlocks(): readonly PythonBlock[] {
  * Install the thing that actually runs an example. Exactly one handler: a second call replaces the
  * first rather than adding to it, because two handlers would mean two windows for one press.
  */
-export function onTryPython(next: (request: TryPythonRequest) => void): void {
+export function onTryPython(next: Handler<TryPythonRequest>): void {
   handler = next;
+}
+
+/** Install the runner for edited snippets. Same rule: one handler. */
+export function onTryPythonEdited(next: Handler<EditedRunRequest>): void {
+  editedHandler = next;
 }
 
 /**
@@ -187,12 +206,23 @@ export function onTryPython(next: (request: TryPythonRequest) => void): void {
  * build did not ask for a playground, so the tree drew no run control and nothing can have pressed
  * it. There is no queue, because a press nobody can serve is not work to be caught up on.
  */
-export function tryPython(request: TryPythonRequest): void {
-  handler?.(request);
+export function tryPython(request: TryPythonRequest): Promise<void> {
+  return Promise.resolve(handler?.(request));
+}
+
+/**
+ * Report a press on an edited snippet. Resolves when it has run, rejects when it could not (no
+ * handler, a session on another origin, no interpreter): a control that silently did nothing is
+ * the hardest thing to diagnose. Without a handler there is no playground on this page at all.
+ */
+export function tryPythonEdited(request: EditedRunRequest): Promise<void> {
+  if (!editedHandler) return Promise.reject(new Error("no Python playground on this page"));
+  return Promise.resolve(editedHandler(request));
 }
 
 /** For tests: forget every registration, so one page's blocks are not another's. */
 export function resetPythonBridge(): void {
   blocks.length = 0;
   handler = null;
+  editedHandler = null;
 }

@@ -123,6 +123,21 @@ export function verifyArtifact(dir: string): DiagnosticBag {
     }
   }
 
+  // Every redirect the host is told about has its fallback page, so a host that ignores the
+  // policy still answers the old URL rather than with a 404.
+  const policy = parsedManifests.get("host-policy.json") as {
+    redirects?: { from: string; fallback: string }[];
+  };
+  for (const redirect of policy?.redirects ?? []) {
+    if (!present.has(redirect.fallback)) {
+      bag.error(
+        "FP1603",
+        `The redirect from '${redirect.from}' has no fallback page '${redirect.fallback}' in the artifact.`,
+        { file: redirect.fallback },
+      );
+    }
+  }
+
   // Manifests describe the same file set.
   for (const file of portal.files) {
     if (!present.has(file.path)) {

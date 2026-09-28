@@ -21,6 +21,8 @@ export interface RawContentSource {
 export interface RawMountRoot {
   root: string;
   mount: string;
+  /** The same include/exclude globs a content source takes. Absent: every file. */
+  files?: { include?: string[]; exclude?: string[] };
 }
 
 export interface RawAnnouncement {
@@ -104,16 +106,28 @@ export interface PortalConfig {
     institution?: { name: string; url?: string };
   };
   chrome?: {
-    header?: { enabled: boolean; links?: RawLink[]; prose?: string };
+    header?: {
+      enabled: boolean;
+      links?: RawLink[];
+      prose?: string;
+      search?: { enabled: boolean; placeholder?: string };
+    };
     footer?: {
       enabled: boolean;
       groups?: { title: string; links: RawLink[] }[];
       legalLinks?: RawLink[];
+      /** Short links in the collapsed bar, on screen on every page. See the schema. */
+      bar?: { lead?: string; links: RawLink[] };
       prose?: string;
       badge?: { enabled?: boolean; kind?: "freva"; quality?: "auto" | "standard" };
     };
   };
-  theme?: { preset: string; tokens?: Record<string, string> };
+  theme?: {
+    preset: string;
+    tokens?: RawThemeTokens;
+    /** How a drawn backdrop meets the end of the landing; see the schema. */
+    backdrop?: { tail?: "full" | "short" | "none" };
+  };
   rendering?: {
     profile: "portal-content-v1";
     sources?: RawContentSource[];
@@ -129,6 +143,35 @@ export interface PortalConfig {
   announcements?: RawAnnouncement[];
   trustedSubsites?: RawTrustedSubsite[];
   pythonPlayground?: RawPythonPlayground;
+  redirects?: RawRedirect[];
+  announcementFeed?: { url: string };
+}
+
+/**
+ * `theme.tokens`: the flat tokens (one value for both colour modes) and, optionally, one page
+ * palette per colour mode.
+ */
+export type RawThemeTokens = { [token: string]: string | RawThemeModeTokens | undefined } & {
+  light?: RawThemeModeTokens;
+  dark?: RawThemeModeTokens;
+};
+
+/** One colour mode's page palette: see `themes/palette.ts`. */
+export interface RawThemeModeTokens {
+  colorBackground?: string;
+  colorSurface?: string;
+  colorText?: string;
+  colorTextMuted?: string;
+  colorBorder?: string;
+}
+
+/** One old public path and where it went: exactly one of `landing`, `component` or `href`. */
+export interface RawRedirect {
+  from: string;
+  landing?: string;
+  component?: string;
+  href?: string;
+  status?: 301 | 302 | 307 | 308;
 }
 
 export interface RawLandingBlock {
@@ -258,6 +301,13 @@ export interface RawPythonPlaygroundBase {
   network?: "origins" | "https";
   /** Keep a Freva refresh token across reloads. Off by default; see the resolver for why. */
   persistCredentials?: boolean;
+  /**
+   * When a runnable snippet's Copy and Try in Python controls show. `always` (the default) or
+   * `hover`. Presentation only: not part of the interpreter's identity.
+   */
+  controls?: "always" | "hover";
+  /** Every runnable snippet editable in place. Off by default; see `editable` on a fence. */
+  editableSnippets?: boolean;
   terminal?: {
     style?: "freva-client-terminal";
     osControls?: "auto" | "mac" | "windows" | "linux";

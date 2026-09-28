@@ -18,6 +18,7 @@ import {
   writeSite,
 } from "../helpers/fixture.js";
 import { buildFixture } from "../helpers/site.js";
+import { writeConsumerSite } from "../helpers/consumer.js";
 import { registerCatalogExamples, resolvePythonPlayground } from "../../src/model/dataset-tree.js";
 import { projectRuntime, generateEntryModule } from "../../src/artifact/runtime-projection.js";
 import { parseDatasetTreeCatalogV1 } from "@freva-org/dataset-tree/snapshot";
@@ -372,6 +373,35 @@ describe("the generated entry", () => {
     // asynchronous, because a live S3 block's adapter arrives through an import of its own.
     expect(with_).toContain(".then(() => preparePythonPlayground(loadLocalChunks));");
   });
+});
+
+describe("runnable snippets on a page without a tree, on a portal with one elsewhere", () => {
+  // The startup chain runs on a page without a tree too, so a docs page's Try buttons show.
+  // `browser-tests/python-playground.mjs` presses one.
+  it.each([
+    [{}, "loadLocalChunks"],
+    [{ playgroundOrigin: "https://play.example.org" }, "loadFramedChunks"],
+  ])(
+    "still mounts them and prepares the playground (%j)",
+    async (playground, loader) => {
+      const root = writeConsumerSite({ playground, runnableDocs: true, pages: 1 });
+      const { model } = await resolveFixture(root);
+      const entry = generateEntryModule(model!);
+      const tree = entry.indexOf('if (document.querySelector("[data-portal-dataset-tree]"))');
+      const fallback = entry.indexOf(
+        `  else {\n    void mountRunnableCode().then(() => preparePythonPlayground(${loader}));`,
+      );
+      expect(tree).toBeGreaterThan(-1);
+      expect(fallback).toBeGreaterThan(tree);
+    },
+    120_000,
+  );
+
+  it("adds nothing when no page marks a snippet", async () => {
+    const root = writeConsumerSite({ playground: {}, pages: 1 });
+    const { model } = await resolveFixture(root);
+    expect(generateEntryModule(model!)).not.toContain("mountRunnableCode");
+  }, 120_000);
 });
 
 // built output

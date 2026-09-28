@@ -62,12 +62,12 @@ const scratch = mkdtempSync(join(tmpdir(), "portal-builder-pack-"));
 try {
   // pack
   execFileSync("npm", ["run", "build"], { cwd: PKG, stdio: "inherit" });
-  const packed = JSON.parse(
+  const packed = packResult(
     execFileSync("npm", ["pack", "--json", "--pack-destination", scratch], {
       cwd: PKG,
       encoding: "utf8",
     }),
-  )[0];
+  );
   const tarball = join(scratch, packed.filename);
   const names = packed.files.map((f) => f.path);
 
@@ -163,6 +163,34 @@ try {
     );
   });
 
+  await check("the archive carries the STAC Browser recipe, and not the application", () => {
+    // `prepare-stac` runs this copy from an npm install; without it a consumer has to clone the
+    // monorepo to prepare materials. It is the recipe only - pin, patches, scripts, licences -
+    // and never a checkout, a dependency tree or a compiled bundle.
+    for (const file of [
+      "stac-recipe/package.json",
+      "stac-recipe/upstream.json",
+      "stac-recipe/adapter-contract.json",
+      "stac-recipe/scripts/prepare.mjs",
+      "stac-recipe/scripts/build.mjs",
+      "stac-recipe/scripts/recipe.mjs",
+      "stac-recipe/LICENSES/stac-browser-ISC.txt",
+      "stac-recipe/THIRD_PARTY_NOTICES.md",
+    ]) {
+      assert.ok(names.includes(file), `${file} is missing`);
+    }
+    const recipe = JSON.parse(
+      readFileSync(join(REPO, "packages", "stac-browser", "upstream.json"), "utf8"),
+    );
+    for (const patch of recipe.patches.series) {
+      assert.ok(names.includes(`stac-recipe/patches/${patch.name}`), `${patch.name} is missing`);
+    }
+    const leaked = names.filter((n) =>
+      /^stac-recipe\/(?:\.upstream|dist|materials|node_modules|tests)\//.test(n),
+    );
+    assert.deepEqual(leaked, [], `the recipe copy carries ${leaked.join(", ")}`);
+  });
+
   await check("the archive contains no test, fixture or source tree", () => {
     const unexpected = names.filter((n) => /^(tests|browser-tests|src|coverage)\//.test(n));
     assert.deepEqual(unexpected, [], `unexpected entries: ${unexpected.join(", ")}`);
@@ -253,6 +281,22 @@ try {
 
   await check("the installed package exposes its executable", () => {
     assert.ok(existsSync(join(project, "node_modules", ".bin", "freva-portal-builder")));
+  });
+
+  await check("the installed prepare-stac computes the workspace recipe's cache key", () => {
+    // Same recipe, same toolchain, same key: the npm path and the monorepo path are one stage.
+    const installed = execFileSync(
+      join(project, "node_modules", ".bin", "freva-portal-builder"),
+      ["prepare-stac", "--cache-key"],
+      { cwd: project, encoding: "utf8" },
+    ).trim();
+    const workspace = execFileSync(
+      process.execPath,
+      [join(REPO, "packages", "stac-browser", "scripts", "prepare.mjs"), "--cache-key"],
+      { encoding: "utf8" },
+    ).trim();
+    assert.match(installed, /^sha256:[0-9a-f]{64}$/);
+    assert.equal(installed, workspace);
   });
 
   await check("the installed package builds a fictional consumer end to end", () => {
@@ -492,11 +536,22 @@ try {
       "test:browser:tree",
       "test:browser:tree:s3",
       "test:browser:runnable",
+      // Runnable snippets: when their controls show, and the editable ones.
+      "test:browser:snippets",
+      // The cosmos landing's ending, per theme.backdrop.tail.
+      "test:browser:cosmos-tail",
+      // Shortcuts in the collapsed footer bar, chrome.footer.bar.
+      "test:browser:footer-bar",
       "test:browser:terminal",
       // The generated policy against the freva-client profile, with a real interpreter behind a
       // real header. Not strict and not in the default gate: it needs a prepared Pyodide runtime
       // and a public package index, and skips when it has neither.
       "test:browser:package-index",
+      // The responsive navigation (and maths overflow) suite, and the live-announcement suite.
+      "test:browser:nav",
+      "test:browser:announcements",
+      // The per-mode page palette suite: the example portal on a white light page.
+      "test:browser:paper",
       "test:security",
       "test:packaging",
       "cosmos:acceptance",

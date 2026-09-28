@@ -15,7 +15,8 @@ const THEME_KEY = "freva.portal.theme";
 
 type ThemeMode = "light" | "dark";
 
-function dismissed(): Set<string> {
+/** Announcement ids this reader dismissed in this session. Shared with the live feed. */
+export function dismissed(): Set<string> {
   try {
     const raw = window.sessionStorage.getItem(DISMISSED_KEY);
     return new Set(raw ? (JSON.parse(raw) as string[]) : []);
@@ -24,7 +25,7 @@ function dismissed(): Set<string> {
   }
 }
 
-function remember(ids: Set<string>): void {
+export function remember(ids: Set<string>): void {
   try {
     window.sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
   } catch {
@@ -532,6 +533,48 @@ function initSearchBusy(): void {
   clear();
 }
 
+/**
+ * A content box that scrolls sideways (long display maths, a wide table, code on a phone) must be
+ * keyboard-reachable (WCAG 2.1.1; axe's `scrollable-region-focusable`). Only boxes that overflow
+ * at the current width get a tab stop, so twenty short equations cost no extra Tab presses. The
+ * markup stays the build's; without this script Chromium's keyboard-focusable scrollers apply.
+ */
+function initScrollers(): void {
+  const boxes = [
+    ...document.querySelectorAll<HTMLElement>(
+      ".portal-prose .portal-math-block, .portal-prose table, .portal-prose pre",
+    ),
+  ];
+  if (boxes.length === 0) return;
+  const update = (): void => {
+    for (const box of boxes) {
+      const scrolls = box.scrollWidth > box.clientWidth + 1;
+      const marked = box.dataset.portalScroller === "true";
+      if (scrolls && !marked && !box.hasAttribute("tabindex")) {
+        box.dataset.portalScroller = "true";
+        box.tabIndex = 0;
+        if (box.classList.contains("portal-math-block") && !box.hasAttribute("role")) {
+          box.setAttribute("role", "group");
+          box.setAttribute("aria-label", "Equation (scrolls horizontally)");
+        }
+      } else if (!scrolls && marked) {
+        delete box.dataset.portalScroller;
+        box.removeAttribute("tabindex");
+        if (box.getAttribute("role") === "group") {
+          box.removeAttribute("role");
+          box.removeAttribute("aria-label");
+        }
+      }
+    }
+  };
+  update();
+  let frame = 0;
+  window.addEventListener("resize", () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(update);
+  });
+}
+
 export function initShell(): void {
   applyTheme(currentTheme());
   const toggle = document.querySelector<HTMLButtonElement>(".portal-theme-toggle");
@@ -547,4 +590,5 @@ export function initShell(): void {
   initToc();
   initAnnouncements();
   initSearchBusy();
+  initScrollers();
 }

@@ -4,6 +4,8 @@
 // `preset: waterpark` provably changes only styling.
 
 import { compareCodePoints } from "../util/order.js";
+import { contrast, fromHsl, isHex, luminance, mix, toHsl } from "./color.js";
+import { derivePalette, type ColorMode, type ModeTokens, type PaletteFinding } from "./palette.js";
 
 export interface ThemePreset {
   name: string;
@@ -447,6 +449,24 @@ const COSMOS_CSS = `
 }
 .portal-shell[data-backdrop="cosmos"] .portal-landing > * + * {
   margin-top: var(--portal-cosmos-story-gap);
+}
+/*
+ * A shorter ending (\`theme.backdrop.tail\`): \`short\` ends the story 96px below the last block,
+ * \`none\` at it. Both drop the two-screen floor (on a tall window, most of the empty scene), so
+ * the page is as long as its content and the scene compresses to fit (\`scene.js\` reads the same
+ * option). The last block's bottom margin goes too; the footer's clearance stays the shell's.
+ */
+.portal-shell[data-backdrop="cosmos"] .portal-landing:is([data-backdrop-tail="short"], [data-backdrop-tail="none"]) {
+  min-height: 0;
+}
+.portal-shell[data-backdrop="cosmos"] .portal-landing[data-backdrop-tail="short"] {
+  padding-bottom: 96px;
+}
+.portal-shell[data-backdrop="cosmos"] .portal-landing[data-backdrop-tail="none"] {
+  padding-bottom: 0;
+}
+.portal-shell[data-backdrop="cosmos"] .portal-landing[data-backdrop-tail] > :last-child {
+  margin-bottom: 0;
 }
 
 /*
@@ -931,17 +951,6 @@ export function themeNames(): string[] {
   return Object.keys(THEME_PRESETS).sort();
 }
 
-function mix(a: string, b: string, weight: number): string {
-  const [ar, ag, ab] = channels(a);
-  const [br, bg, bb] = channels(b);
-  const blend = [
-    ar * weight + br * (1 - weight),
-    ag * weight + bg * (1 - weight),
-    ab * weight + bb * (1 - weight),
-  ];
-  return `#${blend.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
-}
-
 // The palette for the header and the footer, which are one surface filled with the deployment's
 // main colour. These are computed here rather than with `color-mix` in the stylesheet because
 // every one of them is a contrast decision and CSS cannot make one. A "quieter" text tone on a
@@ -1051,26 +1060,6 @@ const ACCENT_INK = { light: "#f6f5f1", dark: "#0b1117" } as const;
 const TEXT_BG = { light: "#f6f5f1", dark: "#243040" } as const;
 const PAGE_INK = { light: "#14202c", dark: "#e9eef3" } as const;
 
-function channels(hex: string): [number, number, number] {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-}
-
-function luminance(hex: string): number {
-  const [r, g, b] = channels(hex).map((channel) => {
-    const c = channel / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  }) as [number, number, number];
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function contrast(a: string, b: string): number {
-  const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
-  return (high + 0.05) / (low + 0.05);
-}
-
-const isHex = (value: string): boolean => /^#[0-9a-fA-F]{6}$/.test(value);
-
 /** The readable ink for text sitting on this accent. */
 function inkOn(accent: string, mode: "light" | "dark"): string {
   if (!isHex(accent)) return ACCENT_INK[mode];
@@ -1079,66 +1068,32 @@ function inkOn(accent: string, mode: "light" | "dark"): string {
     : ACCENT_INK.dark;
 }
 
-function toHsl(hex: string): [number, number, number] {
-  const [r, g, b] = channels(hex).map((c) => c / 255) as [number, number, number];
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const d = max - min;
-  if (d === 0) return [0, 0, l];
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  const h =
-    max === r
-      ? ((g - b) / d + (g < b ? 6 : 0)) / 6
-      : max === g
-        ? ((b - r) / d + 2) / 6
-        : ((r - g) / d + 4) / 6;
-  return [h, s, l];
-}
-
-function fromHsl(h: number, s: number, l: number): string {
-  if (s === 0) {
-    const v = Math.round(l * 255);
-    return `#${[v, v, v].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-  }
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const channel = (t: number): number => {
-    let x = t;
-    if (x < 0) x += 1;
-    if (x > 1) x -= 1;
-    if (x < 1 / 6) return p + (q - p) * 6 * x;
-    if (x < 1 / 2) return q;
-    if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
-    return p;
-  };
-  const rgb = [channel(h + 1 / 3), channel(h), channel(h - 1 / 3)].map((c) =>
-    Math.max(0, Math.min(255, Math.round(c * 255))),
-  );
-  return `#${rgb.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-}
-
 /**
- * The accent as *text* on the page background.
- *
- * The accent as a fill and the accent as text have opposite requirements: a navy that is perfect
- * on a button is unreadable on a dark page. Falling back to the page ink makes the deployment's
- * colour vanish in one theme, so a link that is unmistakably "the portal's colour" by day turns
- * into ordinary body text by night and the site reads as two different products. So the hue and
- * the saturation are kept and only the *lightness* moves, one percent at a time, until the
- * colour is readable where it is being used.
+ * The accent as *text* on the page background. A fill and text have opposite needs - a navy fine
+ * on a button is unreadable on a dark page - and falling back to the page ink would make the
+ * portal's colour vanish in one theme. So hue and saturation stay and only the lightness moves,
+ * 1% at a time, until the colour reads where it is used.
  */
-function accentTextFor(accent: string, mode: "light" | "dark"): string {
+function accentTextFor(
+  accent: string,
+  mode: "light" | "dark",
+  /** A mode block's own text surfaces; the design's worst case when there is none. */
+  surfaces: readonly string[] = [TEXT_BG[mode]],
+  ink: string = PAGE_INK[mode],
+): string {
   if (!isHex(accent)) return accent;
-  const bg = TEXT_BG[mode];
-  if (contrast(accent, bg) >= 4.5) return accent;
+  const reads = (colour: string): boolean =>
+    surfaces.every((surface) => contrast(colour, surface) >= 4.5);
+  if (reads(accent)) return accent;
   const [h, sat, l] = toHsl(accent);
-  const towards = mode === "dark" ? 1 : 0;
+  // Away from the page: lighter on a dark one. A mode block can put a light page in dark mode, so
+  // the direction is read off the surfaces, not off the mode's name.
+  const towards = surfaces.every((surface) => luminance(surface) < 0.2) ? 1 : 0;
   for (let step = 1; step <= 100; step += 1) {
     const candidate = fromHsl(h, sat, l + (towards - l) * (step / 100));
-    if (contrast(candidate, bg) >= 4.5) return candidate;
+    if (reads(candidate)) return candidate;
   }
-  return PAGE_INK[mode];
+  return ink;
 }
 
 /**
@@ -1159,19 +1114,37 @@ export const UNAPPLIED_TOKENS: Record<string, string> = {
   colorTextMuted: "--muted",
 };
 
+/** `theme.tokens`: the flat tokens, plus an optional page palette per colour mode. */
+export type ThemeTokenInput = { [token: string]: string | ModeTokens | undefined } & {
+  light?: ModeTokens;
+  dark?: ModeTokens;
+};
+
 export function resolveThemeCss(
   presetName: string,
-  overrides: Record<string, string> | undefined,
+  overrides: ThemeTokenInput | undefined,
 ): {
   tokens: Record<string, string>;
   css: string;
   backdrop?: "contour" | "cosmos";
   /** Consumer-supplied token names this call accepted and did not apply. */
   unapplied: string[];
+  /**
+   * The code-block background of each mode a mode block repainted. Code is recoloured at build
+   * time against its background, so the content pipeline needs the one the page will draw.
+   */
+  codeBackgrounds: Partial<Record<ColorMode, string>>;
+  /** Text/background pairs a mode block's explicit colours leave below their threshold. */
+  findings: PaletteFinding[];
 } {
   const preset = THEME_PRESETS[presetName];
   if (!preset) throw new Error(`Unknown theme preset '${presetName}'.`);
-  const tokens = { ...preset.tokens, ...(overrides ?? {}) };
+  const flat = Object.fromEntries(
+    Object.entries(overrides ?? {}).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  const tokens = { ...preset.tokens, ...flat };
 
   // The closed token block is the consumer-facing contract and is emitted verbatim.
   const declarations: string[] = [];
@@ -1236,17 +1209,67 @@ export function resolveThemeCss(
     }
   }
 
+  // A mode block repaints that mode's page, and only that mode's: the light palette goes in the
+  // plain `:root` block, which the design's `:root[data-theme="dark"]` block outranks for every
+  // property it sets, and the dark one under the dark selector. Accent-coloured text is then
+  // re-measured against the surfaces the new page actually has.
+  const codeBackgrounds: Partial<Record<ColorMode, string>> = {};
+  const findings: PaletteFinding[] = [];
+  for (const [mode, sink] of [
+    ["light", light],
+    ["dark", dark],
+  ] as const) {
+    const palette = derivePalette(mode, overrides?.[mode], accent);
+    if (!palette) continue;
+    for (const [property, value] of Object.entries(palette.properties)) {
+      sink.push(`  ${property}: ${value};`);
+    }
+    codeBackgrounds[mode] = palette.codeBackground;
+    findings.push(...palette.findings);
+    if (accent !== undefined && isHex(accent)) {
+      const ink = palette.properties["--ink"];
+      sink.push(`  --accent-text: ${accentTextFor(accent, mode, palette.textSurfaces, ink)};`);
+      const onFill = inkOn(accent, mode);
+      if (contrast(onFill, accent) < 4.5) {
+        findings.push({
+          mode,
+          pointer: "/theme/tokens/colorAccent",
+          message: `text on the accent ${accent} (${onFill}) is ${contrast(onFill, accent).toFixed(2)}:1 in ${mode} mode; buttons and badges need 4.5:1.`,
+        });
+      }
+    }
+  }
+
+  // The header and footer are the accent with white on it, in both modes and whatever the page.
+  // That stays the design's decision, and the colour stays the deployment's: a consumer's accent
+  // that white does not read on is reported, not repainted.
+  const consumerAccent = flat.colorAccent;
+  if (consumerAccent !== undefined && isHex(consumerAccent)) {
+    const onBars = chromeContrast(consumerAccent)!;
+    if (onBars < 4.5) {
+      findings.push({
+        mode: "both",
+        pointer: "/theme/tokens/colorAccent",
+        message: `header and footer text (white) on the accent ${consumerAccent} is ${onBars.toFixed(2)}:1; it needs 4.5:1. A darker shade of the same hue keeps the colour and clears it.`,
+      });
+    }
+  }
+
   const blocks = [`:root {\n${declarations.join("\n")}\n}`];
   if (light.length > 0) blocks.push(`:root {\n${light.join("\n")}\n}`);
   if (dark.length > 0) blocks.push(`:root[data-theme="dark"] {\n${dark.join("\n")}\n}`);
   const css = `${blocks.join("\n")}\n${preset.extraCss ?? ""}`;
   // Only what the CONSUMER supplied: a preset stating its own character is not a surprise, a
   // deployment setting a value and getting nothing is.
-  const unapplied = Object.keys(UNAPPLIED_TOKENS).filter((name) => overrides?.[name] !== undefined);
+  const unapplied = Object.keys(UNAPPLIED_TOKENS).filter(
+    (name) => typeof overrides?.[name] === "string",
+  );
   return {
     tokens,
     css,
     unapplied,
+    codeBackgrounds,
+    findings,
     ...(preset.backdrop ? { backdrop: preset.backdrop } : {}),
   };
 }

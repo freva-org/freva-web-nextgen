@@ -33,6 +33,12 @@ for (const link of footer.legalLinks) {
 }
 
 const hasIndex = footer.groups.length > 0 || legal.length > 0 || Boolean(footer.prose);
+
+/**
+ * `chrome.footer.bar`: shortcuts in the one part of the footer that is on screen on every page.
+ * Not de-duplicated against the index - the bar is the shortcut and the index the full list.
+ */
+const bar = footer.bar;
 ---
 
 {
@@ -140,6 +146,37 @@ const hasIndex = footer.groups.length > 0 || legal.length > 0 || Boolean(footer.
             <span class="portal-freva-name">Freva</span>
           </span>
         </span>
+        )}
+        {bar && (
+          <nav class="portal-footer-shortcuts" aria-label="Footer shortcuts">
+            {bar.lead && <span class="portal-footer-shortcuts-lead">{bar.lead}</span>}
+            <ul class="portal-footer-shortcuts-list">
+              {bar.links.map((link, index) => (
+                <li>
+                  {(index > 0 || bar.lead) && (
+                    <span
+                      class={
+                        index === 0
+                          ? "portal-footer-shortcuts-sep portal-footer-shortcuts-sep-lead"
+                          : "portal-footer-shortcuts-sep"
+                      }
+                      aria-hidden="true"
+                    >
+                      ·
+                    </span>
+                  )}
+                  <a
+                    class="portal-footer-shortcut"
+                    href={link.href}
+                    target={link.newTab ? "_blank" : undefined}
+                    rel={link.newTab ? "noopener noreferrer" : undefined}
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
         )}
         <span class="portal-footer-institution">{site.institution?.name ?? ""}</span>
       </div>

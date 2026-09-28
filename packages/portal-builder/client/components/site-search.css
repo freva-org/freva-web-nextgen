@@ -1,0 +1,152 @@
+/*
+ * The header search: the control, the dialog, the results, and the marks on the page a result
+ * led to. Imported by the island, so a portal without search links none of it.
+ */
+
+.portal-sitesearch-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px 0 11px;
+  border: 1px solid var(--chrome-line);
+  border-radius: var(--r-pill);
+  background: var(--chrome-chip);
+  color: var(--chrome-ink-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.portal-sitesearch-open:hover {
+  background: var(--chrome-chip-hi);
+  color: var(--chrome-ink);
+}
+.portal-sitesearch-open[hidden] {
+  display: none;
+}
+/* On a narrow header the control is its icon; the label is still its accessible name. */
+@media (max-width: 760px) {
+  .portal-sitesearch-open {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .portal-sitesearch-open-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.portal-sitesearch {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(640px, calc(100dvh - 96px));
+  margin: 72px auto auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-14);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-card);
+}
+.portal-sitesearch[open] {
+  display: flex;
+  flex-direction: column;
+}
+.portal-sitesearch::backdrop {
+  background: rgb(10 16 24 / 0.45);
+}
+.portal-sitesearch-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.portal-sitesearch-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+.portal-sitesearch-input:focus {
+  outline: none;
+}
+.portal-sitesearch-box:focus-within {
+  box-shadow: inset 0 -2px 0 var(--accent-text, var(--accent));
+}
+.portal-sitesearch-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+.portal-sitesearch-close kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.portal-sitesearch-status {
+  margin: 0;
+  padding: 6px 16px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.portal-sitesearch-status:empty {
+  display: none;
+}
+.portal-sitesearch-results {
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+.portal-sitesearch-results:empty {
+  display: none;
+}
+.portal-sitesearch-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  border-radius: var(--r-9);
+  cursor: pointer;
+}
+.portal-sitesearch-result[aria-selected="true"] {
+  background: var(--chip);
+  box-shadow: inset 3px 0 0 var(--accent-text, var(--accent));
+}
+.portal-sitesearch-result-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+.portal-sitesearch-result-place {
+  font-size: 12px;
+  color: var(--muted);
+}
+.portal-sitesearch-result-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+/* The same highlighter in both themes, with its own ink: a translucent mark over a dark surface
+   leaves light text on pale yellow, which is the contrast failure a highlight must not be. */
+.portal-sitesearch-mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: #ffe38a;
+  color: #1b1b12;
+}

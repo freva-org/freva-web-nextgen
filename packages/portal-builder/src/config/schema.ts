@@ -50,7 +50,15 @@ const compiled = new Map<SchemaName, ValidateFunction>();
 
 function instance(): SchemaValidatorFactory {
   if (ajv) return ajv;
-  const a = new Ajv2020({ allErrors: true, strict: true, allowUnionTypes: true });
+  // `discriminator` lets a closed union say which property picks the branch (a landing block's
+  // `type`), so a mistake inside a prose block is reported against the prose shape only - not as
+  // one "Value must be …" per block type the author did not mean.
+  const a = new Ajv2020({
+    allErrors: true,
+    strict: true,
+    allowUnionTypes: true,
+    discriminator: true,
+  });
   addFormats(a);
   // The manifest schemas share one reference grammar; register it first.
   a.addSchema(JSON.parse(readSchemaFile(SCHEMA_FILES.materialReference)) as AnySchema);
@@ -145,10 +153,53 @@ function messageFor(e: ErrorObject): string {
   if (e.keyword === "const") {
     return `Value must be ${JSON.stringify((e.params as { allowedValue: unknown }).allowedValue)}.`;
   }
+  if (e.keyword === "discriminator") {
+    const params = e.params as { tag: string; tagValue: unknown };
+    return `Unknown ${params.tag} ${JSON.stringify(params.tagValue)}.`;
+  }
   if (e.keyword === "oneOf") {
     return "Value does not match exactly one of the allowed shapes for this object.";
   }
   return `${e.message ?? "is invalid"}${e.keyword === "pattern" ? ` (pattern ${(e.params as { pattern: string }).pattern})` : ""}.`;
+}
+
+/**
+ * A few unknown keys are not typos but a feature asked for in the wrong place. The message stays
+ * the generic one - the object is closed - and the hint says where the feature does live.
+ */
+function hintFor(name: SchemaName, e: ErrorObject): string | undefined {
+  if (codeFor(name, e) === "FP1229") {
+    return (
+      "The bar is one line on every page, so it holds at most three links. Put the rest in " +
+      "chrome.footer.groups or chrome.footer.legalLinks, where the open footer lists them."
+    );
+  }
+  if (e.keyword !== "additionalProperties") return undefined;
+  const prop = (e.params as { additionalProperty: string }).additionalProperty;
+  if (name === "landing" && prop === "python" && /^\/blocks\/\d+$/.test(e.instancePath)) {
+    return (
+      "A `python` stanza is accepted on a `dataset-tree` block only. Runnable prose - a block " +
+      "marked `try-in-python` in a prose fragment or a documentation page - always uses the " +
+      "portal-wide `pythonPlayground`, and a page has exactly one playground, so a second stanza " +
+      "here could only disagree with it. Configure the interpreter in `pythonPlayground`."
+    );
+  }
+  return undefined;
+}
+
+/**
+ * The schema's own code, FP1104, for every violation but the few a deployment is expected to hit
+ * on purpose and deserves a name for.
+ */
+function codeFor(name: SchemaName, e: ErrorObject): string {
+  if (
+    name === "portal" &&
+    e.keyword === "maxItems" &&
+    e.instancePath === "/chrome/footer/bar/links"
+  ) {
+    return "FP1229";
+  }
+  return "FP1104";
 }
 
 export interface SchemaValidation {
@@ -169,13 +220,15 @@ export function validateAgainst(
     const pointer = e.instancePath === "" ? "" : e.instancePath;
     const position = positionOf?.(pointer);
     const d: Diagnostic = {
-      code: "FP1104",
+      code: codeFor(name, e),
       severity: "error",
       message: messageFor(e),
       file,
       pointer: pointer === "" ? "/" : pointer,
     };
     if (position) d.position = position;
+    const hint = hintFor(name, e);
+    if (hint) d.hint = hint;
     return d;
   });
   return { valid: false, diagnostics };

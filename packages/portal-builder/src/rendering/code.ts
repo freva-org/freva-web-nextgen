@@ -29,11 +29,13 @@ export function disposeHighlighter(): void {
 }
 
 /**
- * The code surface in each theme: the design's `--chip` values. They are not
- * consumer-configurable - a theme preset can move the accent and the border, not the code
- * background - so a build-time contrast decision made against them stays true in the browser.
+ * The code surface in each theme: the design's `--chip` values. A preset cannot move them; a
+ * portal's per-mode page palette (`theme.tokens.light|dark`) can, and then passes its own code
+ * background to {@link CodeStyleSheet}, so a build-time contrast decision is always made against
+ * the background the browser will draw.
  */
 const CODE_BG = { light: "#eceae2", dark: "#202a36" } as const;
+type CodeBackgrounds = Record<"light" | "dark", string>;
 
 /** WCAG AA for body text. Code is small text, so this is the right threshold. */
 const MIN_CONTRAST = 4.5;
@@ -77,12 +79,18 @@ const HEX = /^#[0-9a-f]{6}$/;
  * black (light) or white (dark) in one-percent steps until readable. An already readable colour
  * is returned untouched, and the function is pure, so the artifact stays reproducible.
  */
-function readableOn(colour: string, mode: "light" | "dark"): string {
+function readableOn(
+  colour: string,
+  mode: "light" | "dark",
+  backgrounds: CodeBackgrounds = CODE_BG,
+): string {
   const hex = colour.toLowerCase();
   if (!HEX.test(hex)) return hex;
-  const bg = CODE_BG[mode];
+  const bg = backgrounds[mode];
   if (contrast(hex, bg) >= MIN_CONTRAST) return hex;
-  const target = mode === "light" ? 0 : 255;
+  // Away from the background: towards black on a light one, white on a dark one. Read off the
+  // background rather than the mode's name, which a page palette can make disagree.
+  const target = luminance(bg) < 0.2 ? 255 : 0;
   const start = channels(hex);
   for (let step = 1; step <= 100; step += 1) {
     const k = step / 100;
@@ -103,11 +111,18 @@ function readableOn(colour: string, mode: "light" | "dark"): string {
 export class CodeStyleSheet {
   private readonly pairs = new Map<string, { light: string; dark: string; cls: string }>();
 
-  constructor(private readonly prefix: string) {}
+  private readonly backgrounds: CodeBackgrounds;
+
+  constructor(
+    private readonly prefix: string,
+    backgrounds: Partial<CodeBackgrounds> = {},
+  ) {
+    this.backgrounds = { ...CODE_BG, ...backgrounds };
+  }
 
   classFor(light: string, dark?: string): string {
-    const lightKey = readableOn(light, "light");
-    const darkKey = readableOn(dark ?? light, "dark");
+    const lightKey = readableOn(light, "light", this.backgrounds);
+    const darkKey = readableOn(dark ?? light, "dark", this.backgrounds);
     const key = `${lightKey}|${darkKey}`;
     const existing = this.pairs.get(key);
     if (existing) return existing.cls;
@@ -146,6 +161,10 @@ export interface HighlightResult {
 export interface RunnableExample {
   id: string;
   sha256: string;
+  /** The visitor may edit the snippet in place. Only ever set on the portal's own origin. */
+  editable?: boolean;
+  /** `hover`: the controls show only under the pointer or with the focus. Default: always. */
+  controls?: "always" | "hover";
 }
 
 export async function highlight(
@@ -227,10 +246,19 @@ export async function highlight(
           ]),
         ]
       : [copy];
-    const figure = h("div", { class: `${prefix}-figure`, "data-portal-code": label }, [
-      h("div", { class: `${prefix}-head` }, [...head, ...actions]),
-      pre,
-    ]);
+    // A runnable block's presentation, as attributes the stylesheet and the island read:
+    // `data-portal-controls="hover"` restores the reveal-on-hover bar, `data-portal-editable`
+    // marks a snippet the visitor may edit. Neither is emitted on a plain block.
+    const figure = h(
+      "div",
+      {
+        class: `${prefix}-figure`,
+        "data-portal-code": label,
+        ...(runnable?.controls === "hover" ? { "data-portal-controls": "hover" } : {}),
+        ...(runnable?.editable ? { "data-portal-editable": "" } : {}),
+      },
+      [h("div", { class: `${prefix}-head` }, [...head, ...actions]), pre],
+    );
     // Named so the sanitizer can tell this chrome from anything an author wrote.
     figure.generatedBy = "portal-code";
     return figure;

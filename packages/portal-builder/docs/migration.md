@@ -33,6 +33,41 @@ canonical URL, and it writes a placeholder for it on purpose.
 | Clock-selected announcements | `startsAt`/`endsAt` plus `--effective-at` and a scheduled build at each boundary.                                   |
 | An unrecognized feature flag | A framework capability proposal with a schema, tests and a registry entry.                                          |
 
+## Moving a static documentation site
+
+A site that already has public URLs - a MkDocs site, say - keeps them working
+with `redirects:` (old path to route, landing or component; see the
+configuration reference). What else a MkDocs site typically carries, and where
+it goes:
+
+| MkDocs feature                               | In the portal                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------------- |
+| Material `!!!`, `/// caption`, `grid cards`  | Read as written by `portal-content-v1`.                                         |
+| Header search                                | `chrome.header.search: { enabled: true }` - a static index built with the site. |
+| Runtime announcement banner from a JSON file | `announcementFeed.url` - the same file, read by the page at load.               |
+| A newsletter sign-up form (e.g. listmonk)    | Stays with the newsletter service; see below.                                   |
+| Scripts in `docs/` served as downloads       | `rendering.downloads` with `files.include`.                                     |
+
+**A newsletter sign-up stays external, deliberately.** A double opt-in form collects a personal
+address for another service and needs that service's privacy notice, abuse protection and
+confirmation flow; authored forms are refused in content for the same reasons. Use the service's
+own hosted page (listmonk serves one at `/subscription/form`) and point the old URL and a footer
+link at it:
+
+```yaml
+redirects:
+  - from: /newsletter/
+    href: https://lists.example.org/subscription/form
+chrome:
+  footer:
+    enabled: true
+    groups:
+      - title: Stay informed
+        links:
+          - label: Newsletter
+            href: https://lists.example.org/subscription/form
+```
+
 ## Classify the rest of the tree
 
 For each source, decide which of four things it is:

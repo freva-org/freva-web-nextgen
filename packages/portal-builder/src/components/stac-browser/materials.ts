@@ -164,7 +164,7 @@ export function loadStacMaterials(explicit?: string): LoadedStacMaterials {
             "materials.",
           "Prepared materials are produced by one network-enabled stage and passed explicitly to " +
             "this one:\n" +
-            "  npm run prepare:upstream -w @freva-org/stac-browser -- --out <dir>\n" +
+            "  freva-portal-builder prepare-stac --out <dir>\n" +
             "  freva-portal-builder build --config <portal.yaml> --stac-materials <dir>\n" +
             "A portal build never fetches, patches or compiles upstream, and it will not go " +
             "looking for a materials directory it was not told about.",
@@ -179,8 +179,8 @@ export function loadStacMaterials(explicit?: string): LoadedStacMaterials {
         diagnostics: [
           error(
             `No prepared STAC materials at '${root}': ${MANIFEST_NAME} is missing.`,
-            "The path is taken literally. Point it at the directory 'npm run prepare -w " +
-              "@freva-org/stac-browser' wrote, which contains materials.json.",
+            "The path is taken literally. Point it at the directory " +
+              "'freva-portal-builder prepare-stac --out <dir>' wrote, which contains materials.json.",
           ),
         ],
       };
@@ -194,7 +194,7 @@ export function loadStacMaterials(explicit?: string): LoadedStacMaterials {
         diagnostics: [
           error(
             `'${manifestPath}' is not valid JSON: ${(cause as Error).message}`,
-            "The prepared materials are produced by 'npm run prepare:upstream -w @freva-org/stac-browser'. A hand-edited manifest is not a supported input.",
+            "The prepared materials are produced by 'freva-portal-builder prepare-stac --out <dir>'. A hand-edited manifest is not a supported input.",
           ),
         ],
       };
@@ -210,7 +210,7 @@ export function loadStacMaterials(explicit?: string): LoadedStacMaterials {
           code: "FP1604",
           hint:
             d.hint ??
-            "The prepared STAC materials manifest does not match the closed contract. Re-prepare them with 'npm run prepare:upstream -w @freva-org/stac-browser'.",
+            "The prepared STAC materials manifest does not match the closed contract. Re-prepare them with 'freva-portal-builder prepare-stac --out <dir>'.",
         })),
       };
     }

@@ -9,7 +9,7 @@ matters; which tool installs the bytes does not.
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Mount the artifact root at the pathname of `site.canonicalUrl`         | Every generated URL contains the base path exactly once. The same directory served at `/` is a deployment error, not a relocation mechanism.           |
 | Serve directory `index.html` and real deep links, no SPA fallback      | Routes are files. A fallback would hide a missing page and break the auth callback.                                                                    |
-| Redirect the non-slash directory form, preserving the query            | `/docs/guide` must reach `/docs/guide/` without losing `?probe=1`.                                                                                     |
+| Redirect the non-slash directory form, preserving the query            | `/docs/guide` must reach `/docs/guide/` without losing its query.                                                                                      |
 | Return the generated `404.html` with status 404                        | A mistyped link should report a missing page, not silently render the home page.                                                                       |
 | Point every error status you handle at its generated `<code>.html`     | The artifact ships a document for each; without them a failing request falls back to the origin's own default page, which has no way back to the site. |
 | Apply declared MIME types and `nosniff`                                | Sniffing is never the policy.                                                                                                                          |
@@ -17,6 +17,7 @@ matters; which tool installs the bytes does not.
 | Apply the declared CSP                                                 | Defense in depth, in addition to safe rendering.                                                                                                       |
 | `no-store`, `no-referrer` and query-log redaction on the auth callback | The callback URL carries single-use credentials.                                                                                                       |
 | Never grant immutable caching to stable, unhashed project asset names  | Only content-hashed names can be immutable.                                                                                                            |
+| Answer each entry in `redirects` with its status and `Location`        | A migrated site's old URLs keep working, and a crawler sees a move rather than a page. The fallback page at the old path is for a host that cannot.    |
 
 ## Status documents
 
@@ -102,6 +103,62 @@ server {
 # log_format redacted '$remote_addr - "$request_method $uri" $status';
 ```
 
+## Redirects
+
+`redirects:` in portal.yaml (see the configuration reference) become a list in
+`host-policy.json`:
+
+```json
+"redirects": [
+  { "from": "/site/storage_concepts/", "to": "/site/docs/storage-concepts/",
+    "status": 301, "preserveQuery": true, "fallback": "storage_concepts/index.html" }
+]
+```
+
+`from` is the decoded path (a space, not `%20`), which is what a host matches, and it names
+`fallback` too. Match `from` exactly and without its trailing slash, answer `status` with
+`Location: to`, and merge the request's query into the target's: the target's parameters first,
+then the request's, then the target's fragment (`/new?fixed=1` with `?q=x` is `/new?fixed=1&q=x`,
+never `/new?fixed=1?q=x`). For a target without a query or fragment - every internal one - that
+is plain appending. In nginx, one line each, generated from the file:
+
+```nginx
+location = "/site/storage_concepts/" { return 301 /site/docs/storage-concepts/$is_args$args; }
+location = "/site/storage_concepts"  { return 301 /site/docs/storage-concepts/$is_args$args; }
+```
+
+The quotes keep a path with a space in it one argument.
+
+```console
+jq -r '.redirects[] | select(.to | test("[?#]") | not)
+       | "location = \"\(.from)\" { return \(.status) \(.to)$is_args$args; }",
+         "location = \"\(.from | rtrimstr("/"))\" { return \(.status) \(.to)$is_args$args; }"' \
+  build/portal/host-policy.json
+```
+
+`$is_args$args` is only right for a target with no query or fragment of its own,
+so the one-liner skips the others. Only an external target can have them (an
+internal one must be an existing route); write those by hand:
+
+```nginx
+location = /site/newsletter/ {
+  set $sep "";
+  if ($args) { set $sep "&"; }
+  return 301 "https://lists.example.org/subscription/form?list=2$sep$args#top";
+}
+```
+
+`host-check` probes every redirect with `?freva-portal-host-check=1` - a name
+no target will use - and compares the whole query the host answers with against
+the target's own parameters plus the probe's, in any order. It fails a redirect
+whose query was dropped, replaced, or concatenated rather than merged, or whose
+fragment was lost.
+
+The artifact also carries a static page at each old path (`fallback`): a meta
+refresh, a canonical link and a visible link, with no script. A host that
+cannot redirect still gets readers where they are going, but it answers with a
+`200`, and `host-check` reports that as a failure of the contract.
+
 ## Object storage and CDNs
 
 Use the platform's native immutable deployment mechanism. Two things need
@@ -120,8 +177,9 @@ freva-portal-builder host-check --dir build/portal --url https://portal.example.
 ```
 
 It checks the root document, deep links, the slash redirect with its query, the
-real 404, download headers, the callback's cache and referrer policy, and cache
-classes. It reports what the target actually did.
+real 404, download headers, the callback's cache and referrer policy, cache
+classes, and every declared redirect (status, target and query). It reports what
+the target actually did.
 
 One thing it cannot observe over HTTP is access-log redaction; confirm that in
 the host configuration. `preview` approximates routing and headers for local

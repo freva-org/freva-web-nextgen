@@ -336,6 +336,9 @@ export function hostPolicy(inputs: ManifestInputs): object {
       if (origin) connectOrigins.add(origin);
     }
   }
+  // A live announcement feed on another origin, in `connect-src` and nowhere else: the page
+  // fetches one JSON document from it and renders its strings as text.
+  if (model.announcementFeed?.origin) connectOrigins.add(model.announcementFeed.origin);
 
   // Every playground on the portal, from BOTH the things that can ask for one: a dataset-tree
   // block's stanza, and a page that registered a runnable snippet. Reading only the blocks is
@@ -503,6 +506,21 @@ export function hostPolicy(inputs: ManifestInputs): object {
       preserveQueryOnRedirect: true,
     },
     errorPages: { notFound: "404.html", status: 404 },
+    // Old public paths, for the host to answer with a real redirect. `from` and an internal `to`
+    // carry the base path, like every other path in this document; the query string is kept, as
+    // for the slash redirect. Each also has a static fallback page at `file`, which is what a
+    // host that ignores this list serves - with a 200, which `host-check` reports.
+    ...(model.redirects.length > 0
+      ? {
+          redirects: model.redirects.map((redirect) => ({
+            from: redirect.fromPath,
+            to: redirect.to,
+            status: redirect.status,
+            preserveQuery: true,
+            fallback: redirect.file,
+          })),
+        }
+      : {}),
     headers,
     csp: {
       portal: {
