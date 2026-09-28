@@ -243,8 +243,8 @@ function buildShell(cfg: ResolvedConfig): ShellRefs {
     el("span", { class: "spin" }),
   ]);
   const searchStatus = el("span", { class: "sr-only", role: "status", "aria-live": "polite" });
-  // The field's right-hand furniture: the spinner's reserved slot, and the keyboard hint beside it.
-  // One element so the input's right padding is a single number rather than a sum that drifts.
+  // The field's right-hand furniture: the spinner's reserved slot. One element, so the input's
+  // right padding is a single number rather than a sum that drifts.
   const searchAside = el("span", { class: "search-aside" }, [searchSpin]);
   const search = el("div", { class: "search" }, [
     el("span", { class: "ic" }, [svgIcon(ICONS.search, { size: 16 })]),
@@ -1766,7 +1766,7 @@ export function mountDataBrowser(
     // The field's furniture is wired even when the dropdown is not: a deployment that turns the
     // value dropdown off still has a field somebody has to be able to reach and read.
   }
-  decorateSearchField(ctx, refs.searchInput, refs.searchAside);
+  decorateSearchField(ctx, refs.searchInput);
 
   // lens dropdown
   dis.listen(refs.lensBtn, "click", () => {
