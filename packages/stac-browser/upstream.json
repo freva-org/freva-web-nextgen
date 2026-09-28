@@ -2,7 +2,7 @@
   "$comment": "THE authoritative STAC Browser recipe, and the pin every script and test reads. Freva owns this centrally: no deployment forks it, copies its patches or keeps its own upstream pin. A deployment decides only whether the closed 'stac-browser' component is enabled and which STAC API it points at. Everything about HOW the application is constructed - revision, patches, toolchain, build settings, and the shape of the result - is recorded here and nowhere else. Changing any value is a reviewed source change; see UPSTREAM.md.",
   "schemaVersion": 1,
   "kind": "stac-browser-recipe",
-  "recipeVersion": "2609.3.0",
+  "recipeVersion": "2609.4.0",
   "name": "@radiantearth/stac-browser",
   "repository": "https://github.com/radiantearth/stac-browser.git",
   "tag": "v5.1.0",
@@ -177,8 +177,10 @@
     "schemaVersion": 1
   },
   "expected": {
-    "$comment": "The tree digest a verified preparation from these inputs produces on the recorded toolchain. It is an expectation, not a gate: upstream's bundler is not byte-reproducible across every environment, so preparation reports a mismatch loudly and the portal build still verifies the manifest it was actually given. A mismatch means 'find out why before shipping', not 'stop'.",
-    "materialsTreeDigest": "sha256:a9bb256ca49750ac5f42ff61ccfb28d220c6b04b815ee2f98a6d044286b326e8",
-    "fileCount": 667
+    "$comment": "What a verified preparation from these inputs produces. `patchedSourceDigest` is the patch RESULT (patchedTree.files by content) and a GATE: no toolchain changes it. `materialsTreeDigest` is the compiled output and an expectation, not a gate: preparation reports a mismatch with both toolchains, and the portal build verifies the manifest it was given. `recordedWith` is the toolchain both were recorded on. See UPSTREAM.md, 'Reproducibility'.",
+    "materialsTreeDigest": "sha256:ddecc957e44d580c0aa62847f75a5fe2acd5d77556b3106b695fa44ccc363adf",
+    "fileCount": 667,
+    "patchedSourceDigest": "sha256:66cc7f9bf9d3ea060d8efdb8377d9460eaef9cd87ef3e62e8643d8fdcb90ee1b",
+    "recordedWith": "node 24.21.0, npm 11.20.0, linux/x64"
   }
 }

@@ -17,6 +17,7 @@
  *   --out <dir>       where to write the materials (default: packages/stac-browser/materials)
  *   --upstream <dir>  an existing checkout or local mirror instead of a fetch; the commit is still
  *                     verified, so a mirror cannot substitute a different revision
+ *   $FREVA_STAC_CHECKOUT_DIR  where to keep the fetched checkout (default: <recipe>/.upstream)
  *   --cache-key       print the cache key for these inputs and exit, changing nothing
  *   --force           rebuild even if the compiled tree already verifies
  */
@@ -40,11 +41,15 @@ import {
   assertPinnedCheckout,
   assertToolchain,
   cacheKey,
+  checkoutVerdict,
+  claimCheckout,
   digestOfFile,
   git,
+  patchedSourceDigest,
   patchSeries,
   PKG_ROOT,
   readRecipe,
+  toolchainFingerprint,
 } from "./recipe.mjs";
 import { assertPublishable, publishStaged } from "./publish.mjs";
 
@@ -68,7 +73,12 @@ const OUT = resolve(value("out") ?? resolve(PKG_ROOT, "materials"));
 const MIRROR = value("upstream") ?? process.env.FREVA_STAC_UPSTREAM_DIR;
 // The VERIFIED SOURCE: read from, never written to after this point - not the shared `.upstream`
 // cache, not a caller's mirror. Patching and installing happen in the workspace below.
-const SOURCE = MIRROR ? resolve(MIRROR) : resolve(PKG_ROOT, ".upstream");
+// `FREVA_STAC_CHECKOUT_DIR` moves the fetched checkout elsewhere. Inside
+// `@freva-org/portal-builder` the recipe sits under `node_modules`, possibly read-only, so
+// `prepare-stac` points it beside the output.
+const SOURCE = MIRROR
+  ? resolve(MIRROR)
+  : resolve(process.env.FREVA_STAC_CHECKOUT_DIR ?? resolve(PKG_ROOT, ".upstream"));
 
 // The disposable workspace this run patches, installs and builds in. Building directly in
 // `SOURCE` would patch a supplied mirror and install `node_modules` into it, and two concurrent
@@ -84,6 +94,20 @@ process.on("exit", () => rmSync(WORKSPACE, { recursive: true, force: true }));
 
 /** Refuse an impossible destination before doing any work, not after the build. */
 assertPublishable(OUT, { packageRoot: PKG_ROOT });
+
+// ...and a checkout directory this run may not touch: one at the wrong revision is discarded, so a
+// supplied path is refused, before anything in it changes, unless this recipe fetched it.
+const CHECKOUT = MIRROR
+  ? "mirror"
+  : checkoutVerdict(SOURCE, { ownDefault: SOURCE === resolve(PKG_ROOT, ".upstream") });
+if (CHECKOUT === "refuse") {
+  throw new Error(
+    `${SOURCE} is not a checkout this recipe fetched, so it is neither reused nor deleted. ` +
+      "Point the checkout directory (FREVA_STAC_CHECKOUT_DIR, or prepare-stac --checkout-dir) at " +
+      "a new or empty directory, or pass an existing upstream checkout as --upstream: it is then " +
+      "verified and only read.",
+  );
+}
 
 const say = (line) => process.stdout.write(`[stac-prepare] ${line}\n`);
 const step = (n, line) => say(`${n}. ${line}`);
@@ -103,18 +127,20 @@ step(2, MIRROR ? `using the supplied checkout ${UPSTREAM}` : "fetching the pinne
 // An isolated directory, and a single-commit fetch rather than a clone - the smallest transfer
 // that still lets the object name be read. A mirror, for air-gapped CI, gets the same checks.
 if (!MIRROR) {
-  if (existsSync(resolve(SOURCE, ".git"))) {
+  // Only a checkout this recipe fetched gets here with contents (see CHECKOUT above).
+  if (CHECKOUT === "reuse") {
     try {
       assertPinnedCheckout(SOURCE, recipe);
-      say(".upstream is already at the pinned commit");
+      say(`the checkout at ${SOURCE} is already at the pinned commit`);
     } catch {
-      say(".upstream is at the wrong revision; discarding it and refetching");
+      say(`the checkout at ${SOURCE} is at the wrong revision; discarding it and refetching`);
       rmSync(SOURCE, { recursive: true, force: true });
     }
   }
   if (!existsSync(resolve(SOURCE, ".git"))) {
     mkdirSync(SOURCE, { recursive: true });
     git(["init", "--quiet"], SOURCE);
+    claimCheckout(SOURCE); // before the fetch, so a failed fetch leaves a checkout it may discard
     git(["remote", "add", "origin", recipe.repository], SOURCE);
     run("git", ["fetch", "--quiet", "--depth", "1", "origin", recipe.commit], SOURCE);
     git(["checkout", "--quiet", "FETCH_HEAD"], SOURCE);
@@ -187,6 +213,10 @@ run("node", [resolve(PKG_ROOT, "scripts", "build.mjs")], PKG_ROOT, {
   ...(flag("force") ? { FREVA_STAC_FORCE_BUILD: "1" } : {}),
 });
 
+// Re-read from the workspace, not taken from build.mjs's log: this is what provenance records.
+const patchedSource = patchedSourceDigest(UPSTREAM, recipe);
+const machine = toolchainFingerprint();
+
 step(5, "assembling verified materials");
 // Staged, not published: the containment assertions and the provenance record below belong to the
 // staged tree, and only a tree that passes all of them is renamed into place.
@@ -255,7 +285,8 @@ const provenance = {
     affects: p.affects,
     owner: p.owner,
   })),
-  toolchain: { node: process.versions.node },
+  toolchain: machine,
+  patchedSourceDigest: patchedSource,
   build: { mode: recipe.buildMode, env: recipe.build.env },
   cacheKey: key,
   cacheKeyParts: parts,
@@ -281,12 +312,24 @@ say(`published to ${OUT}`);
 // artifact's own provenance record and copies nothing.
 
 if (manifest.treeDigest !== recipe.expected.materialsTreeDigest) {
+  // build.mjs already gated the patched source, so a tree mismatch here is the bundler's output,
+  // not a different patch result. The note shows both toolchains.
+  const recorded = recipe.expected.recordedWith;
   say("");
   say(`NOTE: the prepared tree digest is ${manifest.treeDigest}`);
   say(`      the recipe expects           ${recipe.expected.materialsTreeDigest}`);
-  say("      Upstream's bundler is not byte-reproducible across every environment, so this is a");
-  say("      signal rather than a failure. Find out why before shipping: a different toolchain is");
-  say("      an explanation, a different patch result is not.");
+  say(
+    `      patched source:              ${patchedSource} ` +
+      (recipe.expected.patchedSourceDigest ? "(matches the recipe)" : "(the recipe records none)"),
+  );
+  say(
+    `      this toolchain:              node ${machine.node}, npm ${machine.npm}, ` +
+      `${machine.platform}/${machine.arch}`,
+  );
+  if (recorded) say(`      recorded on:                 ${recorded}`);
+  say("      The patch result is identical, so the difference is in what upstream's bundler");
+  say("      emitted on this machine. Compare the two materials.json file lists to see which");
+  say("      assets differ; UPSTREAM.md, 'Reproducibility', lists what has been ruled out.");
 }
 
 say("");

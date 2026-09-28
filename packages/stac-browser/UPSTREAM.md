@@ -45,7 +45,7 @@ requested" means deployment build time.
 | `build`                       | mode, install command and the environment the recorded output was produced with                                                                                                      |
 | `output`                      | the shape the result must have: entry and stylesheet patterns, required and forbidden files                                                                                          |
 | `adapterContract`             | the reviewed upstream option surface, for exactly this pin                                                                                                                           |
-| `expected`                    | the tree digest a verified preparation produces, as a signal rather than a gate                                                                                                      |
+| `expected`                    | the patch result (`patchedSourceDigest`, a gate), the tree digest (a signal) and the toolchain they were recorded on (`recordedWith`)                                                |
 
 Institution-specific values - catalogue URL, title, logo, route, labels - are **not** here and are
 never patched into upstream source. They are consumer configuration, validated by the closed portal
@@ -58,6 +58,8 @@ package build, or any test that is not about STAC:
 
 ```bash
 npm run stac:prepare -- --out /tmp/stac-materials
+# or, without this repository (@freva-org/portal-builder ships the recipe):
+npx freva-portal-builder prepare-stac --out /tmp/stac-materials
 ```
 
 It, in order: checks the toolchain and the patch digests; fetches the pinned commit into an
@@ -99,6 +101,32 @@ npm run stac:prepare -- --upstream /srv/mirrors/stac-browser --out /tmp/stac-mat
 A supplied checkout is held to the same verification: it must resolve to the pinned commit and
 carry the recorded lockfile and licence.
 
+### Reproducibility
+
+A tree-digest mismatch has two possible causes, and preparation tells them apart:
+
+1. **The patch result** (`patchedSourceDigest`): every file in `patchedTree.files`, by content,
+   after the series and the runtime-config toggle. It depends only on the commit and the patches,
+   so it is a **gate** that stops the build before `npm ci`. The usual cause of a mismatch is git's
+   line-ending conversion (`core.autocrlf`, `.gitattributes`) or a checkout modified after
+   verification.
+2. **The compiled tree** (`materialsTreeDigest`): what upstream's bundler emitted. Reported, not
+   enforced; the note prints the patched-source digest, this machine's toolchain and
+   `expected.recordedWith`.
+
+Upstream's `vite.config.js` compiles every `SB_*` variable into the bundle and reads `SB_CONFIG`,
+`DYNAMIC_CONFIG` and `STAC_BROWSER_E2E`, so the build runs without them, plus the recipe's own
+`build.env` (`upstreamBuildEnv` in `scripts/recipe.mjs`): a shell or CI variable cannot change the
+bytes or the configuration visitors get.
+
+For v5.1.0 (`c78b78f`) the tree `sha256:ddecc957…` (667 files) is reproduced byte for byte on
+Node 22.22.2 / npm 10.9.7, Node 24.21.0 / npm 10.9.7 and Node 24.21.0 / npm 11.20.0 (linux/x64),
+with and without `CI=true`.
+
+A patch changed on purpose changes the patch result: update the patch digest, clear
+`expected.patchedSourceDigest` in the same commit, prepare, and record with
+`node packages/stac-browser/scripts/pin.mjs --materials <dir>`. `pin.mjs --commit` clears it itself.
+
 ### The cache key
 
 ```bash
@@ -106,7 +134,9 @@ npm run stac:cache-key
 ```
 
 Derived from the upstream commit, the upstream lockfile digest, the ordered patch digests, the
-recipe version and the Node/npm major versions - everything that can change the bytes. A private CI
+recipe version, a digest of the preparation scripts (`procedure=`, see `PROCEDURE_SCRIPTS` in
+`scripts/recipe.mjs`) and the Node/npm major versions - everything that can change the bytes. A
+directory prepared by another procedure never counts as prepared. A private CI
 cache may reuse a result under a matching key. It may never reuse one whose manifest or tree digest
 does not verify, and the portal build re-verifies both regardless: a key match is permission to
 skip the work, never the verification.
@@ -217,7 +247,8 @@ node packages/stac-browser/scripts/pin.mjs --materials <dir>
 The first moves commit, tag, lockfile digest, `adapterContract.upstream` and the root README's
 link to upstream at the pin. Preparation then
 verifies the licence and every patch digest, applies the series and builds; a patch that no longer
-applies stops it. The last records the expected tree digest. A changed licence digest or patch
+applies stops it. The last records the tree digest, the patch result and `recordedWith`. A
+changed licence digest or patch
 digest is always edited by a person.
 
 Then: run the browser, accessibility, routing and containment suites, and regenerate the SBOM and

@@ -18,7 +18,14 @@
  * reviewer's diff shows exactly the fields that moved.
  */
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,7 +110,9 @@ function pinRelease(commit, tag) {
     const lockfileDigest = digestOfFile(join(work, recipe.lockfile));
     const licenseDigest = digestOfFile(join(work, recipe.licenseFile));
 
-    rewrite(RECIPE_FILE, { commit, tag, lockfileDigest });
+    // The recorded patch result is the OLD commit's and a gate: it would stop the preparation that
+    // records the new one. `--materials` writes it again.
+    rewrite(RECIPE_FILE, { commit, tag, lockfileDigest, patchedSourceDigest: "" });
     rewrite(CONTRACT_FILE, { commit, tag });
     writeFileSync(README_FILE, setReadmePin(readFileSync(README_FILE, "utf-8"), commit));
     writeFileSync(NOTICE_FILE, setNoticePin(readFileSync(NOTICE_FILE, "utf-8"), commit, tag));
@@ -121,14 +130,28 @@ function pinRelease(commit, tag) {
   }
 }
 
+/** One line, so `setField` can move it like every other recorded value. */
+export function describeToolchain(toolchain) {
+  return `node ${toolchain.node}, npm ${toolchain.npm}, ${toolchain.platform}/${toolchain.arch}`;
+}
+
 function recordMaterials(dir) {
   const manifest = JSON.parse(readFileSync(join(dir, "materials.json"), "utf-8"));
-  rewrite(RECIPE_FILE, {
+  // PROVENANCE.json carries the patch result and the toolchain; without them only the tree moves.
+  const provenancePath = join(dir, "PROVENANCE.json");
+  const provenance = existsSync(provenancePath)
+    ? JSON.parse(readFileSync(provenancePath, "utf-8"))
+    : {};
+  const fields = {
     materialsTreeDigest: manifest.treeDigest,
     fileCount: manifest.files.length,
-  });
+  };
+  if (provenance.patchedSourceDigest) fields.patchedSourceDigest = provenance.patchedSourceDigest;
+  if (provenance.toolchain) fields.recordedWith = describeToolchain(provenance.toolchain);
+  rewrite(RECIPE_FILE, fields);
   output("tree", manifest.treeDigest);
   output("files", manifest.files.length);
+  if (provenance.patchedSourceDigest) output("patched", provenance.patchedSourceDigest);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
