@@ -41,11 +41,12 @@ export function git(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf-8" }).trim();
 }
 
-export function run(cmd, args, cwd, env = {}) {
+export function run(cmd, args, cwd, env = {}, { inherit = true } = {}) {
   execFileSync(cmd, args, {
     cwd,
     stdio: "inherit",
-    env: { ...process.env, ...env },
+    // `inherit: false` passes exactly `env`, for the upstream build (see `upstreamBuildEnv`).
+    env: inherit ? { ...process.env, ...env } : env,
   });
 }
 

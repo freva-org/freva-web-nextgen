@@ -36,9 +36,11 @@ import {
   assertLicense,
   assertLockfile,
   assertPatchDigests,
+  assertPatchedSource,
   assertToolchain,
   patchSeries,
   readRecipe,
+  upstreamBuildEnv,
 } from "./recipe.mjs";
 
 const pin = readPin();
@@ -208,6 +210,9 @@ if (violations.length) {
     `index.html was changed beyond removing the RC comment markers: ${violations.join(" | ")}`,
   );
 }
+// The patch RESULT, by content: a gate, because no toolchain can change it (see recipe.mjs).
+const patchedSource = assertPatchedSource(SRC, recipe);
+console.log(`[stac-browser] patched source ${patchedSource}`);
 
 // 2. Install upstream's own pinned dependency tree: `npm ci` inside .upstream against upstream's
 // package-lock.json, deliberately NOT hoisted into the Freva root lockfile. STAC Browser's ~800
@@ -218,16 +223,17 @@ if (!existsSync(resolve(SRC, "node_modules"))) {
 }
 
 // 3. Build.
-const env = {
+const env = upstreamBuildEnv(process.env, {
   DYNAMIC_CONFIG: "true",
   SB_pathPrefix: pin.config.pathPrefix,
   SB_historyMode: pin.config.historyMode,
   SB_catalogTitle: pin.config.catalogTitle,
   // Vite reads NODE_ENV; keep the build deterministic regardless of the caller.
   NODE_ENV: "production",
-};
+});
 console.log(`[stac-browser] building ${pin.tag} (${pin.buildMode} mode)`);
-run("npm", ["run", `build:${pin.buildMode}`], SRC, env);
+// Exactly `env`: an inherited `SB_*` variable would be compiled into the bundle as configuration.
+run("npm", ["run", `build:${pin.buildMode}`], SRC, env, { inherit: false });
 
 // 4. Assemble dist/.
 const built = resolve(SRC, "dist");
