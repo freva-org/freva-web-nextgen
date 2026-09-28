@@ -1,22 +1,12 @@
-// What a reader downloads, in three kinds, each with its own reviewed ceiling.
+// What a reader downloads, measured as three things they experience differently: the base
+// page (fetched on load), lazy chunks (fetched only when something asks, like the Python
+// playground) and the external runtime (Pyodide, from a CDN, not emitted here).
 //
-// One number summing every `.js` and `.css` file under `_portal/` is only fair while
-// everything the compiler emits is also everything a page loads, and a feature whose whole
-// point is that it is NOT loaded breaks that: the documented Python playground is a quarter
-// of a megabyte no visitor fetches unless they press a button. Exempting those bytes leaves a
-// hole in the budget; raising the ceiling for everybody stops the base-page budget bounding
-// the base page. So the artifact is measured as three things a reader experiences differently:
-//
-//   1. THE BASE PAGE - what a browser fetches to render a page, before any interaction.
-//      Bounded strictly, because every visitor pays it on every page, and measured per page
-//      and reported for the heaviest: a sum would charge one visitor for another's page.
-//   2. LAZY CHUNKS - emitted code no page references, fetched only when something asks for it:
-//      the Data Browser's metadata tables, the Python playground's console and Worker. Bounded
-//      per feature as well as in total, because "it is lazy" is a reason to weigh it
-//      differently and not a reason to stop weighing it.
-//   3. THE EXTERNAL RUNTIME - Pyodide and its wheels, which this build neither emits nor can
-//      bound: they come from a CDN at the version `@freva-org/browser-python` pins. Recorded
-//      in `budgets.json` as a documented figure, not a gate, since it cannot be measured here.
+// Measured, not limited: there are no size ceilings. They failed builds over a few hundred bytes
+// of deliberate features, and a feature's weight depends on what else a portal enables, so no
+// single number fit every portal. The measurement stays because the tests use it to check
+// structure: a page without Python fetches none of its chunks, and every lazy chunk is charged
+// to the feature that loads it.
 //
 // WHAT DECIDES WHICH IS WHICH is the emitted HTML, not the module graph. Astro hoists the CSS
 // of anything reachable from a page's client graph - including through a dynamic import - into
@@ -25,36 +15,11 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import type { Diagnostic } from "../diagnostics.js";
-import { SCHEMA_DIR } from "../util/package.js";
 import type { ComponentEvidence } from "./evidence.js";
 
 export interface FeatureBudget {
   javascript: number;
   css: number;
-}
-
-export interface Budgets {
-  schemaVersion: 2;
-  basePage: { javascript: number; css: number };
-  lazy: { javascript: number; css: number; features: Record<string, FeatureBudget> };
-  components: Record<string, { javascript: number }>;
-  /** Documented, not enforced: this build does not emit it and cannot measure it. */
-  externalRuntime?: Record<string, unknown>;
-}
-
-let cached: Budgets | undefined;
-
-export function loadBudgets(): Budgets {
-  if (!cached) {
-    cached = JSON.parse(readFileSync(join(SCHEMA_DIR, "budgets.json"), "utf8")) as Budgets;
-  }
-  return cached;
-}
-
-/** For tests that write their own `budgets.json`; the loader caches by design. */
-export function resetBudgetCache(): void {
-  cached = undefined;
 }
 
 export interface BudgetInput {
@@ -101,7 +66,7 @@ export interface BudgetReport {
  * An asset reference in emitted HTML, matched by SUFFIX rather than from the root. A portal
  * published under a base path writes `/site/_portal/entry.js`, which an expression anchored at
  * `/_portal/` would not match: every asset would look lazy, the base page would measure zero,
- * and a nested-mount build would fail its lazy budget with its own eager stylesheet. The
+ * and a nested-mount build would count its own eager stylesheet as lazy. The
  * artifact-relative path is the part from `_portal/` onwards, whatever prefix mounts it.
  */
 const HTML_ASSET = /(?:src|href)\s*=\s*"[^"]*?(_portal\/[^"]+)"/g;
@@ -264,88 +229,6 @@ export function measureArtifact(input: BudgetInput): BudgetReport {
     },
     features,
   };
-}
-
-export function checkBudgets(input: BudgetInput): Diagnostic[] {
-  const budgets = loadBudgets();
-  const diagnostics: Diagnostic[] = [];
-  const report = measureArtifact(input);
-
-  const over = (what: string, actual: number, limit: number, hint?: string): void => {
-    if (actual <= limit) return;
-    diagnostics.push({
-      code: "FP1407",
-      severity: "error",
-      message: `${what} is ${actual} bytes, above the reviewed budget of ${limit} bytes.`,
-      hint:
-        hint ??
-        "Reduce the bundle, or change the budget in schema/budgets.json with a reason in the pull request.",
-    });
-  };
-
-  // The heaviest page, not the sum of every page. A budget on the sum charges one visitor for
-  // a page they will never open, and gets steadily harder to meet as a site publishes more
-  // content, which would make "add a documentation page" a bundle-size decision.
-  const heaviest = report.pages[0];
-  if (heaviest) {
-    over(
-      `Base-page JavaScript (heaviest page: ${heaviest.page})`,
-      heaviest.javascript,
-      budgets.basePage.javascript,
-      "This is what every visitor downloads before interacting. Move work behind a dynamic import, or change schema/budgets.json with a reason.",
-    );
-    over(
-      `Base-page CSS (heaviest page: ${heaviest.page})`,
-      heaviest.css,
-      budgets.basePage.css,
-      "This is what every visitor downloads before interacting. Move stylesheets off the eager path, or change schema/budgets.json with a reason.",
-    );
-  }
-
-  // THE AGGREGATE FAILURE SAYS WHERE THE BYTES ARE. "983497 is above 983040" answers nothing:
-  // the number is a sum over every optional feature in the build, and a consumer reading it in
-  // their own CI cannot tell whether the interpreter grew, or the Data Browser did, or they
-  // enabled something. So the message carries the breakdown the report already holds: per
-  // feature, largest first, with the unattributed remainder named as such rather than left as
-  // the difference between two numbers nobody printed.
-  const breakdown = Object.entries(report.features)
-    .map(([feature, totals]) => [feature, totals.javascript] as const)
-    .sort((a, b) => b[1] - a[1]);
-  const attributed = breakdown.reduce((sum, [, bytes]) => sum + bytes, 0);
-  const unattributed = report.lazyTotals.javascript - attributed;
-  const where = [
-    ...breakdown.map(([feature, bytes]) => `${feature} ${bytes}`),
-    ...(unattributed > 0 ? [`unattributed ${unattributed}`] : []),
-  ].join(", ");
-  over(
-    "Lazily loaded JavaScript",
-    report.lazyTotals.javascript,
-    budgets.lazy.javascript,
-    `Where it is: ${where}. Each optional feature also has its own ceiling in ` +
-      "schema/budgets.json; this total is those plus an allowance for what the edge walk cannot " +
-      "attribute. Reduce the feature that grew, or change the budget with a reason.",
-  );
-  over("Lazily loaded CSS", report.lazyTotals.css, budgets.lazy.css);
-
-  for (const [feature, limit] of Object.entries(budgets.lazy.features)) {
-    const actual = report.features[feature];
-    if (!actual) continue;
-    over(`Lazily loaded JavaScript for '${feature}'`, actual.javascript, limit.javascript);
-    over(`Lazily loaded CSS for '${feature}'`, actual.css, limit.css);
-  }
-
-  // A component's share is the rendered size of the modules it owns. Charging it for the whole
-  // shared chunk would make every component look like every other one, the same as having no
-  // per-component budget at all.
-  for (const component of input.components) {
-    if (!component.enabled) continue;
-    const limit = budgets.components[component.kind]?.javascript;
-    if (limit === undefined) continue;
-    const bytes = component.modules.reduce((n, id) => n + (input.moduleBytes[id] ?? 0), 0);
-    over(`Component '${component.id}' JavaScript`, bytes, limit);
-  }
-
-  return diagnostics;
 }
 
 /** Kept so a caller that only wants the file list does not need `node:fs` of its own. */
