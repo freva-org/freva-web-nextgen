@@ -167,6 +167,18 @@ function setCaretOffsetIn(host: HTMLElement, offset: number): void {
   setSelectionIn(host, offset, offset);
 }
 
+/** Keys whose default action moves the caret without changing the buffer. */
+const NAVIGATION_KEYS = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+]);
+
 export class Editor {
   /** The whole editable region (prefix + command). */
   readonly root: HTMLElement;
@@ -257,12 +269,15 @@ export class Editor {
         this.composing = false;
         emitInput();
       });
-      dis.listen(node, "keydown", (e) => hooks.onKeyDown(e as KeyboardEvent));
-      dis.listen(node, "keyup", (e) => {
-        const k = (e as KeyboardEvent).key;
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(k)) {
-          hooks.onCaretMove();
+      dis.listen(node, "keydown", (e) => {
+        const ke = e as KeyboardEvent;
+        hooks.onKeyDown(ke);
+        if (!ke.defaultPrevented && NAVIGATION_KEYS.has(ke.key)) {
+          dis.setTimeout(() => hooks.onCaretMove(), 0);
         }
+      });
+      dis.listen(node, "keyup", (e) => {
+        if (NAVIGATION_KEYS.has((e as KeyboardEvent).key)) hooks.onCaretMove();
       });
       dis.listen(node, "click", () => hooks.onCaretMove());
       dis.listen(node, "focus", () => hooks.onFocus());

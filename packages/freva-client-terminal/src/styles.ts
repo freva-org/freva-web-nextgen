@@ -629,6 +629,17 @@ export const STYLES = `/* styles.css - @freva-org/freva-client-terminal. Scoped 
 .freva-term .py-ghost {
   color: #4d5d78;
 }
+
+.freva-term .te-input::selection,
+.freva-term .py-input::selection {
+  color: transparent;
+}
+.freva-term :is(.te-hl, .py-hl) > .te-caret {
+  margin-right: -7px;
+}
+.freva-term :is(.te-hl, .py-hl) > .te-caret + .te-ghost {
+  padding-left: 7px;
+}
 .freva-term .py-out {
   color: #aeb9cf;
   margin: 0 0 2px;
