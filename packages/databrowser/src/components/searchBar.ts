@@ -373,72 +373,11 @@ function typedPlaceholder(ctx: AppContext, input: HTMLInputElement, dis: Disposa
   });
 }
 
-/* The keyboard hint.
- *
- * `⌘K` on a Mac and `Ctrl K` everywhere else - the modifier a visitor's own keyboard actually has.
- * Printing one of the two on every platform is how a hint becomes a thing people try once.
- */
-
-/** True when the visitor is on an Apple keyboard layout, by the least-deprecated means available. */
-export function isAppleKeyboard(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const data = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
-  const platform = data?.platform ?? navigator.platform ?? "";
-  return /mac|iphone|ipad|ipod/i.test(platform);
-}
-
 /**
- * The hint element, plus the shortcut that makes it true.
- *
- * The listener is on the OWNING DOCUMENT rather than the field, because the point of the shortcut
- * is to reach the field from somewhere else on the page. It stands down while the visitor is typing
- * into some other field: stealing a keystroke out of a textarea to focus a search box is the kind
- * of helpfulness that loses somebody a paragraph.
- */
-function keyboardHint(input: HTMLInputElement, dis: Disposables): HTMLElement {
-  const apple = isAppleKeyboard();
-  const hint = el("span", { class: "search-kbd", "aria-hidden": "true" }, [
-    el("kbd", { text: apple ? "⌘" : "Ctrl" }),
-    el("kbd", { text: "K" }),
-  ]);
-  // Announced once, on the field itself, rather than by the decorative glyphs above.
-  const existing = input.getAttribute("aria-label") ?? "";
-  input.setAttribute("aria-keyshortcuts", apple ? "Meta+K" : "Control+K");
-  input.setAttribute("aria-label", `${existing} (${apple ? "Command" : "Control"}+K)`.trim());
-
-  dis.listen(input.ownerDocument, "keydown", (event) => {
-    const ke = event as KeyboardEvent;
-    if (ke.key !== "k" && ke.key !== "K") return;
-    if (apple ? !ke.metaKey : !ke.ctrlKey) return;
-    if (ke.altKey) return;
-    if (!input.isConnected) return;
-    const active = input.ownerDocument.activeElement as HTMLElement | null;
-    const typingElsewhere =
-      active !== null &&
-      active !== input &&
-      (active.tagName === "TEXTAREA" ||
-        (active.tagName === "INPUT" && (active as HTMLInputElement).type !== "checkbox") ||
-        active.isContentEditable);
-    if (typingElsewhere) return;
-    ke.preventDefault();
-    input.focus();
-    input.select();
-  });
-  return hint;
-}
-
-/**
- * Wire the field's own furniture: the typed placeholder and the keyboard hint.
- *
  * Separate from `createValueSearch` because they are separate concerns with separate failure
  * modes - a deployment with `features.search` off still has a field it can focus - and because the
  * dropdown is the part with the interesting logic and does not need a timer in the middle of it.
  */
-export function decorateSearchField(
-  ctx: AppContext,
-  input: HTMLInputElement,
-  slot: HTMLElement,
-): void {
+export function decorateSearchField(ctx: AppContext, input: HTMLInputElement): void {
   typedPlaceholder(ctx, input, ctx.dis);
-  slot.appendChild(keyboardHint(input, ctx.dis));
 }
