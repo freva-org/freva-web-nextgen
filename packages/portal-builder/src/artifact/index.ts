@@ -50,7 +50,6 @@ import {
   type ManifestInputs,
 } from "./manifests.js";
 import { validateAgainst } from "../config/schema.js";
-import { checkBudgets } from "./budgets.js";
 import type { ComponentEvidence } from "./evidence.js";
 import { MATERIALS_MANIFEST } from "../model/python-materials.js";
 import { containStylesheet } from "../components/stac-browser/containment.js";
@@ -72,9 +71,8 @@ export interface BuildResult {
   graph?: GraphRecord;
   /**
    * What each component and feature owns in this artifact. Returned so a caller can measure
-   * the build the way the build measures itself: the budget report attributes lazily loaded
-   * chunks to the feature that pulled them in, and that attribution comes from here rather
-   * than from a file-name guess.
+   * the build's weight: `measureArtifact` attributes lazily loaded chunks to the feature that
+   * pulled them in, and that attribution comes from here rather than from a file-name guess.
    */
   evidence?: ComponentEvidence[];
   /**
@@ -284,7 +282,7 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
     // every selector to the mount without changing its specificity;
     // `src/components/stac-browser/containment.ts` has the measurement and the reasoning
     // behind the two rewrite shapes. It happens HERE, at the copy, and not at any later step:
-    // what lands in `tempOut` is what `collect()` hashes, budgets and writes into
+    // what lands in `tempOut` is what `collect()` hashes and writes into
     // `checksums.sha256`, so the contained bytes are the identified ones. A pass running
     // afterwards would leave the artifact's own verifier describing a file that is gone.
     const escapes: string[] = [];
@@ -321,9 +319,8 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   }
 
   // The Python playground's materials, copied HERE, and the position is the whole point:
-  // before `collect()`, before the manifests, before the budgets and before
-  // `checksums.sha256`, so the wheels and add-on artefacts are hashed, listed, budgeted and
-  // checksummed exactly like every other file in the artifact. Arriving later - copied in by
+  // before `collect()`, before the manifests and before `checksums.sha256`, so
+  // the wheels and add-on artefacts are hashed, listed and checksummed exactly like every other file in the artifact. Arriving later - copied in by
   // a deployment script after the builder finished - makes the artifact's own verifier report
   // `FP1603 freva-wheels/…whl: … is in the artifact but not in checksums.sha256`. Copying
   // them from the plan rather than from a directory listing is deliberate too: what lands in
@@ -380,7 +377,7 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   }
 
   // The separate-origin playground's deployment description, written BEFORE the manifests so
-  // the two files it produces are themselves checksummed, budgeted and listed like everything
+  // the two files it produces are themselves checksummed and listed like everything
   // else in the artifact. A deployment description the artifact's own manifest did not cover
   // would be a file with no provenance.
   const deployment = describePlaygroundDeployment(
@@ -459,18 +456,6 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
     const result = validateAgainst(schema, parsed, name);
     bag.merge(result.diagnostics);
   }
-
-  bag.merge(
-    checkBudgets({
-      files: manifestInputs.files,
-      // The artifact itself is what says which assets a page asks for; see `budgets.ts`.
-      artifactDir: tempOut,
-      components: evidence.components,
-      moduleBytes: graph.moduleBytes,
-      preparedRoots: model.componentEvidencePlan.flatMap((plan) => plan.ownedStaticRoots),
-      chunkEdges: graph.chunks,
-    }),
-  );
 
   const finalFiles = collect();
   write("checksums.sha256", checksumFile(finalFiles));
