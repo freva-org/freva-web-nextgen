@@ -1,5 +1,11 @@
 # @freva-org/portal-builder
 
+## 2609.1.1
+
+### Patch Changes
+
+- ca14d7f: fix the OS detection on browser-python: `pythonPlayground.terminal.osControls: auto` detects the platform the same way as the Data Browser's terminal
+
 ## 2609.1.0
 
 ### Minor Changes
