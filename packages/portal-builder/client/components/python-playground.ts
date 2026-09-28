@@ -40,6 +40,7 @@ import type {
   TryPythonRequest,
 } from "../python-bridge.js";
 import { pythonBlocks } from "../python-bridge.js";
+import { osControlsFor } from "./os-controls-core.js";
 
 export type { ExampleSource, PlaygroundState, PythonPlaygroundConfig, TryPythonRequest };
 
@@ -194,15 +195,6 @@ function appearanceStorage(remember: boolean) {
     getTextScale: () => number("scale"),
     setTextScale: (s: number) => write("scale", String(s)),
   };
-}
-
-/** `auto` asks the platform; anything else is what the portal said. */
-function osControls(configured: PythonPlaygroundConfig["terminal"]["osControls"]): string {
-  if (configured !== "auto") return configured;
-  const platform = navigator.platform || navigator.userAgent || "";
-  if (/Mac|iPhone|iPad/i.test(platform)) return "mac";
-  if (/Win/i.test(platform)) return "windows";
-  return "linux";
 }
 
 export function createPythonPlayground(
@@ -1138,7 +1130,7 @@ export function createPythonPlayground(
       layer = mountLayer(shell, config.terminal.alwaysOnTop ? "always-on-top" : "floating");
 
       const handle = createTerminalWindow(shell, {
-        os: osControls(config.terminal.osControls),
+        os: osControlsFor(config.terminal.osControls),
         bounds: () => shell.parentElement,
         storage: appearanceStorage(config.terminal.rememberAppearance),
         dragExclude: ".portal-python-tab",
