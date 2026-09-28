@@ -1,5 +1,14 @@
 # @freva-org/portal-builder
 
+## 2609.0.6
+
+### Patch Changes
+
+- Updated dependencies [f4c59b4]
+- Updated dependencies [e8e0509]
+  - @freva-org/databrowser@2609.1.2
+  - @freva-org/browser-python@2609.0.4
+
 ## 2609.0.5
 
 ### Patch Changes
