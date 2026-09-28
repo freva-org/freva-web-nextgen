@@ -1,5 +1,11 @@
 # @freva-org/portal-builder
 
+## 2609.1.0
+
+### Minor Changes
+
+- b8940dc: Runnable snippets show Copy and Try in Python at all times and can be editable, add per-mode page colours, add sign-in
+
 ## 2609.0.6
 
 ### Patch Changes
