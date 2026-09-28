@@ -637,6 +637,81 @@ describe("history interaction", () => {
   });
 });
 
+describe("moving between the lines of a multi-line buffer", () => {
+  const BLOCK = "for i in range(3):\n    total = i\nprint(total)";
+
+  it("Up moves to the line above at the same column, and stops at the first line", () => {
+    const { controller, surface } = build();
+    surface.setCommand(BLOCK); // caret at the end of `print(total)`, column 12
+    expect(controller.lineUpOrHistory()).toBe(true);
+    expect(surface.cursor).toBe(BLOCK.indexOf("    total") + 12);
+    expect(controller.lineUpOrHistory()).toBe(true);
+    expect(surface.cursor).toBe(12); // `for i in range(3):`, column 12
+    expect(surface.command).toBe(BLOCK);
+    // On the first line Up is history, which (filtered by the typed block) has nothing: the key is
+    // not taken and the block is untouched.
+    expect(controller.lineUpOrHistory()).toBe(false);
+    expect(surface.command).toBe(BLOCK);
+  });
+
+  it("clamps the column to a shorter line", () => {
+    const { controller, surface } = build();
+    surface.setCommand("a_long_first_line\nx");
+    expect(controller.lineUpOrHistory()).toBe(true);
+    expect(surface.cursor).toBe(1);
+    surface.setCursor(15);
+    expect(controller.lineDownOrHistory()).toBe(true);
+    expect(surface.cursor).toBe("a_long_first_line\nx".length);
+  });
+
+  it("Down moves to the line below, and history only from the last line", async () => {
+    const { controller, surface } = build();
+    await controller.submit("older = 1");
+    await controller.submit("newer = 2");
+    controller.historyPrevious();
+    controller.historyPrevious();
+    expect(surface.command).toBe("older = 1");
+    surface.setCommand(BLOCK);
+    surface.setCursor(4); // `for |i`
+    expect(controller.lineDownOrHistory()).toBe(true);
+    expect(surface.cursor).toBe(BLOCK.indexOf("\n") + 1 + 4);
+    expect(controller.lineDownOrHistory()).toBe(true);
+    expect(surface.cursor).toBe(BLOCK.lastIndexOf("\n") + 1 + 4);
+    expect(surface.command).toBe(BLOCK);
+    expect(controller.lineDownOrHistory()).toBe(true);
+    expect(surface.command).toBe("newer = 2");
+  });
+
+  it("a recalled block is walked line by line before the next entry up", async () => {
+    const { controller, surface } = build();
+    await controller.submit("older = 1");
+    await controller.execute("x = 1\ny = 2");
+    expect(controller.lineUpOrHistory()).toBe(true);
+    const recalled = surface.command;
+    expect(recalled).toContain("x = 1\ny = 2");
+    // Up from the recalled block's last line stays inside the block ...
+    while (
+      surface.command === recalled &&
+      surface.command.lastIndexOf("\n", surface.cursor - 1) !== -1
+    ) {
+      expect(controller.lineUpOrHistory()).toBe(true);
+    }
+    expect(surface.command).toBe(recalled);
+    // ... and from its first line reaches the entry before it.
+    expect(controller.lineUpOrHistory()).toBe(true);
+    expect(surface.command).toBe("older = 1");
+  });
+
+  it("a single-line buffer is history at once, as before", async () => {
+    const { controller, surface } = build();
+    await controller.submit("older = 1");
+    surface.setCommand("old");
+    surface.setCursor(1);
+    expect(controller.lineUpOrHistory()).toBe(true);
+    expect(surface.command).toBe("older = 1");
+  });
+});
+
 describe("lifecycle", () => {
   it("detach removes every subscription and leaves the engine alone", () => {
     const { controller, engine } = build();

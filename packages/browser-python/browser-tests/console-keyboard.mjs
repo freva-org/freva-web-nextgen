@@ -235,6 +235,48 @@ const result = await inBrowser(
         detail: JSON.stringify({ ctrlP, ctrlN }),
       });
 
+      // multi-line: the arrows move between the block's lines before they reach history
+
+      await press("Control+c");
+      await reset();
+      await type("x = 1");
+      await press("Shift+Enter");
+      await type("y = 2");
+      await press("ArrowUp");
+      const lineUp = (await look()).command.trim();
+      await press("ArrowDown");
+      const lineDown = (await look()).command.trim();
+      await press("Enter");
+      const ranBlock = (await look()).pushes;
+      checks.push({
+        name: "in a multi-line buffer Up and Down move between its lines, not through history",
+        pass: lineUp === "x = 1" && lineDown === "y = 2" && ranBlock.includes("x = 1\ny = 2"),
+        detail: JSON.stringify({ lineUp, lineDown, ranBlock }),
+      });
+
+      // …and a recalled block is walked line by line before the entry above it.
+      await press("ArrowUp");
+      const recalledLast = (await look()).command.trim();
+      await press("ArrowUp");
+      const recalledFirst = (await look()).command.trim();
+      await press("ArrowUp");
+      const olderEntry = (await look()).command.trim();
+      checks.push({
+        name: "Up walks a recalled block's lines first, then the entry before it",
+        pass: recalledLast === "y = 2" && recalledFirst === "x = 1" && olderEntry === "second = 2",
+        detail: JSON.stringify({ recalledLast, recalledFirst, olderEntry }),
+      });
+      // Ctrl+P stays history even inside a block.
+      await press("Control+c");
+      await press("ArrowUp");
+      await press("Control+p");
+      const ctrlPFromBlock = (await look()).command.trim();
+      checks.push({
+        name: "Ctrl+P leaves a multi-line block for the previous entry in one key",
+        pass: ctrlPFromBlock === "second = 2",
+        detail: ctrlPFromBlock,
+      });
+
       // prefix navigation
 
       await press("Control+c");

@@ -962,6 +962,43 @@ export class ConsoleController {
     return true;
   }
 
+  /**
+   * Up in a multi-line buffer: the caret moves to the line above, at the same column where that
+   * line is long enough. Only on the first line does it recall history, so a recalled block can be
+   * edited line by line instead of being replaced by the next entry up.
+   */
+  lineUpOrHistory(): boolean {
+    return this.#moveLine(-1) || this.historyPrevious();
+  }
+
+  /** Down: the line below, and history only from the last line. */
+  lineDownOrHistory(): boolean {
+    return this.#moveLine(1) || this.historyNext();
+  }
+
+  /** Moves the caret one line in `step`'s direction; false when there is no line there. */
+  #moveLine(step: -1 | 1): boolean {
+    const text = this.#surface.getCommand();
+    if (!text.includes("\n")) return false;
+    const caret = this.#surface.getCursor();
+    const start = text.lastIndexOf("\n", caret - 1) + 1;
+    const column = caret - start;
+    let target: number;
+    if (step < 0) {
+      if (start === 0) return false;
+      const above = text.lastIndexOf("\n", start - 2) + 1;
+      target = above + Math.min(column, start - 1 - above);
+    } else {
+      const end = text.indexOf("\n", caret);
+      if (end === -1) return false;
+      const below = end + 1;
+      const belowEnd = text.indexOf("\n", below);
+      target = below + Math.min(column, (belowEnd === -1 ? text.length : belowEnd) - below);
+    }
+    this.#surface.setCursor(target);
+    return true;
+  }
+
   /** The ghost suffix for what is currently typed. Never modifies the buffer. */
   refreshSuggestion(): void {
     if (this.#search) return; // reverse search owns the line while it is open
