@@ -8,10 +8,12 @@ import {
   DEFAULT_HIGHLIGHT_OPTIONS,
   DEFAULT_HISTORY_OPTIONS,
   DEFAULT_OUTPUT_OPTIONS,
+  type ConsoleExample,
   type ConsoleHighlightOptions,
   type ConsoleHistoryOptions,
   type ConsoleOutputOptions,
   type ConsoleSurfaceAdapter,
+  type ExampleOutcome,
 } from "./console-types.js";
 import { HistoryStore } from "./history-store.js";
 
@@ -104,6 +106,8 @@ interface QueuedInput {
   block: boolean;
   /** A registered example's title, so the divider is printed with the entry rather than after. */
   label?: string;
+  /** Told whether a queued example raised, once it has run. */
+  outcome?: (raised: boolean) => void;
 }
 
 /** Where a block came from. Recorded for hosts and tests; it does not change what runs. */
@@ -309,8 +313,12 @@ export class ConsoleController {
     try {
       while (this.#queued.length > 0 && !this.#disposed && this.#ready) {
         const entry = this.#queued.shift() as QueuedInput;
-        if (entry.block) await this.#runBlock(entry.text, true);
-        else await this.submit(entry.text, { alreadyEchoed: true, interactive: entry.interactive });
+        if (entry.block) {
+          const raised = await this.#runBlock(entry.text, true);
+          entry.outcome?.(raised);
+        } else {
+          await this.submit(entry.text, { alreadyEchoed: true, interactive: entry.interactive });
+        }
       }
     } finally {
       this.#draining = false;
@@ -575,13 +583,24 @@ export class ConsoleController {
    * Hold a line until the interpreter is ready, and echo it once, now. Typing replaces; a
    * submitted block appends - see `submit()` for why.
    */
-  #enqueue(text: string, interactive: boolean, block = false, label?: string): void {
+  #enqueue(
+    text: string,
+    interactive: boolean,
+    block = false,
+    example?: { title: string; comment?: string; outcome?: (raised: boolean) => void },
+  ): void {
     if (interactive) {
       const held = this.#queued.findIndex((entry) => entry.interactive);
       if (held !== -1) this.#queued.splice(held, 1);
     }
-    this.#queued.push({ text, interactive, block, ...(label !== undefined ? { label } : {}) });
-    if (label !== undefined) this.#emitDivider(label);
+    this.#queued.push({
+      text,
+      interactive,
+      block,
+      ...(example ? { label: example.title } : {}),
+      ...(example?.outcome ? { outcome: example.outcome } : {}),
+    });
+    if (example) this.#emitDivider(example.title, example.comment);
     if (block) this.#echoBlock(text);
     else this.#echoCommand(text);
     this.#emit({ kind: "status", text: "…queued until the interpreter is ready\n" });
@@ -592,9 +611,14 @@ export class ConsoleController {
    * transcript is something visitors COPY, and a line the console wrote into their program is a
    * `SyntaxError` when pasted back. Emitted when the example is ACCEPTED, before it runs and
    * before it is queued, because that is when the visitor needs to see the transcript move.
+   *
+   * A host's `comment` is the one exception, and it is safe for the same reason: it is status, so
+   * the transcript records it as `# …`, which pastes back as a comment.
    */
-  #emitDivider(_title: string): void {
+  #emitDivider(_title: string, comment?: string): void {
     this.#emit({ kind: "status", text: "\n" });
+    const line = comment?.replace(/\s+/g, " ").trim();
+    if (line) this.#emit({ kind: "status", text: `${line}\n` });
   }
 
   /**
@@ -632,19 +656,23 @@ export class ConsoleController {
    * line is whitespace and indentation survives byte for byte. The cost: file mode does not echo a
    * trailing bare expression, so a pasted `a + 1` prints nothing. Typed lines keep `push()` and
    * the echo; see `submitBlock`.
+   *
+   * Resolves to whether the program raised.
    */
-  async #runBlock(source: string, alreadyEchoed: boolean): Promise<void> {
+  async #runBlock(source: string, alreadyEchoed: boolean): Promise<boolean> {
     const engine = this.#engine;
-    if (!engine || this.#disposed) return;
+    if (!engine || this.#disposed) return false;
 
     if (!alreadyEchoed) this.#echoBlock(source);
     this.#resetTransient();
     this.#busy = true;
     this.#surface.setBusy(true);
     try {
-      await engine.run(source);
+      const result = await engine.run(source);
       // One history entry for one block: ↑ recalls the program, not its last line.
       this.#history.add(source);
+      // The traceback is already on its way to the transcript; this only says that it happened.
+      return Boolean(result?.error);
     } finally {
       this.#flush();
       this.#busy = false;
@@ -715,9 +743,11 @@ export class ConsoleController {
    * typing (`1 + 1` echoes `2`); an example is a registered program and runs the way
    * `python file.py` runs it whatever its length. Nothing else changes: same namespace,
    * transcript appended to, history kept, half-typed command left at the prompt.
+   *
+   * Resolves once it has run, saying whether it raised; see {@link ExampleOutcome}.
    */
-  async runExample(example: { title: string; source: string }): Promise<void> {
-    if (this.#disposed) return;
+  async runExample(example: ConsoleExample): Promise<ExampleOutcome> {
+    if (this.#disposed) return { raised: false };
     // CRLF from a manifest written on Windows is not Python's business. Nothing else is touched.
     const source = example.source.replace(/\r\n?/g, "\n");
 
@@ -727,24 +757,32 @@ export class ConsoleController {
     // ask for, but a `Try in Python` press exists to see something run, so the move happens FIRST.
     this.#surface.followLatest();
 
+    let raised = false;
     if (!this.#ready || this.#blockRunning || this.#busy) {
-      this.#enqueue(source, false, true, example.title);
+      this.#enqueue(source, false, true, {
+        title: example.title,
+        ...(example.comment !== undefined ? { comment: example.comment } : {}),
+        outcome: (result) => {
+          raised = result;
+        },
+      });
       await this.#waitForDrain();
-      return;
+      return { raised };
     }
 
     this.#blockRunning = true;
     this.#surface.setBusy(true);
     try {
-      if (this.#disposed) return;
-      this.#emitDivider(example.title);
+      if (this.#disposed) return { raised };
+      this.#emitDivider(example.title, example.comment);
       // `#runBlock` echoes the source itself, then runs it once. File semantics, always.
-      await this.#runBlock(source, false);
+      raised = await this.#runBlock(source, false);
     } finally {
       this.#blockRunning = false;
       this.#surface.setBusy(this.#busy);
       if (this.#queued.length > 0) void this.#drainQueue();
     }
+    return { raised };
   }
 
   /** The old name for {@link submitBlock}, kept because it is the documented public API. */

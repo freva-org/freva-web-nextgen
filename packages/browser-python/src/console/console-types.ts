@@ -12,6 +12,23 @@ import type {
   BrowserPythonReadyInfo,
 } from "../types.js";
 
+/** A registered example, as `runExample` takes it. */
+export interface ConsoleExample {
+  title: string;
+  source: string;
+  /**
+   * One line for the transcript, above the echoed source: shown as console status and copied as a
+   * Python comment (`# …`). Never executed, so the program's line numbers are the source's own.
+   */
+  comment?: string;
+}
+
+/** What became of a registered example. */
+export interface ExampleOutcome {
+  /** The program ended with an uncaught exception; its traceback is in the transcript. */
+  raised: boolean;
+}
+
 /** Where command history is kept. `none` disables persistence AND recall. */
 export type HistoryPersistence = "local" | "session" | "memory" | "none";
 
@@ -170,7 +187,7 @@ export interface BrowserPythonConsoleElement extends HTMLElement {
    * Run a registered example: a labelled divider, the source, and ONE execution as a file. Always
    * file semantics, whatever the length, and nothing about the session is reset.
    */
-  runExample(example: { title: string; source: string }): Promise<void>;
+  runExample(example: ConsoleExample): Promise<ExampleOutcome>;
   /** The visible transcript as plain text, bounded by `outputOptions`. */
   transcript(): string;
   focus(): void;

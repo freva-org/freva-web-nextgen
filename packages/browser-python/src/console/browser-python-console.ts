@@ -25,11 +25,13 @@ import {
   DEFAULT_HISTORY_OPTIONS,
   DEFAULT_OUTPUT_OPTIONS,
   type BrowserPythonConsoleElement,
+  type ConsoleExample,
   type ConsoleHighlightOptions,
   type ConsoleHistoryOptions,
   type ConsoleOutputOptions,
   type ConsoleTheme,
   type ConsoleToolbarMode,
+  type ExampleOutcome,
 } from "./console-types.js";
 import { ConsoleController } from "./console-controller.js";
 import { JQueryTerminalAdapter } from "./adapters/jquery-terminal-adapter.js";
@@ -1553,11 +1555,14 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
    * semantics whatever its length. NOTHING IS RESET: namespace, transcript, history and a
    * half-typed command are all as they were, and the example is appended rather than substituted
    * - a "Try it" that cleared the console would throw away the variables it is tried with.
+   *
+   * Resolves once it has run, with whether it raised. `comment` adds one status line above the
+   * echoed source (a `# …` comment in the copied transcript) without changing what runs.
    */
-  async runExample(example: { title: string; source: string }): Promise<void> {
+  async runExample(example: ConsoleExample): Promise<ExampleOutcome> {
     if (!this.#mounted) this.#build();
     await this.start();
-    await this.#controller?.runExample(example);
+    return (await this.#controller?.runExample(example)) ?? { raised: false };
   }
 
   /**

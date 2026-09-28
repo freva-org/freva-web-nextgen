@@ -68,7 +68,7 @@ Nothing is fetched until `start()`.
 | what                                   | on the wire                                               | when                                 |
 | -------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
 | this package, engine only              | <!-- size:root-entry-gz --> 7.0 KiB gzipped               | with your bundle                     |
-| this package, with the console         | <!-- size:console-entry-gz --> 123.9 KiB gzipped          | with your bundle, `/console` only    |
+| this package, with the console         | <!-- size:console-entry-gz --> 124.0 KiB gzipped          | with your bundle, `/console` only    |
 | Pyodide runtime + stdlib               | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
 | xarray, zarr, fsspec, numcodecs, numpy | 9.6 MB, 17 wheels                                         | first `start()`, `xarray-zarr` only  |
 | the derived Freva wheel + PyPI deps    | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
@@ -441,12 +441,12 @@ incomplete, state persists between lines, and top-level `await` works.
 |                       | `@freva-org/browser-python`             | `@freva-org/browser-python/console`          |
 | --------------------- | --------------------------------------- | -------------------------------------------- |
 | What you get          | engine, events, `push()`                | the above plus a rendered console            |
-| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **123.9 KiB** |
+| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **124.0 KiB** |
 | Touches `document`    | no                                      | yes, on `connectedCallback`                  |
 | Safe to import in SSR | yes                                     | `/console` yes, `/console/auto` no           |
 | jQuery in the bundle  | never (asserted by a test)              | yes, as a private instance                   |
 
-The console layer over the headless engine is <!-- size:console-layer-gz --> 116.9 KiB gzipped, of
+The console layer over the headless engine is <!-- size:console-layer-gz --> 117.0 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
 a target - 124 KiB for the layer, 8 KiB for the root entry - and fails if it finds a jQuery or
 worker-only add-on pin fingerprint in the root bundle.
@@ -564,7 +564,11 @@ An entry is `{ id, datasetId?, title, source, sha256 }`, and resolution needs bo
 registered and the digest it was registered under. The digest is not a signature - it is an
 integrity check between two halves of one deployment, so a stale portal asking a fresh playground
 for `open-store` gets a refusal rather than a different program under a name it knew.
-`consoleElement.runExample(...)` is always file semantics whatever the length, and resets nothing.
+`consoleElement.runExample({ title, source, comment? })` is always file semantics whatever the
+length, and resets nothing. It resolves once the example has run, with `{ raised }`: whether the
+program ended with an uncaught exception, whose traceback is in the transcript. `comment` adds one
+status line above the echoed source, which the copied transcript records as `# …`; it is not run,
+so traceback line numbers are the source's own.
 
 ## Security
 
