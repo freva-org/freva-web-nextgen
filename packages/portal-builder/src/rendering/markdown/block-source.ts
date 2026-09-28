@@ -59,6 +59,25 @@ const GITHUB = /^(\s*)>\s*\[!([A-Za-z]+)\]\s*$/;
  * `/// define` - is *recognized* and refused with a diagnostic instead of printed as prose.
  */
 const PYMDOWN = /^(\s*)\/\/\/[ \t]*(\S*)[ \t]*(.*)$/;
+/**
+ * Material for MkDocs' card grid: `<div class="grid cards" markdown>` on a line of its own,
+ * closed by a line of `</div>`. Raw HTML is otherwise refused, and this is not an exception to
+ * that: the line is recognized as a block spelling, like `!!!`, and never reaches the parser as
+ * HTML. Captured loosely - class list and attributes - so a near miss can be named precisely.
+ */
+const MATERIAL_DIV =
+  /^(\s*)<div\s+class\s*=\s*"([^"]*)"((?:\s+[A-Za-z-]+(?:\s*=\s*"[^"]*")?)*)\s*>\s*$/;
+
+/** How the card grid is spelled, from the profile. */
+export interface CardGridSpelling {
+  directive: string;
+  materialClassLists: string[];
+  materialMarkdownAttribute: string[];
+  columns: number[];
+  columnsAttribute: string;
+  materialColumnsClassPrefix: string;
+}
+
 /** The internal directive names the rewrite emits. Not authored vocabulary. */
 export const CAPTION_DIRECTIVE = "portal-caption";
 export const FIGURE_DIRECTIVE = "portal-figure";
@@ -108,6 +127,135 @@ function takeUntil(
   return { body, next: closed ? i + 1 : i, closed };
 }
 
+/** The column a line's content starts at, a tab advancing to the next multiple of four. */
+function columnOf(line: string): number {
+  let column = 0;
+  for (const c of line) {
+    if (c === " ") column += 1;
+    else if (c === "\t") column += 4 - (column % 4);
+    else break;
+  }
+  return column;
+}
+
+/** A list item marker, the whitespace in front of it and the whitespace after it. */
+const LIST_MARKER = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]*)(.*)$/;
+
+/**
+ * Where indented code is. CommonMark makes it depend on context: an indented code block begins
+ * four columns past the content of the list item it sits in (or past the enclosing block,
+ * outside any item), and only where a paragraph is not open - after a blank line, a closed
+ * fence, a heading or another block that cannot be continued. Following list items and open
+ * paragraphs is enough to read a card's or a list item's own example the way the Markdown
+ * parser will read it, so a `</div>`, `!!! note` or `/// caption` shown in one is left alone.
+ *
+ * Feed it every line of a block in order; lines another scan consumes as a whole (a fence and
+ * its contents, a rewritten block) are reported with `closeBlock()` instead.
+ */
+class IndentedCode {
+  /** Content columns of the list items the scan is inside, innermost last. */
+  private readonly items: number[] = [];
+  private paragraph = false;
+  private afterBlank = true;
+  private codeFrom: number | undefined;
+
+  constructor(private readonly base = 0) {}
+
+  private contentColumn(): number {
+    return this.items[this.items.length - 1] ?? this.base;
+  }
+
+  /** Whether `line` is part of an indented code block. Blank lines are never reported as code. */
+  isCode(line: string): boolean {
+    if (line.trim() === "") {
+      this.paragraph = false;
+      this.afterBlank = true;
+      return false;
+    }
+    const column = columnOf(line);
+    const blank = this.afterBlank;
+    this.afterBlank = false;
+    // Still inside an indented code block: blank lines were passed over above, and any line at
+    // least as deep as the block's own indentation is more of it.
+    if (this.codeFrom !== undefined) {
+      if (column >= this.codeFrom) return true;
+      this.codeFrom = undefined;
+    }
+    // Leaving list items: after a blank line, a line shallower than an item's content is no
+    // longer part of it. Without the blank line it is a lazy paragraph continuation instead.
+    if (blank || !this.paragraph) this.leave(column);
+    // An indented code block opens only where no paragraph can be continued.
+    if (!this.paragraph && column >= this.contentColumn() + 4) {
+      this.codeFrom = this.contentColumn() + 4;
+      return true;
+    }
+    const marker = LIST_MARKER.exec(line);
+    if (marker && (marker[3] !== "" || marker[4] === "")) {
+      this.leave(column);
+      const lead = columnOf(marker[1]!) + marker[2]!.length;
+      const gap = columnOf(`${" ".repeat(lead)}${marker[3]!}`) - lead;
+      // Five or more spaces after the marker make the item start with indented code, and its
+      // content column one past the marker; an empty item's content column is also one past.
+      const opensCode = marker[4] !== "" && gap >= 5;
+      this.items.push(lead + (marker[4] === "" || opensCode ? 1 : gap));
+      this.paragraph = !opensCode && marker[4] !== "";
+      if (opensCode) this.codeFrom = this.contentColumn() + 4;
+      return false;
+    }
+    // A heading or a thematic break is a whole block; anything else opens or continues a
+    // paragraph (or an HTML block, which a blank line ends just the same).
+    this.paragraph = !/^(#{1,6}(\s|$)|([-*_])(\s*\3){2,}\s*$)/.test(line.trim());
+    return false;
+  }
+
+  /** The line just fed opened a block no paragraph continues: a fence, a directive. */
+  closeBlock(): void {
+    this.paragraph = false;
+  }
+
+  private leave(column: number): void {
+    while (this.items.length > 0 && column < this.items[this.items.length - 1]!) this.items.pop();
+  }
+}
+
+/**
+ * The closing-tag test for a Material `<div … markdown>` whose opener sits at column `base`.
+ * The body runs to the `</div>` that closes THIS div: nested `<div … markdown>` blocks are
+ * counted rather than taken for the end of the grid, and nothing inside code - fenced or
+ * indented - counts at all: a card that SHOWS an HTML example, `</div>` and all, must not end
+ * the grid in the middle of it.
+ */
+function materialGridCloser(base: number): (line: string) => boolean {
+  let depth = 0;
+  let fence: string | undefined;
+  const code = new IndentedCode(base);
+  return (line) => {
+    const trimmed = line.trim();
+    if (fence !== undefined) {
+      // CommonMark: the same character, at least as many of it, and nothing after.
+      const closer = /^(`{3,}|~{3,})\s*$/.exec(trimmed);
+      if (closer && closer[1]![0] === fence[0] && closer[1]!.length >= fence.length) {
+        fence = undefined;
+      }
+      return false;
+    }
+    if (code.isCode(line)) return false;
+    // A fence opens on its own line or as the first line of a list item.
+    const opener = FENCE.exec(line) ?? FENCE.exec(line.replace(LIST_ITEM, ""));
+    if (opener) {
+      fence = opener[2]!;
+      code.closeBlock();
+      return false;
+    }
+    if (/^<div\b/i.test(trimmed)) depth += 1;
+    if (trimmed === "</div>") {
+      if (depth === 0) return true;
+      depth -= 1;
+    }
+    return false;
+  };
+}
+
 /** Trim leading and trailing blank lines, keeping the source indices aligned. */
 function trimBlank(body: string[], sources: number[]): void {
   while (body.length > 0 && isBlank(body[0]!)) {
@@ -136,6 +284,7 @@ function rewrite(
   out: string[],
   map: number[],
   problems: NormalizationProblem[],
+  cards?: CardGridSpelling,
 ): number {
   let i = 0;
   let tallest = -1;
@@ -163,7 +312,7 @@ function rewrite(
   ): void => {
     const inner: string[] = [];
     const innerMap: number[] = [];
-    const height = rewrite(body, 0, inner, innerMap, problems) + 1;
+    const height = rewrite(body, 0, inner, innerMap, problems, cards) + 1;
     tallest = Math.max(tallest, height);
     const fence = fenceFor(height);
     const at = (text: string): string => (text === "" ? "" : `${indent}${text}`);
@@ -172,37 +321,27 @@ function rewrite(
     emit(at(fence), sourceLine);
   };
 
-  // Where an indented code block could begin. CommonMark starts one at four spaces of
-  // indentation, but only where a new block could start - not as the continuation of a
-  // paragraph, and not inside a list, where four spaces is the item's own content. Tracking
-  // those two facts is what leaves `    /// caption` in a snippet alone.
-  let afterBlank = true;
-  let inList = false;
+  // Indented code is copied through untouched, like fenced code: a `/// caption`, `!!! note` or
+  // `<div class="grid cards" markdown>` shown as an example is the example, not a block.
+  const code = new IndentedCode();
+  // Whether the previous line opened a block that some branch below consumed whole: nothing
+  // after such a block continues a paragraph, so indented code may begin right after it.
+  let blockEnded = false;
 
   while (i < lines.length) {
     const line = lines[i]!;
     const sourceLine = sourceStart + i;
 
-    if (isBlank(line)) {
-      afterBlank = true;
+    if (blockEnded) code.closeBlock();
+    blockEnded = false;
+    // Blank lines are fed too: they are what lets indented code begin and a list item end.
+    if (code.isCode(line) || isBlank(line)) {
       emit(line, sourceLine);
       i += 1;
       continue;
     }
-    const lineIndent = indentOf(line);
-    if (afterBlank && !inList && lineIndent >= 4) {
-      // An indented code block: everything through the last line before a non-blank line
-      // that is indented less.
-      while (i < lines.length && (isBlank(lines[i]!) || indentOf(lines[i]!) >= 4)) {
-        emit(lines[i]!, sourceStart + i);
-        i += 1;
-      }
-      afterBlank = false;
-      continue;
-    }
-    if (LIST_ITEM.test(line)) inList = true;
-    else if (lineIndent === 0) inList = false;
-    afterBlank = false;
+    // Every branch below that does not fall through to the end consumes a block.
+    blockEnded = true;
 
     // A code fence is copied through untouched, opener to closer.
     const fenceMatch = FENCE.exec(line);
@@ -242,7 +381,7 @@ function rewrite(
         const colonSources = [sourceLine, ...bodySources, sourceStart + cursor];
         const inner: string[] = [];
         const innerMap: number[] = [];
-        const height = rewrite(colonForm, 0, inner, innerMap, problems);
+        const height = rewrite(colonForm, 0, inner, innerMap, problems, cards);
         tallest = Math.max(tallest, height);
         inner.forEach((text, index) => emit(text, colonSources[innerMap[index]!] ?? sourceLine));
         i = cursor + 1;
@@ -332,6 +471,70 @@ function rewrite(
       continue;
     }
 
+    // Material's card grid. Only a `<div>` with the `markdown` attribute is a block spelling at
+    // all (without it Material treats the contents as HTML), and only the `grid cards` class list
+    // is accepted. Anything else meets the raw-HTML refusal (PC1002).
+    const material = cards ? MATERIAL_DIV.exec(line) : null;
+    if (material && cards) {
+      const indent = material[1]!;
+      const classes = material[2]!.trim().split(/\s+/).join(" ");
+      const attributes = material[3]!.trim().split(/\s+/).filter(Boolean);
+      const markdown = attributes.some((a) => cards.materialMarkdownAttribute.includes(a));
+      if (markdown) {
+        const taken = takeUntil(lines, i + 1, indent, materialGridCloser(columnOf(indent)));
+        const bodySources = taken.body.map((_, index) => sourceStart + i + 1 + index);
+        const at = sourceLine;
+        const next = taken.next;
+        // A `cols-N` class is the column hint, and is taken out before the class list is
+        // compared: `grid cards cols-2` is the grid with a hint, not a different class list.
+        const prefix = cards.materialColumnsClassPrefix;
+        const hints = classes.split(" ").filter((c) => c.startsWith(prefix));
+        const gridClasses = classes
+          .split(" ")
+          .filter((c) => !c.startsWith(prefix))
+          .join(" ");
+        if (!cards.materialClassLists.includes(gridClasses)) {
+          refuse(
+            at,
+            "PC1023",
+            `\`<div class="${classes}" markdown>\` is not part of portal-content-v1.`,
+            'The card grid is `<div class="grid cards" markdown>`, or `:::cards` around a list.',
+          );
+          i = next;
+          continue;
+        }
+        const allowed = cards.columns.map((n) => `${prefix}${n}`);
+        if (hints.length > 1 || (hints.length === 1 && !allowed.includes(hints[0]!))) {
+          refuse(
+            at,
+            "PC1023",
+            `\`${hints.join(" ")}\` is not a column hint this grid accepts.`,
+            `A card grid takes at most one of ${allowed.map((c) => `\`${c}\``).join(", ")}.`,
+          );
+          i = next;
+          continue;
+        }
+        const columns = hints.length === 1 ? hints[0]!.slice(prefix.length) : undefined;
+        if (!taken.closed) {
+          refuse(at, "PC1023", "This card grid is never closed.", "Close it with `</div>`.");
+          i = next;
+          continue;
+        }
+        trimBlank(taken.body, bodySources);
+        emit("", sourceLine);
+        emitBlock(
+          (fence) =>
+            `${fence}${cards.directive}${columns ? `{${cards.columnsAttribute}=${columns}}` : ""}`,
+          taken.body,
+          bodySources,
+          sourceLine,
+          indent,
+        );
+        i = next;
+        continue;
+      }
+    }
+
     const github = GITHUB.exec(line);
     if (github) {
       const type = github[2]!;
@@ -346,7 +549,7 @@ function rewrite(
       }
       const inner: string[] = [];
       const innerMap: number[] = [];
-      const height = rewrite(body, 0, inner, innerMap, problems) + 1;
+      const height = rewrite(body, 0, inner, innerMap, problems, cards) + 1;
       tallest = Math.max(tallest, height);
       const fence = fenceFor(height);
       emit(`${fence}${type.toLowerCase()}`, sourceLine);
@@ -495,7 +698,7 @@ function rewrite(
       const materializedSources: number[] = [];
       const nested: string[] = [];
       const nestedMap: number[] = [];
-      const innerHeight = rewrite(inner, 0, nested, nestedMap, problems);
+      const innerHeight = rewrite(inner, 0, nested, nestedMap, problems, cards);
       const childFence = fenceFor(innerHeight + 1);
       nested.forEach((text, index) => {
         const source = innerSources[nestedMap[index]!] ?? sourceLine;
@@ -535,7 +738,7 @@ function rewrite(
       if (i < lines.length) i += 1; // the closing fence
       const inner: string[] = [];
       const innerMap: number[] = [];
-      const height = rewrite(body, 0, inner, innerMap, problems) + 1;
+      const height = rewrite(body, 0, inner, innerMap, problems, cards) + 1;
       tallest = Math.max(tallest, height);
       const fence = fenceFor(height);
       emit(`${fence}${type}${title ? `[${title}]` : ""}`, sourceLine);
@@ -560,7 +763,7 @@ function rewrite(
       if (i < lines.length) i += 1; // the closing fence
       const inner: string[] = [];
       const innerMap: number[] = [];
-      const height = rewrite(body, 0, inner, innerMap, problems) + 1;
+      const height = rewrite(body, 0, inner, innerMap, problems, cards) + 1;
       tallest = Math.max(tallest, height);
       const fence = fenceFor(height);
       emit(`${fence}${suffix}`, sourceLine);
@@ -606,7 +809,7 @@ function rewrite(
       const attributes = collapsible ? `{collapsible="${collapsible}"}` : "";
       const inner: string[] = [];
       const innerMap: number[] = [];
-      const height = rewrite(body, 0, inner, innerMap, problems) + 1;
+      const height = rewrite(body, 0, inner, innerMap, problems, cards) + 1;
       tallest = Math.max(tallest, height);
       const fence = fenceFor(height);
       emit(`${fence}${type}${title ? `[${title}]` : ""}${attributes}`, sourceLine);
@@ -615,6 +818,7 @@ function rewrite(
       continue;
     }
 
+    blockEnded = false;
     emit(line, sourceLine);
     i += 1;
   }
@@ -626,11 +830,11 @@ function rewrite(
  * container directives, which the profile's own parser already understands, plus a map from
  * its lines back to the author's and the list of spellings recognized but refused.
  */
-export function normalizeBlockSyntax(source: string): NormalizedSource {
+export function normalizeBlockSyntax(source: string, cards?: CardGridSpelling): NormalizedSource {
   const lines = source.split("\n");
   const out: string[] = [];
   const map: number[] = [];
   const problems: NormalizationProblem[] = [];
-  rewrite(lines, 1, out, map, problems);
+  rewrite(lines, 1, out, map, problems, cards);
   return { text: out.join("\n"), lineMap: map, problems };
 }

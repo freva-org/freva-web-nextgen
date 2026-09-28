@@ -290,6 +290,8 @@ export function resolvePlaygroundSettings(
     optionalAddons,
     ...(raw.initialSource ? { initialSource: raw.initialSource } : {}),
     ...(raw.playgroundOrigin ? { playgroundOrigin: raw.playgroundOrigin } : {}),
+    ...(raw.controls ? { controls: raw.controls } : {}),
+    ...(raw.editableSnippets ? { editableSnippets: true } : {}),
     ...(raw.runtimeIndexUrl ? { runtimeIndexUrl: raw.runtimeIndexUrl } : {}),
     ...(raw.wheelhouseUrl ? { wheelhouseUrl: raw.wheelhouseUrl } : {}),
     ...(raw.addonBaseUrl ? { addonBaseUrl: raw.addonBaseUrl } : {}),

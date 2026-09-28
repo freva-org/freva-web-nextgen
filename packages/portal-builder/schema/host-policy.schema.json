@@ -43,6 +43,22 @@
         "status": { "const": 404 }
       }
     },
+    "redirects": {
+      "type": "array",
+      "description": "Old public paths the host must answer with an HTTP redirect. Match `from` exactly and also without its trailing slash; answer `status` with `Location: to`, merging the request's query into the target's own (target parameters first, then the request's, then the target's fragment) when `preserveQuery` is true - never concatenating the two query strings. `fallback` is the static page the artifact carries at that path for a host that cannot redirect.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to", "status", "preserveQuery", "fallback"],
+        "properties": {
+          "from": { "type": "string", "pattern": "^/" },
+          "to": { "type": "string" },
+          "status": { "enum": [301, 302, 307, 308] },
+          "preserveQuery": { "const": true },
+          "fallback": { "type": "string" }
+        }
+      }
+    },
     "headers": {
       "type": "array",
       "items": {

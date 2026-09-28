@@ -32,6 +32,7 @@ import type { TerminalMenuSection, TerminalWindowHandle } from "@freva-org/freva
 import type { BridgeOp, EmbeddedArtifact, PlaygroundHost } from "@freva-org/browser-python/embed";
 // The shapes both halves agree on. The bridge holds them because both halves import the bridge.
 import type {
+  EditedRunRequest,
   ExampleBinder,
   ExampleSource,
   PlaygroundState,
@@ -43,8 +44,18 @@ import { pythonBlocks } from "../python-bridge.js";
 export type { ExampleSource, PlaygroundState, PythonPlaygroundConfig, TryPythonRequest };
 
 export interface PythonPlayground {
-  /** Handle a press. Resolves the name, opens the window if needed, and runs it. */
-  run(request: TryPythonRequest): void;
+  /**
+   * Handle a press. Resolves the name, opens the window if needed, and runs it. Settles when the
+   * run is over; rejects when it was refused or no interpreter could be had - after saying so in
+   * the window, so the rejection is for the control that was pressed, not a second report.
+   */
+  run(request: TryPythonRequest): Promise<void>;
+  /**
+   * Run an EDITED snippet: visitor input, like a cell typed at the prompt, in the active session
+   * and labelled as edited. Only a session on this origin accepts it - a framed session's bridge
+   * carries ids and digests, never source - so a framed one refuses, out loud.
+   */
+  runEdited(request: EditedRunRequest): Promise<void>;
   /**
    * Show the prompt with no example, and start an interpreter. `focus` moves the keyboard focus
    * into the window and defaults to NOT doing so, because a window that appeared because
@@ -90,6 +101,11 @@ interface ReadyReport {
  * want the second - visitor Python otherwise runs with the portal's origin authority - and the
  * difference is confined to this interface so nothing above it has to branch.
  */
+/** What the console says about a run it finished: whether the program raised. */
+interface Ran {
+  raised: boolean;
+}
+
 interface Session {
   readonly id: string;
   label: string;
@@ -104,8 +120,17 @@ interface Session {
   start(): Promise<void>;
   /** Whether `start()` has completed. For the launcher's status line. */
   started(): boolean;
-  /** Run a registered example. Local sessions run it; framed ones ask their frame to. */
-  runExample(request: TryPythonRequest, example: ExampleSource): Promise<void>;
+  /**
+   * Run a registered example. Local sessions run it and say whether it raised; framed ones hand it
+   * to their frame, whose bridge reports nothing back, and resolve once it is handed over.
+   */
+  runExample(request: TryPythonRequest, example: ExampleSource): Promise<Ran | void>;
+  /**
+   * Run visitor-supplied source - an edited snippet - labelled `title`. Present only on a LOCAL
+   * session: the visitor's code already runs there when typed at the prompt, and nothing about
+   * it crosses an origin. A framed session has no such method, and so cannot be asked.
+   */
+  runVisitorSource?(title: string, source: string): Promise<Ran | void>;
   /** Plain-text transcript, or `null` when this session's transcript is not reachable. */
   transcript(): string | null;
   clearTranscript(): void;
@@ -1375,30 +1400,74 @@ export function createPythonPlayground(
       .catch((error: unknown) => reportUnavailable(error));
   }
 
-  function run(request: TryPythonRequest): void {
-    const resolved = resolve(request);
-    if ("reason" in resolved) {
-      // Refused, and said out loud. A run control that silently does nothing is the hardest thing
-      // to diagnose, and every reason this can produce means the page and its build disagree.
-      void ensureWindow()
-        .then(() => {
-          reveal(true);
-          announce(`That example was not run: ${resolved.reason}.`, "warn");
-        })
-        .catch((error: unknown) => reportUnavailable(error));
-      return;
-    }
-    void ensureWindow()
+  /** Say why a press was not run, in the window, and reject so the control can say so too. */
+  function refuse(reason: string): Promise<never> {
+    return ensureWindow()
+      .then(() => {
+        reveal(true);
+        announce(`That example was not run: ${reason}.`, "warn");
+      })
+      .catch((error: unknown) => reportUnavailable(error))
+      .then(() => {
+        throw new Error(reason);
+      });
+  }
+
+  /**
+   * Open the window and hand the active session to `work`; report and rethrow a failure. A program
+   * that RAISED is not a failure of the playground: its traceback is already in the transcript, so
+   * it rejects only after the window has been left alone, for the control to say "Failed".
+   */
+  function inWindow(work: (session: Session) => Promise<Ran | void>): Promise<void> {
+    return ensureWindow()
       .then(async () => {
         // A press on a run control IS the request, so the focus follows it into the window - and
         // returns to that same control when the window is hidden.
         reveal(true);
         announce("");
         const session = sessions[active];
-        if (!session) return;
-        await session.runExample(request, resolved.example);
+        if (!session) throw new Error("no Python session is open");
+        return work(session);
       })
-      .catch((error: unknown) => reportUnavailable(error));
+      .catch((error: unknown) => {
+        reportUnavailable(error);
+        throw error;
+      })
+      .then((ran) => {
+        if (ran?.raised) throw new Error("the program raised an exception");
+      });
+  }
+
+  function run(request: TryPythonRequest): Promise<void> {
+    const resolved = resolve(request);
+    // Refused, and said out loud. A run control that silently does nothing is the hardest thing
+    // to diagnose, and every reason this can produce means the page and its build disagree.
+    if ("reason" in resolved) return refuse(resolved.reason);
+    return inWindow((session) => session.runExample(request, resolved.example));
+  }
+
+  function runEdited(request: EditedRunRequest): Promise<void> {
+    const id = request?.exampleId;
+    // The id only NAMES the snippet the visitor started from; the source is theirs. It must still
+    // be one this page registered, so a label in the transcript cannot be made up by a caller.
+    const example = typeof id === "string" ? sources.get(id) : undefined;
+    if (!example) return refuse(`no snippet is registered as “${String(id)}” in this page`);
+    if (typeof request.source !== "string" || request.source.trim() === "") {
+      return refuse("the edited snippet is empty");
+    }
+    return inWindow((session) => {
+      if (!session.runVisitorSource) {
+        // Defence in depth: the build does not make a snippet editable when the interpreter is on
+        // another origin (FP1227), so a page reaching this has been changed since it was built.
+        throw new Error(
+          "an edited snippet cannot run in this session: the interpreter is on a separate origin, " +
+            "whose bridge carries registered examples and never source",
+        );
+      }
+      // Labelled as what it is: visitor code never appears under the name of the example the build
+      // approved. The console prints the label above the source and does not run it.
+      return session.runVisitorSource(`Edited snippet · ${example.title}`, request.source);
+    });
   }
 
   /**
@@ -1433,6 +1502,7 @@ export function createPythonPlayground(
 
   return {
     run,
+    runEdited,
     open,
     async warm(): Promise<void> {
       await ensureWindow();
@@ -1477,7 +1547,8 @@ export function createPythonPlayground(
       hideFiles: boolean;
       start(): Promise<void>;
       execute(source: string): Promise<void>;
-      runExample(example: ExampleSource): Promise<void>;
+      // `{ raised }` from a console that reports it; nothing from an older or stubbed one.
+      runExample(example: ExampleSource & { comment?: string }): Promise<Ran | void>;
       transcript(): string;
       focus(): void;
       clear(): void;
@@ -1598,7 +1669,14 @@ export function createPythonPlayground(
       started: () => ready,
       async runExample(_request, example) {
         await start();
-        await element.runExample(example);
+        return element.runExample(example);
+      },
+      // The same path a registered example takes in the console - queued behind a busy
+      // interpreter, run as one block, namespace untouched - with the label printed above it as
+      // a comment the console does not run, so traceback line numbers match the editor's.
+      async runVisitorSource(title, source) {
+        await start();
+        return element.runExample({ title, source, comment: title });
       },
       transcript: () => element.transcript(),
       // The console's own file panel is in this document and is the authoritative list; the menu

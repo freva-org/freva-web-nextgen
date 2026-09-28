@@ -36,6 +36,7 @@ modified the tree afterwards could undo it.
 | Extensions  | GFM autolinks, footnotes, strikethrough, tables, task lists         |
 | Directives  | `note`, `tip`, `warning`, `caution` — container form only           |
 | Captions    | `/// caption`, `:::{figure}`, `:::{table}` — see below              |
+| Card grids  | `:::cards`, Material's `<div class="grid cards" markdown>` — below  |
 | Frontmatter | `title`, `description`, `path`, `toc`, `navOrder`, and nothing else |
 | MDX         | rejected                                                            |
 | Raw HTML    | rejected, not passed through                                        |
@@ -189,6 +190,89 @@ element an id to link to, and nothing counts figures for you. No Pandoc
 `Table:` syntax, no raw HTML `<figure>`, no captions on audio or video, no
 `csv-table`, no external file insertion, no Sphinx subfigures. This is a caption
 subset, not MyST support and not MkDocs support.
+
+## Card grids
+
+A gallery or an overview page is a grid of cards: a thumbnail, a linked title and
+a short summary each. Two spellings, one result:
+
+```markdown
+<div class="grid cards" markdown>
+
+- [![](01_first_map.png)](01_first_map.md)
+  **[A map of one month](01_first_map.md)**
+  First paragraph of the example...
+
+- [![](02_zonal_mean.png)](02_zonal_mean.md)
+  **[A zonal mean](02_zonal_mean.md)**
+  ...
+
+</div>
+```
+
+```markdown
+:::cards
+
+- **[A map of one month](01_first_map.md)**
+  First paragraph of the example...
+  :::
+```
+
+The Material form is recognized the way `!!!` and `/// caption` are: the `<div>` line and its
+`</div>` are block spellings, never raw HTML, and are left alone inside code. Only
+`class="grid cards"` (plus an optional `cols-N` hint) with a `markdown` attribute is accepted;
+`<div class="grid" markdown>` is `PC1023`, and any other `<div>` is raw HTML (`PC1002`).
+
+The body is one Markdown list, one card per item. Each item is read in order:
+
+| Part    | What it is                                                                 | Optional |
+| ------- | -------------------------------------------------------------------------- | -------- |
+| image   | the item's first thing, an image or a link around one                      | yes      |
+| title   | then a link, or `**strong**`/`*emphasis*` text around one, on its own line | yes      |
+| `---`   | Material's separator between title and summary; dropped                    | yes      |
+| summary | everything else in the item, as ordinary Markdown                          | yes      |
+
+The pieces may share one paragraph (line breaks between them) or be separate
+paragraphs. Links and images are resolved like any other: `01_first_map.md`
+becomes that page's route and a missing target is an error.
+
+The result is a `<ul role="list">` of `<li>` cards, so a screen reader announces the count and
+moves card by card. The title is a paragraph, not a heading, so a gallery adds nothing to the
+table of contents. When image and title link to the same place, the image is not linked again and
+counts as decorative (no `PC1014` for an empty `alt`); the title link is stretched over the card -
+one click target, one tab stop - and a link in the summary stays its own.
+
+**Columns.** As many as fit at 21rem or more (narrower, the summary wraps every few words): two or
+three in the docs column, never four, one on a phone - with no inline style and no script.
+
+An optional **column hint** caps it:
+
+```markdown
+:::cards{columns=2}
+
+- **[The guide](guide/index.md)**
+  ...
+  :::
+```
+
+or, in Material's spelling, a `cols-N` class:
+
+```markdown
+<div class="grid cards cols-2" markdown>
+...
+</div>
+```
+
+`2`, `3` and `4` are accepted. The hint is a **maximum**: the grid still drops to fewer columns
+when narrow, and to one on a phone. It becomes a class (`portal-cardgrid-max-2`), never a style
+attribute, and lets cards go down to 13rem so `columns=3` or `4` fits a docs column.
+
+Refused, as `PC1023`: a body that is not exactly one list, a title on `:::cards` or any attribute
+but `columns`, a column hint other than `2`, `3` or `4` (`columns=5`, `cols-5`, two `cols-`
+classes), a task-list item, an empty item, and a linked image with no `alt` that keeps its own
+link (no title, or a title linking elsewhere) - it would be a link with no name.
+
+Card grids are Markdown only; the RST lane has no spelling for them.
 
 ## Links and assets
 

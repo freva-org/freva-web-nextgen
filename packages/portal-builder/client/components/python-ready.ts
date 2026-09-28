@@ -10,7 +10,9 @@
 
 import {
   onTryPython,
+  onTryPythonEdited,
   pythonBlocks,
+  type EditedRunRequest,
   type ExampleBinder,
   type TryPythonRequest,
 } from "../python-bridge.js";
@@ -86,9 +88,16 @@ export function preparePythonPlayground(chunkLoader: ChunkLoader): void {
   const first = pythonBlocks()[0];
   if (!first) return;
 
-  onTryPython((request: TryPythonRequest) => {
-    void ensure().then((instance) => instance?.run(request));
-  });
+  // Both return the run itself, so the control that was pressed can say what became of it.
+  const unavailable = (): never => {
+    throw new Error("the Python playground could not be loaded");
+  };
+  onTryPython((request: TryPythonRequest) =>
+    ensure().then((instance) => (instance ? instance.run(request) : unavailable())),
+  );
+  onTryPythonEdited((request: EditedRunRequest) =>
+    ensure().then((instance) => (instance ? instance.runEdited(request) : unavailable())),
+  );
 
   // THERE IS NO STANDING LAUNCHER, and the gap is deliberate: a page whose catalogue has nothing
   // runnable in it has no `Try in Python` anywhere, and a visitor who closes the terminal window

@@ -26,3 +26,23 @@ declare module "*.css?inline" {
   const css: string;
   export default css;
 }
+
+/**
+ * The three Prism entry points the snippet editor imports - the same subset, and the same narrow
+ * shape, `@freva-org/browser-python` declares for its console. Prism's `components/*` deep imports
+ * have no declarations of their own, and narrowing to what is used keeps a typo an error.
+ */
+declare module "prismjs/components/prism-core.js" {
+  interface PrismLanguages {
+    python?: unknown;
+    [language: string]: unknown;
+  }
+  interface PrismStatic {
+    languages: PrismLanguages;
+    tokenize(text: string, grammar: unknown): unknown[];
+  }
+  const Prism: PrismStatic;
+  export default Prism;
+}
+declare module "prismjs/components/prism-clike.js";
+declare module "prismjs/components/prism-python.js";

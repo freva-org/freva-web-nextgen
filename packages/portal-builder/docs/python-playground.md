@@ -41,12 +41,13 @@ build refuses it by name.
 
 The build refuses, with the file and line:
 
-| what                                        | code                |
-| ------------------------------------------- | ------------------- |
-| the marker on a language that is not Python | `PC1022`            |
-| the marker twice on one fence               | `PC1022`            |
-| the marker on an empty block                | `PC1022`            |
-| anything else on the fence                  | `PC1021`, as before |
+| what                                         | code     |
+| -------------------------------------------- | -------- |
+| the marker on a language that is not Python  | `PC1022` |
+| the marker twice on one fence                | `PC1022` |
+| the marker on an empty block                 | `PC1022` |
+| `editable` without `try-in-python`, or twice | `PC1022` |
+| anything else on the fence                   | `PC1021` |
 
 **A marked block in a portal with no `pythonPlayground` is ordinary copyable code.** No control, no
 identity, no digest, and nothing of the interpreter in the artifact. That is the same page it was
@@ -54,6 +55,62 @@ before the marker was added, byte for byte.
 
 There are no per-snippet profiles and no per-snippet packages. What a page's interpreter contains is
 the deployment's decision, in one place.
+
+### Editable snippets
+
+A runnable snippet can be made editable, so a reader can change it and press Try in Python again.
+It is off by default. Opt one snippet in with `editable` on the fence (any order beside `title` and
+`try-in-python`):
+
+````markdown
+```python try-in-python editable title="area.py"
+def area(r):
+    return 3.14159 * r * r
+
+print(area(2))
+```
+````
+
+or every runnable snippet on the portal with `pythonPlayground.editableSnippets: true` (this is also
+the way to do it for RST, which has no per-block `editable` option).
+
+With scripts on, an editable snippet looks like an editor before anyone clicks it: line numbers
+in a gutter (never selected or copied, and fixed while a long line scrolls), an **Editable** tag
+beside the language, and a text cursor. Read-only code blocks get none of this.
+
+The editor loads only when the reader clicks into the block (or focuses it and presses Enter): a
+small chunk of its own, like the interpreter. Once open, it offers:
+
+- Python syntax highlighting, drawn as DOM nodes with the theme's `--syn-*` colours. There are no
+  inline styles and no `eval`, so the page policy is unchanged.
+- Tab and Shift+Tab to indent and outdent (four spaces, for a line or a selection), and Enter to keep
+  the indentation, adding a level after a colon.
+- Escape, then Tab, to leave the editor, so the keyboard is never trapped.
+- Ctrl+Enter (Cmd+Enter on a Mac) to run.
+- A light background on the cursor's line while the editor has focus, and line numbers that
+  follow edits.
+- An **Edited** marker beside the title (beside the Editable tag when there is no title) while the
+  code differs from the author's. On a phone the two header tags show as a pencil and a dot.
+- **Reset**, beside Try in Python, shown once the code differs from the author's. It puts the
+  author's code back.
+- **Copy**, which copies what is on screen, edits included.
+
+Editing needs the interpreter on the portal's own origin. With `playgroundOrigin`, a snippet that
+asks to be editable stays read-only and runnable, and the build warns once (`FP1227`) and names the
+key. See _What a press sends_ for why.
+
+### When the controls show
+
+On a runnable snippet, Copy and Try in Python are always on the block's bar.
+`pythonPlayground.controls: hover` shows them only under the pointer or with the focus, on devices
+that can hover (touch screens always show them). A plain code block's Copy appears on hover either
+way.
+
+While a press runs the button reads **Running…**, then **Done** when the program ran to the end,
+or **Failed** if it raised (the traceback is in the transcript) or could not run (refused, or no
+interpreter). Presses made while the interpreter is busy queue, and the button stays Running…
+until the last one finishes. With `playgroundOrigin` the bridge reports nothing back: **Done**
+means handed over, and an exception shows only in the transcript.
 
 ## Enabling it
 
@@ -83,6 +140,9 @@ pythonPlayground:
 
   persistCredentials: false
 
+  controls: always # or hover
+  editableSnippets: false # true needs the interpreter on this origin (no playgroundOrigin)
+
   terminal:
     style: freva-client-terminal
     osControls: auto
@@ -94,6 +154,35 @@ Everything except `enabled` is optional. Enabling this **does not** turn Python 
 dataset tree — that is still the tree's own stanza — and it does not by itself put an interpreter on
 any page. A portal that enables it and marks nothing emits no interpreter, no Worker and no widened
 policy, and the build says so once (`FP1222`).
+
+### Which configuration wins
+
+There is one playground per page, and one per portal. Nothing is resolved by precedence; the
+rules only say where each key comes from, and anything that would need a tie-break is an error.
+
+| Where Python runs                                                              | Its configuration                                                                  |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| A `try-in-python` block on a documentation page or in a landing prose fragment | `pythonPlayground`, as written. Prose has no stanza of its own.                    |
+| A `dataset-tree` block with `python: { enabled: true }`                        | `pythonPlayground`, with the keys the block's `python` stanza writes overriding it |
+| A `dataset-tree` block with `python` and no `pythonPlayground`                 | the block's stanza, with the defaults for everything it does not write             |
+
+Then:
+
+- **`python` is a `dataset-tree` key only.** Written on a `prose` block (or any other block) it is
+  refused as `FP1104` at that block, with a hint pointing at `pythonPlayground`. A prose block that
+  wants a different interpreter is asking for a second playground on the page, which does not exist.
+- **One page, one playground (`FP1215`).** Every provider on a page that actually runs Python -
+  each Python-enabled tree, and `pythonPlayground` when the page has a `try-in-python` block - must
+  resolve to the same `profile`, `autostart`, `network`, `maxSessions`, `initialSource`, origins
+  and `terminal.*`. A disagreement is an error per differing key, naming both providers. A tree
+  that writes only `enabled: true` cannot disagree.
+- **One portal, one playground (`FP1215` again).** The same comparison runs across pages, because
+  the portal emits one Content-Security-Policy and at most one playground artifact.
+- A `pythonPlayground` that no page uses emits nothing and warns once (`FP1222`).
+
+So a landing with `dataset-tree` + `python: { enabled: true }` and a prose fragment with a
+`try-in-python` snippet runs both on the portal's `pythonPlayground`. To give the landing a
+different interpreter, change `pythonPlayground` - not the blocks.
 
 ### Profiles are singular
 
@@ -452,6 +541,19 @@ Separate-origin, the child owns a manifest with the sources, verifies every sour
 before importing an interpreter, and refuses an id it does not know. A stale child deployment fails
 visibly rather than running a different snippet.
 
+**An edited snippet is the one exception, and it is visitor input.** Until the reader changes the
+code (or after Reset), a press is the unedited press above: id and digest, verified. Once the text
+differs, what runs is code the reader wrote, as if typed at the prompt, in the same session
+(interpreter, namespace, queue). The transcript labels it as an edit on a line above the echoed
+code (`# Edited snippet · area.py` when copied), never under the registered example's name; the
+label does not run, so traceback line numbers match the editor. The id only names the snippet it
+started from, and must still be one the page registered.
+
+That is why editing is same-origin only: the separate-origin bridge carries registered ids and
+digests and has nowhere to put source. The build does not make a snippet editable with
+`playgroundOrigin` (`FP1227`), and a framed session refuses edited source even if a changed page
+asks.
+
 ## Credentials
 
 `persistCredentials` defaults to `false`. What is persisted is a refresh token in browser storage,
@@ -551,6 +653,8 @@ origin to `connectOrigins` — a URL in a snippet grants nothing by itself.
 - Python inside `trustedSubsites`. Those are opaque prebuilt HTML artifacts and are outside this
   feature entirely.
 - Per-snippet profiles, per-snippet packages, or arbitrary package metadata on a fence.
+- Editable snippets with `playgroundOrigin` (`FP1227`), and a per-block `editable` option in RST
+  (use `editableSnippets`).
 - Composed profiles.
 - `dask.distributed`, multiprocessing, thread pools.
 - Runtime dependency resolution from PyPI, or runtime downloads from Natural Earth. Neither origin

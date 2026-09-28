@@ -55,6 +55,8 @@ export interface SiteOptions {
   theme?: string;
   /** Indented YAML for `theme.tokens`, so a fixture can exercise the closed token set. */
   themeTokens?: string;
+  /** Indented YAML for `theme.backdrop`. */
+  themeBackdrop?: string;
 }
 
 /** A minimal, valid site; tests add exactly the part they are about. */
@@ -86,7 +88,7 @@ site:
     logo: ./assets/logo.svg
     favicon: ./assets/favicon.svg
 theme:
-  preset: ${options.theme ?? "default"}${options.themeTokens ? `\n  tokens:\n${options.themeTokens}` : ""}
+  preset: ${options.theme ?? "default"}${options.themeTokens ? `\n  tokens:\n${options.themeTokens}` : ""}${options.themeBackdrop ? `\n  backdrop:\n${options.themeBackdrop}` : ""}
 landings:
   home:
     path: /

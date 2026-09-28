@@ -58,10 +58,32 @@
         "$ref": "#/$defs/announcement"
       }
     },
+    "announcementFeed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "description": "Opt-in LIVE announcements: a JSON document an operator edits on the server, read by the page at load, so a notice can be posted or cleared without a rebuild. Live data, like a search result - not site structure. Its origin is added to connect-src; nothing of it ships without this key.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "Root-relative (`/api/announcements`, same origin, never prefixed with the base path) or an https:// URL."
+        }
+      }
+    },
     "trustedSubsites": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/trustedSubsite"
+      }
+    },
+    "redirects": {
+      "type": "array",
+      "maxItems": 1024,
+      "description": "Old public paths that now live elsewhere, for a site migrated into the portal. Each is validated against the built site, written into host-policy.json for the host to answer with a real HTTP redirect, emitted as a static fallback page at the old path, and probed by host-check.",
+      "items": {
+        "$ref": "#/$defs/redirect"
       }
     },
     "pythonPlayground": {
@@ -151,6 +173,14 @@
         "persistCredentials": {
           "type": "boolean",
           "description": "Keep a Freva refresh token across reloads, in browser storage. FALSE by default, deliberately: what is stored is a credential readable by any same-origin script, including a package the visitor installs at the prompt - which this console encourages. Turning it on is a statement that the origin is one you trust with a credential, so pair it with `playgroundOrigin`; the build warns when it is on without one."
+        },
+        "controls": {
+          "enum": ["always", "hover"],
+          "description": "When a runnable snippet's Copy and Try in Python controls are shown. `always` (the default): on the code block's bar at all times, so a visitor finds the control. `hover`: only while the block is under the pointer or holds the focus - on a device that can hover; a touch screen always shows them. Plain code blocks are unaffected: their Copy appears on hover as before."
+        },
+        "editableSnippets": {
+          "type": "boolean",
+          "description": "Make every runnable snippet editable in place: the block becomes an editor, Ctrl/Cmd+Enter runs it, Reset restores the author's code. False by default; one snippet can opt in with the fence word `editable` (```python try-in-python editable). Edited code is visitor input and runs like a cell typed at the prompt. Not available with `playgroundOrigin`, whose bridge carries no source: the build says so (FP1227) and leaves the snippets read-only."
         },
         "terminal": {
           "type": "object",
@@ -335,6 +365,21 @@
             },
             "prose": {
               "$ref": "#/$defs/localPath"
+            },
+            "search": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "description": "A documentation search in the header: a full-text index of every content page, built with the artifact as one static file, and a control that searches it in the browser with results, keyboard navigation and highlighting. No service and no request beyond the portal's own origin. Disabled, nothing of it is shipped.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "placeholder": {
+                  "$ref": "#/$defs/text",
+                  "description": "The search field's placeholder. Default `Search the documentation`."
+                }
+              }
             }
           }
         },
@@ -374,6 +419,29 @@
                 "$ref": "#/$defs/link"
               },
               "maxItems": 8
+            },
+            "bar": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["links"],
+              "description": "Short links in the collapsed footer bar, the one part of the footer on screen on every page - landing, document and application views alike. An inline `lead · link · link` line between the badge and the institution; it never makes the bar taller. A link here may repeat one in the open footer index: the bar is the shortcut, the index the full list.",
+              "properties": {
+                "lead": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "description": "Plain text before the links, such as 'Need support?'. Hidden below about 640px, where the links keep the room."
+                },
+                "links": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "items": {
+                    "$ref": "#/$defs/link"
+                  },
+                  "description": "One to three links, in the same shape as legalLinks: an internal path, a landing or component, an https:// URL (opened in a new tab) or a mailto: address. More than three is FP1229."
+                }
+              }
             },
             "prose": {
               "$ref": "#/$defs/localPath"
@@ -415,13 +483,24 @@
         },
         "tokens": {
           "$ref": "#/$defs/themeTokens"
+        },
+        "backdrop": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How a preset's drawn backdrop meets the end of the landing. Only the cosmos preset draws a story that uses this; any other preset reports FP1228 and ignores it.",
+          "properties": {
+            "tail": {
+              "enum": ["full", "short", "none"],
+              "description": "The empty scene after the last landing block, before the footer. `full` (the default): about a third of the ocean band, and at least two screens of page, so the story ends on the ocean. `short`: 96px. `none`: the page ends at the last block. With `short` and `none` the page is only as long as its content and the scene compresses to fit it."
+            }
+          }
         }
       }
     },
     "themeTokens": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A finite override surface. Arbitrary CSS is not accepted in v1.",
+      "description": "A finite override surface. Arbitrary CSS is not accepted in v1. The flat colour tokens are one value for both colour modes; `light` and `dark` set one mode's page palette.",
       "properties": {
         "colorAccent": {
           "$ref": "#/$defs/color"
@@ -452,6 +531,34 @@
         },
         "headingScale": {
           "enum": ["modest", "regular", "expressive"]
+        },
+        "light": {
+          "$ref": "#/$defs/themeModeTokens"
+        },
+        "dark": {
+          "$ref": "#/$defs/themeModeTokens"
+        }
+      }
+    },
+    "themeModeTokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One colour mode's page palette. A mode with no block keeps the design's colours. Given a background, the surfaces, rules, chips and status fills are derived from it; set colorSurface or colorBorder to choose one instead.",
+      "properties": {
+        "colorBackground": {
+          "$ref": "#/$defs/color"
+        },
+        "colorSurface": {
+          "$ref": "#/$defs/color"
+        },
+        "colorText": {
+          "$ref": "#/$defs/color"
+        },
+        "colorTextMuted": {
+          "$ref": "#/$defs/color"
+        },
+        "colorBorder": {
+          "$ref": "#/$defs/color"
         }
       }
     },
@@ -553,24 +660,7 @@
           "$ref": "#/$defs/sitePath"
         },
         "files": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "include": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/glob"
-              },
-              "maxItems": 32
-            },
-            "exclude": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/glob"
-              },
-              "maxItems": 32
-            }
-          }
+          "$ref": "#/$defs/fileFilter"
         }
       }
     },
@@ -592,6 +682,83 @@
         },
         "mount": {
           "$ref": "#/$defs/sitePath"
+        },
+        "files": {
+          "$ref": "#/$defs/fileFilter",
+          "description": "Which files under `root` are published, by the same glob rules as a content source. Without `include`, every file is a candidate; `exclude` then removes matches. A file left out is not published, not hashed as an input and not checked against the MIME allowlist - so a directory can hold a download beside the page that explains it."
+        }
+      }
+    },
+    "redirect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from"],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/sitePath",
+          "description": "The old site-logical path, e.g. `/storage_concepts/`. Directory form: a trailing slash is added if missing. It must not be a route, a mount or anything else the artifact publishes."
+        },
+        "landing": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "component": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "href": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "An internal site path that exists (a route, a static file or a subsite mount), or an https:// URL."
+        },
+        "status": {
+          "enum": [301, 302, 307, 308],
+          "description": "The HTTP status the host answers with. Default 301: a moved page, which is what a migrated site's old URLs are."
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["landing"],
+          "properties": {
+            "landing": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["component"],
+          "properties": {
+            "component": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["href"],
+          "properties": {
+            "href": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "fileFilter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/glob"
+          },
+          "maxItems": 32
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/glob"
+          },
+          "maxItems": 32
         }
       }
     },

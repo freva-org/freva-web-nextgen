@@ -13,15 +13,16 @@ import remarkFrontmatter from "remark-frontmatter";
 import type { Root, RootContent, PhrasingContent, Definition, FootnoteDefinition } from "mdast";
 import type { Diagnostic } from "../../diagnostics.js";
 import { loadYaml } from "../../config/yaml.js";
-import type { IrDocument, IrNode, SourceLocation } from "../ir.js";
+import type { IrCards, IrDocument, IrNode, SourceLocation } from "../ir.js";
 import {
   CAPTION_DIRECTIVE,
   FIGURE_DIRECTIVE,
   LEGEND_DIRECTIVE,
   normalizeBlockSyntax,
 } from "./block-source.js";
+import { buildCards } from "../cards.js";
 import { resolveAdmonition } from "../admonitions.js";
-import { RUNNABLE_MARKER } from "../runnable.js";
+import { EDITABLE_MARKER, RUNNABLE_MARKER } from "../runnable.js";
 import { locationFor, type OriginContext, type OriginNode } from "../location.js";
 import type { ContentProfile } from "../profile.js";
 
@@ -106,7 +107,7 @@ export function parseMarkdown(
   const diagnostics: Diagnostic[] = [];
   // Accept the block spellings real documentation is written in, before the parser sees the
   // text. Nothing else about the source is rewritten.
-  const normalized = normalizeBlockSyntax(source);
+  const normalized = normalizeBlockSyntax(source, profile.markdown.cardGrid);
   const lineMap = normalized.lineMap;
   source = normalized.text;
   // What the normalizer recognized and refused. Errors, not warnings: a caption block the
@@ -217,12 +218,28 @@ export function parseMarkdown(
         const meta = typeof node.meta === "string" ? node.meta.trim() : "";
         let title: string | undefined;
         let runnable = false;
+        let editable = false;
         if (meta) {
           const titles = [...meta.matchAll(/title\s*=\s*"([^"]*)"/g)];
           const rest = meta.replace(/title\s*=\s*"[^"]*"/g, " ");
           const words = rest.split(/\s+/).filter((word) => word !== "");
           const markers = words.filter((word) => word === RUNNABLE_MARKER);
-          const leftover = words.filter((word) => word !== RUNNABLE_MARKER).join(" ");
+          const editables = words.filter((word) => word === EDITABLE_MARKER);
+          const leftover = words
+            .filter((word) => word !== RUNNABLE_MARKER && word !== EDITABLE_MARKER)
+            .join(" ");
+          if (editables.length > 1 || (editables.length === 1 && markers.length !== 1)) {
+            error(
+              "PC1022",
+              editables.length > 1
+                ? `This code fence carries '${EDITABLE_MARKER}' more than once.`
+                : `'${EDITABLE_MARKER}' is only meaningful beside '${RUNNABLE_MARKER}'.`,
+              node,
+              `A snippet is editable so it can be run again: write \`python ${RUNNABLE_MARKER} ${EDITABLE_MARKER}\`.`,
+            );
+            return [];
+          }
+          editable = editables.length === 1;
           if (titles.length > 1) {
             error("PC1021", "This code fence carries more than one title.", node);
             return [];
@@ -241,7 +258,7 @@ export function parseMarkdown(
               "PC1021",
               `Code fence metadata '${leftover}' is not part of portal-content-v1.`,
               node,
-              `Only title="…" and ${RUNNABLE_MARKER} are accepted.`,
+              `Only title="…", ${RUNNABLE_MARKER} and ${EDITABLE_MARKER} are accepted.`,
             );
             return [];
           }
@@ -272,6 +289,7 @@ export function parseMarkdown(
             ...(lang ? { lang } : {}),
             ...(title !== undefined ? { title } : {}),
             ...(runnable ? { runnable: true } : {}),
+            ...(runnable && editable ? { editable: true } : {}),
           } as IrNode,
         ];
       }
@@ -450,6 +468,51 @@ export function parseMarkdown(
               children: [image, ...kids()],
             } as IrNode,
           ];
+        }
+        if (name === profile.markdown.cardGrid.directive) {
+          const children = ((node.children as RootContent[]) ?? []) as MdNode[];
+          const first = children[0] as
+            | (MdNode & { data?: { directiveLabel?: boolean } })
+            | undefined;
+          const grid = profile.markdown.cardGrid;
+          const attributes = (node.attributes ?? {}) as Record<string, string | null | undefined>;
+          const names = Object.keys(attributes);
+          if (first?.data?.directiveLabel || names.some((key) => key !== grid.columnsAttribute)) {
+            error(
+              "PC1023",
+              `A card grid takes no title, and no attribute but \`${grid.columnsAttribute}\`.`,
+              node,
+              `Write \`:::${name}\` - or \`:::${name}{${grid.columnsAttribute}=2}\` - on its own line, then the list of cards.`,
+            );
+            return [];
+          }
+          const hint = attributes[grid.columnsAttribute];
+          let columns: number | undefined;
+          if (names.includes(grid.columnsAttribute)) {
+            columns = grid.columns.find((n) => String(n) === String(hint ?? "").trim());
+            if (columns === undefined) {
+              error(
+                "PC1023",
+                `\`${grid.columnsAttribute}=${hint ?? ""}\` is not a column hint this grid accepts.`,
+                node,
+                `Use ${grid.columns.map((n) => `\`${grid.columnsAttribute}=${n}\``).join(", ")}: the most columns the grid may use.`,
+              );
+              return [];
+            }
+          }
+          const built = buildCards(kids(), l);
+          if (built.node && columns !== undefined) (built.node as IrCards).columns = columns;
+          for (const problem of built.problems) {
+            diagnostics.push({
+              code: "PC1023",
+              severity: "error",
+              message: problem.message,
+              file,
+              ...(problem.loc.line !== undefined ? { position: { line: problem.loc.line } } : {}),
+              ...(problem.hint ? { hint: problem.hint } : {}),
+            });
+          }
+          return built.node ? [built.node] : [];
         }
         // Any name the vocabulary knows, plus a neutral fallback for one it does not: a build
         // that stops because somebody wrote `:::musing` turns a styling question into an

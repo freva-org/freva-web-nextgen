@@ -37,6 +37,11 @@ feature almost nobody enables.
 npm run stac:prepare -- --out /tmp/stac-materials
 ```
 
+A consumer without a checkout runs the same recipe from the published package -
+`freva-portal-builder prepare-stac --out <dir>` - which `prepack` makes possible by copying the
+recipe's allow-listed files into `stac-recipe/` (`scripts/vendor-stac-recipe.mjs`). In a checkout
+the command reads `packages/stac-browser` directly.
+
 That verifies the pinned commit, upstream's lockfile and its licence text against the recipe,
 applies the reviewed patch series with `git apply --check` first and no fuzzy or three-way
 matching, builds with the recorded settings, and writes a verified directory with a manifest, a
@@ -141,7 +146,10 @@ would have been a `PC1005` error — so adding a key to `allowedKeys` changes no
 existing document's output, no anchor and no DOM. It is still a change to the
 profile: the digest moves, the artifact records the new one, and the key has to
 be documented in `content-profile.md`'s closed list alongside the others.
-`navOrder` was added under this rule. A key that changed how existing content
+`navOrder` was added under this rule. So were card grids (`:::cards` and Material's
+`<div class="grid cards" markdown>`): the HTML spelling was a `PC1002` error and `:::cards` an
+unknown admonition that warned (`PC1017`), so no document that built without a diagnostic renders
+differently. A key that changed how existing content
 renders would not qualify, whatever its name. A
 security correction may reject input demonstrated to be unsafe in a patch
 release; it changes the profile digest, carries an advisory and a migration

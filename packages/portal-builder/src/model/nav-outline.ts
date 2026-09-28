@@ -7,9 +7,9 @@
  * sentence. Both levels are derived here as one tree, once, at build time, so the phone panel and
  * the tablet breadcrumb dropdown render the same data rather than two hand-kept copies.
  *
- * Nothing new is computed. Sections are the declared links; a section's pages are the routes
- * beneath it, ordered by `deriveSectionNavigation` where it applies; a page's groups are its own
- * `toc`. The model already carries all three - see `ResolvedRoute`.
+ * Nothing new is computed. Sections are the declared links; a section's pages are the linked
+ * page's own `sectionNavigation` (the directory-based list the desktop rail draws), then any
+ * deeper routes beneath the link; a page's groups are its own `toc`. See `ResolvedRoute`.
  */
 import type { HeadingRef, ResolvedLink, ResolvedRoute } from "./types.js";
 
@@ -64,22 +64,46 @@ export function nestHeadings(toc: readonly HeadingRef[]): OutlineHeading[] {
   return roots;
 }
 
-/** Routes that belong under `href`, in the order the site publishes them. */
-function pagesUnder(href: string, routes: readonly ResolvedRoute[]): ResolvedRoute[] {
-  return routes.filter(
-    (route) => route.kind === "content" && route.path !== href && route.path.startsWith(href),
-  );
+/** Whether a page is its directory's index, the one page that stands for the directory. */
+function isSectionEntry(route: ResolvedRoute): boolean {
+  return /(?:^|\/)index\.(?:md|rst)$/i.test(route.source ?? "");
+}
+
+/**
+ * The base-path-aware href of a route. Header links are resolved against the site base
+ * (`/portal/docs/...`), while `route.path` is site-logical (`/docs/...`); comparing the two
+ * directly only works for a portal published at the domain root.
+ */
+function routeHref(basePath: string, route: ResolvedRoute): string {
+  const base = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+  return `${base}${route.path}`;
 }
 
 /**
  * The whole outline: one entry per declared header link. The same tree is emitted for every page,
  * so the narrow chrome is identical markup everywhere and the build stays reproducible; which
  * entry is current is a rendering question, answered against `currentPath` in the template.
+ *
+ * Membership, in order:
+ *
+ * 1. A link to a directory's INDEX page with a `sectionNavigation`: every page of that section, in
+ *    the rail's order, keyed on the source directory - so a page whose frontmatter `path` moves it
+ *    outside the link's prefix stays in. The linked page itself is drawn as "<section> overview".
+ *    A link to an ordinary page is a link to THAT page only: About and Contact from one directory
+ *    must not share a submenu and both show active.
+ * 2. Then any other content page under the link's URL, in route order (deeper directories the
+ *    flat rail never lists), never twice.
+ *
+ * Comparisons use base-path-aware hrefs, like `currentPath`, so `/portal/` and `/` match.
  */
 export function deriveNavOutline(
   links: readonly ResolvedLink[],
   routes: readonly ResolvedRoute[],
+  basePath = "/",
 ): OutlineSection[] {
+  const content = routes.filter((route) => route.kind === "content");
+  const byHref = new Map(content.map((route) => [routeHref(basePath, route), route] as const));
+
   return links.map((link) => {
     const section: OutlineSection = {
       label: link.label,
@@ -89,31 +113,28 @@ export function deriveNavOutline(
     };
     if (link.external) return section;
 
-    // A section index has a `sectionNavigation` covering its own directory, and that ordering -
-    // index first, then `navOrder`, then filename - is what the docs rail shows. Reusing it keeps
-    // the phone panel and the rail in the same order.
-    const index = routes.find((route) => route.path === link.href);
-    const ordered = index?.sectionNavigation?.items;
-    const under = pagesUnder(link.href, routes);
-    const byPath = new Map(under.map((route) => [route.path, route] as const));
+    const seen = new Set<string>([link.href]);
+    const chosen: { route: ResolvedRoute; href: string }[] = [];
+    const take = (href: string): void => {
+      if (seen.has(href)) return;
+      const route = byHref.get(href);
+      if (!route) return;
+      seen.add(href);
+      chosen.push({ route, href });
+    };
 
-    const chosen: ResolvedRoute[] = [];
-    if (ordered) {
-      for (const item of ordered) {
-        const route = byPath.get(item.href);
-        if (route) {
-          chosen.push(route);
-          byPath.delete(item.href);
-        }
-      }
+    const target = byHref.get(link.href);
+    if (target && isSectionEntry(target)) {
+      for (const item of target.sectionNavigation?.items ?? []) take(item.href);
     }
-    // Anything the section ordering did not name - a deeper page, a directory of its own - keeps
-    // its route order rather than disappearing from the panel.
-    for (const route of under) if (byPath.has(route.path)) chosen.push(route);
+    for (const route of content) {
+      const href = routeHref(basePath, route);
+      if (href.startsWith(link.href)) take(href);
+    }
 
-    section.pages = chosen.map((route) => ({
+    section.pages = chosen.map(({ route, href }) => ({
       title: route.title,
-      href: route.path,
+      href,
       headings: (route.toc?.length ?? 0) >= 2 ? nestHeadings(route.toc ?? []) : [],
     }));
     return section;

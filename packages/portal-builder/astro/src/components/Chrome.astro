@@ -36,8 +36,16 @@ const monogram = brandName
  */
 const declared = [...navigation.header, ...chrome.header.links];
 const tabs = declared.filter((link) => link.href !== homeHref);
+/**
+ * A tab is active on its own route, under its URL prefix, or on any page its outline lists - a
+ * page whose frontmatter `path` published it outside the prefix still belongs to its section.
+ */
 const isActive = (href: string): boolean =>
-  href === currentPath || (href !== homeHref && currentPath.startsWith(href));
+  href === currentPath ||
+  (href !== homeHref && currentPath.startsWith(href)) ||
+  model.navOutline.some(
+    (section) => section.href === href && section.pages.some((page) => page.href === currentPath),
+  );
 
 /**
  * Both navigation levels, as one tree, for the phone drill-down. Read from the model rather than
@@ -143,6 +151,24 @@ const outlineSections = model.navOutline;
 
       <div class="portal-header-controls">
         {/*
+          The documentation search, when the deployment enabled it. `hidden` until the island
+          starts: without JavaScript there is nothing behind the button, and a control that does
+          nothing is worse than none. The index is fetched on first use, from this origin.
+        */}
+        {model.search && (
+          <button
+            type="button"
+            class="portal-sitesearch-open"
+            data-portal-sitesearch-open
+            aria-haspopup="dialog"
+            aria-controls="portal-sitesearch"
+            hidden
+          >
+            <Fragment set:html={`<svg class="portal-sitesearch-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>`} />
+            <span class="portal-sitesearch-open-label">Search</span>
+          </button>
+        )}
+        {/*
           The day/night control, in the Data Browser's own shape: a track with a knob that slides.
           Which icon shows and where the knob sits are decided by `:root[data-theme]` in the
           stylesheet, so it is correct on the first paint rather than rewritten by a script.
@@ -201,6 +227,45 @@ const outlineSections = model.navOutline;
         )}
       </div>
     </header>
+  )
+}
+
+{
+  /*
+    The search dialog: a native modal `<dialog>`, which brings the focus trap, Escape and the
+    inert page behind it for free. A combobox over a listbox, the ARIA pattern for "type, then
+    pick": focus stays in the field, arrow keys move the active option, Enter follows it.
+  */
+  chrome.header.enabled && model.search && (
+    <dialog
+      class="portal-sitesearch"
+      id="portal-sitesearch"
+      aria-label="Search the documentation"
+      data-portal-sitesearch-index={model.search.indexUrl}
+    >
+      <div class="portal-sitesearch-box">
+        <Fragment set:html={`<svg class="portal-sitesearch-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>`} />
+        <input
+          type="search"
+          class="portal-sitesearch-input"
+          role="combobox"
+          aria-label={model.search.placeholder}
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="portal-sitesearch-results"
+          placeholder={model.search.placeholder}
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="200"
+        />
+        <button type="button" class="portal-sitesearch-close" data-portal-sitesearch-close>
+          <span class="portal-visually-hidden">Close search</span>
+          <kbd aria-hidden="true">Esc</kbd>
+        </button>
+      </div>
+      <p class="portal-sitesearch-status" role="status" aria-live="polite"></p>
+      <ul class="portal-sitesearch-results" id="portal-sitesearch-results" role="listbox" aria-label="Results"></ul>
+    </dialog>
   )
 }
 

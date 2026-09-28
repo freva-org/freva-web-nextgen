@@ -19,6 +19,7 @@ export type ValueRole =
   | "token"
   | "text"
   | "sitePath"
+  | "sitePathOrUrl"
   | "artifactPath"
   | "artifactPathPrefix"
   | "sourcePath"
@@ -168,6 +169,10 @@ const RULES: Rule[] = [
   { pointer: /^\/cache\/classes\/[^/]+$/, role: "headerValue" },
   { pointer: /^\/authCallback\/path$/, role: "sitePath" },
   { pointer: /^\/authCallback\/headers\/[^/]+$/, role: "headerValue" },
+  { pointer: /^\/redirects\/\*\/from$/, role: "sitePath" },
+  // An internal target is a site path; a redirect off the site is an absolute https URL.
+  { pointer: /^\/redirects\/\*\/to$/, role: "sitePathOrUrl" },
+  { pointer: /^\/redirects\/\*\/fallback$/, role: "artifactPath" },
 
   // BUILDINFO.json
   { pointer: /^\/builder\/name$/, role: "purlName" },
@@ -287,6 +292,8 @@ export function checkRole(role: ValueRole, value: string): string | undefined {
   switch (role) {
     case "sitePath":
       return checkSitePath(value);
+    case "sitePathOrUrl":
+      return value.startsWith("/") ? checkSitePath(value) : checkUrl(value, false);
     case "artifactPath":
     case "sourcePath":
       return checkRelativePath(value, false);

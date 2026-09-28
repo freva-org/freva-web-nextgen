@@ -13,6 +13,18 @@ export interface ContentProfile {
   profileVersion: number;
   markdown: {
     containerDirectives: string[];
+    /** `:::cards`, and Material for MkDocs' `<div class="grid cards" markdown>`. */
+    cardGrid: {
+      directive: string;
+      materialClassLists: string[];
+      materialMarkdownAttribute: string[];
+      /** The column hints a grid may carry: a maximum, never a fixed count. */
+      columns: number[];
+      /** `:::cards{columns=2}` */
+      columnsAttribute: string;
+      /** `<div class="grid cards cols-2" markdown>` */
+      materialColumnsClassPrefix: string;
+    };
     rawHtml: "reject";
     autolinkLiteral: { bareWwwScheme: string };
   };

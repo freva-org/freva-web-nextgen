@@ -70,6 +70,13 @@ export const CODES = {
   FP1220: "Credential persistence on the portal's own origin",
   FP1221: "A runnable code block in a place that is not a page",
   FP1222: "Python playground configured but unused",
+  FP1223: "Python playground artefacts have nowhere to be served",
+  FP1224: "Invalid redirect",
+  FP1225: "Header search without a header",
+  FP1226: "Theme colours fail a readability rule",
+  FP1227: "Editable snippets are not available with a separate playground origin",
+  FP1228: "A theme option the preset does not use",
+  FP1229: "Too many links in the collapsed footer bar",
   // Announcements
   FP1301: "Missing --effective-at for a dated announcement",
   FP1302: "Invalid announcement interval",

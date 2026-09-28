@@ -141,6 +141,7 @@ const outlinePages = showSection
           class="portal-cosmos"
           aria-hidden="true"
           data-portal-cosmos-assets={model.theme.sceneAssetBase}
+          data-portal-cosmos-tail={model.theme.backdropTail}
         />
       </Fragment>
     )
@@ -148,7 +149,7 @@ const outlinePages = showSection
 
   {
     landing && (
-      <div class="portal-landing">
+      <div class="portal-landing" data-backdrop-tail={model.theme.backdropTail}>
         {model.theme.backdrop === "contour" && (
           <canvas class="portal-contour-stripes" aria-hidden="true" />
         )}

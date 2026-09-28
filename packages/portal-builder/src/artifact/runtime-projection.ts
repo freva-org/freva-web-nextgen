@@ -32,6 +32,13 @@ export interface RuntimeProjection {
   /** Present only when a footer badge was configured. */
   footerBadge?: { kind: string; quality: string };
   /**
+   * Present only when `chrome.header.search` is enabled. The index URL is on the dialog element
+   * the header draws, not here: the entry names the module and nothing about the site.
+   */
+  search?: true;
+  /** Present only when `announcementFeed` is configured: the one URL the island reads. */
+  announcementFeed?: { url: string };
+  /**
    * Present only when the theme asks for a drawn backdrop. A preset that does not ask leaves
    * this undefined and the module is never imported, which is how a `default` build is proved
    * to contain none of it.
@@ -152,6 +159,8 @@ export function projectRuntime(model: ResolvedPortalModel): RuntimeProjection {
     };
   }
 
+  if (model.search) projection.search = true;
+  if (model.announcementFeed) projection.announcementFeed = { url: model.announcementFeed.url };
   if (model.chrome.footer.badge) {
     projection.footerBadge = {
       kind: model.chrome.footer.badge.kind,
@@ -216,7 +225,11 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
     lines.push(`import { runAuthCallback } from ${CLIENT("components/auth-callback.ts")};`);
   }
   if (projection.databrowser) {
-    lines.push(`import { mountDatabrowserIsland } from ${CLIENT("components/databrowser.ts")};`);
+    // The island itself is a LITERAL DYNAMIC import, further down, behind a check for its mount
+    // element, like the dataset tree. Statically imported, it and the terminal (~570 KiB) would be
+    // in every page's eager chunk, and the playground's lazy terminal import would be ineffective
+    // (INEFFECTIVE_DYNAMIC_IMPORT).
+    //
     // The landing box's suggestion list is Data-Browser-owned too: it ranks with that
     // package's ranker and reads that service. With the component disabled there is no box to
     // enhance, and nothing of it is imported.
@@ -227,6 +240,17 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
   }
   if (projection.footerBadge) {
     lines.push(`import { mountFooterBadge } from ${CLIENT("components/footer-badge.ts")};`);
+  }
+  // The header search: small, and needed on every page it is on (the `/` shortcut, and marking
+  // the words a reader arrived from), so a static import - but only in a portal that asked for
+  // it. Its stylesheet comes with it and with nothing else.
+  if (projection.search) {
+    lines.push(`import { initSiteSearch } from ${CLIENT("components/site-search.ts")};`);
+  }
+  if (projection.announcementFeed) {
+    lines.push(
+      `import { initAnnouncementFeed } from ${CLIENT("components/announcement-feed.ts")};`,
+    );
   }
   // The dataset tree is reached through a LITERAL DYNAMIC import, and only because a landing
   // block asked for it; a portal without the block emits no such line at all, which
@@ -310,14 +334,22 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
   if (projection.auth) lines.push("  const auth = createAuth(RUNTIME.auth);");
   if (projection.databrowser) {
     lines.push(
+      "  if (document.getElementById(RUNTIME.databrowser.mountId)) {",
+      `    void import(${CLIENT("components/databrowser.ts")}).then((m) =>`,
       projection.auth
-        ? "  mountDatabrowserIsland(RUNTIME.databrowser, { auth });"
-        : "  mountDatabrowserIsland(RUNTIME.databrowser);",
+        ? "      m.mountDatabrowserIsland(RUNTIME.databrowser, { auth }),"
+        : "      m.mountDatabrowserIsland(RUNTIME.databrowser),",
+      "    );",
+      "  }",
     );
   }
   if (projection.databrowser) lines.push("  initSearchSuggestions();");
   if (projection.stac) lines.push("  void mountStacIsland(RUNTIME.stac);");
   if (projection.footerBadge) lines.push("  void mountFooterBadge();");
+  if (projection.search) lines.push("  initSiteSearch();");
+  if (projection.announcementFeed) {
+    lines.push("  void initAnnouncementFeed(RUNTIME.announcementFeed.url);");
+  }
   if (projection.datasetTree) {
     // The playground is prepared AFTER the mount RESOLVES, not beside it and not inside its
     // `.then`. `preparePythonPlayground()` reads the blocks the island registers,
@@ -364,6 +396,17 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
       lines[lines.length - 1] += ";";
     }
     lines.push("  }");
+    // A page without a tree, on a portal with one elsewhere: its runnable snippets are still
+    // providers, so it gets the playground configuration and its Try buttons.
+    if (projection.pythonPlayground?.content) {
+      lines.push(
+        "  else {",
+        `    void mountRunnableCode().then(() => preparePythonPlayground(${
+          projection.pythonPlayground.framed ? "loadFramedChunks" : "loadLocalChunks"
+        }));`,
+        "  }",
+      );
+    }
   } else if (projection.pythonPlayground) {
     // No tree block on any page of this portal: the runnable snippets are the only providers,
     // so the chain starts from them rather than from a mount that will not happen.

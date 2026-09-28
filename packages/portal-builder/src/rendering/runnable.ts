@@ -17,6 +17,13 @@ import { lineOf } from "./location.js";
 export const RUNNABLE_MARKER = "try-in-python";
 
 /**
+ * The fence word that makes a runnable snippet editable in place: ```` ```python try-in-python
+ * editable ````. Meaningful only beside the runnable marker - an editable block that cannot run
+ * would be a text box - and only on a portal whose interpreter is on its own origin.
+ */
+export const EDITABLE_MARKER = "editable";
+
+/**
  * A source path, escaped so two different paths can never compose into one id. The same rule
  * the dataset tree uses for its own ids: percent-escape the separator and the escape
  * character, so `a/b` and `a%2Fb` stay distinguishable and a forged delimiter buys nothing.

@@ -63,6 +63,17 @@ const MARKDOWN: { name: string; source: string; expect: RegExp }[] = [
     source: "www.example.org",
     expect: /href="https:\/\/www\.example\.org"/,
   },
+  {
+    name: "card grid (:::cards)",
+    source: ":::cards\n- **[A](https://example.org/)**\n  Summary.\n:::",
+    expect:
+      /<ul class="portal-cardgrid" role="list"><li class="portal-cardgrid-card"><p class="portal-cardgrid-title">/,
+  },
+  {
+    name: "card grid (Material)",
+    source: '<div class="grid cards" markdown>\n\n- **[A](https://example.org/)**\n\n</div>',
+    expect: /<ul class="portal-cardgrid" role="list">/,
+  },
 ];
 
 /** Every RST construct the profile accepts. */

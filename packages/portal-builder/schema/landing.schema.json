@@ -119,6 +119,9 @@
           ]
         }
       },
+      "discriminator": {
+        "propertyName": "type"
+      },
       "oneOf": [
         {
           "$ref": "#/$defs/blockHero"

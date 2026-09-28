@@ -13,6 +13,7 @@
 // only way to test the coordinator rather than Pyodide.
 //
 // Usage:  node browser-tests/python-playground.mjs
+//         FREVA_ONLY="<substring>" node browser-tests/python-playground.mjs   (matching checks)
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -135,8 +136,11 @@ ${Array.from({ length: 8 }, (_, i) => `      - title: Card ${i + 1}\n        sum
     expand:
       - cmip6
 ${
-  python
-    ? `    python:
+  options.docs
+    ? // The tree inherits the portal-level stanza, which the docs page's snippets use too.
+      "    python:\n      enabled: true\n"
+    : python
+      ? `    python:
       enabled: true
       profile: minimal
       autostart: ${options.autostart ?? "never"}
@@ -147,7 +151,7 @@ ${options.initialSource ? `      initialSource: |\n        ${options.initialSour
         alwaysOnTop: ${options.alwaysOnTop ?? true}
         rememberAppearance: true
 `
-    : ""
+      : ""
 }`,
   );
   put(
@@ -167,8 +171,34 @@ landings:
   home:
     path: /
     source: ./landings/home.yaml
-`,
+${
+  options.docs
+    ? `rendering:
+  profile: portal-content-v1
+  sources:
+    - root: ./content
+      mount: /docs/
+pythonPlayground:
+  enabled: true
+  profile: minimal
+  autostart: never
+  maxSessions: 2
+  terminal:
+    style: freva-client-terminal
+    osControls: linux
+    alwaysOnTop: true
+    rememberAppearance: true
+`
+    : ""
+}`,
   );
+  if (options.docs) {
+    put(
+      "content/guide.md",
+      "---\ntitle: Guide\n---\n\n# Guide\n\nNo tree on this page.\n\n" +
+        '```python try-in-python title="docs.py"\nprint("from the docs page")\n```\n',
+    );
+  }
   const out = join(root, "..", `py-site-${suffix}-${process.pid}`);
   execFileSync(
     process.execPath,
@@ -216,6 +246,8 @@ const SITES = {
   }),
   bare: writeFixture(true, { suffix: "bare", noExamples: true }),
   floating: writeFixture(true, { suffix: "floating", alwaysOnTop: false }),
+  // A tree on the landing page, and runnable snippets on a docs page that has no tree.
+  mixed: writeFixture(true, { suffix: "mixed", docs: true }),
 };
 
 const { createPreviewServer } = await import(join(PKG, "dist", "verify", "preview.js"));
@@ -320,6 +352,7 @@ const problemsOf = (ctx) => ctx.problems;
 
 const results = [];
 async function check(name, fn) {
+  if (process.env.FREVA_ONLY && !name.includes(process.env.FREVA_ONLY)) return;
   try {
     await fn();
     results.push({ name, ok: true });
@@ -340,7 +373,11 @@ async function check(name, fn) {
  */
 const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 
-async function withPage(key, fn, { stub = true, confirmAnswer = true, readyInfo = null } = {}) {
+async function withPage(
+  key,
+  fn,
+  { stub = true, confirmAnswer = true, readyInfo = null, path = "", ready = ".dataset-tree" } = {},
+) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   await context.route(`${bases[key]}__axe-core.js`, (route) =>
     route.fulfill({ status: 200, contentType: "text/javascript", body: AXE }),
@@ -405,8 +442,8 @@ async function withPage(key, fn, { stub = true, confirmAnswer = true, readyInfo 
   if (stub) await page.addInitScript(STUB);
   await page.addInitScript(PORTAL_MODAL);
   try {
-    await page.goto(bases[key], { waitUntil: "networkidle" });
-    await page.waitForSelector(".dataset-tree", { timeout: 15_000 });
+    await page.goto(`${bases[key]}${path}`, { waitUntil: "networkidle" });
+    await page.waitForSelector(ready, { timeout: 15_000 });
     // `violations` is read at ASSERTION time, not here: a snapshot taken before the test has done
     // anything would report the page load's policy record and miss everything the press causes,
     // which is the half that matters.
@@ -946,6 +983,47 @@ try {
       await page.click(tryIt);
       await page.waitForSelector(".freva-term.show");
       assert.equal(await page.evaluate(() => window.__consoles().length), 2);
+    }),
+  );
+
+  // a tree on one page, runnable snippets on another
+
+  await check("a docs page without a tree shows its Try button, and a press runs it", () =>
+    withPage(
+      "mixed",
+      async (page) => {
+        // Only the startup chain unhides the buttons, and it must run on a page without a tree.
+        await page.waitForSelector(".portal-code-run:not([hidden])", { timeout: 10_000 });
+        await page.click(".portal-code-run");
+        await page.waitForSelector(".freva-term.show", { timeout: 20_000 });
+        await page.waitForFunction(() => window.__order.includes("example:docs.py"), null, {
+          timeout: 10_000,
+        });
+        const state = await page.evaluate(() => ({
+          consoles: window.__consoles().length,
+          transcript: window.__consoles()[0].transcript(),
+          trees: document.querySelectorAll("[data-portal-dataset-tree]").length,
+        }));
+        assert.equal(state.trees, 0, "the docs page has a tree after all");
+        assert.equal(state.consoles, 1);
+        assert.ok(state.transcript.includes('print("from the docs page")'), state.transcript);
+      },
+      { path: "docs/guide/", ready: ".portal-code-figure" },
+    ),
+  );
+
+  await check("…and the landing page with the tree is unchanged: its Try still runs", () =>
+    withPage("mixed", async (page) => {
+      assert.equal(await page.locator(".portal-code-run").count(), 0);
+      const tryIt = await openExample(page);
+      await page.waitForSelector(tryIt);
+      await page.click(tryIt);
+      await page.waitForSelector(".freva-term.show", { timeout: 20_000 });
+      await page.waitForFunction(
+        () => window.__consoles()[0]?.transcript().includes("open_zarr"),
+        null,
+        { timeout: 10_000 },
+      );
     }),
   );
 

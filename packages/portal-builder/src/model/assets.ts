@@ -9,7 +9,7 @@ import { readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import type { Diagnostic } from "../diagnostics.js";
 import { sha256 } from "../util/package.js";
-import { walkRoot } from "../sources/glob.js";
+import { compileGlob, walkRoot } from "../sources/glob.js";
 import type { ContentProfile } from "../rendering/profile.js";
 import { sanitizeSvgFile } from "../rendering/svg.js";
 import type { CacheClass, InputRecord, ResolvedStaticFile } from "./types.js";
@@ -22,6 +22,25 @@ export interface MountedRoot {
   relative: string;
   /** Site-logical mount, always with a trailing slash. */
   mount: string;
+  /** `files.include`; empty means every file under the root is a candidate. */
+  include?: string[];
+  /** `files.exclude`, applied after `include`. */
+  exclude?: string[];
+}
+
+/**
+ * Apply a root's `files` filter, in the content sources' glob dialect (`compileGlob`). No
+ * `include` keeps every walked file, dotfiles included, so a root that says nothing publishes
+ * everything.
+ */
+export function filterMountedFiles(files: readonly string[], root: MountedRoot): string[] {
+  const include = (root.include ?? []).map(compileGlob);
+  const exclude = (root.exclude ?? []).map(compileGlob);
+  return files.filter(
+    (file) =>
+      (include.length === 0 || include.some((re) => re.test(file))) &&
+      !exclude.some((re) => re.test(file)),
+  );
 }
 
 export interface AssetCollectionResult {
@@ -64,7 +83,7 @@ export function collectMountedFiles(
   for (const root of roots) {
     const walked = walkRoot(root.absolute, root.relative);
     diagnostics.push(...walked.diagnostics);
-    for (const rel of walked.files) {
+    for (const rel of filterMountedFiles(walked.files, root)) {
       const abs = join(root.absolute, rel);
       const sourceRel = `${root.relative}/${rel}`.replace(/^\/+/, "");
       const size = statSync(abs).size;

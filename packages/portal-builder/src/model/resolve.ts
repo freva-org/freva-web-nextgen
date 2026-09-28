@@ -82,9 +82,13 @@ import { UNAPPLIED_TOKENS, resolveThemeCss, themeNames } from "../themes/registr
 import { collectMountedFiles, mimeForAsset, type MountedRoot } from "./assets.js";
 import { collectSubsite } from "./subsites.js";
 import { resolveLink, type LinkContext } from "./links.js";
+import { resolveRedirects } from "./redirects.js";
+import { buildSearchIndex, publishSearchIndex, SITE_SEARCH_EVIDENCE } from "./search-index.js";
+import { ANNOUNCEMENT_FEED_EVIDENCE } from "./announcement-feed.js";
 import {
   normalizeAuthBase,
   normalizeDatabrowserBase,
+  normalizeServiceUrl,
   normalizeStacCatalogUrl,
   parseCanonicalUrl,
   siteFile,
@@ -349,7 +353,13 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     if (!root) continue;
     const mount = sitePath(entry.mount, `/rendering/assets/${index}/mount`, "asset mount");
     if (!mount) continue;
-    assetRoots.push({ absolute: root.absolute, relative: root.relative, mount });
+    assetRoots.push({
+      absolute: root.absolute,
+      relative: root.relative,
+      mount,
+      include: entry.files?.include ?? [],
+      exclude: entry.files?.exclude ?? [],
+    });
     inputRootsForDisjointness.push({
       absolute: root.absolute,
       label: `asset root ${root.relative}`,
@@ -362,7 +372,13 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     if (!root) continue;
     const mount = sitePath(entry.mount, `/rendering/downloads/${index}/mount`, "download mount");
     if (!mount) continue;
-    downloadRoots.push({ absolute: root.absolute, relative: root.relative, mount });
+    downloadRoots.push({
+      absolute: root.absolute,
+      relative: root.relative,
+      mount,
+      include: entry.files?.include ?? [],
+      exclude: entry.files?.exclude ?? [],
+    });
     inputRootsForDisjointness.push({
       absolute: root.absolute,
       label: `download root ${root.relative}`,
@@ -414,6 +430,20 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     return { diagnostics: bag, warningsAsErrors, contents, rst: { used: false } };
   }
   const theme = resolveThemeCss(presetName, config.theme?.tokens);
+  // The story's ending. Only the cosmos preset tells one; anywhere else the key does nothing, and
+  // a build that accepted it silently would leave a deployment wondering why.
+  const requestedTail = config.theme?.backdrop?.tail;
+  const backdropTail =
+    theme.backdrop === "cosmos" && (requestedTail === "short" || requestedTail === "none")
+      ? requestedTail
+      : undefined;
+  if (requestedTail && theme.backdrop !== "cosmos") {
+    bag.warn(
+      "FP1228",
+      `theme.backdrop.tail has no effect with the '${presetName}' preset: only 'cosmos' draws a story with an ending to shorten.`,
+      { file: configRel, pointer: "/theme/backdrop/tail" },
+    );
+  }
   // A token the schema accepts, the build reports nothing about, and the stylesheet never sees.
   // Four of the seven colour tokens drive properties the design owns in both themes, and the
   // resolver drops them; without this a deployment sets `colorSurface`, sees a clean build, and
@@ -425,9 +455,19 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
       {
         file: configRel,
         pointer: `/theme/tokens/${token}`,
-        hint: "Remove it, or change the preset. The tokens that do reach the stylesheet are colorAccent, colorAccentContrast and colorBorder.",
+        hint: `Set it for one colour mode instead: theme.tokens.light.${token} or theme.tokens.dark.${token}. The flat tokens that do reach the stylesheet are colorAccent, colorAccentContrast and colorBorder.`,
       },
     );
+  }
+
+  // A mode block's page palette is re-measured at build time. What the builder derived already
+  // clears every rule; what is left here is a colour the consumer set that does not.
+  for (const finding of theme.findings) {
+    bag.warn("FP1226", `Theme ${finding.message}`, {
+      file: configRel,
+      pointer: finding.pointer,
+      hint: "Choose a colour that clears the ratio, or leave it out and the builder derives one that does.",
+    });
   }
 
   // Identity assets.
@@ -1312,7 +1352,19 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     );
   }
 
-  const pipeline = new ContentPipeline(profile, limits, Boolean(portalPlayground));
+  const pipeline = new ContentPipeline(
+    profile,
+    limits,
+    Boolean(portalPlayground),
+    theme.codeBackgrounds,
+    {
+      ...(portalPlayground?.controls ? { controls: portalPlayground.controls } : {}),
+      ...(portalPlayground?.editableSnippets ? { editableAll: true } : {}),
+      // Edited source can only run in an interpreter on this origin: the separate-origin bridge
+      // carries an example's id and digest, and nowhere to put code.
+      editing: !portalPlayground?.playgroundOrigin,
+    },
+  );
   const contentResult = await pipeline.run(
     discovered.docs,
     [...fragmentRequests.values()],
@@ -1326,6 +1378,26 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     },
     register,
   );
+
+  // Editing asked for where it cannot be honoured: the interpreter is on `playgroundOrigin`, whose
+  // bridge carries an example's id and digest and deliberately has nowhere to put source. The
+  // snippets stay runnable and read-only; this says why, once.
+  if (pipeline.editableRefused > 0 && portalPlayground?.playgroundOrigin) {
+    bag.warn(
+      "FP1227",
+      `${pipeline.editableRefused} snippet${pipeline.editableRefused === 1 ? " asks" : "s ask"} to be editable, but the Python playground runs on a separate origin (${portalPlayground.playgroundOrigin}); they stay read-only.`,
+      {
+        file: configRel,
+        pointer: portalPlayground.editableSnippets
+          ? "/pythonPlayground/editableSnippets"
+          : "/pythonPlayground/playgroundOrigin",
+        hint:
+          "Edited code is visitor input, and the separate-origin bridge only ever carries a " +
+          "registered example's id and digest, never source. Run the interpreter on the " +
+          "portal's own origin to allow editing, or drop `editable`.",
+      },
+    );
+  }
 
   // What each page actually registered, now that the content has been rendered. A landing's
   // runnable snippets are its prose blocks'; a documentation page's are its own. This has to come
@@ -1539,6 +1611,20 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     inputs.push(...(cosmosPublication.inputs as typeof inputs));
   }
 
+  // The collapsed bar's shortcuts. Resolved exactly as the legal links are; the one thing added is
+  // whether a link opens a new tab, which an external https:// link does and a mailto: does not.
+  const rawBar = config.chrome?.footer?.bar;
+  const barLinks = rawBar
+    ? resolveLinks(rawBar.links, "/chrome/footer/bar/links").map((link) => ({
+        ...link,
+        newTab: link.external && !link.href.startsWith("mailto:"),
+      }))
+    : [];
+  const footerBar =
+    footerEnabled && barLinks.length > 0
+      ? { ...(rawBar?.lead ? { lead: rawBar.lead } : {}), links: barLinks }
+      : undefined;
+
   const chrome = {
     header: {
       enabled: config.chrome?.header?.enabled ?? true,
@@ -1554,6 +1640,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         links: resolveLinks(group.links, `/chrome/footer/groups/${index}/links`),
       })),
       legalLinks: resolveLinks(config.chrome?.footer?.legalLinks, "/chrome/footer/legalLinks"),
+      ...(footerBar ? { bar: footerBar } : {}),
       ...(footerProse && contentResult.fragments.has(footerProse)
         ? { prose: contentResult.fragments.get(footerProse)! }
         : {}),
@@ -1565,6 +1652,20 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     header: resolveLinks(config.navigation?.header, "/navigation/header"),
     footer: resolveLinks(config.navigation?.footer, "/navigation/footer"),
   };
+
+  // Redirects, once every route, mount and link target is known.
+  const redirectResult = resolveRedirects(config.redirects ?? [], {
+    basePath: canonical.basePath,
+    isRoute: (path) => routes.has(path),
+    mounts: [
+      ...assetRoots.map((root) => root.mount),
+      ...downloadRoots.map((root) => root.mount),
+      ...subsites.map((subsite) => subsite.mount),
+    ],
+    link: linkCtxBase,
+    file: configRel,
+  });
+  bag.merge(redirectResult.diagnostics);
 
   // STAC root intro.
   for (const component of componentList) {
@@ -1779,6 +1880,67 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     emittedServiceIds: [],
   });
 
+  // The header search: one static index of every content page, published with the artifact.
+  const searchEnabled = Boolean(config.chrome?.header?.search?.enabled);
+  let search: ResolvedPortalModel["search"];
+  if (searchEnabled) {
+    const index = buildSearchIndex(allRoutes, canonical.basePath);
+    const published = publishSearchIndex(index, canonical.basePath);
+    contents.set(published.file, published.bytes);
+    search = {
+      indexUrl: published.url,
+      placeholder: config.chrome?.header?.search?.placeholder ?? "Search the documentation",
+      entries: index.entries.length,
+    };
+    if (config.chrome?.header?.enabled === false) {
+      bag.warn("FP1225", "chrome.header.search is enabled, but the header is not.", {
+        file: configRel,
+        pointer: "/chrome/header/search",
+        hint: "The search control lives in the header. Enable the header, or drop the search.",
+      });
+    }
+  }
+  componentEvidencePlan.push({
+    ...SITE_SEARCH_EVIDENCE,
+    ownedModuleRoots: [...SITE_SEARCH_EVIDENCE.ownedModuleRoots],
+    ownedStaticRoots: [...SITE_SEARCH_EVIDENCE.ownedStaticRoots],
+    ownedEmittedNames: [...SITE_SEARCH_EVIDENCE.ownedEmittedNames],
+    assetNamespaces: [...SITE_SEARCH_EVIDENCE.assetNamespaces],
+    allowedSharedModules: [...SITE_SEARCH_EVIDENCE.allowedSharedModules],
+    enabled: searchEnabled,
+    routes: [],
+    emittedServiceIds: [],
+  });
+
+  // Live announcements. The URL is a service URL by the same rules as every other one - https or
+  // root-relative, a loopback http only under `dev` - with its query kept.
+  let announcementFeed: ResolvedPortalModel["announcementFeed"];
+  if (config.announcementFeed) {
+    const check = normalizeServiceUrl(config.announcementFeed.url, {
+      allowQuery: true,
+      allowInsecureLoopback: opts.dev ?? false,
+      trailingSlash: "preserve",
+    });
+    if (check.ok) announcementFeed = { url: check.value, origin: check.origin };
+    else {
+      bag.error("FP1205", `announcementFeed.url: ${check.error ?? "invalid URL"}`, {
+        file: configRel,
+        pointer: "/announcementFeed/url",
+      });
+    }
+  }
+  componentEvidencePlan.push({
+    ...ANNOUNCEMENT_FEED_EVIDENCE,
+    ownedModuleRoots: [...ANNOUNCEMENT_FEED_EVIDENCE.ownedModuleRoots],
+    ownedStaticRoots: [],
+    ownedEmittedNames: [],
+    assetNamespaces: [],
+    allowedSharedModules: [...ANNOUNCEMENT_FEED_EVIDENCE.allowedSharedModules],
+    enabled: Boolean(announcementFeed),
+    routes: [],
+    emittedServiceIds: [],
+  });
+
   const emittedServices = componentList
     .filter((c) => c.enabled && c.serviceId)
     .map((c) => services.get(c.serviceId!)!)
@@ -1856,6 +2018,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
       tokens: theme.tokens,
       css: theme.css,
       ...(theme.backdrop ? { backdrop: theme.backdrop } : {}),
+      ...(backdropTail ? { backdropTail } : {}),
       ...(cosmosPublication ? { sceneAssetBase: cosmosPublication.assetBase } : {}),
     },
     chrome,
@@ -1874,6 +2037,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         (link) => link.href !== canonical.basePath,
       ),
       allRoutes,
+      canonical.basePath,
     ),
     landings,
     routes: allRoutes,
@@ -1882,6 +2046,9 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     identityFiles,
     trustedSubsiteMounts: subsites,
     announcements,
+    redirects: redirectResult.redirects,
+    ...(search ? { search } : {}),
+    ...(announcementFeed ? { announcementFeed } : {}),
     hostPolicy: {
       ...(authComponent
         ? { authCallbackPath: (authComponent.options as AuthOptions).callbackPath }

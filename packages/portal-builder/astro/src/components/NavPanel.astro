@@ -26,7 +26,11 @@ const { sections, currentPath, homeHref, brandName } = Astro.props;
 const isCurrentPage = (href: string): boolean => href === currentPath;
 /** A section is current when the page being read lives inside it. */
 const isCurrentSection = (href: string): boolean =>
-  href === currentPath || (href !== homeHref && currentPath.startsWith(href));
+  href === currentPath ||
+  (href !== homeHref && currentPath.startsWith(href)) ||
+  sections.some(
+    (section) => section.href === href && section.pages.some((page) => page.href === currentPath),
+  );
 ---
 
 <div class="portal-navpanel" id="portal-navpanel" hidden data-level="root">

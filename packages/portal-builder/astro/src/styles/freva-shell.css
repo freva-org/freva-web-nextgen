@@ -1111,14 +1111,22 @@ a {
    */
   line-height: 1.65;
 }
+/*
+ * The measure as a registered LENGTH, resolved once at the prose's 16px and inherited as pixels,
+ * so headings and a smaller sidebar measure against the paragraphs' column.
+ */
+@property --portal-measure {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
 .portal-prose {
   /*
-   * The measure. 72ch is the classic book column, but a technical document carries wide tables,
-   * code and figures, and forcing those into a book measure wastes half the page and makes every
-   * one of them scroll. Half as wide again gives them room while keeping paragraphs short of the
-   * line lengths that hurt.
+   * 108ch: the 72ch book column half as wide again, for tables, code and figures. It belongs to
+   * running text, not the block: the block takes the panel's width, and wide content (card grids,
+   * code, tables, figures, diagrams, display maths) uses all of it from the same left edge.
    */
-  max-width: 108ch;
+  --portal-measure: 108ch;
   font-size: 16px;
   line-height: 1.65;
   color: var(--ink-2);
@@ -1128,6 +1136,23 @@ a {
    * overflow), so without this the end of it is *clipped* rather than wrapped.
    */
   overflow-wrap: break-word;
+}
+/* Everything that is not wide content keeps the measure: paragraphs, lists, headings, quotes,
+   admonitions, definition lists, and any construct not named here, which is the safe default. */
+.portal-prose
+  > :not(
+    pre,
+    table,
+    figure,
+    img,
+    video,
+    iframe,
+    .portal-code-figure,
+    .portal-cardgrid,
+    .portal-math-block,
+    .portal-diagram
+  ) {
+  max-width: var(--portal-measure, 108ch);
 }
 .portal-prose a {
   /* `anywhere` rather than `break-word`: a URL is one word, so only breaking
@@ -1262,6 +1287,174 @@ a {
 .portal-prose th {
   border: 1px solid var(--line);
   padding: 6px 10px;
+}
+
+/*
+ * Card grids in prose (`:::cards`, Material's `grid cards`): as many columns of at least 21rem as
+ * fit - narrower, the summary wraps every few words beside a stamp-sized picture - so two in the
+ * docs column, three on a very wide screen, one on a phone.
+ *
+ * A column hint (`:::cards{columns=2}`, `cols-2`) is a MAXIMUM: each track is at least
+ * `(100% - (N-1) gaps) / N`, and at least 13rem so a hint of 3 or 4 fits a docs column.
+ *
+ * The title link is stretched over the card (`::after`): one pointer target, one tab stop. Links
+ * in the summary are lifted above it; the focus ring is drawn on the card.
+ */
+.portal-prose .portal-cardgrid {
+  --portal-cardgrid-gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
+  gap: var(--portal-cardgrid-gap);
+  margin: 1.4em 0;
+  padding: 0;
+  list-style: none;
+}
+.portal-prose .portal-cardgrid-max-2 {
+  --portal-cardgrid-max: 2;
+}
+.portal-prose .portal-cardgrid-max-3 {
+  --portal-cardgrid-max: 3;
+}
+.portal-prose .portal-cardgrid-max-4 {
+  --portal-cardgrid-max: 4;
+}
+.portal-prose
+  .portal-cardgrid:is(.portal-cardgrid-max-2, .portal-cardgrid-max-3, .portal-cardgrid-max-4) {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(
+      min(
+        100%,
+        max(
+          13rem,
+          (100% - (var(--portal-cardgrid-max) - 1) * var(--portal-cardgrid-gap)) /
+            var(--portal-cardgrid-max)
+        )
+      ),
+      1fr
+    )
+  );
+}
+.portal-prose .portal-cardgrid-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.portal-prose .portal-cardgrid-card:hover {
+  border-color: var(--line-2);
+  box-shadow: var(--shadow-card);
+}
+.portal-prose .portal-cardgrid-card:has(.portal-cardgrid-title a:focus-visible) {
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+}
+.portal-prose .portal-cardgrid-media {
+  margin: 0;
+  background: var(--chip);
+  border-bottom: 1px solid var(--line);
+}
+.portal-prose .portal-cardgrid-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  margin: 0;
+  border-radius: 0;
+}
+.portal-prose .portal-cardgrid-title {
+  margin: 14px 16px 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1em;
+  line-height: 1.35;
+}
+.portal-prose .portal-cardgrid-title a {
+  color: var(--ink);
+  text-decoration: none;
+}
+.portal-prose .portal-cardgrid-title a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.portal-prose .portal-cardgrid-title a:focus-visible {
+  outline: none;
+}
+.portal-prose .portal-cardgrid-card:hover .portal-cardgrid-title a {
+  color: var(--accent-text, var(--accent));
+  text-decoration: underline;
+}
+.portal-prose .portal-cardgrid-body {
+  margin: 6px 16px 16px;
+  font-size: 0.93em;
+  color: var(--ink-2);
+}
+.portal-prose .portal-cardgrid-body > :first-child {
+  margin-top: 0;
+}
+.portal-prose .portal-cardgrid-body > :last-child {
+  margin-bottom: 0;
+}
+/*
+ * Everything in a card that acts on its own is lifted above the title's stretched overlay: summary
+ * links, a thumbnail linked elsewhere, and any control (Copy, Try in Python, form fields,
+ * disclosures, focusable scrollers). A code block is lifted whole, so its code stays selectable.
+ */
+.portal-prose
+  .portal-cardgrid-body
+  :is(a, button, input, select, textarea, summary, label, [tabindex]),
+.portal-prose .portal-cardgrid-media a {
+  position: relative;
+  z-index: 2;
+}
+.portal-prose .portal-cardgrid-body .portal-code-figure {
+  z-index: 2;
+}
+.portal-prose .portal-cardgrid-media a {
+  display: block;
+}
+.portal-prose .portal-cardgrid-card > :last-child:not(.portal-cardgrid-body) {
+  margin-bottom: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-prose .portal-cardgrid-card {
+    transition: none;
+  }
+}
+
+/*
+ * Display maths scrolls in its own box and never widens the page (KaTeX's `nowrap` makes a long
+ * equation as wide as it is). `position: relative` also contains KaTeX's hidden MathML copy,
+ * whose `position: absolute` could otherwise extend the page's scroll width. `overflow-y: hidden`
+ * stops a vertical scroller for KaTeX's sub-pixel struts; the padding keeps tall glyphs unclipped.
+ */
+.portal-prose .portal-math-block {
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding-block: 2px;
+}
+.portal-prose .portal-math-block > .katex-display {
+  margin-block: 0.6em;
+}
+.portal-prose .katex .katex-mathml {
+  /* Belt and braces: a clipped 1px box that can never contribute scroll width of its own. */
+  inset-inline-start: 0;
+  max-width: 1px;
 }
 
 /* Figures and captions. */
@@ -1701,6 +1894,10 @@ a {
     width: min(300px, 42%);
     margin-left: 28px;
   }
+  /* Beside the text it belongs to: at the measure's right edge, not the panel's. */
+  .portal-prose > .sidebar {
+    margin-right: max(0px, 100% - var(--portal-measure, 108ch));
+  }
   .portal-prose h1,
   .portal-prose h2,
   .portal-prose h3,
@@ -1890,8 +2087,12 @@ a {
   height: calc(100dvh - var(--header-h) - var(--footer-h, 0px) - 48px);
   max-height: calc(100dvh - var(--header-h) - var(--footer-h, 0px) - 48px);
   overflow-y: auto;
-  overscroll-behavior: contain;
   /*
+   * No `overscroll-behavior: contain`: it would hold the wheel in the rail even with nothing to
+   * scroll. By default a rail that fits hands the wheel to the page, and a long one scrolls, then
+   * carries on into the document. (The phone drawer and outline pop-over are overlays and keep
+   * `contain`.)
+   *
    * A rule down the whole column, so the rail reads as a full-height sidebar rather than a list
    * that happens to be on the left. Without it the eye has nothing telling it where the
    * navigation stops and the document starts.
@@ -2299,6 +2500,62 @@ summary.portal-section-nav-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Gives way before the shortcuts do. */
+  flex: 0 10 auto;
+  min-width: 0;
+}
+
+/*
+ * `chrome.footer.bar`: a lead and one to three links, on one line, in every mode - on the slim
+ * document and application bar too. One line of 12.5px text in a bar at least 34px tall, so it
+ * never makes the bar taller; it never wraps, and when it does not fit beside the badge it ends in
+ * an ellipsis. The few pixels of padding are the room a focus ring needs inside `overflow: hidden`.
+ */
+.portal-footer-shortcuts {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 3px;
+  font-size: 12.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.portal-footer-shortcuts-list,
+.portal-footer-shortcuts-list > li {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.portal-footer-shortcuts-lead {
+  color: var(--footer-muted);
+}
+.portal-footer-shortcuts-sep {
+  margin: 0 6px;
+  color: var(--footer-muted);
+}
+.portal-footer-shortcut {
+  color: var(--footer-text);
+  text-decoration: none;
+  border-radius: 3px;
+}
+.portal-footer-shortcut:hover,
+.portal-footer-shortcut:focus-visible {
+  color: var(--footer-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.portal-footer-shortcut:focus-visible {
+  outline: 2px solid var(--footer-strong);
+  outline-offset: 1px;
+}
+/* A phone keeps the links; the lead and its separator give way. */
+@media (max-width: 640px) {
+  .portal-footer-shortcuts-lead,
+  .portal-footer-shortcuts-sep-lead {
+    display: none;
+  }
 }
 /*
  * The site index unrolls as the visitor scrolls into it. The page reserves exactly the index's
@@ -3112,6 +3369,252 @@ details.portal-admonition > summary.portal-admonition-title:focus-visible {
 @media (hover: none) {
   .portal-code-run {
     opacity: 1;
+  }
+}
+
+/*
+ * On a RUNNABLE block the bar always shows: a control that appears only under the pointer is one a
+ * visitor must already know about. Copy shows with it; a plain block keeps its hover-only Copy.
+ * `pythonPlayground.controls: hover` restores the reveal on a device that can hover.
+ */
+.portal-code-actions .portal-code-copy,
+.portal-code-actions .portal-code-run {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .portal-code-figure[data-portal-controls="hover"]
+    .portal-code-actions
+    :is(.portal-code-copy, .portal-code-run) {
+    opacity: 0;
+  }
+  .portal-code-figure[data-portal-controls="hover"]:is(:hover, :focus-within)
+    .portal-code-actions
+    :is(.portal-code-copy, .portal-code-run),
+  .portal-code-figure[data-portal-controls="hover"]
+    .portal-code-actions
+    :is(.portal-code-copy, .portal-code-run):is(:focus-visible, [data-state]) {
+    opacity: 1;
+  }
+}
+
+/*
+ * What a press did, on the button itself: running while the example is queued or executing, then
+ * done when the program ran to the end, or error when it raised or could not run at all (refused,
+ * or no interpreter). The label says it in words; the colour only repeats it.
+ */
+.portal-code-run[data-state="running"] {
+  cursor: progress;
+}
+.portal-code-run[data-state="done"] {
+  color: var(--ink-2);
+}
+.portal-code-run[data-state="error"] {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Reset, beside Try in Python: only on an editable snippet, and only once it has been edited. */
+.portal-code-reset {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.portal-code-reset:hover {
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+.portal-code-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * An editable snippet: `code-run.ts` adds a line-number gutter, an "Editable" tag and a text
+ * cursor; the loaded editor puts a textarea with transparent glyphs over a highlighted copy in one
+ * grid cell. The textarea draws caret and selection from ITS metrics over the layer's glyphs, so
+ * any difference (size, line height, padding, ligature) drifts the caret. Every child gets the same
+ * size here, and layer and textarea are reset property by property at a specificity no prose `code`
+ * rule reaches. Nothing is sized by script.
+ */
+.portal-code-figure[data-portal-editable] > .portal-code-block {
+  display: flex;
+  align-items: flex-start;
+  /* The gutter carries the left inset, so text scrolling under it is hidden, not beside it. */
+  padding-left: 0;
+  cursor: text;
+}
+.portal-code-figure[data-portal-editable] > .portal-code-block > * {
+  /* What `pre > code` gets in prose: the gutter and the editor match the read-only code. */
+  font-size: 0.9em;
+  line-height: inherit;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+}
+/* Line numbers: muted, never selected or copied, and pinned while long lines scroll. */
+.portal-code-figure[data-portal-editable] > .portal-code-block > .portal-code-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  padding: 0 10px 0 16px;
+  border-right: 1px solid var(--line);
+  /* The block's own colour, so scrolled text passes under it. */
+  background: var(--chip);
+  /* Secondary text, not \`--muted\`: on a white page's code background muted is 4.44:1. */
+  color: var(--ink-2);
+  text-align: right;
+  white-space: pre;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.portal-code-figure[data-portal-editable] > .portal-code-block > code {
+  flex: 1 0 auto;
+  padding: 0 0 0 12px;
+}
+.portal-code-figure[data-portal-editable] > .portal-code-block > .portal-code-editor-grid {
+  display: grid;
+  flex: 1 0 auto;
+  min-width: 0;
+  padding: 0;
+}
+.portal-code-figure[data-portal-editable] .portal-code-editor-grid > :is(span, textarea) {
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-variant-ligatures: none;
+  font-feature-settings: normal;
+  font-kerning: none;
+  line-height: inherit;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-indent: 0;
+  text-transform: none;
+  tab-size: 4;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.portal-code-figure[data-portal-editable] .portal-code-editor-view {
+  display: block;
+  pointer-events: none;
+}
+/* Both the line blocks and the textarea start 12px after the gutter, so they stay in register. */
+.portal-code-figure[data-portal-editable] .portal-code-editor-grid > textarea,
+.portal-code-editor-view > .portal-code-line {
+  padding-left: 12px;
+}
+.portal-code-editor-view > .portal-code-line {
+  display: block;
+}
+/* The caret's line, while the editor has the focus. */
+.portal-code-editor-view > .portal-code-line.is-current {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.portal-code-editor-input {
+  display: block;
+  overflow: hidden;
+  resize: none;
+  color: transparent;
+  caret-color: var(--ink);
+  outline: none;
+}
+.portal-code-editor-input::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: transparent;
+}
+.portal-code-figure:has(.portal-code-editor-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The editor's own highlighting: the shell's syntax roles, which every theme already sets. */
+.portal-code-editor .tok-comment {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+.portal-code-editor .tok-keyword {
+  color: var(--syn-keyword);
+}
+.portal-code-editor .tok-string {
+  color: var(--syn-string);
+}
+.portal-code-editor .tok-number {
+  color: var(--syn-number);
+}
+.portal-code-editor .tok-name {
+  color: var(--syn-name);
+}
+.portal-code-editor .tok-punct {
+  color: var(--syn-punct);
+}
+
+/*
+ * The header of an editable snippet: an "Editable" tag beside the language, and an "Edited" marker
+ * beside the title (beside the tag without one) while the code differs from the author's.
+ */
+.portal-code-figure[data-portal-editable] .portal-code-title {
+  flex: 0 1 auto;
+}
+.portal-code-figure[data-portal-editable]
+  .portal-code-lang:not(.portal-code-lang-secondary)
+  ~ .portal-code-actions {
+  margin-left: auto;
+}
+.portal-code-editable,
+.portal-code-edited {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.portal-code-edited[hidden] {
+  display: none;
+}
+.portal-code-editable-icon {
+  width: 11px;
+  height: 11px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16z'/%3E%3Cpath d='M13 7l4 4'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16z'/%3E%3Cpath d='M13 7l4 4'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+}
+.portal-code-edited::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* A phone keeps the icon and the dot; the words stay for a screen reader. */
+@media (max-width: 480px) {
+  :is(.portal-code-editable, .portal-code-edited) > [class$="-label"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 

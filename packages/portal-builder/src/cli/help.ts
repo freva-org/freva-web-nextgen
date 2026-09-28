@@ -17,6 +17,8 @@ Usage:
   freva-portal-builder migrate    --from <ui-manifest.json> --out <dir>
   freva-portal-builder stac-plan  --source-root <dir> --config <portal.yaml> [--diagnostics json]
   freva-portal-builder prepare-playground --source-root <dir> --config <portal.yaml> --out <dir> [--force] [--dry-run]
+  freva-portal-builder prepare-stac --out <dir> [--force] [--upstream <dir>] [--checkout-dir <dir>]
+  freva-portal-builder prepare-stac --cache-key
 
 Options:
   --source-root <dir>     The trusted source root. Required for validate and build.
@@ -24,7 +26,7 @@ Options:
   --out <dir>             Output directory. Must be outside every declared input root.
   --effective-at <time>   RFC 3339 instant used to select dated announcements.
   --stac-materials <dir>  Prepared STAC Browser materials, produced beforehand by
-                          'npm run stac:prepare'. Required only when the portal
+                          'prepare-stac'. Required only when the portal
                           enables the stac-browser component; ignored when it
                           does not. This build never fetches, patches or
                           compiles upstream, and it does not look for materials
@@ -40,8 +42,16 @@ Options:
                           'verify' like everything else. Adding them afterwards
                           is what makes an artifact unverifiable.
                           FREVA_PORTAL_PYTHON_MATERIALS says the same thing.
-  --force                 For 'prepare-playground': fetch again even when the
-                          cache is current and verifies.
+  --force                 For 'prepare-playground' and 'prepare-stac': prepare
+                          again even when the output is current and verifies.
+  --cache-key             For 'prepare-stac': print the cache key for the
+                          shipped recipe and this toolchain, and exit.
+  --upstream <dir>        For 'prepare-stac': an existing upstream checkout or
+                          mirror instead of a fetch. The commit is still verified.
+  --checkout-dir <dir>    For 'prepare-stac': where the fetched upstream checkout
+                          is kept between runs (default: .stac-upstream beside
+                          --out). A new or empty directory, or one prepare-stac
+                          made; anything else is refused, never deleted.
   --dry-run               For 'prepare-playground': list what would be prepared
                           and touch neither the network nor the disk.
   --stage <dir>           Disposable staging root for 'smoke'. Must be empty.
@@ -72,8 +82,8 @@ Preparing the Python playground:
   bytes against the pins, not by looking for a manifest, so a stale directory is
   prepared again rather than served.
 
-  'validate' and 'build' never open a socket. 'prepare-playground' is the only
-  command in this CLI that does.
+  'validate' and 'build' never open a socket. 'prepare-playground' and
+  'prepare-stac' are the only commands in this CLI that do.
 
 There is no --runtime, no --api-settings and no silent HTTP fallback: the site's
 routes, navigation, theme and content are decided here, not in a browser.
@@ -87,12 +97,19 @@ a portal that would actually build.
 STAC Browser:
   Freva owns one central recipe for building Radiant Earth's STAC Browser -
   the pin, the patch series, the toolchain and the verification - in
-  packages/stac-browser. A deployment decides only whether to enable the
-  closed 'stac-browser' component and which STAC API it points at.
-  Preparation is a separate, network-enabled stage that runs only for a
-  deployment that has enabled it; this build is network-disabled and consumes
-  its verified output. Neither the published packages nor the base builder
-  image contains the compiled third-party application.
+  packages/stac-browser, and this package ships a copy of it. A deployment
+  decides only whether to enable the closed 'stac-browser' component and which
+  STAC API it points at. Preparation is a separate, network-enabled stage that
+  runs only for a deployment that has enabled it (it needs git and npm):
+
+    freva-portal-builder prepare-stac --out .stac-materials
+    freva-portal-builder build --source-root . --config portal/portal.yaml \
+      --out build/portal --stac-materials .stac-materials
+
+  A directory whose provenance carries the current cache key and whose files
+  verify is reused rather than rebuilt. This build is network-disabled and
+  consumes the verified output. Neither the published packages nor the base
+  builder image contains the compiled third-party application.
 
 Reproducibility:
   SOURCE_DATE_EPOCH   Seconds since the Unix epoch, as an integer. Required by

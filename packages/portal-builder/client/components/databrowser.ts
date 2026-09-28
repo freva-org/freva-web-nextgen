@@ -76,7 +76,13 @@ export function mountDatabrowserIsland(
     metadataScriptUrl: null,
     features: { brand: false, footer: false, themeToggle: false },
     theme: { mode: widgetMode() },
-    ...(deps.auth ? { getAuthToken: () => deps.auth!.token() } : {}),
+    ...(deps.auth
+      ? {
+          getAuthToken: () => deps.auth!.token(),
+          // Offered by the inspector only when an action needs a signed-in user.
+          signIn: () => deps.auth!.login(),
+        }
+      : {}),
   });
 
   // One theme, one switch. The shell owns the control and announces the change; the widget

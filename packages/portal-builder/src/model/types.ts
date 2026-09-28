@@ -55,6 +55,11 @@ export interface ResolvedTheme {
    */
   backdrop?: "contour" | "cosmos";
   /**
+   * `theme.backdrop.tail` when it shortens the cosmos story's ending; absent for `full`, the
+   * default, and on every preset without a story.
+   */
+  backdropTail?: "short" | "none";
+  /**
    * Where a backdrop's own object bodies were published, with a trailing slash. Present only for
    * a backdrop that has any - today only `cosmos`. The island cannot work this out: the directory
    * is named for the digest of the published set, which only the build knows.
@@ -78,6 +83,8 @@ export interface ResolvedChrome {
     enabled: boolean;
     groups: { title: string; links: ResolvedLink[] }[];
     legalLinks: ResolvedLink[];
+    /** `chrome.footer.bar`: a lead and one to three links in the collapsed bar. */
+    bar?: { lead?: string; links: ResolvedBarLink[] };
     prose?: RenderedFragment;
     /**
      * The footer badge, when the configuration asked for one. Absent is the load-bearing case: no
@@ -86,6 +93,15 @@ export interface ResolvedChrome {
      */
     badge?: ResolvedFooterBadge;
   };
+}
+
+/**
+ * A link in the collapsed footer bar. `newTab` is decided here, not in the template: an https://
+ * link opens in a new tab, and a mailto: address - external too - hands off to a mail client and
+ * gets neither `target` nor `rel`.
+ */
+export interface ResolvedBarLink extends ResolvedLink {
+  newTab: boolean;
 }
 
 /** The footer badge as the templates and the island see it. */
@@ -441,6 +457,12 @@ export interface RegisteredExampleDigest extends PlaygroundExampleDigest {
 export interface PlaygroundSettings {
   /** browser-python profile name, passed through verbatim. Singular - see the raw type. */
   profile: string;
+  /**
+   * How a runnable snippet's controls show, and whether snippets are editable portal-wide. How a
+   * snippet is PRESENTED, not which interpreter runs it, so neither is in `playgroundIdentity`.
+   */
+  controls?: "always" | "hover";
+  editableSnippets?: boolean;
   autostart: "never" | "after-interactive" | "immediately";
   /** 1 or 2. Two is the ceiling: each session is a Worker with its own WASM heap. */
   maxSessions: number;
@@ -769,7 +791,7 @@ export interface ComponentEvidencePlan {
    * because the two are enabled separately: a portal with a dataset-tree block and no `python`
    * stanza must be provable to contain no interpreter.
    */
-  kind: ComponentKind | "dataset-tree" | "python-playground";
+  kind: ComponentKind | "dataset-tree" | "python-playground" | "site-search" | "announcement-feed";
   enabled: boolean;
   ownedModuleRoots: string[];
   ownedStaticRoots: string[];
@@ -851,6 +873,18 @@ export interface ResolvedPortalModel {
   identityFiles: ResolvedStaticFile[];
   trustedSubsiteMounts: ResolvedSubsite[];
   announcements: ResolvedAnnouncement[];
+  /** Old public paths and where they went; see `src/model/redirects.ts`. */
+  redirects: ResolvedRedirect[];
+  /**
+   * The header search, when `chrome.header.search.enabled`. Absent is the load-bearing case: no
+   * control in the header, no module in the entry, no stylesheet and no index file.
+   */
+  search?: { indexUrl: string; placeholder: string; entries: number };
+  /**
+   * Live announcements, when `announcementFeed` is configured: where the page reads them, and the
+   * origin that adds to `connect-src` (empty for same-origin). Absent: no island, no request.
+   */
+  announcementFeed?: { url: string; origin: string };
   hostPolicy: HostPolicyPlan;
   buildIdentity: BuildIdentity;
   inputs: InputRecord[];
@@ -867,4 +901,20 @@ export function deepFreeze<T>(value: T): T {
     }
   }
   return value;
+}
+
+/** One redirect for a migrated site; resolved in `src/model/redirects.ts`. */
+export type RedirectStatus = 301 | 302 | 307 | 308;
+
+export interface ResolvedRedirect {
+  /** The old site-logical path, directory form, e.g. `/storage_concepts/`. */
+  from: string;
+  /** The same path with the site's base path, which is what the host matches on. */
+  fromPath: string;
+  /** Where it goes: a base-path-aware path, or an absolute https URL. */
+  to: string;
+  external: boolean;
+  status: RedirectStatus;
+  /** Artifact-relative fallback page, e.g. `storage_concepts/index.html`. */
+  file: string;
 }

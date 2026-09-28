@@ -240,7 +240,7 @@ async function lowerNode(node: IrNode, ctx: LowerContext, slugs: SlugRegistry): 
       const resolved = ctx.resolveAsset(bare, line);
       if (!resolved) return [];
       const src = node.only ? `${resolved}#only-${node.only}` : resolved;
-      if (!node.alt.trim()) {
+      if (!node.alt.trim() && !node.decorative) {
         ctx.diagnostics.push({
           code: "PC1014",
           severity: "warning",
@@ -509,6 +509,47 @@ async function lowerNode(node: IrNode, ctx: LowerContext, slugs: SlugRegistry): 
       };
       return [h(map[node.type]!, {}, await kids())];
     }
+    case "cards":
+      // A list, because a grid of cards is one: a screen reader announces "list, 8 items" and
+      // lets the reader move card by card. `role="list"` because WebKit drops the list role
+      // from a `<ul>` whose markers are removed by CSS, which is exactly what a grid does.
+      // A column hint is a class, never a style attribute: the stylesheet turns it into a
+      // maximum, so the grid still reflows narrower - and to one column on a phone.
+      return [
+        h(
+          "ul",
+          {
+            class: node.columns
+              ? `portal-cardgrid portal-cardgrid-max-${node.columns}`
+              : "portal-cardgrid",
+            role: "list",
+          },
+          await kids(),
+        ),
+      ];
+    case "card": {
+      const children: HNode[] = [];
+      const body: HNode[] = [];
+      for (const child of node.children) {
+        const rendered = await lowerNode(child, ctx, slugs);
+        if (child.type === "image" || (child.type === "link" && child === node.children[0])) {
+          children.push(h("div", { class: "portal-cardgrid-media" }, rendered));
+        } else if (child.type === "cardTitle") {
+          children.push(...rendered);
+        } else {
+          body.push(...rendered);
+        }
+      }
+      if (body.length > 0) children.push(h("div", { class: "portal-cardgrid-body" }, body));
+      // Distinct class names from the landing `cards` block (`portal-card-grid`), which is
+      // chrome the portal draws, not prose an author wrote. The whole card is clickable only when
+      // its title is a link: the stylesheet stretches that link over the card.
+      return [h("li", { class: "portal-cardgrid-card" }, children)];
+    }
+    case "cardTitle":
+      // A paragraph, not a heading: eight card titles in the page's table of contents, and a
+      // heading level chosen for the grid rather than the document, would both be wrong.
+      return [h("p", { class: "portal-cardgrid-title" }, await kids())];
     case "tableOfContents":
       return [];
     default:
