@@ -1,5 +1,11 @@
 # @freva-org/databrowser
 
+## 2609.1.2
+
+### Patch Changes
+
+- f4c59b4: closes #17
+
 ## 2609.1.1
 
 ### Patch Changes

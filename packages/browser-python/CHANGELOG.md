@@ -1,5 +1,11 @@
 # @freva-org/browser-python
 
+## 2609.0.4
+
+### Patch Changes
+
+- e8e0509: up and down move between the lines of a multi-line block in the console before they reach history, the way IPython does
+
 ## 2609.0.3
 
 ### Patch Changes
