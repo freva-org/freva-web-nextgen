@@ -1,5 +1,13 @@
 # @freva-org/portal-builder
 
+## 2609.0.4
+
+### Patch Changes
+
+- Updated dependencies [8b433e3]
+  - @freva-org/freva-client-terminal@2609.0.1
+  - @freva-org/databrowser@2609.1.1
+
 ## 2609.0.3
 
 ### Patch Changes
