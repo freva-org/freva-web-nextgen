@@ -1468,8 +1468,10 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
       }
     }
 
-    if (event.key === "ArrowUp") return controller.historyPrevious();
-    if (event.key === "ArrowDown") return controller.historyNext();
+    // In a multi-line buffer the arrows move between its lines first; Ctrl+P / Ctrl+N above stay
+    // history-only, so a block can still be left for the previous entry in one key.
+    if (event.key === "ArrowUp") return controller.lineUpOrHistory();
+    if (event.key === "ArrowDown") return controller.lineDownOrHistory();
     if (event.key === "ArrowRight") {
       const surface = this.#adapter;
       // Only at the very end, where Right has nothing else to do.

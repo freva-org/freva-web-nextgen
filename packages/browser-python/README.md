@@ -68,7 +68,7 @@ Nothing is fetched until `start()`.
 | what                                   | on the wire                                               | when                                 |
 | -------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
 | this package, engine only              | <!-- size:root-entry-gz --> 7.0 KiB gzipped               | with your bundle                     |
-| this package, with the console         | <!-- size:console-entry-gz --> 124.0 KiB gzipped          | with your bundle, `/console` only    |
+| this package, with the console         | <!-- size:console-entry-gz --> 124.2 KiB gzipped          | with your bundle, `/console` only    |
 | Pyodide runtime + stdlib               | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
 | xarray, zarr, fsspec, numcodecs, numpy | 9.6 MB, 17 wheels                                         | first `start()`, `xarray-zarr` only  |
 | the derived Freva wheel + PyPI deps    | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
@@ -441,12 +441,12 @@ incomplete, state persists between lines, and top-level `await` works.
 |                       | `@freva-org/browser-python`             | `@freva-org/browser-python/console`          |
 | --------------------- | --------------------------------------- | -------------------------------------------- |
 | What you get          | engine, events, `push()`                | the above plus a rendered console            |
-| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **124.0 KiB** |
+| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **124.2 KiB** |
 | Touches `document`    | no                                      | yes, on `connectedCallback`                  |
 | Safe to import in SSR | yes                                     | `/console` yes, `/console/auto` no           |
 | jQuery in the bundle  | never (asserted by a test)              | yes, as a private instance                   |
 
-The console layer over the headless engine is <!-- size:console-layer-gz --> 117.0 KiB gzipped, of
+The console layer over the headless engine is <!-- size:console-layer-gz --> 117.2 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
 a target - 124 KiB for the layer, 8 KiB for the root entry - and fails if it finds a jQuery or
 worker-only add-on pin fingerprint in the root bundle.
@@ -482,21 +482,21 @@ nor history, runs again after every `restart()`, and **rejects `start()`** with
 
 ### Keyboard
 
-| Key                 | Does                                                                                      |
-| ------------------- | ----------------------------------------------------------------------------------------- |
-| `Enter`             | run the line - or open a continuation if the statement is incomplete                      |
-| `Shift+Enter`       | newline inside the current statement, without running it                                  |
-| `Tab`               | Python completion; at a whitespace-only prefix, indents instead                           |
-| `Tab` / `Shift+Tab` | cycle the completion menu when it is open                                                 |
-| `Enter` (menu open) | insert the selected completion. It does not run the line                                  |
-| `Escape`            | close the completion menu, or leave history search                                        |
-| `↑` / `↓`           | history, filtered by what is already typed                                                |
-| `Ctrl+P` / `Ctrl+N` | the same                                                                                  |
-| `→` / `Ctrl+E`      | accept the greyed-out history suggestion at end of line                                   |
-| `Ctrl+R`            | reverse history search; again for the next older match                                    |
-| `Ctrl+G`            | leave history search, restoring what you had typed                                        |
-| `Ctrl+L`, `clear`   | clear the transcript. Python state is untouched                                           |
-| `Ctrl+C`            | cancel a running execution at its next suspension point, or abandon the statement in hand |
+| Key                 | Does                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `Enter`             | run the line - or open a continuation if the statement is incomplete                        |
+| `Shift+Enter`       | newline inside the current statement, without running it                                    |
+| `Tab`               | Python completion; at a whitespace-only prefix, indents instead                             |
+| `Tab` / `Shift+Tab` | cycle the completion menu when it is open                                                   |
+| `Enter` (menu open) | insert the selected completion. It does not run the line                                    |
+| `Escape`            | close the completion menu, or leave history search                                          |
+| `↑` / `↓`           | in a multi-line block, the line above / below; otherwise history, filtered by what is typed |
+| `Ctrl+P` / `Ctrl+N` | history, even inside a multi-line block                                                     |
+| `→` / `Ctrl+E`      | accept the greyed-out history suggestion at end of line                                     |
+| `Ctrl+R`            | reverse history search; again for the next older match                                      |
+| `Ctrl+G`            | leave history search, restoring what you had typed                                          |
+| `Ctrl+L`, `clear`   | clear the transcript. Python state is untouched                                             |
+| `Ctrl+C`            | cancel a running execution at its next suspension point, or abandon the statement in hand   |
 
 `Ctrl+C` on a synchronous loop never reaches a suspension point, and a second and a half later the
 console says so and points at **Stop and restart**. `clear` is shadowed only in the exact case
