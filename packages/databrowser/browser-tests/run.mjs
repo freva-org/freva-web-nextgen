@@ -14,6 +14,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   "terminal-wrapping.mjs",
   "terminal-behaviour.mjs",
+  "terminal-selection.mjs",
   "layout.mjs",
   "time-card.mjs",
   "search-dropdown.mjs",
