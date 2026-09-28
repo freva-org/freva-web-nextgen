@@ -24,6 +24,7 @@ export { DEFAULT_BANNER } from "./console-types.js";
 export type {
   BrowserPythonConsoleElement,
   ConsoleDisplayOutput,
+  ConsoleExample,
   ConsoleHighlightOptions,
   ConsoleHistoryOptions,
   ConsoleOutputOptions,
@@ -32,5 +33,6 @@ export type {
   ConsoleTheme,
   ConsoleToolbarMode,
   DisplayRenderer,
+  ExampleOutcome,
   HistoryPersistence,
 } from "./console-types.js";

@@ -201,3 +201,55 @@ describe("transcript", () => {
     expect(controller.transcript()).toContain("x = 11");
   });
 });
+
+describe("what a run reports back", () => {
+  /** An engine whose `run` answers with a traceback for any source containing `raise`. */
+  function raising() {
+    const built = build();
+    const realRun = built.engine.run.bind(built.engine);
+    built.engine.run = async (code: string) => {
+      const result = await realRun(code);
+      return code.includes("raise") ? { ...result, error: "Traceback …\nValueError: no" } : result;
+    };
+    return built;
+  }
+
+  it("says whether the program raised", async () => {
+    const { controller } = raising();
+    expect(await controller.runExample({ title: "t", source: "a = 1\n" })).toEqual({
+      raised: false,
+    });
+    expect(await controller.runExample({ title: "t", source: "raise ValueError('no')\n" })).toEqual(
+      { raised: true },
+    );
+  });
+
+  it("says so for an example that waited in the queue, too", async () => {
+    const { controller, engine } = raising();
+    engine.emitStatus("loading");
+    const clean = controller.runExample({ title: "a", source: "a = 1\n" });
+    const failing = controller.runExample({ title: "b", source: "raise ValueError('no')\n" });
+    await settle();
+    engine.emitStatus("ready");
+    expect(await clean).toEqual({ raised: false });
+    expect(await failing).toEqual({ raised: true });
+  });
+
+  it("prints a comment above the source without running it", async () => {
+    const { controller, engine, surface } = build();
+    await controller.runExample({
+      title: "t",
+      source: "a = 1\nb = 2\n",
+      comment: "Edited snippet ·\narea.py",
+    });
+    // The program is what runs, byte for byte: its line numbers are its own.
+    expect(engine.runs).toEqual(["a = 1\nb = 2\n"]);
+    expect(surface.text.slice(0, 3).map((entry) => [entry.kind, entry.text])).toEqual([
+      ["status", "\n"],
+      ["status", "Edited snippet · area.py\n"],
+      ["command", "a = 1"],
+    ]);
+    // …and a comment in the copied transcript, so it pastes back as Python.
+    expect(controller.transcript()).toContain("# Edited snippet · area.py\n>>> a = 1");
+  });
+});
