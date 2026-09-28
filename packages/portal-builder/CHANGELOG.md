@@ -1,5 +1,13 @@
 # @freva-org/portal-builder
 
+## 2609.0.5
+
+### Patch Changes
+
+- d682664: Remove size budget from portal builder
+- Updated dependencies [9fbd88f]
+  - @freva-org/browser-python@2609.0.3
+
 ## 2609.0.4
 
 ### Patch Changes
