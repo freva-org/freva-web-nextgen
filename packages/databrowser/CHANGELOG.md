@@ -1,5 +1,12 @@
 # @freva-org/databrowser
 
+## 2609.1.1
+
+### Patch Changes
+
+- Updated dependencies [8b433e3]
+  - @freva-org/freva-client-terminal@2609.0.1
+
 ## 2609.1.0
 
 ### Minor Changes

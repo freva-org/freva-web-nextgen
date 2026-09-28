@@ -1,5 +1,11 @@
 # @freva-org/freva-client-terminal
 
+## 2609.0.1
+
+### Patch Changes
+
+- 8b433e3: `::selection { color }` no longer paints the textarea's elected text over the highlighted copy, so a selected line holding the cursor no longer shows its text twice
+
 ## 2609.0.0
 
 ### Major Changes
