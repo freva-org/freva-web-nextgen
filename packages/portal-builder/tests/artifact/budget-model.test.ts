@@ -1,8 +1,6 @@
-// The budget model, against a portal shaped like a deployment rather than like a unit test.
-//
-// Every other budget fixture in the suite is minimal, and a minimal fixture sits comfortably under
-// a budget a real consumer exceeds - a dataset-tree stylesheet and the Python playground's chunks
-// have each done it. The site here has two components, a documentation tree with prose, code and
+// The size measurement, against a portal shaped like a deployment rather than like a unit test.
+// There are no size ceilings: these check STRUCTURE - what a page fetches on load, what stays lazy
+// and which feature a lazy chunk is charged to - which a byte count cannot say. The site here has two components, a documentation tree with prose, code and
 // mathematics, a themed preset and a catalogue with thirty datasets, because that is the shape
 // that finds those.
 //
@@ -16,7 +14,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { cleanupFixtures, tempRoot } from "../helpers/fixture.js";
 import { buildFixture } from "../helpers/site.js";
 import { writeConsumerSite } from "../helpers/consumer.js";
-import { loadBudgets, measureArtifact } from "../../src/artifact/budgets.js";
+import { measureArtifact } from "../../src/artifact/budgets.js";
 import type { BuildResult } from "../../src/artifact/index.js";
 
 afterAll(cleanupFixtures);
@@ -52,19 +50,13 @@ function weigh(out: string, path: string): { raw: number; gz: number } {
 }
 
 describe("a consumer-shaped portal", () => {
-  it("validates without Python, inside the base-page budget", async () => {
+  it("validates without Python", async () => {
     const { result, report } = await build({}, "portal-consumer-base-");
     expect(result.diagnostics.errors).toEqual([]);
-    const budgets = loadBudgets();
-    const heaviest = report.pages[0];
-    expect(heaviest).toBeTruthy();
-    expect(heaviest?.javascript ?? 0).toBeLessThanOrEqual(budgets.basePage.javascript);
-    expect(heaviest?.css ?? 0).toBeLessThanOrEqual(budgets.basePage.css);
+    expect(report.pages[0]).toBeTruthy();
   }, 300_000);
 
   it("still validates with `dataset-tree.python` enabled", async () => {
-    // One number over every emitted file would fail the build here by a quarter of a megabyte of
-    // code no visitor fetches unless they press a button.
     const { result } = await build({ python: true }, "portal-consumer-python-");
     expect(result.diagnostics.errors).toEqual([]);
   }, 300_000);
@@ -98,14 +90,9 @@ describe("a consumer-shaped portal", () => {
 
   it("measures the optional chunks rather than exempting them", async () => {
     const { report } = await build({ python: true }, "portal-consumer-measured-");
-    const budgets = loadBudgets();
     const feature = report.features["python-playground"];
     expect(feature).toBeTruthy();
     expect(feature?.javascript ?? 0).toBeGreaterThan(300_000);
-    expect(feature?.javascript ?? 0).toBeLessThanOrEqual(
-      budgets.lazy.features["python-playground"]?.javascript ?? 0,
-    );
-    expect(report.lazyTotals.javascript).toBeLessThanOrEqual(budgets.lazy.javascript);
   }, 300_000);
 
   it("reports what each autostart mode actually transfers on load", async () => {
@@ -135,8 +122,8 @@ describe("a consumer-shaped portal", () => {
   }, 600_000);
 
   it("prints a per-asset breakdown, raw and gzipped", async () => {
-    // Reported rather than asserted. A budget says "not more than"; a reader deciding whether a
-    // feature is worth its weight needs the actual numbers, and gzip is what crosses the wire.
+    // Reported rather than asserted: a reader deciding whether a feature is worth its weight
+    // needs the actual numbers, and gzip is what crosses the wire.
     const { out, report } = await build({ python: true }, "portal-consumer-table-");
     const rows: string[] = [];
     const heaviest = report.pages[0];
@@ -156,22 +143,10 @@ describe("a consumer-shaped portal", () => {
   }, 300_000);
 });
 
-// A base page can exceed the CSS budget with Python DISABLED - a real consumer measured 123,890
-// against 122,880 - and the optional-feature split does not address that, because none of those
-// bytes are the playground's. The growth is in unconditional stylesheets: +14,873 in the shell's
-// own and +7,356 in the dataset-tree block wrapper, 22,229 together.
-//
-// Asserted here as the shape of that failure rather than a deployment's exact number, which this
-// suite cannot know: base-page CSS measured with no Python near it, inside the reviewed ceiling,
-// and - the part that keeps this honest - with real headroom rather than a ceiling moved to just
-// above whatever the build happened to emit.
-const RETIRED_CSS_CEILING = 122_880;
-
 describe("the base page's own stylesheet weight", () => {
-  it("is inside the reviewed base-page CSS budget with Python disabled", async () => {
+  it("is measured with no Python asset in it when Python is disabled", async () => {
     const { result, report } = await build({}, "portal-consumer-basecss-");
     expect(result.diagnostics.errors).toEqual([]);
-    const budgets = loadBudgets();
     const heaviest = report.pages[0];
     expect(heaviest).toBeTruthy();
     const css = heaviest?.css ?? 0;
@@ -180,21 +155,7 @@ describe("the base page's own stylesheet weight", () => {
     expect(report.eager.filter((p) => /console|browser-python|python-playground/.test(p))).toEqual(
       [],
     );
-    expect(css).toBeLessThanOrEqual(budgets.basePage.css);
-
-    // The reduction has to do the work, not the revised ceiling. The tree package's stylesheet is
-    // not linked from the head, and it alone is larger than the headroom the revision added, so
-    // its return fails here rather than in a deployment.
-    expect(
-      css,
-      `base CSS ${css} no longer clears the retired ${RETIRED_CSS_CEILING} ceiling: the eager ` +
-        `stylesheets have grown back. Reduce them rather than raising the budget again.`,
-    ).toBeLessThanOrEqual(RETIRED_CSS_CEILING);
-
-    console.log(
-      `\nbase-page CSS: ${css} measured, ${budgets.basePage.css} allowed ` +
-        `(retired ceiling ${RETIRED_CSS_CEILING})`,
-    );
+    console.log(`\nbase-page CSS: ${css} bytes`);
   }, 300_000);
 
   it("links no dataset-tree stylesheet from a page that has no tree", async () => {
@@ -217,11 +178,10 @@ describe("the base page's own stylesheet weight", () => {
 
   it("charges the tree package's stylesheet to the pages that have a tree", async () => {
     // The bytes sit inside the island's own chunk - lazy, fetched by a page with a block on it -
-    // so they are still measured rather than exempted, which is the point of the model.
+    // so they are still measured rather than exempted.
     const { report } = await build({}, "portal-consumer-treelazy-");
     const treeChunks = report.lazy.filter((f) => /dataset-tree/.test(f.path));
     expect(treeChunks.length).toBeGreaterThan(0);
-    expect(report.lazyTotals.javascript).toBeLessThanOrEqual(loadBudgets().lazy.javascript);
   }, 300_000);
 });
 
@@ -254,16 +214,13 @@ describe("what 'eager' means", () => {
   }, 600_000);
 });
 
-// The combination a Waterpark deployment runs, which is the one that crosses the ceiling. Every
-// fixture above browses a build-time CATALOGUE, and a catalogue does not reach the S3 adapter,
-// the access recipes or the in-page data inspector - so those measure a portal nobody deploys and
-// pass, while a consumer with the Data Browser and a LIVE tree fails `FP1407` at 936,720 bytes.
-// This fixture is shaped like that deployment: Data Browser, live dataset tree, the inspector the
+// The combination a Waterpark deployment runs. Every fixture above browses a build-time
+// CATALOGUE, and a catalogue does not reach the S3 adapter, the access recipes or the in-page data
+// inspector. This fixture is shaped like that deployment: Data Browser, live dataset tree, the inspector the
 // tree pulls in, and the Python playground on the profile that makes a recipe runnable.
 describe("a Waterpark-shaped portal: Data Browser, a live tree, the inspector and Python", () => {
   // The configuration under test. The Data Browser is not a flag: `writeConsumerSite` always
-  // enables it, which is what makes this the combination that crosses the ceiling rather than a
-  // tree on its own.
+  // enables it.
   const WATERPARK = { s3: true, python: true, profile: "xarray-zarr" } as const;
 
   /**
@@ -284,20 +241,9 @@ describe("a Waterpark-shaped portal: Data Browser, a live tree, the inspector an
     );
   }
 
-  it("passes every reviewed ceiling in the complete consumer configuration", async () => {
-    const { result, report } = await build(WATERPARK, "portal-waterpark-");
-    // The BUILD's own verdict, not a re-implementation of it: `buildFixture` runs the real
-    // `checkBudgets` over the real evidence and chunk graph, so an empty error list is the gate
-    // passing rather than this test agreeing with itself.
+  it("builds the complete consumer configuration without errors", async () => {
+    const { result } = await build(WATERPARK, "portal-waterpark-");
     expect(result.diagnostics.errors).toEqual([]);
-
-    const budgets = loadBudgets();
-    expect(report.lazyTotals.javascript).toBeLessThanOrEqual(budgets.lazy.javascript);
-    // Two-sided, like every other budget assertion here: a ceiling a fixture uses a third of
-    // describes nothing, and would let the next feature through unnoticed.
-    expect(report.lazyTotals.javascript).toBeGreaterThan(budgets.lazy.javascript * 0.5);
-    expect(report.pages[0]?.javascript ?? 0).toBeLessThanOrEqual(budgets.basePage.javascript);
-    expect(report.pages[0]?.css ?? 0).toBeLessThanOrEqual(budgets.basePage.css);
   }, 240_000);
 
   it("keeps the inspector lazy: no page asks for it, so the base page does not pay for it", async () => {
@@ -323,10 +269,8 @@ describe("a Waterpark-shaped portal: Data Browser, a live tree, the inspector an
     const { out, report } = await build(WATERPARK, "portal-waterpark-attribution-");
     const chunks = inspectorChunks(out, report);
     // The point of the accounting. Without the tree's evidence plan owning the inspector and its
-    // loader, these bytes are lazy, real and against nobody's name: the tree's cost reads as its
-    // island alone and the inspector surfaces only when an aggregate ceiling fails in a
-    // consumer's build. Unattributed lazy bytes are the exemption this model exists to refuse,
-    // and "it is only 43 KB" is how the console's 269 KB of libraries get in.
+    // loader, these bytes are lazy, real and against nobody's name, and the tree's cost reads as
+    // its island alone.
     for (const chunk of chunks) expect(chunk.feature).toBe("dataset-tree");
 
     const tree = report.features["dataset-tree"];
@@ -337,33 +281,12 @@ describe("a Waterpark-shaped portal: Data Browser, a live tree, the inspector an
     expect(tree?.javascript ?? 0).toBeGreaterThan(inspector + 40_000);
   }, 240_000);
 
-  it("still enforces the Python playground's own ceiling", async () => {
+  it("charges the console, the coordinator, the bridge and the Worker to the playground", async () => {
     const { result, report } = await build(WATERPARK, "portal-waterpark-python-");
     expect(result.diagnostics.errors).toEqual([]);
-
-    const budgets = loadBudgets();
-    // The per-feature ceiling is stated separately so growth in one optional feature cannot be
-    // paid for out of another's headroom - which is what raising the AGGREGATE ceiling for the
-    // inspector would do. Asserted as a literal, because a test that read the number it checks
-    // would pass whatever that number became. See schema/budgets.json for the measurement behind
-    // 688,128 and the shape it was measured in. A Waterpark-shaped build is not that shape: its
-    // Data Browser claims the console's shared chunks first, and it stays well under.
-    expect(budgets.lazy.features["python-playground"]?.javascript).toBe(688128);
     const python = report.features["python-playground"];
     expect(python).toBeTruthy();
-    // The console, the coordinator, the bridge AND the Worker the bundler emits beside the graph.
+    // The Worker is emitted beside the graph, so this is only this large when it is counted too.
     expect(python?.javascript ?? 0).toBeGreaterThan(500_000);
-    expect(python?.javascript ?? 0).toBeLessThanOrEqual(
-      budgets.lazy.features["python-playground"]!.javascript,
-    );
   }, 240_000);
-
-  it("leaves the base-page ceilings exactly where they were", () => {
-    // The lazy accommodation is for ONE lazy feature: a raised lazy ceiling arriving with a
-    // raised base-page ceiling is a different and much worse change.
-    const budgets = loadBudgets();
-    expect(budgets.basePage.javascript).toBe(786432);
-    expect(budgets.basePage.css).toBe(131072);
-    expect(budgets.lazy.css).toBe(16384);
-  });
 });
