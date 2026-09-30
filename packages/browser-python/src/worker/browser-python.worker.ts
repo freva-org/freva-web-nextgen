@@ -281,7 +281,8 @@ async function handleInit(request: Extract<WorkerRequest, { kind: "init" }>): Pr
     output.status("loading", "starting the console");
     // JSPI is detected HERE, in the worker that will run the code, and never inferred from a
     // browser's name: the answer is what `ready.jspi` reports and what the REPL uses to decide how
-    // to enter Python. Its absence is not announced at startup - see `_freva_bridge.set_jspi`.
+    // to enter Python. The engine prints nothing about its absence at startup (the console shows a
+    // collapsed hint from `ready.jspi`) - see `_freva_bridge.set_jspi`.
     const console_ = new Repl(pyodide, output, { jspi: supportsJspi() });
     repl = console_;
     await console_.start();

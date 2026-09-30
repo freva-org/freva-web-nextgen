@@ -459,6 +459,29 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
   }
 
   /**
+   * The page a visitor is on, for the no-JSPI card's "Copy page link" and IT note. Unset, the card
+   * uses this document's own address, which is right unless the console is FRAMED on another
+   * origin - then it is the frame's, and reopening it elsewhere loses the portal page and its
+   * example controls. A framing host sets it (`page-url` attribute or this property).
+   */
+  get pageUrl(): string | null {
+    return this.getAttribute("page-url");
+  }
+
+  set pageUrl(value: string | null) {
+    if (value) this.setAttribute("page-url", value);
+    else this.removeAttribute("page-url");
+  }
+
+  /**
+   * Open an external link on the console's behalf, for a console that cannot: a sandboxed frame
+   * without `allow-popups` drops a `target=_blank` click without a word. A framing host sets it to
+   * something that opens the link from its own document. Unset, a framed console tries
+   * `window.open` and, if that is refused, shows the address to copy.
+   */
+  openExternal: ((url: string) => void) | null = null;
+
+  /**
    * Hide the file panel. On by default, because a console whose Python writes a NetCDF file and
    * offers no way to get it produced nothing. A host with its own file browser turns this off.
    */
@@ -609,11 +632,21 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
     // inside the terminal. DEFERRED, because its click handling ends by moving focus.
     this.#terminalHost.addEventListener(
       "click",
-      () => {
+      (event) => {
         if (suppressClickFocus) {
           suppressClickFocus = false;
           return;
         }
+        // A click on a notice card's control keeps its focus: pulling it to the prompt would take
+        // it from the button just pressed, and the selection from a field the card just revealed.
+        const inCard = event
+          .composedPath()
+          .some(
+            (node) =>
+              typeof (node as Element).classList?.contains === "function" &&
+              (node as Element).classList.contains("bp-notice"),
+          );
+        if (inCard) return;
         setTimeout(() => this.#focusFromPointer(), 0);
       },
       true,
@@ -717,6 +750,12 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
       },
       onKeydown: (event) => this.#onKeydown(event),
       onFollowChange: (state) => this.#renderFollow(state),
+      // Read when a card's control is used, not when the card is drawn: a framing host may learn
+      // the page's address after the startup hint is already on screen.
+      notice: {
+        pageUrl: () => this.pageUrl,
+        openExternal: () => this.openExternal,
+      },
     });
     this.#adapter.mount(this.#terminalHost);
 
@@ -1521,6 +1560,12 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
         kind: "status",
         text: `Python ${info.pythonVersion} (Pyodide ${info.pyodideVersion}) on WebAssembly\n`,
       });
+      // Said once, collapsed, right under the version line: a visitor learns that remote reads
+      // need a newer browser before an example fails on one, not after. Here rather than in the
+      // toolbar, which a host that draws its own window hides.
+      if (info.jspi === false) {
+        this.#adapter?.appendNotice?.({ notice: "needs-jspi", origin: "hint", text: "" });
+      }
       this.#adapter?.focus();
       // The file panel's starting state. A restart empties the workspace and the panel has to say
       // so rather than keep offering the previous session's downloads; and an engine already

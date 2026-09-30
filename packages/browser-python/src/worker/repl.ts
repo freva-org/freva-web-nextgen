@@ -48,6 +48,8 @@ function isDestroyable(value: unknown): value is Destroyable {
 interface Bridge extends Destroyable {
   make_console(stdout: (t: string) => void, stderr: (t: string) => void): boolean;
   set_jspi(available: boolean): boolean;
+  /** The plain text Python reports for a remote read without JSPI. Optional: older bridges. */
+  needs_jspi_text?(): string;
   console_push(line: string): unknown;
   run_future(future: unknown): Promise<unknown>;
   run_source(source: string): unknown;
@@ -92,6 +94,7 @@ export class Repl {
   readonly #pyodide: PyodideApi;
   readonly #output: OutputBridge;
   readonly #jspi: boolean;
+  #needsJspiText: string | null = null;
   #bridge: Bridge | null = null;
   /** Temporaries currently held. Asserted back to zero by the browser suite - see the header. */
   #live = 0;
@@ -133,6 +136,21 @@ export class Repl {
     // Python formats the one error that depends on it - a synchronous remote read - so it has to
     // know the same answer `ready.jspi` reports.
     this.#bridge.set_jspi(this.#jspi);
+    // Read back rather than duplicated here, so the text that marks the notice is the text Python
+    // actually reports.
+    const text =
+      typeof this.#bridge.needs_jspi_text === "function" ? this.#bridge.needs_jspi_text() : null;
+    this.#needsJspiText = typeof text === "string" && text !== "" ? text.trimEnd() : null;
+  }
+
+  /** An execution's error, on stderr - marked as a notice when it is the no-JSPI remote read. */
+  #reportError(error: string): void {
+    const line = error.endsWith("\n") ? error : `${error}\n`;
+    if (this.#needsJspiText !== null && error.trimEnd() === this.#needsJspiText) {
+      this.#output.stderrNotice(line, "needs-jspi");
+    } else {
+      this.#output.stderr(line);
+    }
   }
 
   /** Install the Fetch-backed filesystem. Only meaningful once fsspec is loaded. */
@@ -219,7 +237,7 @@ export class Repl {
     }
     await this.#emitDisplay();
     if (error) {
-      this.#output.stderr(error.endsWith("\n") ? error : `${error}\n`);
+      this.#reportError(error);
       return { error: error.trimEnd() };
     }
     return {};
@@ -346,7 +364,7 @@ export class Repl {
         const text = String(this.#at(returned, 1) ?? "");
         const error = (this.#at(returned, 2) as string | null) ?? null;
         if (error) {
-          this.#output.stderr(error.endsWith("\n") ? error : `${error}\n`);
+          this.#reportError(error);
           return { error: error.trimEnd() };
         }
         if (hasValue) {

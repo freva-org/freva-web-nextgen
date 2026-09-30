@@ -28,6 +28,7 @@ import type {
 
 /** Records everything the controller asks the surface to do. */
 class FakeSurface implements ConsoleSurfaceAdapter {
+  appendNotice?: NonNullable<ConsoleSurfaceAdapter["appendNotice"]>;
   prompt: ">>> " | "... " = ">>> ";
   busy = false;
   command = "";
@@ -454,6 +455,42 @@ describe("output ordering", () => {
     engine.emitOutput({ type: "result", executionId: "exec-7", text: "1" });
     await settle();
     expect(surface.text[0]?.executionId).toBe("exec-7");
+  });
+});
+
+describe("a notice (a marked stderr line)", () => {
+  const TEXT = "RuntimeError: This browser can't open remote datasets.\n";
+
+  it("is drawn as a card after what was printed before it, and kept in the transcript", async () => {
+    const { controller, surface, engine } = build();
+    const notices: unknown[] = [];
+    surface.appendNotice = (output) => {
+      notices.push({ ...output, textsBefore: surface.text.length });
+      return true;
+    };
+    engine.emitOutput({ type: "stdout", executionId: "e1", text: "before\n" });
+    engine.emitOutput({ type: "stderr", executionId: "e1", text: TEXT, notice: "needs-jspi" });
+    await frame();
+    expect(notices).toEqual([
+      { notice: "needs-jspi", origin: "error", text: TEXT, executionId: "e1", textsBefore: 1 },
+    ]);
+    expect(surface.text.map((t) => t.text)).toEqual(["before\n"]);
+    expect(controller.transcript()).toContain("can't open remote datasets");
+  });
+
+  it("falls back to plain stderr on a surface that cannot draw it", async () => {
+    const { surface, engine } = build();
+    engine.emitOutput({ type: "stderr", executionId: "e1", text: TEXT, notice: "needs-jspi" });
+    await frame();
+    expect(surface.text).toEqual([expect.objectContaining({ kind: "stderr", text: TEXT })]);
+  });
+
+  it("falls back as well when the surface declines the kind", async () => {
+    const { surface, engine } = build();
+    surface.appendNotice = () => false;
+    engine.emitOutput({ type: "stderr", executionId: "e1", text: TEXT, notice: "needs-jspi" });
+    await frame();
+    expect(surface.text.map((t) => t.text)).toEqual([TEXT]);
   });
 });
 

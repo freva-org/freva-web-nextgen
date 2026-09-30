@@ -5,6 +5,7 @@
  */
 
 import { MAX_TRANSCRIPT_CHARS } from "../transcript-limit.js";
+import type { NoticeKind } from "../notices.js";
 import type {
   BrowserPython,
   BrowserPythonAddon,
@@ -92,6 +93,16 @@ export interface ConsoleDisplayOutput {
   metadata?: { figure?: number; width?: number; height?: number };
 }
 
+/** A marked stderr line (`StreamEvent.notice`) that the surface draws as a card. */
+export interface ConsoleNoticeOutput {
+  notice: NoticeKind;
+  /** `error`: an execution failed on it. `hint`: said once at startup, collapsed. */
+  origin: "error" | "hint";
+  /** The complete plain message. Empty for a startup hint, which no execution produced. */
+  text: string;
+  executionId?: string;
+}
+
 /** The console surface, abstracted. The public element depends on THIS and never on jQuery
  * Terminal, so the library underneath can be replaced without a consumer noticing: it is 93 KiB
  * gzipped and Pyodide's own console is considering a move away from it. */
@@ -107,6 +118,8 @@ export interface ConsoleSurfaceAdapter {
   insert(value: string): void;
   appendText(output: ConsoleTextOutput): void;
   appendDisplay(output: ConsoleDisplayOutput): void;
+  /** Draw a notice as a card. Optional: a surface without it gets the plain text instead. */
+  appendNotice?(output: ConsoleNoticeOutput): boolean;
   clear(): void;
   /** Drop entries from the OLDEST end until the transcript is within both limits, and say how
    * many. Separate from `clear()`: clearing on an overrun of one entry throws away the newest
@@ -165,6 +178,16 @@ export interface BrowserPythonConsoleElement extends HTMLElement {
   /** `true` is exactly `toolbarMode === "none"`. */
   hideToolbar: boolean;
   toolbarMode: ConsoleToolbarMode;
+  /**
+   * The page the no-JSPI card tells a visitor to reopen. `null` means this document's address; a
+   * host that frames the console on another origin sets the portal page (`page-url` attribute).
+   */
+  pageUrl: string | null;
+  /**
+   * Opens the no-JSPI card's links for a console that cannot - a sandboxed frame without
+   * `allow-popups`. `null` means the console tries itself and otherwise shows the address.
+   */
+  openExternal: ((url: string) => void) | null;
 
   /**
    * What the RUNNING interpreter reported at start, or `null` when none is running. Read-only,

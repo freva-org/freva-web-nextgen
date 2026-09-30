@@ -15,6 +15,7 @@ import {
   isEmbeddedArtifact,
   newChallenge,
   newIdentity,
+  OPEN_LINK_ALLOWLIST,
   type BridgeOp,
   type ChunkMessage,
   type EmbeddedArtifact,
@@ -163,6 +164,18 @@ export interface PlaygroundHost {
   stop(): Promise<void>;
 }
 
+/** This page's origin and path, for the hail; nothing when the scope has no readable location. */
+function pageOf(scope: Window): { page?: string } {
+  try {
+    const { origin, pathname } = scope.location;
+    return typeof origin === "string" && typeof pathname === "string"
+      ? { page: `${origin}${pathname}` }
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 /** The default sink: the browser's own save dialog, owned by the portal page. */
 export async function saveFilePickerSink(artifact: DownloadableArtifact): Promise<HostSink> {
   const picker = (
@@ -300,6 +313,8 @@ export function createPlaygroundHost(options: PlaygroundHostOptions): Playground
           challenge,
           sessionId: "",
           kind: "hail",
+          // The page the visitor is on, without its query: what "reopen this page" means.
+          ...pageOf(scope),
         },
         origin,
       );
@@ -372,6 +387,15 @@ export function createPlaygroundHost(options: PlaygroundHostOptions): Playground
     }
     if (data.kind === "example-accepted") {
       options.onExampleAccepted?.(data.exampleId);
+      return;
+    }
+    if (data.kind === "open-link") {
+      // Only the card's own fixed addresses, compared exactly; anything else is dropped without a
+      // reply. Opened from THIS document, which is not sandboxed and holds the visitor's click:
+      // activation propagates from a frame to its ancestors.
+      if (typeof data.url === "string" && OPEN_LINK_ALLOWLIST.has(data.url)) {
+        scope.open(data.url, "_blank", "noopener,noreferrer");
+      }
       return;
     }
     if (data.kind === "example-refused") {

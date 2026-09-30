@@ -23,7 +23,14 @@ function sequence(values: unknown[]) {
 /** A payload list, as `capture_display` returns it: empty, because nothing was plotted. */
 const noFigures = () => ({ ...sequence([]), toJs: () => [] });
 
-function harness(options: { jspi?: boolean; promising?: "throws" | "works" }) {
+const NEEDS_JSPI = "RuntimeError: This browser can't open remote datasets. Your code is fine.\n";
+
+function harness(options: {
+  jspi?: boolean;
+  promising?: "throws" | "works";
+  runError?: string | null;
+  noticeText?: boolean;
+}) {
   const calls = { plain: 0, promising: 0, setJspi: [] as boolean[] };
   const capture = Object.assign(
     () => {
@@ -49,7 +56,8 @@ function harness(options: { jspi?: boolean; promising?: "throws" | "works" }) {
     },
     console_push: () => sequence(["complete", "", { destroy: () => undefined }]),
     run_future: async () => sequence([true, "2", null]),
-    run_source: async () => sequence([false, "", null]),
+    run_source: async () => sequence([false, "", options.runError ?? null]),
+    ...(options.noticeText === false ? {} : { needs_jspi_text: () => NEEDS_JSPI }),
     clear_buffer: () => true,
     complete: () => sequence([sequence([]), 0]),
     get capture_display() {
@@ -67,14 +75,16 @@ function harness(options: { jspi?: boolean; promising?: "throws" | "works" }) {
     globals: { get: () => bridge },
   } as unknown as PyodideApi;
   const stderr: string[] = [];
+  const notices: Array<{ text: string; notice: string }> = [];
   const output = {
     stdout: () => undefined,
     stderr: (text: string) => stderr.push(text),
+    stderrNotice: (text: string, notice: string) => notices.push({ text, notice }),
     result: () => undefined,
     display: () => undefined,
   } as unknown as OutputBridge;
   const repl = new Repl(pyodide, output, options.jspi === undefined ? {} : { jspi: options.jspi });
-  return { repl, calls, stderr };
+  return { repl, calls, stderr, notices };
 }
 
 describe("the REPL and a runtime without JSPI", () => {
@@ -118,6 +128,38 @@ describe("the REPL and a runtime without JSPI", () => {
   });
 });
 
+describe("the no-JSPI report is marked, so a console can explain it", () => {
+  it("sends Python's own no-JSPI text as a needs-jspi notice, whole", async () => {
+    const { repl, stderr, notices } = harness({ jspi: false, runError: NEEDS_JSPI.trimEnd() });
+    await repl.start();
+    const outcome = await repl.run("xr.open_zarr('https://example.org/x.zarr')");
+    expect(notices).toEqual([{ text: NEEDS_JSPI, notice: "needs-jspi" }]);
+    expect(stderr, "not also as plain stderr: it would print twice").toEqual([]);
+    // The API's own error is unchanged: the complete plain message.
+    expect(outcome.error).toBe(NEEDS_JSPI.trimEnd());
+  });
+
+  it("leaves every other error as ordinary stderr", async () => {
+    const { repl, stderr, notices } = harness({ jspi: false, runError: "NameError: name 'x'" });
+    await repl.start();
+    await repl.run("x");
+    expect(notices).toEqual([]);
+    expect(stderr).toEqual(["NameError: name 'x'\n"]);
+  });
+
+  it("marks nothing with an older bridge that cannot say what the text is", async () => {
+    const { repl, stderr, notices } = harness({
+      jspi: false,
+      runError: NEEDS_JSPI.trimEnd(),
+      noticeText: false,
+    });
+    await repl.start();
+    await repl.run("xr.open_zarr('https://example.org/x.zarr')");
+    expect(notices).toEqual([]);
+    expect(stderr).toEqual([NEEDS_JSPI]);
+  });
+});
+
 describe("the worker says nothing about JSPI at startup", () => {
   const read = (path: string) =>
     readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
@@ -132,9 +174,13 @@ describe("the worker says nothing about JSPI at startup", () => {
 
   it("keeps the one JSPI message in Python, where the failing call is, with the Safari 27 link", () => {
     const bridge = read("../src/python/_freva_bridge.py");
-    expect(bridge).toContain("Remote dataset access requires WebAssembly JSPI (stack switching)");
+    // Plain words first: the code is fine, and what to do about it.
+    expect(bridge).toContain("This browser can't open remote datasets. Your code is fine");
+    expect(bridge).toContain("WebAssembly JSPI (stack switching)");
     expect(bridge).toContain("https://webkit.org/blog/18325/webkit-features-for-safari-27-0/");
+    expect(bridge).toMatch(/Chrome or Edge 137, "\s*"Firefox 153 or Opera 121, or later/);
     expect(bridge).toContain("def set_jspi(available):");
+    expect(bridge).toContain("def needs_jspi_text():");
     // Only when JSPI is absent: the same message family with JSPI present is a real bug.
     expect(bridge).toMatch(/def _needs_jspi\(exc\):[\s\S]{0,1600}if _jspi:\s+return False/);
   });

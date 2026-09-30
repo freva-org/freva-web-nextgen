@@ -12,6 +12,8 @@
 //     Zarr read is built on - fails with one concise, actionable error and no second warning;
 //     unrelated errors keep their real tracebacks.
 //  2. JSPI present (native): the same synchronous wait succeeds and nothing is printed about it.
+//  4. The console without JSPI: a collapsed hint at startup, and the failing remote read drawn as
+//     the card - the visitor's browser, the ways out - instead of a red line.
 //  3. Sync access handles removed: `workspace.available` is false with the reason an independent
 //     probe says is right HERE - `no-sync-access-handles` where OPFS exists, `no-opfs` where it
 //     does not (Playwright WebKit) - Python still writes files, and the console says why.
@@ -75,6 +77,7 @@ async function execute(page, kind, source) {
         stdout: text("stdout"),
         stderr: text("stderr"),
         stderrEvents: events.filter((e) => e.type === "stderr").length,
+        notices: events.filter((e) => e.type === "stderr" && e.notice).map((e) => e.notice),
       };
     },
     { kind, source },
@@ -153,6 +156,11 @@ async function sections(page, checks, notApplicable, phases) {
           name: "a synchronous wait on a fetch fails with the one concise JSPI message",
           pass: concise(typed),
           detail: JSON.stringify(typed.error),
+        });
+        checks.push({
+          name: "…marked as a needs-jspi notice, so a console can draw it as a card",
+          pass: JSON.stringify(typed.notices) === JSON.stringify(["needs-jspi"]),
+          detail: JSON.stringify(typed.notices),
         });
         checks.push({
           name: "…printed once, with no second display-capture warning after it",
@@ -357,7 +365,11 @@ async function sections(page, checks, notApplicable, phases) {
           .catch(() => {});
         const panel = await page.evaluate((detail) => {
           const root = window.__c.element.shadowRoot;
-          const text = root?.textContent ?? "";
+          // The no-JSPI card is expected in an engine without JSPI; this is about the file panel.
+          let text = root?.textContent ?? "";
+          for (const card of root?.querySelectorAll(".bp-notice") ?? []) {
+            text = text.replace(card.textContent ?? "", "");
+          }
           return {
             showsReportedReason: Boolean(detail) && text.includes(detail),
             mentionsJspi: /stack switching|JSPI/i.test(text),
@@ -373,6 +385,221 @@ async function sections(page, checks, notApplicable, phases) {
             panel.showsReportedReason &&
             !panel.mentionsJspi,
           detail: JSON.stringify({ started, workspace, panel }),
+        });
+      });
+    } finally {
+      await terminateEngines(page);
+      await server.close();
+    }
+  }
+
+  // 4. the console, no JSPI
+  {
+    const consolePage = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+<freva-python-console id="c" worker-url="/test-worker/no-jspi.mjs"></freva-python-console>
+<script type="module">
+  import { defineBrowserPythonConsole } from "/bundle/console.js";
+  defineBrowserPythonConsole();
+  const element = document.getElementById("c");
+  element.setAttribute("index-url", new URL("/runtime/", location.href).href);
+  window.__c = { element };
+  window.__ready = true;
+</script></body></html>`;
+    const server = await serve(consolePage);
+    try {
+      await phases.run("console without JSPI", START_TIMEOUT_MS + 30_000, async () => {
+        await page.goto(server.url);
+        await page.waitForFunction(() => window.__ready === true, null, { timeout: 20_000 });
+        await page.evaluate(() => window.__c.element.start());
+        const cards = () =>
+          page.evaluate(() =>
+            [...(window.__c.element.shadowRoot?.querySelectorAll(".bp-notice") ?? [])].map((c) => ({
+              origin: c.dataset.origin,
+              role: c.getAttribute("role"),
+              title: c.querySelector(".bp-notice-title")?.textContent ?? "",
+              sub: c.querySelector(".bp-notice-sub")?.textContent ?? "",
+              bodyHidden: c.querySelector(".bp-notice-body")?.hidden ?? null,
+              routes: c.querySelectorAll(".bp-notice-route").length,
+              plain: c.querySelector(".bp-notice-plain")?.textContent ?? "",
+            })),
+          );
+        const atStart = await cards();
+        checks.push({
+          name: "the console says once, collapsed, that remote reads need a newer browser",
+          pass:
+            atStart.length === 1 &&
+            atStart[0].origin === "hint" &&
+            atStart[0].role === "note" &&
+            atStart[0].bodyHidden === true,
+          detail: JSON.stringify(atStart),
+        });
+
+        await page.evaluate(
+          (fixture) =>
+            window.__c.element.execute(
+              "from pyodide.ffi import run_sync\nfrom pyodide.http import pyfetch\n" +
+                `run_sync(pyfetch(${JSON.stringify(fixture)}))`,
+            ),
+          FIXTURE,
+        );
+        await page
+          .waitForFunction(
+            () => window.__c.element.shadowRoot?.querySelector('.bp-notice[data-origin="error"]'),
+            null,
+            { timeout: 30_000 },
+          )
+          .catch(() => {});
+        const error = (await cards()).find((c) => c.origin === "error");
+        checks.push({
+          name: "a remote read is drawn as the card: code is fine, a way out, the plain text kept",
+          pass:
+            Boolean(error) &&
+            error.role === "alert" &&
+            error.sub.includes("Your code is fine") &&
+            error.routes >= 1 &&
+            error.plain.includes(NO_JSPI_REMOTE_MESSAGE),
+          detail: JSON.stringify(error ?? null),
+        });
+        const redLines = await page.evaluate(
+          (message) =>
+            [...(window.__c.element.shadowRoot?.querySelectorAll(".bp-line.bp-stderr") ?? [])]
+              .map((l) => l.textContent ?? "")
+              .filter((t) => t.includes(message)),
+          NO_JSPI_REMOTE_MESSAGE,
+        );
+        checks.push({
+          name: "…and not also printed as a red stderr line",
+          pass: redLines.length === 0,
+          detail: JSON.stringify(redLines),
+        });
+
+        // The card's controls must act like any button under real keystrokes, although the
+        // terminal around them treats Tab as completion and Enter as submit. Wait until the
+        // execution settles and the caret is back at the prompt, as a visitor would.
+        await page.waitForTimeout(500);
+        const focused = () =>
+          page.evaluate(() => {
+            const active = window.__c.element.shadowRoot?.activeElement;
+            return active ? `${active.tagName}:${active.textContent?.trim() ?? ""}` : null;
+          });
+        const controls = await page.evaluate(() => {
+          const card = window.__c.element.shadowRoot?.querySelector(
+            '.bp-notice[data-origin="error"]',
+          );
+          const all = [...(card?.querySelectorAll("a[href], button") ?? [])].filter(
+            (n) => !n.closest("[hidden]"),
+          );
+          all[0]?.focus();
+          return all.map((n) => `${n.tagName}:${n.textContent?.trim() ?? ""}`);
+        });
+        const commandsBefore = await page.evaluate(
+          () => window.__c.element.shadowRoot?.querySelectorAll(".bp-line.bp-command").length ?? 0,
+        );
+        const start = await focused();
+        await page.keyboard.press("Tab");
+        const afterTab = await focused();
+        await page.keyboard.press("Shift+Tab");
+        const afterShiftTab = await focused();
+        await page.keyboard.press("Tab");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(300);
+        const after = await page.evaluate(() => ({
+          commands: window.__c.element.shadowRoot?.querySelectorAll(".bp-line.bp-command").length,
+          menuOpen: (() => {
+            const menu = window.__c.element.shadowRoot?.querySelector(".bp-completion");
+            return Boolean(menu && !menu.hidden);
+          })(),
+        }));
+        checks.push({
+          name: "Tab and Shift+Tab move between the card's controls, and Enter presses them",
+          pass:
+            controls.length >= 2 &&
+            start === controls[0] &&
+            afterTab === controls[1] &&
+            afterShiftTab === controls[0] &&
+            after.commands === commandsBefore &&
+            !after.menuOpen,
+          detail: JSON.stringify({
+            controls,
+            start,
+            afterTab,
+            afterShiftTab,
+            commandsBefore,
+            after,
+          }),
+        });
+
+        // Focus back at the prompt switches the terminal on again, however it gets there: here the
+        // way a keyboard or a host does, straight to the prompt's textarea, with no click.
+        const commandCount = () =>
+          page.evaluate(
+            () =>
+              window.__c.element.shadowRoot?.querySelectorAll(".bp-line.bp-command").length ?? 0,
+          );
+        const beforePrompt = await commandCount();
+        await page.evaluate(() =>
+          window.__c.element.shadowRoot?.querySelector(".cmd textarea")?.focus(),
+        );
+        await page.keyboard.type("41 + 1", { delay: 5 });
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(800);
+        const typed = await page.evaluate(() => ({
+          commands: window.__c.element.shadowRoot?.querySelectorAll(".bp-line.bp-command").length,
+          answered: (window.__c.element.shadowRoot?.textContent ?? "").includes("42"),
+        }));
+        checks.push({
+          name: "focus back at the prompt re-enables it: typing and Enter work again",
+          pass: typed.commands === beforePrompt + 1 && typed.answered,
+          detail: JSON.stringify({ beforePrompt, ...typed }),
+        });
+
+        // A refused clipboard shows the text to select, which is what the button then says.
+        const revealed = await page.evaluate(async () => {
+          Object.defineProperty(navigator, "clipboard", {
+            value: { writeText: () => Promise.reject(new Error("denied")) },
+            configurable: true,
+          });
+          const card = window.__c.element.shadowRoot?.querySelector(
+            '.bp-notice[data-origin="error"]',
+          );
+          const copy = [...(card?.querySelectorAll("button") ?? [])].find((b) =>
+            (b.textContent ?? "").startsWith("Copy"),
+          );
+          copy?.click();
+          await new Promise((r) => setTimeout(r, 100));
+          return {
+            label: copy?.textContent ?? null,
+            field: card?.querySelector(".bp-notice-reveal-field")?.value ?? null,
+          };
+        });
+        checks.push({
+          name: "a refused clipboard reveals the text to copy by hand",
+          pass: revealed.label === "Copy failed - select it below" && Boolean(revealed.field),
+          detail: JSON.stringify(revealed),
+        });
+
+        // A multi-line paste into that field is not a program. Read-only fields still receive
+        // paste events, and the terminal's own paste handler runs a multi-line paste as a block.
+        const beforePaste = await commandCount();
+        const pasted = await page.evaluate(async () => {
+          const field = window.__c.element.shadowRoot?.querySelector(".bp-notice-reveal-field");
+          const data = new DataTransfer();
+          data.setData("text/plain", "print('pasted')\nprint('ran')\n");
+          field?.dispatchEvent(
+            new ClipboardEvent("paste", {
+              clipboardData: data,
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+            }),
+          );
+          await new Promise((r) => setTimeout(r, 800));
+          return (window.__c.element.shadowRoot?.textContent ?? "").includes("ran");
+        });
+        checks.push({
+          name: "a multi-line paste into a copy field runs nothing",
+          pass: !pasted && (await commandCount()) === beforePaste,
+          detail: JSON.stringify({ pasted, beforePaste, after: await commandCount() }),
         });
       });
     } finally {

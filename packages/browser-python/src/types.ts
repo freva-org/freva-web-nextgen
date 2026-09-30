@@ -3,6 +3,7 @@
  * engine instance serves a console, a notebook cell and a docs page.
  */
 
+import type { NoticeKind } from "./notices.js";
 import type { ArtifactSink, ArtifactStreamOptions } from "./artifact-stream.js";
 
 /** Re-exported so a consumer types a destination without a second import. */
@@ -326,6 +327,12 @@ export interface StreamEvent {
   text: string;
   /** True when this arrived outside any execution - see `StreamMessage.background`. */
   background?: true;
+  /**
+   * Set on a stderr line that reports a known condition of the ENVIRONMENT rather than of the
+   * code, so a UI can explain it instead of printing it: `"needs-jspi"` is a remote read in a
+   * browser without WebAssembly stack switching. `text` is always the complete plain message.
+   */
+  notice?: NoticeKind;
 }
 
 export interface DisplayEvent {
