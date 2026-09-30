@@ -497,4 +497,10 @@ export interface DatasetTreeHandle {
    * host. Safe to call twice. After this the handle's other methods do nothing.
    */
   destroy(): void;
+  /**
+   * Supply, replace or withdraw (`null`) the search index after mounting, so a consumer loading it
+   * over the network never holds the tree back. Same rules as the `searchIndex` option (already
+   * parsed; ignored over a `complete: true` source). A query already typed is searched again.
+   */
+  setSearchIndex(index: DatasetTreeSearchIndex | null): void;
 }

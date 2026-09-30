@@ -45,6 +45,7 @@ import type {
   DatasetTreeMetric,
   DatasetTreeNode,
   DatasetTreeOptions,
+  DatasetTreeSearchIndex,
 } from "./types.js";
 
 /** Per-node view state. The node itself is stored beside it, never mutated. */
@@ -162,12 +163,12 @@ export function mountDatasetTree(
    * silently. Such a source is walked into memory at mount, so the loaded tree is no less complete,
    * and fresher; refusing to mount would punish a consumer who passes one options object to both.
    */
-  const searchIndex = !complete && options.searchIndex ? options.searchIndex : null;
-  /** Normalised ONCE, here, not on every keystroke. See `search/match.ts`. */
-  const indexEntries: readonly PreparedSearchEntry[] | null = searchIndex
+  let searchIndex = !complete && options.searchIndex ? options.searchIndex : null;
+  /** Normalised ONCE per index, not on every keystroke. See `search/match.ts`. */
+  let indexEntries: readonly PreparedSearchEntry[] | null = searchIndex
     ? prepareSearchEntries(searchIndex.entries)
     : null;
-  const searchable = indexEntries !== null;
+  let searchable = indexEntries !== null;
   const resultLimit = Math.max(
     1,
     Math.trunc(options.searchResultLimit ?? DEFAULT_SEARCH_RESULT_LIMIT),
@@ -240,7 +241,7 @@ export function mountDatasetTree(
 
   // The field is named for what it does: with an index a search over an archive, without one a
   // filter over what is in memory. Calling both "search" implies a reach it does not have.
-  const fieldLabel = searchable ? labels.searchIndexed : labels.filter;
+  let fieldLabel = searchable ? labels.searchIndexed : labels.filter;
   const filterInput = el("input", {
     class: "dataset-tree__filter-input",
     attrs: {
@@ -2326,6 +2327,28 @@ export function mountDatasetTree(
     return loadRoots();
   }
 
+  /**
+   * `DatasetTreeHandle.setSearchIndex`: swap the index without touching browsing, expansion or
+   * requests. Ignored over a `complete: true` source and after `destroy()`.
+   */
+  function setSearchIndex(next: DatasetTreeSearchIndex | null): void {
+    if (destroyed || complete) return;
+    searchIndex = next;
+    indexEntries = next ? prepareSearchEntries(next.entries) : null;
+    searchable = indexEntries !== null;
+    fieldLabel = searchable ? labels.searchIndexed : labels.filter;
+    filterInput.placeholder = fieldLabel;
+    filterInput.setAttribute("aria-label", fieldLabel);
+    hint.textContent = hintText();
+    // Re-run the query in the box, if any: `applyFilter` skips an unchanged query, so it is cleared
+    // first and applied again, which also re-announces the count.
+    const query = filterQuery;
+    if (query.length > 0) {
+      filterQuery = "";
+      applyFilter(query);
+    }
+  }
+
   function destroy(): void {
     if (destroyed) return;
     destroyed = true;
@@ -2366,5 +2389,5 @@ export function mountDatasetTree(
 
   void loadRoots();
 
-  return { reload, destroy };
+  return { reload, destroy, setSearchIndex };
 }
