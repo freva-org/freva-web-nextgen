@@ -62,6 +62,11 @@ export interface RuntimeProjection {
      */
     snapshot: boolean;
     s3: boolean;
+    /**
+     * Whether any live block has a search index. The entry names the index loader, and through
+     * it the package's validator, only then: a portal without an index ships neither.
+     */
+    searchIndex: boolean;
   };
   /**
    * Present only when a dataset-tree block asked for a Python playground. Separate from
@@ -135,6 +140,9 @@ export function projectRuntime(model: ResolvedPortalModel): RuntimeProjection {
       instances: datasetTreeInstances,
       snapshot: modes.includes("snapshot"),
       s3: modes.includes("s3"),
+      searchIndex: model.landings
+        .flatMap((landing) => landing.blocks)
+        .some((block) => Boolean(block.datasetTree?.searchIndex)),
     };
   }
 
@@ -281,6 +289,9 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
   if (projection.datasetTree?.s3) {
     lines.push(`import { loadS3Source } from ${CLIENT("components/tree-source-s3.ts")};`);
   }
+  if (projection.datasetTree?.searchIndex) {
+    lines.push(`import { loadSearchIndex } from ${CLIENT("components/tree-search-index.ts")};`);
+  }
   if (projection.datasetTree) {
     // In the IMPORT section, like its two siblings: `import` is only legal at the top level,
     // so pushing this into the body below would not parse.
@@ -365,6 +376,7 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
     const loaderArgs = [
       projection.datasetTree.snapshot ? "snapshot: loadSnapshotSource" : "",
       projection.datasetTree.s3 ? "s3: loadS3Source" : "",
+      projection.datasetTree.searchIndex ? "searchIndex: loadSearchIndex" : "",
       // The inspector is offered to every dataset tree: a snapshot catalogue carries `inspect`
       // URLs too, and without this they are dead data. The heavy package stays behind the
       // loader's own dynamic import, so a page nobody presses Inspect on never fetches it.

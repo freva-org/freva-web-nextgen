@@ -384,6 +384,48 @@ keep the separate origin and treat them as documentation.
 the store, built from the configured endpoint and addressing style, which is what
 the **Inspect** control opens (see below).
 
+#### `searchIndex`: searching a live archive
+
+Without an index, search over a live tree covers only the branches a visitor has
+opened, and the field says so. A **search index** lets it cover the whole archive
+without listing it: a `dataset-tree-search-index-v1` document (schema published
+by `@freva-org/dataset-tree`) with one entry per dataset, produced by the
+deployment — for example a scheduled job that lists the buckets and commits the
+file. The builder does not crawl; it validates and ships what it is given.
+
+```yaml
+- type: dataset-tree
+  heading: Currently available datasets
+  searchIndex: ../dataset-index.json # relative to this landing, inside the source root
+  searchResultLimit: 200 # optional: results drawn before the rest are a count (1-2000)
+  s3:
+    endpoint: https://s3.waterpark.dkrz.de
+    style: path
+    roots:
+      - { name: CMIP6, bucket: cmip6 }
+```
+
+- **Validated at build time.** The file is read, bounded at 16 MiB (`FP1407`),
+  parsed (`FP1101` for invalid JSON) and checked by the package's own validator:
+  every problem is an `FP1104` pointing into the index file, the first twenty
+  individually and the rest as a count. It is recorded in the input manifest.
+- **Published, not embedded.** An index describes every store in an archive, which
+  the 512 KiB catalogue cap keeps out of the HTML. It is written once as
+  `_portal/dataset-tree-index.<hash>.json` (content-hashed, so `immutable`; listed
+  in `portal-manifest.json` and `checksums.sha256`) and fetched from the portal's
+  own origin, so the recorded policy does not change.
+- **Never waited for.** The tree mounts and browses without it; the index is handed
+  over when it arrives, and a query already typed is searched again. Until then -
+  or for good, if the file is missing, invalid or unreachable - the field keeps the
+  "loaded branches only" caveat and one warning is logged.
+- **No S3 request for a search.** A search scans the index and the loaded tree in
+  the page. A branch listed after the index was generated is still found, and
+  where both have a node the loaded one wins. The hint shows the index's own
+  `generatedAt`.
+- **Live blocks only.** `searchIndex` beside `catalog` is `FP1104`: a snapshot is
+  complete, so the tree already searches all of it and the package ignores an
+  index. `searchResultLimit` without `searchIndex` is `FP1104` too.
+
 #### Opening a node elsewhere
 
 A catalogue node may carry `inspect`, a URL for whatever tool a deployment uses to

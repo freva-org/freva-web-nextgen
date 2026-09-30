@@ -535,6 +535,8 @@ try {
       // pointing at a file nobody ships.
       "test:browser:tree",
       "test:browser:tree:s3",
+      // A live tree's search index: searched with no gateway request, never waited for.
+      "test:browser:tree:index",
       "test:browser:runnable",
       // Runnable snippets: when their controls show, and the editable ones.
       "test:browser:snippets",

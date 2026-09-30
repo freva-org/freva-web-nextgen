@@ -197,6 +197,10 @@ describe("the dataset-tree block's schema", () => {
       "python",
       // The live source, the other half of the discriminated pair.
       "s3",
+      // A live source's optional search index, and its result cap. Refused beside `catalog` by
+      // the resolver, which can say why; see `tests/model/dataset-tree-search-index.test.ts`.
+      "searchIndex",
+      "searchResultLimit",
       "statusLabel",
       "summary",
       "type",
@@ -418,6 +422,7 @@ describe("what a portal that does not enable it gets", () => {
       instances: ["home-1"],
       snapshot: true,
       s3: false,
+      searchIndex: false,
     });
     const entry = generateEntryModule(resolved.model!);
     expect(entry.match(/components\/dataset-tree\.ts/g)).toHaveLength(1);
