@@ -10,6 +10,7 @@
  */
 
 import type { DatasetTreeSource } from "@freva-org/dataset-tree";
+import type { DatasetTreeSearchIndex } from "@freva-org/dataset-tree/search-index";
 import type { InspectorLoader } from "./tree-inspector-loader.js";
 
 /** A live source's configuration, exactly as the build wrote it onto the block. */
@@ -45,6 +46,12 @@ export type S3Loader = (
   onTruncated: (info: { bucket: string; prefix: string; pages: number }) => void,
 ) => Promise<DatasetTreeSource>;
 
+/**
+ * Fetches and validates a published search index. Named by the entry only when some block has
+ * one, so the validator is not in a portal without an index.
+ */
+export type SearchIndexLoader = (url: string) => Promise<DatasetTreeSearchIndex>;
+
 /** What the entry hands the island: whichever loaders this portal's blocks actually need. */
 export interface TreeLoaders {
   snapshot?: SnapshotLoader;
@@ -55,4 +62,6 @@ export interface TreeLoaders {
    * an XML listing document, not something a reader asked for.
    */
   inspector?: InspectorLoader;
+  /** Loads a block's search index. Absent when no block on this portal has one. */
+  searchIndex?: SearchIndexLoader;
 }

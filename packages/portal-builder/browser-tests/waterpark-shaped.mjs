@@ -331,8 +331,11 @@ export function buildWaterparkShaped({
     )
     .join("\n");
 
+  // A live block's search index, when the caller supplies one: written beside the catalogue and
+  // named by the block, exactly as a deployment's scheduled job would commit it.
+  if (s3?.searchIndex) put("data/dataset-index.json", JSON.stringify(s3.searchIndex));
   const source = s3
-    ? `    s3:
+    ? `${s3.searchIndex ? "    searchIndex: ../data/dataset-index.json\n" : ""}    s3:
       endpoint: ${s3.endpoint}
       style: path
       roots:

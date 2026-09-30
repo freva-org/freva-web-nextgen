@@ -469,6 +469,16 @@
             }
           }
         },
+        "searchIndex": {
+          "$ref": "#/$defs/localPath",
+          "description": "A dataset-tree-search-index-v1 JSON document, relative to this landing file and inside the source root, that makes search over a LIVE (`s3`) tree cover the whole index rather than only the branches a visitor has opened. The build validates it and publishes it beside the pages as one content-hashed, same-origin file (`_portal/dataset-tree-index.<hash>.json`), listed in the manifests and in `checksums.sha256`; the page loads it after the tree has mounted and never waits for it, and a search makes no S3 request. Produced by the deployment (for example a scheduled job that lists the buckets); this build does not crawl. Valid only with `s3`: a `catalog` snapshot is complete, so the tree searches it whole and would ignore an index."
+        },
+        "searchResultLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000,
+          "description": "With `searchIndex`: how many search results are drawn before the rest are reported as a count. Default 200."
+        },
         "heading": {
           "$ref": "#/$defs/text"
         },

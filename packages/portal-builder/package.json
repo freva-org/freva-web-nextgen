@@ -60,6 +60,7 @@
     "test:browser:footer-bar": "BROWSER_STRICT=1 node browser-tests/footer-bar.mjs",
     "test:browser:tree": "BROWSER_STRICT=1 node browser-tests/dataset-tree-overlay.mjs",
     "test:browser:tree:s3": "BROWSER_STRICT=1 node browser-tests/dataset-tree-s3.mjs",
+    "test:browser:tree:index": "BROWSER_STRICT=1 node browser-tests/dataset-tree-search-index.mjs",
     "test:browser:terminal": "BROWSER_STRICT=1 node browser-tests/waterpark-terminal.mjs",
     "test:browser:package-index": "BROWSER_STRICT=1 node browser-tests/python-package-index.mjs",
     "test:browser:nav": "BROWSER_STRICT=1 node browser-tests/nav-responsive.mjs",

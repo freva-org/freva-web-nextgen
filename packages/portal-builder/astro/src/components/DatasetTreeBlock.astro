@@ -92,6 +92,12 @@ const data = block.datasetTree!;
     */}
     data-portal-dataset-tree-mode={data.mode}
     data-portal-dataset-tree-s3={data.s3 ? JSON.stringify(data.s3) : undefined}
+    {/*
+      A live block's search index: a same-origin, content-hashed file the island fetches AFTER
+      the tree has mounted. Absent, and the tree searches what is loaded, as it always has.
+    */}
+    data-portal-dataset-tree-search-index={data.searchIndex?.url}
+    data-portal-dataset-tree-search-limit={data.searchResultLimit}
   >
     {
       data.mode === "snapshot" && (

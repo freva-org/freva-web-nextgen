@@ -193,6 +193,10 @@ export interface RawLandingBlock {
   catalog?: string;
   /** dataset-tree only: browse an S3-compatible gateway live instead of embedding a catalogue. */
   s3?: RawDatasetTreeS3;
+  /** dataset-tree only, with `s3`: a dataset-tree-search-index-v1 file, relative to the landing. */
+  searchIndex?: string;
+  /** dataset-tree only, with `searchIndex`: results drawn before the rest are counted. */
+  searchResultLimit?: number;
   /** dataset-tree only: node identifiers expanded as soon as they appear. */
   expand?: string[];
   /** dataset-tree only: the footer pill's text. */

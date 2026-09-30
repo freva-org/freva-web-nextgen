@@ -17,8 +17,10 @@
  * separate failure surface; this reads a file.
  */
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { parseDatasetTreeCatalogV1 } from "@freva-org/dataset-tree/snapshot";
+import { parseDatasetTreeSearchIndexV1 } from "@freva-org/dataset-tree/search-index";
 import type { DatasetTreeCatalog, DatasetTreeCatalogNode } from "@freva-org/dataset-tree/snapshot";
 import { DiagnosticBag } from "../diagnostics.js";
 import { resolvePlaygroundSettings, type PlaygroundWhere } from "./python-playground.js";
@@ -54,6 +56,8 @@ export const DATASET_TREE_EVIDENCE = {
     "builder:client/components/tree-sources.ts",
     "builder:client/components/tree-source-snapshot.ts",
     "builder:client/components/tree-source-s3.ts",
+    // A prefix: the loader and the validator's re-export, `tree-search-index-parse.ts`.
+    "builder:client/components/tree-search-index",
     "builder:client/components/tree-recipes.ts",
     // The recipe templates, as the data file both halves read. The build hashes these strings
     // and the page renders them, and two copies of a string whose digest is a security boundary
@@ -75,6 +79,8 @@ export const DATASET_TREE_EVIDENCE = {
   ],
 
   ownedStaticRoots: [] as string[],
+  // The published search index. A portal with no tree must contain none, and `FP1602` checks it.
+  ownedEmittedNames: ["dataset-tree-index."],
   assetNamespaces: [] as string[],
   allowedSharedModules: [
     "builder:client/shell.ts",
@@ -163,6 +169,117 @@ export const MAX_CATALOG_BYTES = 512 * 1024;
 
 /** How many catalogue problems are reported individually before the rest are summarised. */
 const MAX_REPORTED_PROBLEMS = 20;
+
+/**
+ * How large a search index may be. It is not in the page but a separate file, fetched after the
+ * tree mounts, so the bound is about the browser parsing and normalising it at once: an entry is
+ * roughly 200-400 bytes, so 16 MiB is some 50,000 stores - a large archive - and a file far past it
+ * is a generator indexing chunks or objects instead of datasets.
+ */
+export const MAX_SEARCH_INDEX_BYTES = 16 * 1024 * 1024;
+
+/** A validated search index, re-serialised and ready to publish. */
+export interface PublishedTreeSearchIndex {
+  /** Artifact-relative, e.g. `_portal/dataset-tree-index.<hash>.json`. */
+  file: string;
+  /** Under the portal's base path, as the page fetches it. */
+  url: string;
+  bytes: Buffer;
+  entries: number;
+  complete: boolean;
+  generatedAt?: string;
+}
+
+/**
+ * Read, validate and prepare one search index for a live block. Every failure is a diagnostic with
+ * a pointer (into the landing for size and JSON, into the index file for what the package's parser
+ * rejects), never an exception; returns undefined when the block cannot be built. Published, not
+ * embedded - the 512 KiB catalogue cap exists to keep this size out of the HTML - under an
+ * 8-character content hash (`immutable` cache class) and fetched same-origin, so the policy is
+ * unchanged.
+ */
+export function loadDatasetTreeSearchIndex(options: {
+  /** Absolute path of the index file, already contained. */
+  absolute: string;
+  /** Source-root-relative path of the same file. */
+  relative: string;
+  declaredIn: string;
+  /** JSON pointer of the block within the landing document. */
+  pointer: string;
+  basePath: string;
+  bag: DiagnosticBag;
+}): { published: PublishedTreeSearchIndex; digest: string; bytes: number } | undefined {
+  const { absolute, relative, declaredIn, pointer, bag } = options;
+  const raw = readFileSync(absolute);
+  const where = { file: declaredIn, pointer: `${pointer}/searchIndex` };
+
+  if (raw.byteLength > MAX_SEARCH_INDEX_BYTES) {
+    bag.error(
+      "FP1407",
+      `The dataset-tree search index '${relative}' is ${raw.byteLength} bytes, over the ${MAX_SEARCH_INDEX_BYTES}-byte limit.`,
+      {
+        ...where,
+        hint: "Index datasets (one entry per store), not the objects or chunks inside them.",
+      },
+    );
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.toString("utf8"));
+  } catch (err) {
+    bag.error(
+      "FP1101",
+      `The dataset-tree search index '${relative}' is not valid JSON: ${String(err)}`,
+      where,
+    );
+    return undefined;
+  }
+
+  let index: ReturnType<typeof parseDatasetTreeSearchIndexV1>;
+  try {
+    index = parseDatasetTreeSearchIndexV1(parsed);
+  } catch (err) {
+    // One entry per problem, each with an RFC 6901 pointer into the index file: a generated file of
+    // fifty thousand entries is fixed at the entry, not by rereading all of it.
+    const problems = (err as { diagnostics?: { path: string; message: string }[] }).diagnostics;
+    if (!problems) throw err;
+    for (const problem of problems.slice(0, MAX_REPORTED_PROBLEMS)) {
+      bag.error("FP1104", `The dataset-tree search index is not valid: ${problem.message}.`, {
+        file: relative,
+        pointer: problem.path || "/",
+      });
+    }
+    if (problems.length > MAX_REPORTED_PROBLEMS) {
+      bag.error(
+        "FP1104",
+        `The dataset-tree search index has ${problems.length - MAX_REPORTED_PROBLEMS} further problems.`,
+        { file: relative },
+      );
+    }
+    return undefined;
+  }
+
+  // Re-serialised from the parsed document, like the catalogue: the parser is closed, so only
+  // recognised fields are published and the source file's whitespace cannot change the artifact.
+  const bytes = Buffer.from(`${JSON.stringify(index)}\n`, "utf8");
+  const hash = createHash("sha256").update(bytes).digest("base64url").slice(0, 8);
+  const file = `_portal/dataset-tree-index.${hash}.json`;
+  const base = options.basePath.endsWith("/") ? options.basePath.slice(0, -1) : options.basePath;
+  return {
+    published: {
+      file,
+      url: `${base}/${file}`,
+      bytes,
+      entries: index.entries.length,
+      complete: index.complete,
+      ...(index.generatedAt ? { generatedAt: index.generatedAt } : {}),
+    },
+    digest: sha256(raw),
+    bytes: raw.byteLength,
+  };
+}
 
 function walk(
   nodes: readonly DatasetTreeCatalogNode[],
@@ -493,6 +610,9 @@ export function liveDatasetTreeBlock(options: {
    * this it would resolve to their defaults and disagree with the portal about one interpreter.
    */
   inherit?: PlaygroundSettings;
+  /** The published search index, when the block has one. See `loadDatasetTreeSearchIndex`. */
+  searchIndex?: PublishedTreeSearchIndex;
+  searchResultLimit?: number;
   file: string;
   pointer: string;
   bag: DiagnosticBag;
@@ -531,6 +651,22 @@ export function liveDatasetTreeBlock(options: {
     statusLabel: options.statusLabel ?? "LIVE",
     sourceLabel: options.s3.endpoint,
     ...(python ? { python } : {}),
+    ...(options.searchIndex
+      ? {
+          searchIndex: {
+            url: options.searchIndex.url,
+            file: options.searchIndex.file,
+            entries: options.searchIndex.entries,
+            complete: options.searchIndex.complete,
+            ...(options.searchIndex.generatedAt
+              ? { generatedAt: options.searchIndex.generatedAt }
+              : {}),
+          },
+        }
+      : {}),
+    ...(options.searchResultLimit !== undefined
+      ? { searchResultLimit: options.searchResultLimit }
+      : {}),
   };
 }
 

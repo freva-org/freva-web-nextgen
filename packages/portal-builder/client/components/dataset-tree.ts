@@ -413,9 +413,14 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
   const panel = host.closest<HTMLElement>("[data-portal-tree-panel]");
   const expandControl = panel?.querySelector<HTMLElement>("[data-portal-tree-expand]");
 
-  mountDatasetTree(host, {
+  // With an index, the cap on drawn results travels from the build; the tree reads it only once
+  // an index is searchable, so passing it before the index arrives changes nothing.
+  const searchLimit = Number.parseInt(host.dataset.portalDatasetTreeSearchLimit ?? "", 10);
+
+  const handle = mountDatasetTree(host, {
     source,
     ...(expandControl ? { toolbarExtras: [expandControl] } : {}),
+    ...(Number.isFinite(searchLimit) && searchLimit > 0 ? { searchResultLimit: searchLimit } : {}),
     initialExpandedIds: data.expand,
     // ONE label override: the badge on a collection that has been announced but has nothing in it
     // yet. The package's default is the generic word because its vocabulary is not any one
@@ -458,6 +463,29 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
 
   if (truncated) reportTruncation(host, truncated);
   if (expandControl) settleBlockBar(panel);
+
+  // The search index comes AFTER the tree, never before it: the tree is already browsable, and
+  // the index is handed over whenever it arrives. Until then - or for good, if it is missing,
+  // invalid or unreachable - search covers the loaded branches and says so. Not awaited:
+  // `mountDatasetTreeBlocks` settles when every tree is up, and a download must not hold it back.
+  const indexUrl = mode === "s3" ? host.dataset.portalDatasetTreeSearchIndex : undefined;
+  if (indexUrl && loaders.searchIndex) {
+    void loaders.searchIndex(indexUrl).then(
+      (index) => handle.setSearchIndex(index),
+      (error: unknown) => warnIndexOnce(indexUrl, error),
+    );
+  }
+}
+
+/** One console line per index URL, however many blocks share it. */
+const warnedIndexes = new Set<string>();
+function warnIndexOnce(url: string, error: unknown): void {
+  if (warnedIndexes.has(url)) return;
+  warnedIndexes.add(url);
+  console.warn(
+    `[portal] dataset-tree search index ${url} could not be used; search covers loaded branches only.`,
+    error instanceof Error ? error.message : error,
+  );
 }
 
 /**

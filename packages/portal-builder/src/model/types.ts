@@ -388,6 +388,21 @@ export interface DatasetTreeBlockData {
   expandedIds: string[];
   statusLabel: string;
   /**
+   * A live block's search index, published as its own same-origin file. The page fetches `url`
+   * after the tree mounts and hands it over; a failed load leaves the tree searching what is
+   * loaded.
+   */
+  searchIndex?: {
+    url: string;
+    /** Artifact-relative path of the published file. */
+    file: string;
+    entries: number;
+    complete: boolean;
+    generatedAt?: string;
+  };
+  /** With `searchIndex`: results drawn before the rest become a count. */
+  searchResultLimit?: number;
+  /**
    * The catalogue's own `generatedAt`, formatted for the footer, or `undefined` when it states
    * none - then the footer shows the pill alone. No fallback to the build time: a snapshot's age
    * is a claim about the *archive*, and the moment the site was compiled would look like an

@@ -62,6 +62,10 @@ interface ConsoleElement extends HTMLElement {
   clearHistory(): void;
   restart(): Promise<void>;
   engine?: unknown;
+  /** The portal page, for the no-JSPI card. See the console's own `pageUrl`. */
+  pageUrl: string | null;
+  /** Opens a link the sandboxed frame cannot. See the console's own `openExternal`. */
+  openExternal: ((url: string) => void) | null;
 }
 
 /** Say something in the document itself. A child page has no console a visitor can read. */
@@ -187,9 +191,14 @@ export async function startPlaygroundOrigin(): Promise<void> {
 
   // The bridge is attached once the console exists, because the parent's `welcome` is the signal
   // that this document is ready to be asked for something.
-  attachPlaygroundBridge({
+  const bridge = attachPlaygroundBridge({
     engine,
     hostOrigin: config.hostOrigin,
+    // The portal page the visitor is on, from the portal's hail. Without it the no-JSPI card would
+    // hand out THIS frame's address, which loses the portal page and its example controls.
+    onPage: (url) => {
+      element.pageUrl = url;
+    },
     examples: registry,
     onRunExample: async (example) => {
       await start();
@@ -212,5 +221,10 @@ export async function startPlaygroundOrigin(): Promise<void> {
       status("Python is ready");
     },
   });
+  // This frame is sandboxed without popups, so the card's links go through the portal, which
+  // opens only the card's own fixed addresses.
+  element.openExternal = (url) => {
+    bridge.openLink(url);
+  };
   status("Ready");
 }

@@ -49,6 +49,8 @@ import {
   PYTHON_PLAYGROUND_EVIDENCE,
   liveDatasetTreeBlock,
   loadDatasetTreeCatalog,
+  loadDatasetTreeSearchIndex,
+  type PublishedTreeSearchIndex,
   resolveDatasetTreeS3,
   resolvePlaygroundArtifact,
 } from "./dataset-tree.js";
@@ -1133,6 +1135,8 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     python: RawDatasetTreePython | undefined;
     file: string;
     pointer: string;
+    searchIndex?: PublishedTreeSearchIndex;
+    searchResultLimit?: number;
   }[] = [];
   for (const [id, landing] of landingDocs) {
     landing.doc.blocks.forEach((block, index) => {
@@ -1156,9 +1160,71 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         });
         return;
       }
+      // A search index is for a LIVE tree, which only knows the branches a visitor has opened. A
+      // snapshot is complete - the whole catalogue is in the page - so the tree searches all of it
+      // and the package ignores an index; accepting one would ship a file nothing reads.
+      if (block.searchIndex !== undefined && block.catalog) {
+        bag.error(
+          "FP1104",
+          "`searchIndex` is for a live (`s3`) dataset-tree block; this block has a `catalog`.",
+          {
+            file: landing.source,
+            pointer: `${pointer}/searchIndex`,
+            hint: "A catalogue snapshot is complete, so the tree already searches all of it and would ignore an index. Drop `searchIndex`, or browse the archive live with `s3`.",
+          },
+        );
+        return;
+      }
+      if (block.searchResultLimit !== undefined && block.searchIndex === undefined) {
+        bag.error(
+          "FP1104",
+          "`searchResultLimit` only applies to a search index, and this block has no `searchIndex`.",
+          { file: landing.source, pointer: `${pointer}/searchResultLimit` },
+        );
+        return;
+      }
       if (block.s3) {
         const source = resolveDatasetTreeS3(block.s3, { file: landing.source, pointer }, bag);
         if (!source) return;
+        let searchIndex: PublishedTreeSearchIndex | undefined;
+        if (block.searchIndex !== undefined) {
+          let indexFile: ContainedPath;
+          try {
+            indexFile = resolveContained(
+              sourceRoot,
+              join(sourceRoot, landing.source),
+              block.searchIndex,
+              { mustExist: true },
+            );
+          } catch (err) {
+            if (err instanceof PathViolation) {
+              bag.error(err.code, err.message, {
+                file: landing.source,
+                pointer: `${pointer}/searchIndex`,
+              });
+              return;
+            }
+            throw err;
+          }
+          const loadedIndex = loadDatasetTreeSearchIndex({
+            absolute: indexFile.absolute,
+            relative: indexFile.relative,
+            declaredIn: landing.source,
+            pointer,
+            basePath: canonical.basePath,
+            bag,
+          });
+          if (!loadedIndex) return;
+          inputs.push({
+            path: indexFile.relative,
+            role: "config",
+            digest: loadedIndex.digest,
+            bytes: loadedIndex.bytes,
+          });
+          // Two blocks naming one file publish one file: the name is the content's hash.
+          contents.set(loadedIndex.published.file, loadedIndex.published.bytes);
+          searchIndex = loadedIndex.published;
+        }
         // Deferred, because a live block's playground may inherit the portal's. A dataset-tree
         // block's `python` stanza cannot express add-ons, connect origins, credential persistence
         // or asset locations - by design, since those are portal-wide - so a block resolved on
@@ -1175,6 +1241,10 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
           python: block.python,
           file: landing.source,
           pointer,
+          ...(searchIndex ? { searchIndex } : {}),
+          ...(block.searchResultLimit !== undefined
+            ? { searchResultLimit: block.searchResultLimit }
+            : {}),
         });
         return;
       }
@@ -1346,6 +1416,10 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         python: pending.python,
         file: pending.file,
         pointer: pending.pointer,
+        ...(pending.searchIndex ? { searchIndex: pending.searchIndex } : {}),
+        ...(pending.searchResultLimit !== undefined
+          ? { searchResultLimit: pending.searchResultLimit }
+          : {}),
         bag,
         ...(portalPlayground ? { inherit: portalPlayground } : {}),
       }),
@@ -1834,6 +1908,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     ...DATASET_TREE_EVIDENCE,
     ownedModuleRoots: [...DATASET_TREE_EVIDENCE.ownedModuleRoots],
     ownedStaticRoots: [...DATASET_TREE_EVIDENCE.ownedStaticRoots],
+    ownedEmittedNames: [...DATASET_TREE_EVIDENCE.ownedEmittedNames],
     assetNamespaces: [...DATASET_TREE_EVIDENCE.assetNamespaces],
     allowedSharedModules: [...DATASET_TREE_EVIDENCE.allowedSharedModules],
     enabled: datasetTreeEnabled,

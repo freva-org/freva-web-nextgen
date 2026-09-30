@@ -346,6 +346,9 @@ jobs:
       - name: Runnable snippet controls and editing gate
         run: npm run test:browser:snippets -w @freva-org/portal-builder
 
+      - name: Dataset-tree search index gate (live block, no gateway requests)
+        run: npm run test:browser:tree:index -w @freva-org/portal-builder
+
       - name: Cosmos landing ending gate (theme.backdrop.tail)
         run: npm run test:browser:cosmos-tail -w @freva-org/portal-builder
 
