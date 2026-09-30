@@ -8,6 +8,7 @@
  * - no PyProxy - except `ArtifactDataMessage.blob`, a reference into the blob store.
  */
 
+import type { NoticeKind } from "./notices.js";
 import type {
   ArtifactInfo,
   BrowserPythonAddon,
@@ -210,6 +211,8 @@ export interface StreamMessage {
    * console filing the line inside a block that finished minutes earlier.
    */
   background?: true;
+  /** See `StreamEvent.notice`. */
+  notice?: NoticeKind;
 }
 
 export interface DisplayMessage {

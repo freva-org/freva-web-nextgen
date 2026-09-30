@@ -16,6 +16,7 @@ import {
   validateDisplay,
   type WorkerMessage,
 } from "../protocol.js";
+import type { NoticeKind } from "../notices.js";
 import type { BrowserPythonState } from "../types.js";
 
 /**
@@ -212,6 +213,15 @@ export class OutputBridge {
   #notice(text: string): void {
     this.flush();
     this.#post({ kind: "stderr", ...this.#attribution(), text });
+  }
+
+  /**
+   * One stderr line that reports a known environmental condition (see `StreamEvent.notice`). Sent
+   * whole and at once, like `#notice`: it replaces a traceback, and a UI draws it as one card.
+   */
+  stderrNotice(text: string, notice: NoticeKind): void {
+    this.flush();
+    this.#post({ kind: "stderr", ...this.#attribution(), text, notice });
   }
 
   /**

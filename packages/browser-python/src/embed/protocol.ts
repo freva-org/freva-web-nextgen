@@ -100,6 +100,14 @@ export type PlaygroundPayload =
    * survives is the most recent output.
    */
   | { kind: "transcript"; text: string; truncated: boolean }
+  /**
+   * "Open this address for the visitor." The playground frame is sandboxed without popups, so a
+   * link in it opens nothing; the portal opens it from its own document instead - and only if it
+   * is one of the fixed `NOTICE_LINKS`, compared exactly, so a frame running a visitor's Python
+   * cannot choose what the portal opens. Added in version 3 as an optional kind: a portal that
+   * does not know it ignores it, and the frame always shows the address as well.
+   */
+  | { kind: "open-link"; url: string }
   /** The answer to one `op`. `ok: false` carries a reason a portal can show a visitor. */
   | { kind: "op-result"; requestId: string; ok: boolean; message?: string };
 
@@ -108,8 +116,13 @@ export type PlaygroundMessage = Envelope & PlaygroundPayload;
 
 /** parent -> child, without the envelope the sender adds. */
 export type HostPayload =
-  /** "Answer this nonce with your session." The only thing that starts or renews a session. */
-  | { kind: "hail" }
+  /**
+   * "Answer this nonce with your session." The only thing that starts or renews a session.
+   * `page` is the portal page the frame is on - origin and path, never the query - so a console
+   * telling the visitor to reopen "this page" elsewhere names the portal page rather than the
+   * frame. Optional: a frame that does not know it ignores it.
+   */
+  | { kind: "hail"; page?: string }
   | { kind: "list" }
   | { kind: "download"; requestId: string; name: string; chunkBytes?: number }
   /**
@@ -203,6 +216,38 @@ export function boundTranscript(value: unknown): { text: string; truncated: bool
   if (typeof value !== "string") return null;
   if (value.length <= MAX_TRANSCRIPT_CHARS) return { text: value, truncated: false };
   return { text: value.slice(value.length - MAX_TRANSCRIPT_CHARS), truncated: true };
+}
+
+/**
+ * The addresses a portal will open for a playground (`open-link`): the no-JSPI card's own links.
+ * A COPY of `NOTICE_LINKS` in `../notices.ts`, kept here so the embed layer imports nothing the
+ * console also imports - a module both halves share lands in the console's chunk unless a bundler
+ * is told otherwise, and a framed portal page would then load the console it frames elsewhere.
+ * `tests/embed-notice-links.test.ts` fails if the two lists ever differ.
+ */
+export const OPEN_LINK_ALLOWLIST: ReadonlySet<string> = new Set([
+  "https://www.google.com/chrome/",
+  "https://support.google.com/chrome/answer/95414",
+  "https://support.microsoft.com/en-us/topic/microsoft-edge-update-settings-af8aaca2-1b69-4870-94fe-18822dbb7ef1",
+  "https://support.mozilla.org/kb/update-firefox-latest-release",
+  "https://support.apple.com/102665",
+]);
+
+/**
+ * The portal page a hail named, checked before it is believed: an http(s) URL on the portal's
+ * own origin, reduced to origin and path. Anything else is `null`.
+ */
+export function portalPage(value: unknown, portalOrigin: string): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > 2048) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.origin !== portalOrigin) return null;
+  return `${url.origin}${url.pathname}`;
 }
 
 /** A byte count a peer sent: a non-negative safe integer, and nothing else. */

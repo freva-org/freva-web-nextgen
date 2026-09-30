@@ -167,14 +167,24 @@ _jspi = True
 # on the message because that is all that distinguishes it: the type is a plain RuntimeError.
 _NO_STACK_SWITCHING = "WebAssembly stack switching not supported in this JavaScript runtime"
 
+# The plain-text report. A console that knows it (the worker reads it back through
+# `needs_jspi_text`) draws a card with the visitor's own browser and version instead; everything
+# else - a script reading stderr, `execute()`'s `error` - gets this, complete on its own. The code
+# is not at fault, so it says so before anything else.
 REMOTE_DATA_NEEDS_JSPI = (
-    "RuntimeError: Remote dataset access requires WebAssembly JSPI (stack switching), which this "
-    "browser does not provide.\n"
-    "Local Python, NumPy/xarray on local data and /workspace files are not affected.\n"
-    "Updating the browser fixes this: Safari 27 and later provide JSPI "
-    "(https://webkit.org/blog/18325/webkit-features-for-safari-27-0/), as do Chrome and Edge 137 "
-    "and Firefox 153 or later.\n"
+    "RuntimeError: This browser can't open remote datasets. Your code is fine: reading data over "
+    "the network needs WebAssembly JSPI (stack switching), which this browser does not provide "
+    "yet.\n"
+    "Still works here: local Python, NumPy/xarray on local data and /workspace files.\n"
+    "To fix it, update the browser or open this page in one that has JSPI: Safari 27 "
+    "(https://webkit.org/blog/18325/webkit-features-for-safari-27-0/), Chrome or Edge 137, "
+    "Firefox 153 or Opera 121, or later.\n"
 )
+
+
+def needs_jspi_text():
+    """The report for a remote read without JSPI, so the worker can recognise it."""
+    return REMOTE_DATA_NEEDS_JSPI
 
 
 def set_jspi(available):

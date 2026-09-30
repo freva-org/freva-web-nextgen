@@ -3,7 +3,13 @@
 // completion, output batching and pruning. It talks to the engine ONLY through its public API,
 // never importing from `../worker/`, and every REPL decision comes from the engine's own answer.
 
-import type { ArtifactsEvent, BrowserPython, OutputEvent, StatusEvent } from "../types.js";
+import type {
+  ArtifactsEvent,
+  BrowserPython,
+  OutputEvent,
+  StatusEvent,
+  StreamEvent,
+} from "../types.js";
 import {
   DEFAULT_HIGHLIGHT_OPTIONS,
   DEFAULT_HISTORY_OPTIONS,
@@ -341,8 +347,10 @@ export class ConsoleController {
 
   #onOutput(event: OutputEvent): void {
     switch (event.type) {
-      case "stdout":
       case "stderr":
+        if (event.notice !== undefined && this.#appendNotice(event)) return;
+      // falls through: a surface that cannot draw the card gets the plain text
+      case "stdout":
         // Buffered. Python printing in a loop produces one event per write, and a DOM node per
         // event would be thousands of nodes for one statement.
         this.#pending.push({
@@ -383,6 +391,30 @@ export class ConsoleController {
         this.#countExecution();
         return;
     }
+  }
+
+  /**
+   * A marked stderr line, drawn as a card where the surface can. Flushed first, so it lands after
+   * everything printed before it, and counted as one entry like a display. False when the surface
+   * has no card, and the caller renders the text as ordinary stderr.
+   */
+  #appendNotice(event: StreamEvent): boolean {
+    if (event.notice === undefined || typeof this.#surface.appendNotice !== "function")
+      return false;
+    this.#flush();
+    const drawn = this.#surface.appendNotice({
+      notice: event.notice,
+      origin: "error",
+      text: event.text,
+      ...(event.background === true
+        ? { executionId: BACKGROUND_EXECUTION_ID }
+        : { executionId: event.executionId }),
+    });
+    if (!drawn) return false;
+    this.#characterCount += event.text.length;
+    this.#record(event.text);
+    this.#countExecution();
+    return true;
   }
 
   #scheduleFlush(): void {

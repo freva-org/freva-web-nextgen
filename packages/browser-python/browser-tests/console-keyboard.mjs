@@ -1,14 +1,8 @@
-/**
- * Every documented keyboard shortcut, driven with REAL keystrokes.
- *
- * `console.mjs` drives most behaviour through the element's API, which proves the behaviour is
- * right and nothing about whether a key reaches it. jQuery Terminal normalises the event before
- * handing it on, and does so by MUTATING it (`e.key = ie_key_fix(e)`), so `Tab` arrives as `TAB`,
- * `ArrowUp` as `ARROWUP` and a typed `z` as `Z`. Nothing throws: Tab completion simply never
- * fires, Escape never closes the menu, and reverse search records the query in capitals. So
- * nothing here calls a method - every check is a key press and an observable consequence.
- */
-import { consolePage } from "./console-fixture.mjs";
+// Every documented keyboard shortcut, driven with REAL keystrokes. `console.mjs` proves behaviour
+// through the element's API, not that a key reaches it: jQuery Terminal MUTATES the event
+// (`e.key = ie_key_fix(e)`), so `Tab` arrives as `TAB` and a typed `z` as `Z`, and nothing throws -
+// completion just never fires. So every check here is a key press and its consequence.
+import { MOCK_ENGINE, consolePage } from "./console-fixture.mjs";
 import { bundleConsole, inBrowser, report, requireDist, serve } from "./harness.mjs";
 
 requireDist();
@@ -423,6 +417,64 @@ const result = await inBrowser(
         pass: cleared.command.trim() === "" && !cleared.pushes.includes("half typed statement"),
         detail: JSON.stringify({ command: cleared.command, pushes: cleared.pushes }),
       });
+
+      // TWO CONSOLES, ONE KEYBOARD. The library's key handlers are on the document, so whichever
+      // terminals believe they are active all receive a keystroke. Moving native focus to a prompt
+      // - a keyboard or a host calling `focus()`, not a click - must make that console the only
+      // active one, or one Enter submits one line to two interpreters.
+      const two = await serve(`<!doctype html><html><head><meta charset="utf-8"></head><body>
+<freva-python-console id="a"></freva-python-console>
+<freva-python-console id="b"></freva-python-console>
+<script type="module">
+  ${MOCK_ENGINE}
+  import { defineBrowserPythonConsole } from "/bundle/console.js";
+  defineBrowserPythonConsole();
+  const a = document.getElementById("a");
+  const b = document.getElementById("b");
+  a.engine = new window.__MockEngine();
+  b.engine = new window.__MockEngine();
+  window.__two = { a, b };
+  window.__ready = true;
+</script></body></html>`);
+      try {
+        await page.goto(two.url);
+        await page.waitForFunction(() => window.__ready === true, null, { timeout: 20000 });
+        await page.evaluate(() => Promise.all([window.__two.a.start(), window.__two.b.start()]));
+        const prompt = (id) =>
+          page.evaluate(
+            (which) => window.__two[which].shadowRoot.querySelector(".cmd textarea")?.focus(),
+            id,
+          );
+        const pushes = () =>
+          page.evaluate(() => ({
+            a: [...window.__two.a.engine.pushes],
+            b: [...window.__two.b.engine.pushes],
+          }));
+        // Each step settles first, as a person's does: an execution that finishes puts the caret
+        // back at ITS prompt, and a click activates its terminal after the library's click delay.
+        const step = async (go, line) => {
+          await go();
+          await page.waitForTimeout(400);
+          await page.keyboard.type(line, { delay: 2 });
+          await page.keyboard.press("Enter");
+          await page.waitForTimeout(400);
+        };
+        await step(() => page.click("#a"), "first_a = 1");
+        await step(() => page.click("#b"), "then_b = 2");
+        // Back to A by focus alone, then to B the same way.
+        await step(() => prompt("a"), "back_to_a = 3");
+        await step(() => prompt("b"), "back_to_b = 4");
+        const seen = await pushes();
+        checks.push({
+          name: "with two consoles, focus moved to one prompt sends keys to that console alone",
+          pass:
+            JSON.stringify(seen.a) === JSON.stringify(["first_a = 1", "back_to_a = 3"]) &&
+            JSON.stringify(seen.b) === JSON.stringify(["then_b = 2", "back_to_b = 4"]),
+          detail: JSON.stringify(seen),
+        });
+      } finally {
+        await two.close();
+      }
 
       return checks;
     } finally {

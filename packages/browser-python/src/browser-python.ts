@@ -1367,6 +1367,9 @@ class BrowserPythonEngine implements BrowserPython {
           executionId: message.executionId,
           text: message.text,
           ...(message.background === true ? { background: true } : {}),
+          ...(message.kind === "stderr" && message.notice === "needs-jspi"
+            ? { notice: "needs-jspi" as const }
+            : {}),
         });
         return;
       case "display": {

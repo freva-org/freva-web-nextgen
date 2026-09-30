@@ -57,9 +57,20 @@ const info = await python.start();
 `jspi` is WebAssembly stack switching, detected in the worker (`WebAssembly.Suspending`), never
 inferred from the browser's name. It is not needed to start an interpreter, to run Python or to use
 `/workspace`, but reading a **remote** dataset is, because a synchronous Zarr decode calls an
-asynchronous fetch underneath. Without it nothing is printed at startup or after ordinary commands;
-the one call that needs it fails with a short, actionable `RuntimeError` naming the browser versions
-that provide it (Safari 27, Chrome and Edge 137, Firefox 153), and the session carries on.
+asynchronous fetch underneath. Without it the engine prints nothing at startup or after ordinary
+commands; the one call that needs it fails with a short `RuntimeError` that says the code is fine
+and names the browser versions that provide it (Safari 27, Chrome and Edge 137, Firefox 153,
+Opera 121), and the session carries on. That stderr line is marked `notice: "needs-jspi"`, so a UI
+can explain it instead of printing it.
+
+The console does: a collapsed one-line hint under the version line at startup, and for the failing
+read a card with the visitor's browser and version on a track towards the one that works, what
+still works, and the ways out - "Have Chrome? Skip the update" with the page link to copy (not on
+iPhone or iPad, where every browser is Safari's engine, or on Chrome itself), the vendor's update
+page, and a note for IT support. Browser name and version come from the user agent, for advice
+only. The card's controls behave as buttons (Tab moves, Enter presses), and a refused clipboard or
+a link that cannot open shows the text to copy. A framed console gets the portal page and link
+opening from its host: see `pageUrl`, `openExternal` and the embedding section.
 
 ## The download
 
@@ -68,7 +79,7 @@ Nothing is fetched until `start()`.
 | what                                   | on the wire                                               | when                                 |
 | -------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
 | this package, engine only              | <!-- size:root-entry-gz --> 7.0 KiB gzipped               | with your bundle                     |
-| this package, with the console         | <!-- size:console-entry-gz --> 124.2 KiB gzipped          | with your bundle, `/console` only    |
+| this package, with the console         | <!-- size:console-entry-gz --> 128.7 KiB gzipped          | with your bundle, `/console` only    |
 | Pyodide runtime + stdlib               | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
 | xarray, zarr, fsspec, numcodecs, numpy | 9.6 MB, 17 wheels                                         | first `start()`, `xarray-zarr` only  |
 | the derived Freva wheel + PyPI deps    | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
@@ -78,7 +89,7 @@ Nothing is fetched until `start()`.
 The emitted headless-engine files - everything in `dist/` except the console and optional embed
 bridge - are
 
-<!-- size:engine-dist-gz --> 81.0 KiB gzipped against a budget of
+<!-- size:engine-dist-gz --> 82.3 KiB gzipped against a budget of
 <!-- size:engine-budget-gz --> 83.0 KiB. None of the runtime is in your bundle: it is a dynamic
 
 import by URL, and `npm run check:bytes` fails the build if that stops being true, or if the
@@ -120,6 +131,7 @@ python.onOutput((event) => {
   event.type; // "stdout" | "stderr" | "result" | "display"
   event.executionId; // events are ordered within an execution and tagged with it
   // text events carry `text`; display events carry `mime`, `encoding`, `data`
+  // a stderr event may carry `notice` ("needs-jspi"): an environment condition, `text` still complete
 });
 ```
 
@@ -441,31 +453,33 @@ incomplete, state persists between lines, and top-level `await` works.
 |                       | `@freva-org/browser-python`             | `@freva-org/browser-python/console`          |
 | --------------------- | --------------------------------------- | -------------------------------------------- |
 | What you get          | engine, events, `push()`                | the above plus a rendered console            |
-| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **124.2 KiB** |
+| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **128.7 KiB** |
 | Touches `document`    | no                                      | yes, on `connectedCallback`                  |
 | Safe to import in SSR | yes                                     | `/console` yes, `/console/auto` no           |
 | jQuery in the bundle  | never (asserted by a test)              | yes, as a private instance                   |
 
-The console layer over the headless engine is <!-- size:console-layer-gz --> 117.2 KiB gzipped, of
+The console layer over the headless engine is <!-- size:console-layer-gz --> 121.7 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
 a target - 124 KiB for the layer, 8 KiB for the root entry - and fails if it finds a jQuery or
 worker-only add-on pin fingerprint in the root bundle.
 
 ### Attributes, properties, methods
 
-| Attribute      | Property           | Default                                         |                                                   |
-| -------------- | ------------------ | ----------------------------------------------- | ------------------------------------------------- |
-| `autostart`    | `autoStart`        | `false`                                         | start the engine on connect                       |
-| `profile`      | `profile`          | `"minimal"`                                     | see [Profiles](#profiles)                         |
-| `theme`        | `theme`            | `"auto"`                                        | `auto` follows `prefers-color-scheme`             |
-| `hide-toolbar` | `hideToolbar`      | `false`                                         | hide the built-in buttons                         |
-| `hide-files`   | `hideFiles`        | `false`                                         | hide the file panel                               |
-| -              | `engine`           | `undefined`                                     | inject an engine; the element will not dispose it |
-| -              | `banner`           | plain-text default                              | `false` for none. Text only, never markup         |
-| -              | `startupSource`    | `undefined`                                     | bootstrap run before ready, off-transcript        |
-| -              | `historyOptions`   | `{ persistence: "local", maxEntries: 500, … }`  |                                                   |
-| -              | `outputOptions`    | `{ maxEntries: 500, maxCharacters: 2_000_000 }` |                                                   |
-| -              | `highlightOptions` | `{ enabled: true, live: true, … }`              |                                                   |
+| Attribute      | Property           | Default                                         |                                                     |
+| -------------- | ------------------ | ----------------------------------------------- | --------------------------------------------------- |
+| `autostart`    | `autoStart`        | `false`                                         | start the engine on connect                         |
+| `profile`      | `profile`          | `"minimal"`                                     | see [Profiles](#profiles)                           |
+| `theme`        | `theme`            | `"auto"`                                        | `auto` follows `prefers-color-scheme`               |
+| `hide-toolbar` | `hideToolbar`      | `false`                                         | hide the built-in buttons                           |
+| `hide-files`   | `hideFiles`        | `false`                                         | hide the file panel                                 |
+| `page-url`     | `pageUrl`          | this document's address                         | the page the no-JSPI card tells a visitor to reopen |
+| -              | `openExternal`     | `null`                                          | opens the card's links for a sandboxed frame        |
+| -              | `engine`           | `undefined`                                     | inject an engine; the element will not dispose it   |
+| -              | `banner`           | plain-text default                              | `false` for none. Text only, never markup           |
+| -              | `startupSource`    | `undefined`                                     | bootstrap run before ready, off-transcript          |
+| -              | `historyOptions`   | `{ persistence: "local", maxEntries: 500, … }`  |                                                     |
+| -              | `outputOptions`    | `{ maxEntries: 500, maxCharacters: 2_000_000 }` |                                                     |
+| -              | `highlightOptions` | `{ enabled: true, live: true, … }`              |                                                     |
 
 Methods: `start()`, `execute(source)`, `runExample(example)`, `transcript()`, `focus()`, `clear()`,
 `clearHistory()`, `restart()`, `dispose()`.
@@ -622,6 +636,22 @@ const host = createPlaygroundHost({
   onArtifacts: (artifacts) => renderDownloadButtons(artifacts),
 });
 button.onclick = () => host.download(name, saveFilePickerSink);
+```
+
+**Two things for the console's no-JSPI card.** The portal's `hail` names its page (origin and path,
+never the query); the bridge checks it is on the portal's origin and passes it to `onPage` - set it
+as the console's `pageUrl`, so "Copy page link" names the portal page, not the frame. And
+`bridge.openLink(url)` asks the portal to open one of the card's fixed addresses (`NOTICE_LINKS`),
+since the sandboxed frame has no `allow-popups`; the portal opens only those, compared exactly, and
+the card shows the address too. Both are optional additions to protocol version 3.
+
+```ts
+const bridge = attachPlaygroundBridge({
+  engine,
+  hostOrigin,
+  onPage: (url) => (console.pageUrl = url),
+});
+console.openExternal = (url) => bridge.openLink(url);
 ```
 
 The playground reports artifact **metadata** only - never bytes, never a token - and the only

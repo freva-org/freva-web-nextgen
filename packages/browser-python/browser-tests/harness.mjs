@@ -1028,5 +1028,4 @@ export async function probeWorkerCapabilities(page) {
 }
 
 /** The fixed sentence a remote read without JSPI must produce - see `_freva_bridge.py`. */
-export const NO_JSPI_REMOTE_MESSAGE =
-  "Remote dataset access requires WebAssembly JSPI (stack switching), which this browser does not provide";
+export const NO_JSPI_REMOTE_MESSAGE = "This browser can't open remote datasets. Your code is fine";

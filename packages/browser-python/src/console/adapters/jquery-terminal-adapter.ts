@@ -18,9 +18,11 @@ import installTerminal from "jquery.terminal";
 
 import type {
   ConsoleDisplayOutput,
+  ConsoleNoticeOutput,
   ConsoleSurfaceAdapter,
   ConsoleTextOutput,
 } from "../console-types.js";
+import { renderNeedsJspi } from "../notice-card.js";
 import { highlightedElement, tokenClassesPerCharacter } from "../highlight.js";
 import { hasLink, linkifyInto } from "../linkify.js";
 import { renderDisplay } from "../display-renderers.js";
@@ -74,7 +76,8 @@ type TerminalInstance = {
   pause(): void;
   resume(): void;
   destroy(): void;
-  disable(): void;
+  /** `silent` skips the `onBlur` hook, so no option can veto it. */
+  disable(silent?: boolean): void;
   enable(): void;
   cmd(): { position(index?: number): number; getCursorPosition?(): number };
   find(selector: string): { get(index: number): HTMLElement | undefined };
@@ -96,6 +99,11 @@ export interface JQueryTerminalAdapterOptions {
    * stopped. The console draws its `Jump to latest` affordance from this and from nothing else.
    */
   onFollowChange?(state: { following: boolean; unread: boolean }): void;
+  /** What a notice card needs from the element that hosts it. See `NoticeCardOptions`. */
+  notice?: {
+    pageUrl: () => string | null;
+    openExternal: () => ((url: string) => void) | null;
+  };
   document: Document;
 }
 
@@ -103,6 +111,17 @@ export interface JQueryTerminalAdapterOptions {
  * sub-pixel layout, a fractional device pixel ratio and the library's own filler element leave
  * `scrollHeight - scrollTop - clientHeight` a pixel or two shy of zero at the true bottom. */
 const FOLLOW_EPSILON = 24;
+
+/** Whether a key event started inside a notice card, across the shadow boundary. */
+function fromNoticeCard(event: Event): boolean {
+  return event
+    .composedPath()
+    .some(
+      (node) =>
+        typeof (node as Element).classList?.contains === "function" &&
+        (node as Element).classList.contains("bp-notice"),
+    );
+}
 
 export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
   #terminal: TerminalInstance | null = null;
@@ -269,6 +288,9 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
     mount.addEventListener(
       "keydown",
       (event: KeyboardEvent) => {
+        // A key pressed on a notice card's controls is the card's: Tab moves between its buttons
+        // rather than completing, Enter presses the button rather than submitting.
+        if (fromNoticeCard(event)) return;
         if (!this.#options.onKeydown?.(event)) return;
         event.preventDefault();
         event.stopPropagation();
@@ -288,6 +310,9 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
     mount.addEventListener(
       "paste",
       (event: ClipboardEvent) => {
+        // A paste into a notice card's copy field is not input to Python, even multi-line: the
+        // field is read-only, and what lands here would otherwise run as a program.
+        if (fromNoticeCard(event)) return;
         // `text/plain` is the clipboard's canonical text type. Keep the standard legacy `text`
         // alias as a fallback for older integrations, while synthetic events can expose only the
         // canonical spelling.
@@ -302,6 +327,23 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
         this.setCommand("");
         this.#options.onCommand(pending ? `${pending}${pasted}` : pasted);
         requestAnimationFrame(() => this.#emitChange());
+      },
+      true,
+    );
+
+    // Focus at the prompt means the terminal is on. A notice card switches it off while it holds
+    // focus (see `appendNotice`); however focus returns to the prompt's textarea (a click,
+    // Shift+Tab, a host's `focus()`), it is switched on again - via `focus(true)`, not `enable()`:
+    // the key handlers are on the document, and `focus(true)` switches other consoles off first,
+    // so one Enter never submits to two. A paused (busy) terminal stays paused.
+    mount.addEventListener(
+      "focusin",
+      (event) => {
+        if (fromNoticeCard(event)) return;
+        const target = event.composedPath()[0];
+        if (target instanceof HTMLTextAreaElement && target.closest(".cmd")) {
+          this.#terminal?.focus(true);
+        }
       },
       true,
     );
@@ -638,6 +680,46 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
         container.replaceChildren(wrapper);
       },
     });
+  }
+
+  appendNotice(output: ConsoleNoticeOutput): boolean {
+    const terminal = this.#terminal;
+    if (!terminal || output.notice !== "needs-jspi") return false;
+    this.#afterOutput();
+    const doc = this.#options.document;
+    const card = renderNeedsJspi(output, {
+      document: doc,
+      ...(this.#options.notice
+        ? { pageUrl: this.#options.notice.pageUrl, openExternal: this.#options.notice.openExternal }
+        : {}),
+    });
+    // The terminal lets go while the card has focus: enabled, it pulls focus back to its hidden
+    // textarea ~10ms after anything else takes it, and its document-level handlers act on every
+    // key, so a card button would lose focus and Enter would submit the command line. Focus
+    // entering the card disables it; a click back at the prompt enables it again.
+    card.addEventListener("focusin", () => this.#terminal?.disable(true));
+    // And a press on the card is the card's: the terminal's own mouse and touch handlers would
+    // otherwise refocus its textarea after the click, taking focus from the control just pressed
+    // and the selection from a field the card just revealed.
+    for (const type of ["mousedown", "mouseup", "touchstart", "touchend"] as const) {
+      card.addEventListener(type, (event) => event.stopPropagation());
+    }
+    terminal.echo("", {
+      raw: false,
+      finalize: (rawContainer: unknown) => {
+        const container = this.#unwrap(rawContainer);
+        if (!container) return;
+        // RAW, so the vendor's `:not(.raw)` line rules (nowrap, 1em lines, its own colour) stay
+        // out of a card laid out with grid and flex. See `.bp-notice-line` in styles.css.
+        container.classList.add("raw");
+        const wrapper = doc.createElement("div");
+        wrapper.className = "bp-line bp-notice-line";
+        if (output.executionId) wrapper.dataset.executionId = output.executionId;
+        wrapper.append(card);
+        container.replaceChildren(wrapper);
+      },
+    });
+    return true;
   }
 
   clear(): void {

@@ -19,6 +19,8 @@ import {
   type ChunkAck,
   type EmbeddedArtifact,
   type HostMessage,
+  OPEN_LINK_ALLOWLIST,
+  portalPage,
   type PlaygroundPayload,
 } from "./protocol.js";
 import type { ExampleRegistry, RegisteredExample } from "./examples.js";
@@ -61,12 +63,23 @@ export interface PlaygroundBridgeOptions {
    * against that session stays valid.
    */
   onRestart?: () => void | Promise<void>;
+  /**
+   * The portal page this frame is on, as the portal's hail named it and `portalPage` checked it:
+   * origin and path on the portal's own origin. For a console to name the page a visitor should
+   * reopen, rather than the frame's own address.
+   */
+  onPage?: (url: string) => void;
   /** Injectable for tests; defaults to this frame's own window. */
   scope?: Window;
 }
 
 export interface PlaygroundBridge {
   readonly sessionId: string;
+  /**
+   * Ask the portal to open one of the fixed `NOTICE_LINKS` for the visitor, which this sandboxed
+   * frame cannot. Returns false, and sends nothing, for any other address or before a session.
+   */
+  openLink(url: string): boolean;
   /** Push the current artifact list to the parent. Called automatically on every change. */
   announce(): Promise<void>;
   stop(): void;
@@ -357,6 +370,8 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
       // has nowhere to go, so it is stopped rather than left holding a lease.
       if (challenge && data.challenge !== challenge) abortAll("the portal restarted the session");
       challenge = data.challenge;
+      const page = portalPage((data as { page?: unknown }).page, hostOrigin);
+      if (page) options.onPage?.(page);
       send({ kind: "ready" });
       return;
     }
@@ -415,6 +430,11 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
 
   return {
     sessionId,
+    openLink(url: string): boolean {
+      if (!challenge || !OPEN_LINK_ALLOWLIST.has(url)) return false;
+      send({ kind: "open-link", url });
+      return true;
+    },
     announce: list,
     stop() {
       scope.removeEventListener("message", onMessage);
