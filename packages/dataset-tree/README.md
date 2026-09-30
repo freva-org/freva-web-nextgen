@@ -63,6 +63,7 @@ function mountDatasetTree(host: HTMLElement, options: DatasetTreeOptions): Datas
 interface DatasetTreeHandle {
   reload(): Promise<void>; // discard everything, load the roots again
   destroy(): void; // abort, unbind, remove; safe to call twice
+  setSearchIndex(index: DatasetTreeSearchIndex | null): void; // supply or withdraw it after mount
 }
 
 interface DatasetTreeSource {
@@ -449,6 +450,20 @@ mountDatasetTree(host, {
   source: createS3Source(s3Options),
   searchIndex,
 });
+```
+
+### Loaded after mounting
+
+Mount without the index and hand it over when it arrives, so browsing never waits for the
+download. A query already typed is searched again; if the index never arrives, the tree keeps
+searching what is loaded and says so.
+
+```ts
+const tree = mountDatasetTree(host, { source: createS3Source(s3Options) });
+fetch(indexUrl)
+  .then((response) => response.json())
+  .then((json) => tree.setSearchIndex(parseDatasetTreeSearchIndexV1(json)))
+  .catch(() => undefined); // browsing is unaffected
 ```
 
 ### Without one - the same setup, still supported

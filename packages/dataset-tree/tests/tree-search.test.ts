@@ -470,3 +470,62 @@ test("searching a large index stays well inside a keystroke's budget", async () 
   handle.destroy();
   resetDom();
 });
+
+// an index supplied after mounting: `handle.setSearchIndex`
+
+test("setSearchIndex after mounting makes the field a search, with no source call", async () => {
+  const host = makeHost();
+  const { handle, source } = mountLazy(host);
+  await until(() => rowNames(host).length > 0, "roots");
+  assert.equal(field(host).getAttribute("placeholder"), "Filter datasets and paths…");
+  const before = source.calls.length;
+
+  handle.setSearchIndex(parseDatasetTreeSearchIndexV1(completeIndex()));
+  assert.notEqual(field(host).getAttribute("placeholder"), "Filter datasets and paths…");
+  assert.doesNotMatch(hintText(host), /Only items already loaded are searched/);
+
+  type(field(host), "tasmax");
+  await tick();
+  assert.deepEqual(resultIds(host), ["idx:downscaling/eur-11/tasmax.zarr"]);
+  assert.equal(source.calls.length, before, "supplying or searching the index called the source");
+  handle.destroy();
+  resetDom();
+});
+
+test("a query typed before the index arrives is searched again when it does", async () => {
+  const host = makeHost();
+  const { handle } = mountLazy(host);
+  await until(() => rowNames(host).length > 0, "roots");
+  type(field(host), "tasmax");
+  await tick();
+  assert.deepEqual(resultIds(host), [], "no result list without an index");
+
+  handle.setSearchIndex(parseDatasetTreeSearchIndexV1(completeIndex()));
+  assert.deepEqual(resultIds(host), ["idx:downscaling/eur-11/tasmax.zarr"]);
+  handle.destroy();
+  resetDom();
+});
+
+test("setSearchIndex(null) withdraws it and restores the loaded-only caveat", async () => {
+  const host = makeHost();
+  const { handle } = mountLazy(host, parseDatasetTreeSearchIndexV1(completeIndex()));
+  await until(() => rowNames(host).length > 0, "roots");
+  handle.setSearchIndex(null);
+  assert.equal(field(host).getAttribute("placeholder"), "Filter datasets and paths…");
+  assert.match(hintText(host), /Only items already loaded are searched/);
+  handle.destroy();
+  resetDom();
+});
+
+test("setSearchIndex is ignored over a complete source, and after destroy", async () => {
+  const host = makeHost();
+  const { handle } = mountComplete(host);
+  await until(() => rowNames(host).length > 0, "roots");
+  const placeholder = field(host).getAttribute("placeholder");
+  handle.setSearchIndex(parseDatasetTreeSearchIndexV1(completeIndex()));
+  assert.equal(field(host).getAttribute("placeholder"), placeholder);
+  handle.destroy();
+  // Must not throw on a destroyed handle.
+  handle.setSearchIndex(parseDatasetTreeSearchIndexV1(completeIndex()));
+  resetDom();
+});
