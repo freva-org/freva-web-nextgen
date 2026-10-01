@@ -1,5 +1,11 @@
 # @freva-org/browser-python
 
+## 2609.1.0
+
+### Minor Changes
+
+- f88f963: A browser without WebAssembly JSPI gets advice instead of a red line
+
 ## 2609.0.4
 
 ### Patch Changes

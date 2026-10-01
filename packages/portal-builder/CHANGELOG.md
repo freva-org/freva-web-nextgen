@@ -1,5 +1,18 @@
 # @freva-org/portal-builder
 
+## 2609.2.0
+
+### Minor Changes
+
+- 33b6ed4: `dataset-tree` block can take a search index
+
+### Patch Changes
+
+- Updated dependencies [4267935]
+- Updated dependencies [f88f963]
+  - @freva-org/dataset-tree@2610.0.1
+  - @freva-org/browser-python@2609.1.0
+
 ## 2609.1.1
 
 ### Patch Changes
