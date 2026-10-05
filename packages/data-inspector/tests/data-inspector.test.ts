@@ -184,6 +184,27 @@ describe("rendering", () => {
     expect(grid.hasAttribute("title")).toBe(false);
   });
 
+  it("viewer-off (the host's policy) disables the viewer, says why, and makes no frame", () => {
+    const el = mount({
+      open: "",
+      status: "ready",
+      "zarr-url": "https://s3.example/x.zarr",
+      view: "viewer",
+      "viewer-off": "The 3D viewer is not enabled on this site.",
+    });
+    el.output = "<table>metadata</table>";
+    const grid = el.querySelector<HTMLButtonElement>("#nc-tab-gridlook")!;
+    expect(grid.disabled).toBe(true);
+    expect(grid.getAttribute("title")).toBe("The 3D viewer is not enabled on this site.");
+    expect((el as unknown as { activeView: string }).activeView).toBe("metadata");
+    expect(el.querySelector("iframe")).toBeNull();
+    // A read clearing its own reason does not lift the host's.
+    el.setAttribute("viewer-disabled", "x");
+    el.removeAttribute("viewer-disabled");
+    expect(grid.disabled).toBe(true);
+    expect(el.querySelector("iframe")).toBeNull();
+  });
+
   it("shows an error even when no store URL exists yet", () => {
     const el = mount({ open: "", status: "error", error: "Conversion refused" });
     expect(el.querySelector<HTMLElement>("#nc-tabs-wrap")!.hidden).toBe(false);
@@ -334,6 +355,105 @@ describe("tabs", () => {
     const el = mount({ open: "", "zarr-url": "https://z.example.com", status: "ready" });
     el.output = "<table>data</table>";
     expect(el.innerHTML).toContain("metadata");
+  });
+});
+
+// Embedded, and the view asked for
+
+describe("embedded", () => {
+  it("draws no dialog: no backdrop, title, close button or path field; the views stay", () => {
+    const el = mount({
+      embedded: "",
+      open: "",
+      status: "ready",
+      "zarr-url": "https://z.example/a.zarr",
+    });
+    el.output = "<table>metadata</table>";
+    for (const gone of [
+      "#nc-backdrop",
+      ".di-modal",
+      "#nc-title",
+      "#nc-close-btn",
+      "#nc-path-input",
+    ]) {
+      expect(el.querySelector(gone)).toBeNull();
+    }
+    expect(el.querySelector(".di-embedded")).not.toBeNull();
+    expect(el.querySelector<HTMLElement>("#nc-metadata")!.hidden).toBe(false);
+    expect(el.querySelector("#nc-tab-gridlook")).not.toBeNull();
+  });
+
+  it("leaves the focus where its host put it", () => {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+    mount({ embedded: "", open: "", file: "https://z.example/a.zarr" });
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it("errors, with Retry and the host's action, still show", () => {
+    const el = mount({
+      embedded: "",
+      open: "",
+      status: "error",
+      error: "HTTP 401",
+      "error-action": "Sign in",
+    });
+    expect(el.querySelector<HTMLElement>("#nc-error")!.hidden).toBe(false);
+    expect(el.querySelector("#nc-retry-btn")).not.toBeNull();
+    expect(el.querySelector<HTMLElement>("#nc-error-action")!.hidden).toBe(false);
+  });
+
+  it("a dialog made embedded later is drawn again, without the chrome", () => {
+    const el = mount({ open: "", status: "ready", "zarr-url": "https://z.example/a.zarr" });
+    el.output = "<table>metadata</table>";
+    expect(el.querySelector("#nc-close-btn")).not.toBeNull();
+    el.embedded = true;
+    expect(el.querySelector("#nc-close-btn")).toBeNull();
+    expect(el.querySelector("#nc-metadata-inner")!.innerHTML).toContain("metadata");
+  });
+});
+
+describe("view", () => {
+  it('view="viewer" shows the 3D viewer once the store is read, and says so', () => {
+    const el = mount({
+      view: "viewer",
+      embedded: "",
+      open: "",
+      status: "loading",
+      "zarr-url": "https://z.example/a.zarr",
+    });
+    expect(el.activeView).toBe("metadata");
+    expect(el.querySelector<HTMLElement>("#nc-gridlook")!.hidden).toBe(true);
+    el.setAttribute("status", "ready");
+    el.output = "<table>metadata</table>";
+    expect(el.activeView).toBe("viewer");
+    expect(el.querySelector<HTMLElement>("#nc-gridlook")!.hidden).toBe(false);
+    expect(el.querySelector("#nc-tab-gridlook")!.getAttribute("aria-selected")).toBe("true");
+    el.view = "metadata";
+    expect(el.activeView).toBe("metadata");
+    expect(el.querySelector<HTMLElement>("#nc-metadata")!.hidden).toBe(false);
+  });
+
+  it("a disabled viewer falls back to the metadata", () => {
+    const el = mount({
+      view: "viewer",
+      open: "",
+      status: "ready",
+      "zarr-url": "https://z.example/a.zarr",
+    });
+    el.output = "<table>metadata</table>";
+    el.setAttribute("viewer-disabled", "Needs a token");
+    expect(el.activeView).toBe("metadata");
+    expect(el.querySelector<HTMLElement>("#nc-metadata")!.hidden).toBe(false);
+  });
+
+  it("without the attribute the dialog opens on its metadata, as before", () => {
+    const el = mount({ open: "", status: "ready", "zarr-url": "https://z.example/a.zarr" });
+    el.output = "<table>metadata</table>";
+    expect(el.view).toBe("metadata");
+    expect(el.activeView).toBe("metadata");
+    expect(el.querySelector("#nc-backdrop")).not.toBeNull();
   });
 });
 
