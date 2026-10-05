@@ -103,10 +103,10 @@
         '<div class="pop-meta"><span class="pop-meta__label">' + content.orgsLabel + '</span>' +
         '<div class="pop-meta__viewport" aria-label="' + content.orgsAria + '">' +
           '<div class="pop-meta__track" id="fb-orgTrack"></div></div>' +
-        '<a class="pop-mail" id="fb-popContact" href="mailto:' + content.email + '">' +
+        (content.email ? '<a class="pop-mail" id="fb-popContact" href="mailto:' + content.email + '">' +
           content.icons.mail +
           '<span class="pop-mail__addr">' + content.email + '</span>' +
-          '<span class="pop-mail__go" aria-hidden="true">&rsaquo;</span></a>' +
+          '<span class="pop-mail__go" aria-hidden="true">&rsaquo;</span></a>' : '') +
       '</div></div>' +
       '<button class="pop__close" id="fb-popClose" title="' + content.closeTitle +
       '" aria-label="' + content.closeTitle + '">' +
@@ -1199,7 +1199,7 @@
     if (event.key === 'Escape') { event.stopPropagation(); closePopup(); }
     else if (event.key === 'Tab') {
       event.preventDefault();
-      var controls = [docsTile, apiTile, popContact, popClose];
+      var controls = [docsTile, apiTile, popContact, popClose].filter(Boolean);
       var index = controls.indexOf(document.activeElement);
       if (index < 0) index = event.shiftKey ? 0 : -1;
       index = (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;
