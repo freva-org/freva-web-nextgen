@@ -470,3 +470,46 @@ describe("the badge's runtime is vendored, so this checkout has to carry it", ()
     expect(files.length).toBeGreaterThan(20);
   });
 });
+
+describe("the badge's contact address", () => {
+  const withEmail = (email: string): string => {
+    const root = tempRoot("portal-badge-email-");
+    writeSite(root, {
+      extra: `chrome:\n  footer:\n    enabled: true\n    badge:\n      email: ${email}\n`,
+    });
+    return root;
+  };
+
+  it("is left to the package unless the portal names one", async () => {
+    const root = tempRoot("portal-badge-email-none-");
+    writeSite(root);
+    const { model } = await resolveFixture(root);
+    expect(model!.chrome.footer.badge).toBeDefined();
+    expect(model!.chrome.footer.badge!.email).toBeUndefined();
+  });
+
+  it("can be removed or replaced, and refuses anything that is not an address", async () => {
+    expect((await resolveFixture(withEmail("false"))).model!.chrome.footer.badge!.email).toBe(
+      false,
+    );
+    expect(
+      (await resolveFixture(withEmail("waterpark@support.dkrz.de"))).model!.chrome.footer.badge!
+        .email,
+    ).toBe("waterpark@support.dkrz.de");
+    for (const bad of ['"no address"', '"a@b.c<script>"', "true"]) {
+      expect((await resolveFixture(withEmail(bad))).diagnostics.errors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("reaches the badge's anchor, as none when removed", async () => {
+    for (const [email, attribute] of [
+      ["false", 'data-portal-badge-email="none"'],
+      ["waterpark@support.dkrz.de", 'data-portal-badge-email="waterpark@support.dkrz.de"'],
+    ] as const) {
+      const out = join(tempRoot("portal-badge-email-built-"), "site");
+      const result = await buildFixture(withEmail(email), out);
+      expect(result.diagnostics.errors).toEqual([]);
+      expect(readFileSync(join(out, "index.html"), "utf8")).toContain(attribute);
+    }
+  }, 300_000);
+});

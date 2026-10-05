@@ -1,0 +1,222 @@
+---
+/**
+ * The footer of a customised portal: the design's bar and unrolling index (`Footer.astro`), with
+ * the variant, the section order, the logo wall and the footer slots. The shell island drives it
+ * the same way: `.portal-footer-expanded` is the index it measures and unrolls.
+ */
+import frevaMark from "../assets/freva-mark.webp?url";
+import type { FooterSectionName, ResolvedPortalModel, Segment } from "../../../src/model/types.js";
+import BadgePart from "./parts/BadgePart.astro";
+import LegalLinksPart from "./parts/LegalLinksPart.astro";
+import SlotContent from "./parts/SlotContent.astro";
+
+interface Props {
+  model: ResolvedPortalModel;
+  currentPath: string;
+  slots: Partial<Record<string, Segment[]>>;
+}
+
+const { model, currentPath, slots } = Astro.props;
+const { chrome, site } = model;
+const footer = chrome.footer;
+const custom = model.customisation!;
+const variant = custom.footer.variant;
+const badge = footer.badge;
+const bar = footer.bar;
+
+// `minimal` keeps the institution, the legal links and the prose; `bar-only` has no index.
+const MINIMAL = new Set<FooterSectionName>(["about", "legal", "prose"]);
+const sections = (custom.footer.order ?? ["about", "groups", "logos", "legal", "prose"]).filter(
+  (name) => variant !== "minimal" || MINIMAL.has(name),
+);
+const logos = custom.footer.logos;
+// Legal links a footer template placed are not repeated in their default section.
+const hasLegal = footer.legalLinks.length > 0 && !custom.movedParts.includes("legal-links");
+const present = (name: FooterSectionName): boolean =>
+  name === "about"
+    ? Boolean(site.institution)
+    : name === "groups"
+      ? footer.groups.length > 0 || Boolean(slots.footerColumns)
+      : name === "logos"
+        ? logos.length > 0
+        : name === "legal"
+          ? hasLegal
+          : Boolean(footer.prose);
+
+// Adjacent `about` and `groups` share one grid, as in the design.
+type Entry = FooterSectionName | FooterSectionName[];
+const entries: Entry[] = [];
+for (const name of sections.filter(present)) {
+  const last = entries.at(-1);
+  const gridded = name === "about" || name === "groups";
+  if (gridded && Array.isArray(last)) last.push(name);
+  else entries.push(gridded ? [name] : name);
+}
+const hasIndex =
+  variant !== "bar-only" &&
+  (entries.length > 0 || Boolean(slots.footerTop) || Boolean(slots.footerBottom));
+---
+
+<footer
+  class="portal-footer"
+  data-part="footer"
+  data-variant={variant}
+  data-columns={custom.footer.columns}
+  data-mode="landing"
+  data-expanded="false"
+  data-has-index={hasIndex ? "true" : "false"}
+>
+  {
+    variant !== "bar-only" && (
+      <div class="portal-footer-expanded" data-part="footer-index" hidden>
+        <div class="portal-footer-inner-wrap">
+          {slots.footerTop && (
+            <div class="portal-footer-slot" data-part="footer-top">
+              <SlotContent segments={slots.footerTop} model={model} currentPath={currentPath} />
+            </div>
+          )}
+          {entries.map((entry) =>
+            Array.isArray(entry) ? (
+              <div class="portal-footer-inner">
+                {entry.map((name) =>
+                  name === "about" ? (
+                    <div class="portal-footer-about" data-part="footer-about">
+                      <p class="portal-footer-org">{site.institution!.name}</p>
+                      {site.institution!.url && (
+                        <a
+                          class="portal-footer-link"
+                          data-part="footer-link"
+                          data-state="external"
+                          href={site.institution!.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {site.institution!.url}
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <div class="portal-footer-groups" data-part="footer-groups">
+                      {footer.groups.map((group) => (
+                        <div class="portal-footer-group" data-part="footer-group">
+                          {group.title && (
+                            <h2 class="portal-footer-group-title" data-part="footer-group-title">
+                              {group.title}
+                            </h2>
+                          )}
+                          <ul class="portal-footer-links">
+                            {group.links.map((link) => (
+                              <li>
+                                <a
+                                  class="portal-footer-link"
+                                  data-part="footer-link"
+                                  data-state={link.external ? "external" : undefined}
+                                  href={link.href}
+                                  target={link.external ? "_blank" : undefined}
+                                  rel={link.external ? "noopener noreferrer" : undefined}
+                                >
+                                  {link.label}
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                      {slots.footerColumns && (
+                        <div class="portal-footer-group portal-footer-slot" data-part="footer-columns">
+                          <SlotContent segments={slots.footerColumns} model={model} currentPath={currentPath} />
+                        </div>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+            ) : entry === "logos" ? (
+              <ul class="portal-footer-logos" data-part="footer-logos" aria-label="Partners">
+                {logos.map((logo) => (
+                  <li class="portal-footer-logo" data-part="footer-logo">
+                    {logo.href ? (
+                      <a
+                        href={logo.href}
+                        target={logo.external ? "_blank" : undefined}
+                        rel={logo.external ? "noopener noreferrer" : undefined}
+                      >
+                        <img src={logo.src} alt={logo.alt} decoding="async" />
+                      </a>
+                    ) : (
+                      <img src={logo.src} alt={logo.alt} decoding="async" />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : entry === "legal" ? (
+              <LegalLinksPart model={model} />
+            ) : (
+              <div class="portal-footer-content portal-prose" data-part="footer-prose">
+                <Fragment set:html={footer.prose!.html} />
+              </div>
+            ),
+          )}
+          {slots.footerBottom && (
+            <div class="portal-footer-slot" data-part="footer-bottom">
+              <SlotContent segments={slots.footerBottom} model={model} currentPath={currentPath} />
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  <div class="portal-footer-bar" data-part="footer-bar">
+    {
+      badge ? (
+        <BadgePart model={model} />
+      ) : (
+        <span class="portal-freva-lockup">
+          <span class="portal-freva-mark" aria-hidden="true">
+            <img class="portal-freva-logo" src={frevaMark} alt="" decoding="async" />
+            <span class="portal-freva-glyph">FV</span>
+          </span>
+          <span class="portal-freva-text">
+            <span class="portal-freva-kicker">Powered by</span>
+            <span class="portal-freva-name">Freva</span>
+          </span>
+        </span>
+      )
+    }
+    {
+      bar && (
+        <nav class="portal-footer-shortcuts" data-part="footer-shortcuts" aria-label="Footer shortcuts">
+          {bar.lead && <span class="portal-footer-shortcuts-lead">{bar.lead}</span>}
+          <ul class="portal-footer-shortcuts-list">
+            {bar.links.map((link, index) => (
+              <li>
+                {(index > 0 || bar.lead) && (
+                  <span
+                    class={
+                      index === 0
+                        ? "portal-footer-shortcuts-sep portal-footer-shortcuts-sep-lead"
+                        : "portal-footer-shortcuts-sep"
+                    }
+                    aria-hidden="true"
+                  >
+                    ·
+                  </span>
+                )}
+                <a
+                  class="portal-footer-shortcut"
+                  href={link.href}
+                  target={link.newTab ? "_blank" : undefined}
+                  rel={link.newTab ? "noopener noreferrer" : undefined}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )
+    }
+    <span class="portal-footer-institution" data-part="footer-institution">{site.institution?.name ?? ""}</span>
+  </div>
+</footer>

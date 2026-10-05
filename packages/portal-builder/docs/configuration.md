@@ -77,6 +77,20 @@ It renders as `Need support? · waterpark@support.dkrz.de · Newsletter`, in a
   and `--footer-strong` with an underline on hover and focus, plus a focus ring.
 - A bar link may repeat an `href` from the open footer.
 
+### `chrome.footer.badge`
+
+```yaml
+chrome:
+  footer:
+    badge:
+      enabled: true # false: the plain "powered by" line instead
+      quality: standard # standard | auto
+      email: false # false: no contact button; or an address, e.g. waterpark@support.dkrz.de
+```
+
+The badge's panel has a contact button for `freva@dkrz.de`. `email: false` removes it, and an
+address replaces it, so the panel can name the same support address as the rest of the site.
+
 ### `chrome.header.search`
 
 ```yaml
@@ -97,11 +111,146 @@ once, same-origin, and searches it in the page: every term must match; title bea
 body text; case and accents are ignored. Arrow keys move through the results, Enter follows one,
 and the destination (`?h=<terms>`) marks the words in its article.
 
+The control shows its shortcut: <kbd>/</kbd> opens the dialog from anywhere outside a text
+field. There is deliberately no <kbd>Ctrl</kbd> <kbd>K</kbd>, which browsers use.
+The page behind is blurred. A **Filters** panel beside the results lists the site's sections - the
+`navigation.header` entries - with the number of pages in each; choosing one or more limits the
+results to them, and with no query lists their pages. The filter button in the search field
+shows and hides the panel; it starts hidden on narrow screens.
+
 No service and no other origin: `connect-src 'self'` covers the fetch, so the CSP and
 `host-policy.json` change only by the index's own entry. Disabled or absent, **nothing** ships -
 no index, island, stylesheet or markup - which the `site-search` evidence plan checks
 (`FP1601`/`FP1602`). Enabled with the header off is a warning (`FP1225`). Without JavaScript the
 control is not shown.
+
+### Header layout
+
+```yaml
+chrome:
+  header:
+    enabled: true
+    variant: centered # standard | centered | split | compact | minimal
+    sticky: true # false: the header scrolls away with the page
+    transparentOverHero: true # landing routes only, until the page scrolls
+    logo:
+      src: ./brand/logo.svg
+      dark: ./brand/logo-dark.svg # optional; `light` is optional too
+      alt: Centre A
+    items: [brand, links, navToggle, search, themeToggle, auth]
+```
+
+- `variant` is one of five registered arrangements. `compact` and `centered` change the header's
+  height, and the page's clearance follows it.
+- `sticky: false` lets the header scroll away. `transparentOverHero` draws a landing's hero under
+  a header with no fill until the visitor scrolls; without JavaScript nothing tracks the scroll,
+  so the header keeps its fill.
+- `logo` replaces `site.identity.logo` in the brand lockup. `light` and `dark` are shown in their
+  colour mode; without `alt` the image is decorative and the home link carries the name. Images
+  are local files (SVG through the sanitizer, PNG, JPEG, WebP, AVIF, GIF), published as hashed
+  same-origin files.
+- `items` sets the order of the header's parts and which are shown, so the focus order follows
+  what the visitor sees. `navToggle` must be listed, and the menu button cannot be hidden
+  (`FP1230`). `auth` must be listed whenever auth is enabled, unless a `headerExtra` template
+  places it. `links` may be left out only when `navigation.placement` is `side` or `both`; the
+  menu button then stays visible at every width. `links` and `navToggle` are one navigation
+  landmark, so when both are listed they are next to each other (`FP1234`). Listing `search`
+  without the header search enabled renders nothing (`FP1915`, info).
+
+### Footer layout
+
+```yaml
+chrome:
+  footer:
+    enabled: true
+    variant: columns # columns | stacked | minimal | bar-only
+    columns: 4 # 1-6, at widths from 768px
+    order: [about, groups, logos, legal, prose]
+    logos:
+      - src: ./brand/partner.svg
+        alt: North Agency
+        href: https://north-agency.example.org/
+```
+
+`columns` and `stacked` lay out the site index; `minimal` keeps the institution, the legal links
+and the prose (a listed `groups` or `logos` is a warning, `FP1233`); `bar-only` has no index, so
+a footer slot template is refused there (`FP1913`). `order` lists the index's sections; a section
+left out is not shown. The `footerColumns` slot is a column of the groups section, so it is
+refused with `minimal` or an `order` without `groups` (`FP1913`); a part only leaves its default
+place for a slot that renders. `logos` is a logo wall of local images, each with required `alt`
+and an optional link checked like every other link.
+
+### `chrome.slots`: slot templates
+
+```yaml
+chrome:
+  slots:
+    headerBrand: ./templates/brand.html
+    headerExtra: ./templates/header-extra.html
+    footerTop: ./templates/funding.html
+    footerColumns: ./templates/columns.html
+    footerBottom: ./templates/address.html
+    landingSectionShell: ./templates/section.html
+    proseAside: ./templates/aside.html
+```
+
+Each value is a local `portal-template-v1` file: restricted markup with escaped fields,
+conditionals, bounded loops and sealed framework parts, rendered at build time and sanitized. The
+slots, their contexts and their parts are published in `schema/slots-v1.json`; the language is in
+[customisation.md](customisation.md). Templates are recorded in the input manifest (role
+`template`) and in `component-evidence.json`.
+
+### `navigation.placement`
+
+```yaml
+navigation:
+  placement: side # header (the default) | side | both
+  header:
+    - landing: home
+      label: Overview
+```
+
+`side` and `both` add a side navigation landmark built from the same outline at widths from
+1100px. `side` drops the header's tab list there; narrower viewports always keep the header's
+menu. Application routes (the Data Browser, STAC) keep the header navigation.
+
+### Header dropdowns: `navigation.header[].links`
+
+```yaml
+navigation:
+  header:
+    - label: Find data
+      component: data
+      links:
+        - component: data
+          label: Data Browser
+        - component: catalog
+          label: STAC Browser
+    - label: Examples
+      href: /docs/examples/
+      links:
+        - href: /docs/examples/
+          label: Start here
+        - href: /docs/examples/01_first_map/
+          label: A map of one month
+```
+
+A header entry with `links` (1-16, each resolved like any other link) is also a dropdown. The tab
+still goes to its own target; the caret beside it, or hovering with a mouse, opens the list.
+When the tabs overflow, `More` lists the entry and its links; on narrow screens the menu drills
+into them as the entry's pages. An entry is current when it or one of its links is.
+
+### `navigation.pager`
+
+```yaml
+navigation:
+  pager: true # default false
+```
+
+Previous and next links at the end of every content page, like Material for MkDocs'
+`navigation.footer`. The order is `navigation.header`'s: each entry, then its `links` or its
+section's pages. Only content pages take part; the first page has no previous link and the last
+no next.
 
 ## `theme`
 
@@ -143,9 +292,59 @@ unchanged. On any other preset the key does nothing and the build says so (`FP12
 Neither adds a component, a service or a route, and neither is fetched by any other preset. On a
 documentation, Data Browser, STAC or error page a backdrop preset keeps its palette and does not
 run its scene. `tokens` is a finite
-override surface; arbitrary CSS and asset imports are not accepted in v1. A
-generally useful new token is a contribution to the framework, which then gets
-tests across every built-in component.
+override surface. Anything beyond it goes through the restricted `theme.stylesheet` below, never
+through arbitrary CSS or asset imports. A generally useful new token is a contribution to the
+framework, which then gets tests across every built-in component.
+
+### Fonts, scales and shape: `theme.fonts` and the layout tokens
+
+```yaml
+theme:
+  fonts:
+    - family: Centre Sans
+      src: ./brand/sans-regular.woff2
+      weight: 400 # 1-1000, default 400
+      style: normal # normal | italic
+    - family: Centre Sans
+      src: ./brand/sans-bold.woff2
+      weight: 700
+  tokens:
+    fontBody: Centre Sans
+    fontHeading: Centre Sans
+    fontMono: Centre Mono
+    typeScale: large # small 0.93 | regular 1 | large 1.07 | x-large 1.15
+    spaceScale: loose # tight 0.75 | regular 1 | loose 1.35
+    contentWidth: 1240 # px, 640-2400; default 1440
+    radius: small # none | small | regular | large
+    borderWidth: thick # none | regular | thick: card and panel rules
+    shadow: soft # none | soft | regular | strong
+    dark:
+      shadow: strong # per colour mode
+```
+
+`fonts` are local WOFF2 files only - the extension and the `wOF2` signature are both checked
+(`FP1231`) - published as hashed same-origin files under `_portal/site/fonts/` and declared with
+`@font-face` in the site stylesheet, so `font-src 'self'` is unchanged and nothing is fetched from
+a font service. A family name is letters, digits, spaces and hyphens. `fontBody`, `fontHeading`
+and `fontMono` put a family ahead of the design's own fallback stack. The scale tokens are emitted
+only when set, so an unset token leaves the design's rules, media queries included, untouched.
+
+### `theme.stylesheet`: a restricted local stylesheet
+
+```yaml
+theme:
+  stylesheet:
+    profile: portal-style-v1
+    path: ./brand/site.css
+```
+
+One local stylesheet, parsed and enforced by the builder against the public API in
+`schema/style-parts-v1.json`: `--portal-*` tokens, `data-part`, `data-variant`, `data-state`,
+`[data-theme]` and your own `.site-*` classes. It is published as one hashed
+`_portal/site-style.<hash>.css`, in the `portal-site` cascade layer after the framework's, linked
+after the framework's stylesheets; `style-src` stays `'self'`. The rules - selectors, at-rules,
+values, protected controls, pruning - are in [customisation.md](customisation.md), and every
+rejection names `file:line:col` (`FP1901`-`FP1907`).
 
 ### Page colours per colour mode: `tokens.light` and `tokens.dark`
 
@@ -242,12 +441,106 @@ landings:
 
 A landing file is an ordered list of framework-owned block types carrying your
 data: `hero`, `prose`, `cards`, `links`, `callout`, `component-link`,
-`component-search`, `dataset-tree`. A landing name is a project-local identifier.
+`component-search`, `dataset-tree`, `notebook`. A landing name is a project-local
+identifier. `notebook` frames the portal's notebook in the page (see
+[The notebook in a landing](./python-playground.md#the-notebook-in-a-landing)).
 
 `component-search` produces a plain GET form whose action is the target
 component's route and whose hidden fields carry a versioned `SearchIntentV1`.
 That is why a search started on a landing page survives a reload, a bookmark and
 a paste into a chat window — and why it works with JavaScript switched off.
+
+### `layout`: the 12-column grid
+
+```yaml
+schemaVersion: 1
+title: Centre A
+layout:
+  sections:
+    - id: explore
+      heading: Explore by theme
+      width: wide # narrow | content | wide | full
+      align: start # start | center | end
+      background: surface # none | surface | accent | {image: ./path.svg}
+blocks:
+  - type: hero
+    heading: Regional climate data
+    align: center
+  - type: cards
+    section: explore
+    span: { base: 12, md: 6, lg: 4 }
+    items: [...]
+```
+
+Without `layout` a landing keeps the design's composition. With it, blocks are placed in
+sections - an implicit first section for blocks with no `section`, then the declared ones in
+order - each a 12-column grid. `span` gives a block's columns below 768px (`base`), from 768px
+(`md`) and from 1100px (`lg`); each defaults to the one before it and `base` to 12. A block takes
+the same `width`, `align` and `background` as a section. A `section` that is not declared is an
+error at its pointer (`FP1201`), a duplicate id too (`FP1208`). A background image is a local file,
+published hashed and applied by a generated rule in the site stylesheet; text over it is your
+contrast to check. Only the first hero is the page's `h1`. A `landingSectionShell` template, when
+configured, wraps each section.
+
+### Action intents
+
+A hero action or a `links` entry can be a typed action on an existing component instead of a
+plain link:
+
+```yaml
+actions:
+  - label: Precipitation data
+    intent: select-facet
+    component: data
+    flavour: freva # optional; the component's default otherwise
+    facets: { variable: pr }
+  - label: The daily reanalysis
+    intent: open-dataset
+    component: data
+    dataset: reanalysis-a-daily
+  - label: Try it
+    intent: run-example
+    example: "content:docs/guide.md#1"
+```
+
+`select-facet` and `open-dataset` open an enabled Data Browser with a serialized `SearchIntentV1`
+(the same typed, URL-stable intent a search block submits); a disabled one is omitted with an
+info diagnostic (`FP1202`), and any other component kind is an error (`FP1232`). `run-example`
+links to the page that offers a registered runnable example; the visitor still presses its run
+control, so navigation never runs code. An unknown example is `FP1201`. An intent cannot be
+combined with `href` or `landing`.
+
+### `prose` with a figure
+
+A `prose` block may carry an illustration beside its text: the text in the first column, the
+figure in the second, below the text on a narrow screen.
+
+```yaml
+- type: prose
+  heading: What is Waterpark?
+  source: ../content/_fragments/what.md
+  figure:
+    image: ../assets/landing/flow-light.webp # the still, required
+    imageDark: ../assets/landing/flow-dark.webp # optional
+    video: # optional: muted, looping; one file, or the clip in several formats
+      - ../assets/landing/flow-light.mp4
+      - ../assets/landing/flow-light.webm
+    videoDark: [../assets/landing/flow-dark.mp4, ../assets/landing/flow-dark.webm] # with `video`
+    alt: What the picture shows, for someone who cannot see it.
+    caption: Optional, under the figure.
+```
+
+Every file is a published asset, inside a `rendering.assets` root, named relative to the landing
+file; anything else is `FP1201`. The still is in the page from the start and is what shows without
+JavaScript, with reduced motion and until the video plays. The video has no source in the page: it
+is loaded only when the figure comes into view and motion is allowed, in the page's theme, played
+while it is on screen and paused when it is not, in the first listed format the browser can play
+(give WebM beside MP4: an open-source Chromium has no H.264). A figure with a video adds
+`media-src 'self'` to the portal's policy, and its small player to the page's script; a still alone
+adds neither.
+
+An animated SVG does not work here: published SVGs are sanitized, and the sanitizer removes
+animation and `<use>`. Render the animation to a video and its still to an image instead.
 
 ### `dataset-tree`
 
@@ -377,8 +670,9 @@ they could. A deployment that needs another route adds it as its own example.
 an example name and a digest and no parameters — deliberately, since that is what
 keeps source from crossing origins — and a recipe needs the store substituted
 into it. So a block that sets `playgroundOrigin` shows the recipe without a run
-control, and `FP1217` reports it. Run recipes in the portal's own document, or
-keep the separate origin and treat them as documentation.
+control, and `FP1217` reports it. Run recipes in the portal's own document (with
+`consoleInPage` when the separate origin is there for the notebook), or keep the
+separate origin and treat them as documentation.
 
 **A store is inspectable.** Every `.zarr` prefix carries the plain HTTPS URL of
 the store, built from the configured endpoint and addressing style, which is what
@@ -546,6 +840,13 @@ Python — and anything it installs at the prompt — runs with the portal's ori
 authority: its cookies where CORS allows, its IndexedDB, its Cache Storage. With
 one, the portal's policy gains a single `frame-src` entry and nothing else.
 
+**Only the notebook on its own origin.** With the notebook enabled,
+`consoleInPage: true` uses `playgroundOrigin` for the notebook alone: the console,
+the runnable snippets (editable ones too) and the dataset trees' recipes run in
+the portal's pages, with the portal's origin authority and under its policy, as
+without `playgroundOrigin`. The `playground-origin/` artifact is still built, for
+the notebook. Without the notebook the key changes nothing (`FP1238`).
+
 **Hosting the runtime yourself.** `runtimeIndexUrl` points the interpreter at a
 directory you serve instead of the pinned CDN — for a network that does not reach
 one, or a deployment that will not depend on one. Mirror the release
@@ -603,6 +904,24 @@ is checked by removing it in a real browser and watching what breaks, in
 
 One origin per portal: the artifact is one document with one merged manifest, so
 two landings naming different origins is a build error (`FP1216`).
+
+**The notebook.** With `pythonPlayground.notebook.enabled` the build takes the
+site `prepare-notebook` produced (`--notebook <dir>`, checked against this
+configuration), copies it to `playground-origin/notebook/`, and `deploy.json`
+lists it and carries its own headers under `pathHeaders["/notebook/"]`. Deploy it
+at `/notebook/` on the playground origin. See
+[The notebook](./python-playground.md#the-notebook).
+`notebook.assistant.climateclaw` (ClimateClaw through jupyterlite-ai, `FP1236`)
+and `notebook.dataPanel` (a dataset-tree block as a side panel, `FP1237`) add a
+trimmed JupyterLab interface at `/notebook/lab/` and are part of the agreement
+check; the login callback URL `prepare-notebook` prints must be registered with
+freva-rest. See
+[The assistant and the data panel](./python-playground.md#the-assistant-and-the-data-panel).
+
+**Session choices.** `pythonPlayground.sessionChoices`, `notebook` and
+`resources.maxLiveSessions` are portal-wide and part of the agreement check
+(`FP1215`): a page has one chooser and one policy. See
+[Sessions](./python-playground.md#sessions-a-setup-per-session-measured-and-put-to-sleep).
 
 **What the portal downloads in this mode.** The window chrome and the embed
 bridge, and nothing else — no console, no jQuery Terminal, no Prism, no Worker,

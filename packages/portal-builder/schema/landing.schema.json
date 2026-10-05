@@ -27,6 +27,39 @@
       "items": {
         "$ref": "#/$defs/block"
       }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Lays the landing out on a 12-column grid. Without it, the landing keeps the design's composition.",
+      "properties": {
+        "sections": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/instanceId"
+              },
+              "heading": {
+                "$ref": "#/$defs/text"
+              },
+              "width": {
+                "enum": ["narrow", "content", "wide", "full"]
+              },
+              "align": {
+                "enum": ["start", "center", "end"]
+              },
+              "background": {
+                "$ref": "#/$defs/background"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -71,6 +104,59 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 2048
+        },
+        "intent": {
+          "enum": ["select-facet", "open-dataset", "run-example"],
+          "description": "A typed action on an existing component: select-facet and open-dataset open the Data Browser with a SearchIntentV1; run-example opens the page that offers a registered example's run control."
+        },
+        "facets": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              }
+            ]
+          }
+        },
+        "flavour": {
+          "$ref": "#/$defs/flavourName"
+        },
+        "dataset": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "description": "A dataset identifier, searched as the Data Browser's free text."
+        },
+        "example": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600,
+          "pattern": "^content:",
+          "description": "A registered example id, as the build reports it (content:<page>#<n>)."
+        },
+        "notebook": {
+          "type": "string",
+          "enum": ["lab", "files"],
+          "description": "The portal's notebook on `playgroundOrigin`: `lab` opens its JupyterLab interface (with the assistant and the data panel), `files` its file list. Requires `pythonPlayground.notebook.enabled`; `lab` also needs `notebook.assistant` or `notebook.dataPanel`."
         }
       },
       "oneOf": [
@@ -79,7 +165,12 @@
           "properties": {
             "landing": {
               "$ref": "#/$defs/instanceId"
-            }
+            },
+            "intent": false,
+            "facets": false,
+            "dataset": false,
+            "example": false,
+            "flavour": false
           }
         },
         {
@@ -87,7 +178,26 @@
           "properties": {
             "component": {
               "$ref": "#/$defs/instanceId"
-            }
+            },
+            "intent": false,
+            "facets": false,
+            "dataset": false,
+            "example": false,
+            "flavour": false
+          }
+        },
+        {
+          "required": ["notebook"],
+          "properties": {
+            "notebook": {
+              "type": "string",
+              "enum": ["lab", "files"]
+            },
+            "intent": false,
+            "facets": false,
+            "dataset": false,
+            "example": false,
+            "flavour": false
           }
         },
         {
@@ -97,7 +207,53 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 2048
-            }
+            },
+            "intent": false,
+            "facets": false,
+            "dataset": false,
+            "example": false,
+            "flavour": false
+          }
+        },
+        {
+          "required": ["intent", "component", "facets"],
+          "properties": {
+            "intent": {
+              "const": "select-facet"
+            },
+            "landing": false,
+            "href": false,
+            "notebook": false,
+            "dataset": false,
+            "example": false
+          }
+        },
+        {
+          "required": ["intent", "component", "dataset"],
+          "properties": {
+            "intent": {
+              "const": "open-dataset"
+            },
+            "landing": false,
+            "href": false,
+            "notebook": false,
+            "facets": false,
+            "example": false
+          }
+        },
+        {
+          "required": ["intent", "example"],
+          "properties": {
+            "intent": {
+              "const": "run-example"
+            },
+            "landing": false,
+            "href": false,
+            "notebook": false,
+            "component": false,
+            "facets": false,
+            "dataset": false,
+            "flavour": false
           }
         }
       ]
@@ -115,7 +271,8 @@
             "callout",
             "component-link",
             "component-search",
-            "dataset-tree"
+            "dataset-tree",
+            "notebook"
           ]
         }
       },
@@ -146,6 +303,9 @@
         },
         {
           "$ref": "#/$defs/blockDatasetTree"
+        },
+        {
+          "$ref": "#/$defs/blockNotebook"
         }
       ]
     },
@@ -169,6 +329,35 @@
           "items": {
             "$ref": "#/$defs/action"
           }
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
         }
       }
     },
@@ -185,6 +374,79 @@
         },
         "heading": {
           "$ref": "#/$defs/text"
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
+        },
+        "figure": {
+          "type": "object",
+          "description": "An illustration beside the text: the text in the first column, the figure in the second (below the text on a narrow screen). `image` is the still picture, shown when motion is reduced, before a video plays and without JavaScript; `video` (MP4 or WebM, muted, looping; a list gives the same clip in several formats) plays while the figure is on screen. `imageDark` and `videoDark` are the dark theme's. Every file must be inside a `rendering.assets` root, and is named relative to the landing file.",
+          "additionalProperties": false,
+          "required": ["image", "alt"],
+          "properties": {
+            "image": {
+              "$ref": "#/$defs/localPath"
+            },
+            "imageDark": {
+              "$ref": "#/$defs/localPath"
+            },
+            "video": {
+              "description": "One file, or the same clip in several formats (MP4 and WebM): the browser plays the first it can.",
+              "oneOf": [
+                { "$ref": "#/$defs/localPath" },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "items": { "$ref": "#/$defs/localPath" }
+                }
+              ]
+            },
+            "videoDark": {
+              "description": "One file, or the same clip in several formats (MP4 and WebM): the browser plays the first it can.",
+              "oneOf": [
+                { "$ref": "#/$defs/localPath" },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "items": { "$ref": "#/$defs/localPath" }
+                }
+              ]
+            },
+            "alt": {
+              "$ref": "#/$defs/longText"
+            },
+            "caption": {
+              "$ref": "#/$defs/text"
+            }
+          }
         }
       }
     },
@@ -224,9 +486,43 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2048
+              },
+              "notebook": {
+                "type": "string",
+                "enum": ["lab", "files"],
+                "description": "Link the card to the portal's notebook (see the `notebook` action target)."
               }
             }
           }
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
         }
       }
     },
@@ -248,6 +544,35 @@
           "items": {
             "$ref": "#/$defs/action"
           }
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
         }
       }
     },
@@ -267,6 +592,35 @@
         },
         "body": {
           "$ref": "#/$defs/longText"
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
         }
       }
     },
@@ -286,6 +640,35 @@
         },
         "summary": {
           "$ref": "#/$defs/longText"
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
         }
       }
     },
@@ -337,6 +720,64 @@
               }
             ]
           }
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
+        }
+      }
+    },
+    "blockNotebook": {
+      "type": "object",
+      "description": "The portal's notebook, in the page: JupyterLite in a frame from `playgroundOrigin`, with Maximize (the page's own sheet, as the dataset browser has) and Open in a new tab above it. Requires `pythonPlayground.notebook.enabled`; `view: lab` also needs `notebook.assistant` or `notebook.dataPanel`. The notebook's policy then lets the portal's own origin, and only it, frame the notebook.",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "notebook"
+        },
+        "heading": {
+          "$ref": "#/$defs/text"
+        },
+        "summary": {
+          "$ref": "#/$defs/text"
+        },
+        "view": {
+          "enum": ["lab", "files"],
+          "description": "`lab` (default): the JupyterLab interface. `files`: the Notebook interface's file list."
+        },
+        "title": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/text"
+            }
+          ],
+          "description": "The name on the notebook window's bar. Default: \"<site title> Playground\", the notebook's own tab title."
         }
       }
     },
@@ -567,6 +1008,35 @@
               }
             }
           }
+        },
+        "section": {
+          "$ref": "#/$defs/instanceId",
+          "description": "The layout section this block belongs to (layout.sections)."
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Columns of the 12-column grid this block spans: below 768px (base), from 768px (md) and from 1100px (lg). Each defaults to the one before it, and base to 12.",
+          "properties": {
+            "base": {
+              "$ref": "#/$defs/span"
+            },
+            "md": {
+              "$ref": "#/$defs/span"
+            },
+            "lg": {
+              "$ref": "#/$defs/span"
+            }
+          }
+        },
+        "width": {
+          "enum": ["narrow", "content", "wide", "full"]
+        },
+        "align": {
+          "enum": ["start", "center", "end"]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
         }
       },
       "oneOf": [
@@ -590,6 +1060,29 @@
       "$comment": "A flavour is a lens the DEPLOYMENT's own freva-rest instance serves, not a value this schema can know. The widget types it as a plain string for exactly that reason. Constrained to an identifier so a typo is still caught, but never to a fixed list - a portal whose backend serves `waterpark` must be able to name it.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "span": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "background": {
+      "oneOf": [
+        {
+          "enum": ["none", "surface", "accent"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["image"],
+          "properties": {
+            "image": {
+              "$ref": "#/$defs/localPath"
+            }
+          }
+        }
+      ],
+      "description": "none, the surface or accent fill, or a local image (published as a hashed file; never a URL)."
     }
   }
 }

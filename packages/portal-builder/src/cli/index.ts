@@ -17,6 +17,7 @@ import {
   toPosix,
 } from "../config/paths.js";
 import { resolveModel } from "../model/resolve.js";
+import { authCallbackEntries, describeAuthCallbacks } from "../model/auth-callbacks.js";
 import { buildSite } from "../artifact/index.js";
 import { verifyArtifact } from "../verify/verify.js";
 import { buildCanonicalArchive, recordedEpoch } from "../artifact/archive.js";
@@ -26,6 +27,7 @@ import { migrateFile } from "./migrate.js";
 import { packageInfo } from "../util/package.js";
 import { runDev } from "./dev.js";
 import { preparePlayground } from "./prepare-playground.js";
+import { prepareNotebook } from "./prepare-notebook.js";
 import { prepareStac } from "./prepare-stac.js";
 import { runSmoke, smokeOptions } from "./smoke.js";
 import { validateAgainst } from "../config/schema.js";
@@ -177,6 +179,12 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
       : {};
   }
 
+  /** `--notebook <dir>`: the prepared notebook site, for a portal with the notebook enabled. */
+  function notebookOption(args: ParsedArgs): { notebookDir?: string } {
+    const given = args.flags.notebook;
+    return typeof given === "string" && given.length > 0 ? { notebookDir: resolve(given) } : {};
+  }
+
   try {
     switch (args.command) {
       case "validate": {
@@ -190,6 +198,7 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
           ...(sourceDateEpoch() !== undefined ? { sourceDateEpoch: sourceDateEpoch()! } : {}),
           ...stacMaterialsOption(args),
           ...pythonMaterialsOption(args),
+          ...notebookOption(args),
           release: true,
         });
         report(result.diagnostics, args, io);
@@ -215,6 +224,7 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
           release: true,
           ...stacMaterialsOption(args),
           ...pythonMaterialsOption(args),
+          ...notebookOption(args),
           quiet: args.flags.quiet === true,
           ...(typeof args.flags["effective-at"] === "string"
             ? { effectiveAt: args.flags["effective-at"] }
@@ -228,6 +238,17 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
         report(result.diagnostics, args, io);
         if (!result.outDir) return 1;
         io.out(`built: ${result.files?.length ?? 0} files in ${result.outDir}\n`);
+        const playground = result.model?.playground;
+        const notebook = playground?.authCallbackPath
+          ? {
+              origin: playground.origin,
+              callbackPath: playground.authCallbackPath,
+              basePath: playground.basePath ?? "/",
+            }
+          : undefined;
+        for (const line of describeAuthCallbacks(authCallbackEntries(result.model, notebook))) {
+          io.out(`${line}\n`);
+        }
         return 0;
       }
 
@@ -244,6 +265,25 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
             outDir: resolve(
               requireFlag(args, "out", "Where the prepared materials should be written."),
             ),
+            force: args.flags.force === true,
+            dryRun: args.flags["dry-run"] === true,
+          },
+          io,
+        );
+      }
+
+      // `prepare-notebook` - like `prepare-playground`, a stage that opens sockets: it installs
+      // the pinned JupyterLite toolchain and builds the notebook site this portal needs.
+      case "prepare-notebook": {
+        const { sourceRoot, configPath } = resolveInputs(args, io, false);
+        return await prepareNotebook(
+          {
+            sourceRoot,
+            configPath,
+            outDir: resolve(requireFlag(args, "out", "Where the notebook site should be written.")),
+            ...(typeof args.flags.python === "string" ? { python: args.flags.python } : {}),
+            ...stacMaterialsOption(args),
+            ...pythonMaterialsOption(args),
             force: args.flags.force === true,
             dryRun: args.flags["dry-run"] === true,
           },

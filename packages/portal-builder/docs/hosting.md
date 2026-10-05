@@ -103,6 +103,10 @@ server {
 # log_format redacted '$remote_addr - "$request_method $uri" $status';
 ```
 
+A notebook on its own origin has the same callback at that origin's root
+(`/auth/callback/`), listed in `playground-origin/deploy.json` with its headers;
+serve it with the same log redaction.
+
 ## Redirects
 
 `redirects:` in portal.yaml (see the configuration reference) become a list in

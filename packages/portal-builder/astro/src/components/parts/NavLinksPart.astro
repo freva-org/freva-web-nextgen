@@ -1,0 +1,33 @@
+---
+/** The `nav-links` part: the header's links as a plain list, for a slot template to place. */
+import type { ResolvedPortalModel } from "../../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+  currentPath: string;
+}
+
+const { model, currentPath } = Astro.props;
+const links = [...model.navigation.header, ...model.chrome.header.links];
+---
+
+{
+  links.length > 0 && (
+    <ul class="portal-slot-links">
+      {links.map((link) => (
+        <li>
+          <a
+            href={link.href}
+            data-state={link.href === currentPath ? "current" : link.external ? "external" : undefined}
+            aria-current={link.href === currentPath ? "page" : undefined}
+            target={link.external ? "_blank" : undefined}
+            rel={link.external ? "noopener noreferrer" : undefined}
+          >
+            {link.label}
+            {link.external && <span class="portal-visually-hidden"> (opens in a new tab)</span>}
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}

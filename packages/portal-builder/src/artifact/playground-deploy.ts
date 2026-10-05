@@ -13,23 +13,49 @@
 // `@freva-org/browser-python` emits it BESIDE the module graph: no chunk imports it and no
 // closure reaches it, and a playground deployed without it has nowhere to run its interpreter.
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { GraphRecord } from "./evidence.js";
 import type { PlaygroundArtifactData } from "../model/types.js";
 import { compareCodePoints } from "../util/order.js";
+import { NOTEBOOK_ARTIFACT_DIR, NOTEBOOK_PATH, underBase } from "../model/notebook.js";
+import { ADDONS_DIR, WHEELHOUSE_DIR } from "../model/python-materials.js";
 
 /** Emitted names that belong to the child and reach it through no import edge. */
 const EMITTED_BESIDE = ["browser-python.worker"];
 
-/** `src`/`href` of everything the child document itself asks for on load. */
-function referencedByHtml(html: string): string[] {
+/**
+ * The hashes of a document's inline, executable scripts (a module or classic `<script>` with a
+ * body and no `src`), for a policy that allows exactly them: the compiler inlines a small entry.
+ */
+function inlineScriptHashes(html: string): string[] {
   const out = new Set<string>();
-  const pattern = /(?:src|href)\s*=\s*"([^"]+)"/g;
-  for (let m = pattern.exec(html); m; m = pattern.exec(html)) {
-    const value = m[1] ?? "";
-    if (!value.startsWith("/")) continue;
-    out.add(value.replace(/^\/+/, ""));
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+    const attrs = m[1] ?? "";
+    const body = m[2] ?? "";
+    if (/\bsrc\s*=/i.test(attrs) || body.trim() === "") continue;
+    const type = /\btype\s*=\s*"([^"]*)"/i.exec(attrs)?.[1]?.trim().toLowerCase() ?? "";
+    if (!["", "module", "text/javascript"].includes(type)) continue;
+    out.add(`'sha256-${createHash("sha256").update(body, "utf8").digest("base64")}'`);
+  }
+  return [...out].sort();
+}
+
+/**
+ * The artifact files a document LOADS: `src` of scripts, images and media, `href` of `<link>`s.
+ * Never an `<a href>`, which is navigation (the callback's "Back to the notebook"), not a file
+ * the page needs. URLs carry the deployment's base path; the artifact's paths do not.
+ */
+function referencedByHtml(html: string, basePath: string): string[] {
+  const out = new Set<string>();
+  const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  const tags = /<(script|img|source|link)\b([^>]*)>/gi;
+  for (let m = tags.exec(html); m; m = tags.exec(html)) {
+    const attr = m[1]!.toLowerCase() === "link" ? "href" : "src";
+    const value = new RegExp(`\\b${attr}\\s*=\\s*"([^"]+)"`, "i").exec(m[2] ?? "")?.[1] ?? "";
+    if (!value.startsWith(base)) continue;
+    out.add(value.slice(base.length));
   }
   return [...out];
 }
@@ -40,12 +66,27 @@ export interface PlaygroundDeployment {
   origin: string;
   /** The portal origin the child will answer, and nothing else. */
   hostOrigin: string;
-  /** The document to serve as that origin's root. */
+  /**
+   * The path this origin serves the deployment under: the portal's base path, which the compiler
+   * wrote into every URL of these pages. Files go to `<root><basePath><path>`.
+   */
+  basePath: string;
+  /** The document to serve at `basePath`. */
   entry: string;
+  /**
+   * The notebook's shared sign-in callback document, served at `callbackPath` on this origin.
+   * Absent when the notebook signs in to nothing.
+   */
+  callback?: { path: string; file: string };
   /** Every artifact-relative file to copy, the entry included. Sorted, exact. */
   files: string[];
   /** Response headers the child origin must send. */
   headers: Record<string, string>;
+  /**
+   * Headers for paths under a prefix, replacing `headers` there: the notebook (`/notebook/`) is
+   * a top-level page with a Content-Security-Policy of its own. Absent without a notebook.
+   */
+  pathHeaders?: Record<string, Record<string, string>>;
   /** How many examples the deployed manifest registers. */
   registeredExamples: number;
 }
@@ -122,8 +163,10 @@ export function describePlaygroundDeployment(
   artifactDir: string,
   graph: GraphRecord,
   emittedFiles: readonly string[],
+  notebook?: { csp: string },
 ): PlaygroundDeployment | undefined {
   if (!playground) return undefined;
+  const basePath = playground.basePath ?? "/";
   const entry = "playground-origin/index.html";
   let html: string;
   try {
@@ -135,7 +178,23 @@ export function describePlaygroundDeployment(
   const wanted = new Set<string>([entry]);
   const byFile = new Map(graph.chunks.map((chunk) => [chunk.file, chunk]));
   const queue: string[] = [];
-  for (const ref of referencedByHtml(html)) {
+  const documents = [html];
+  // The shared sign-in callback, with what it loads.
+  let callback: { path: string; file: string } | undefined;
+  let callbackScripts: string[] = [];
+  if (playground.authCallbackPath) {
+    const file = `playground-origin/${playground.authCallbackPath.replace(/^\/+/, "")}index.html`;
+    try {
+      const page = readFileSync(join(artifactDir, ...file.split("/")), "utf8");
+      documents.push(page);
+      callbackScripts = inlineScriptHashes(page);
+      wanted.add(file);
+      callback = { path: underBase(basePath, playground.authCallbackPath), file };
+    } catch {
+      return undefined;
+    }
+  }
+  for (const ref of documents.flatMap((page) => referencedByHtml(page, basePath))) {
     wanted.add(ref);
     if (ref.endsWith(".js")) queue.push(ref);
   }
@@ -159,12 +218,27 @@ export function describePlaygroundDeployment(
       if (file.split("/").pop()?.startsWith(name)) wanted.add(file);
     }
   }
+  // The Python materials this build serves itself (add-ons, the Freva wheels): the interpreters on
+  // this origin - a framed console, the notebook's kernel - ask for them at a root-relative path,
+  // which is this origin. Left out, every add-on is a 404 there.
+  for (const file of emittedFiles) {
+    if (file.startsWith(`${ADDONS_DIR}/`) || file.startsWith(`${WHEELHOUSE_DIR}/`))
+      wanted.add(file);
+  }
+  // The notebook site, whole: it was checked against its inventory when the build took it.
+  if (notebook) {
+    for (const file of emittedFiles) {
+      if (file.startsWith(`${NOTEBOOK_ARTIFACT_DIR}/`)) wanted.add(file);
+    }
+  }
 
   return {
     schemaVersion: 1,
     origin: playground.origin,
     hostOrigin: playground.hostOrigin,
+    basePath,
     entry,
+    ...(callback ? { callback } : {}),
     files: [...wanted].sort(compareCodePoints),
     headers: {
       "Content-Security-Policy": childCsp(playground),
@@ -177,6 +251,37 @@ export function describePlaygroundDeployment(
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
     },
+    ...(notebook || callback
+      ? {
+          pathHeaders: {
+            ...(notebook
+              ? {
+                  [underBase(basePath, `${NOTEBOOK_PATH}/`)]: {
+                    "Content-Security-Policy": notebook.csp,
+                    "Cross-Origin-Resource-Policy": "same-origin",
+                    "Referrer-Policy": "no-referrer",
+                    "X-Content-Type-Options": "nosniff",
+                  },
+                }
+              : {}),
+            // The callback receives authorization responses: never cached, never framed, never
+            // referred on, and nothing but its own script.
+            ...(callback
+              ? {
+                  [callback.path]: {
+                    "Content-Security-Policy":
+                      `default-src 'none'; script-src ${["'self'", ...callbackScripts].join(" ")}; ` +
+                      "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+                    "Cache-Control": "no-store",
+                    "Cross-Origin-Resource-Policy": "same-origin",
+                    "Referrer-Policy": "no-referrer",
+                    "X-Content-Type-Options": "nosniff",
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
     registeredExamples: playground.examples.length,
   };
 }
@@ -186,24 +291,37 @@ export function playgroundDeployReadme(deployment: PlaygroundDeployment): string
   const headers = Object.entries(deployment.headers)
     .map(([name, value]) => `    ${name}: ${value}`)
     .join("\n");
+  // Everything goes under the deployment's base path on that origin.
+  const root = `<playground-root>${deployment.basePath.replace(/\/+$/, "")}`;
+  const notebookPrefix = underBase(deployment.basePath, `${NOTEBOOK_PATH}/`);
   return `# Deploying this playground
 
 This directory is NOT part of the portal's own site. It is the separate-origin Python playground,
 and it belongs at:
 
-    ${deployment.origin}
+    ${deployment.origin}${deployment.basePath}
 
-Serve \`index.html\` as that origin's root document, with the files listed in \`deploy.json\` at the
-same paths they have here. Nothing else from the portal artifact goes to this origin - that
-separation is the entire reason the playground has an origin of its own.
+Serve \`index.html\` as the document at \`${deployment.basePath}\` on that origin - the portal's own base
+path, which the pages' URLs already carry - with the files listed in \`deploy.json\` at the same
+paths under it. Nothing else from the portal artifact goes to this origin - that separation is the
+entire reason the playground has an origin of its own.
 
 ## Copy exactly these files
 
 \`deploy.json\` lists them, artifact-relative and complete:
 
     jq -r '.files[]' <artifact>/playground-origin/deploy.json \\
-      | rsync -a --files-from=- <artifact>/ <playground-root>/
-    mv <playground-root>/playground-origin/index.html <playground-root>/index.html
+      | rsync -a --files-from=- <artifact>/ ${root}/
+    mv ${root}/playground-origin/index.html ${root}/index.html${
+      deployment.pathHeaders?.[notebookPrefix]
+        ? `\n    mv ${root}/${NOTEBOOK_ARTIFACT_DIR} ${root}/${NOTEBOOK_PATH}`
+        : ""
+    }${
+      deployment.callback
+        ? `\n    mkdir -p <playground-root>${deployment.callback.path}` +
+          `\n    mv ${root}/${deployment.callback.file} <playground-root>${deployment.callback.path}index.html`
+        : ""
+    }
 
 ${deployment.files.length} files, registering ${deployment.registeredExamples} example${
     deployment.registeredExamples === 1 ? "" : "s"
@@ -215,7 +333,24 @@ ${headers}
 
 \`frame-ancestors\` names the portal and only the portal. A playground any page can frame is a
 playground any page can ask to run something.
-
+${
+  deployment.callback
+    ? `\n## The sign-in callback\n\nThe notebook signs in through a popup that returns to ${deployment.origin}${deployment.callback.path}\n(the same path as the portal's own callback). Register that URL with the identity provider as a\nredirect URI and a post-logout redirect URI, and in freva-rest's redirect allow-list. The old\n${deployment.origin}${notebookPrefix}freva-login-callback.html stays in the notebook during the migration.\n`
+    : ""
+}${
+    deployment.pathHeaders
+      ? Object.entries(deployment.pathHeaders)
+          .map(
+            ([prefix, values]) =>
+              `\n## Headers under ${prefix}\n\nServed with these headers INSTEAD of the ones above:\n\n${Object.entries(
+                values,
+              )
+                .map(([name, value]) => `    ${name}: ${value}`)
+                .join("\n")}\n`,
+          )
+          .join("")
+      : ""
+  }
 ## What this playground will and will not do
 
 It answers three questions from ${deployment.hostOrigin}: what artifacts exist, send me one, and

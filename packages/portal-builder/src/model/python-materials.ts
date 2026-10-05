@@ -31,6 +31,7 @@ import {
   type AddonArtifactPlan,
 } from "@freva-org/browser-python/prepare";
 import type { PlaygroundSettings } from "./types.js";
+import { allowedAddons, allowedProfiles } from "./python-playground.js";
 
 /** The directory names a prepared materials tree uses, and the artifact serves them under. */
 export const WHEELHOUSE_DIR = "freva-wheels";
@@ -86,8 +87,9 @@ function addonFiles(ids: readonly string[]): { path: string; sha256: string; byt
 
 /** What this playground needs prepared. Pure: it reads pins, never the network and never a disk. */
 export function planPythonMaterials(playground: PlaygroundSettings): PythonMaterialsPlan {
-  const needsWheelhouse = playground.profile === "freva-client";
-  const addons = [...playground.addons].sort();
+  // Every allowed setup's materials: a visitor may choose any of them.
+  const needsWheelhouse = allowedProfiles(playground).includes("freva-client");
+  const addons = allowedAddons(playground);
   const files = [...(needsWheelhouse ? wheelhouseFiles() : []), ...addonFiles(addons)].sort(
     (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
   );

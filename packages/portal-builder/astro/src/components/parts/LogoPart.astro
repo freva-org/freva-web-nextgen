@@ -1,0 +1,21 @@
+---
+/**
+ * The `logo` part: the header logo when one is configured, otherwise the site logo. Light and dark
+ * variants are both in the markup and the stylesheet shows the one for the active colour mode.
+ */
+import type { ResolvedPortalModel } from "../../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+  /** Decorative inside a link that already carries a name. */
+  decorative?: boolean;
+}
+
+const { model, decorative = false } = Astro.props;
+const logo = model.customisation?.header.logo;
+const alt = decorative ? "" : (logo?.alt ?? model.site.institution?.name ?? model.site.title);
+const light = logo ? (logo.light ?? logo.src) : model.site.identity.logo.url;
+const dark = logo?.dark;
+---
+
+{light && <img class="portal-logo-img" src={light} alt={alt} data-portal-theme-only={dark ? "light" : undefined} />}{dark && <img class="portal-logo-img" src={dark} alt={alt} data-portal-theme-only="dark" />}

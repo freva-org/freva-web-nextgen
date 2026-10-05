@@ -1505,15 +1505,14 @@ try {
       await page.waitForFunction(() => window.location.search === "", undefined, {
         timeout: 20_000,
       });
-      const body = await page.locator("[data-portal-callback]").innerText();
+      const body = await page.locator("[data-auth-callback]").innerText();
       assert(!body.includes("secret"), "the callback rendered its parameters");
       assert(
-        (await page
-          .locator('[data-portal-callback][data-portal-callback-state="error"]')
-          .count()) === 1,
+        (await page.locator('[data-auth-callback][data-auth-callback-state="error"]').count()) ===
+          1,
         "a direct visit did not reach the safe error state",
       );
-      const home = await page.locator("[data-portal-callback] a").getAttribute("href");
+      const home = await page.locator("[data-auth-callback] a").getAttribute("href");
       assert(home === "/site/", `expected a link home, got ${home}`);
     }),
   );

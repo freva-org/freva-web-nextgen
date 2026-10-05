@@ -1,0 +1,17 @@
+---
+/** The `theme-toggle` part: the light/dark switch the shell island drives. */
+---
+
+<button
+  type="button"
+  class="portal-theme-toggle"
+  data-part="header-theme-toggle"
+  role="switch"
+  aria-checked="false"
+  aria-label="Switch to dark theme"
+  title="Toggle day / night"
+>
+  <span class="portal-theme-knob" aria-hidden="true">
+    <Fragment set:html={`<svg class="portal-theme-icon portal-theme-icon-moon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1111.2 3a6.5 6.5 0 009.8 9.8z"/></svg><svg class="portal-theme-icon portal-theme-icon-sun" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>`} />
+  </span>
+</button>

@@ -29,6 +29,7 @@
 interface BadgeGlobals {
   FrevaBadgeOptions?: { assetBase: string; quality?: string; liveMark?: string };
   FrevaBadge?: { mount(target?: Element): void };
+  FrevaBadgeContent?: { email?: string };
 }
 
 /** One `<script src>` per file, in order, resolved when it has run. */
@@ -63,6 +64,10 @@ export async function mountFooterBadge(): Promise<void> {
 
   try {
     await loadScript(`${runtimeBase}freva-badge-content.js`);
+    const email = anchor.dataset.portalBadgeEmail;
+    if (email && globals.FrevaBadgeContent) {
+      globals.FrevaBadgeContent.email = email === "none" ? "" : email;
+    }
     await loadScript(`${runtimeBase}freva-badge.js`);
   } catch {
     // A badge that cannot load is a missing credit line, not a broken portal.

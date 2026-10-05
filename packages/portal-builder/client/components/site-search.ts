@@ -12,6 +12,8 @@
 import "./site-search.css";
 
 import {
+  browse,
+  inSections,
   normalize,
   search,
   snippet,
@@ -60,8 +62,15 @@ export function appendMarked(parent: HTMLElement, text: string, wanted: string[]
 }
 
 function hrefFor(entry: Entry, query: string): string {
+  const anchor = entry.a ? `#${entry.a}` : "";
+  if (!query.trim()) return `${entry.u}${anchor}`;
   const params = new URLSearchParams({ [HIGHLIGHT_PARAM]: query.trim() });
-  return `${entry.u}?${params.toString()}${entry.a ? `#${entry.a}` : ""}`;
+  return `${entry.u}?${params.toString()}${anchor}`;
+}
+
+function isEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
 }
 
 /**
@@ -107,6 +116,9 @@ export function initSiteSearch(): void {
   const status = dialog.querySelector<HTMLElement>(".portal-sitesearch-status")!;
   const closer = dialog.querySelector<HTMLButtonElement>("[data-portal-sitesearch-close]");
   const indexUrl = dialog.dataset.portalSitesearchIndex ?? "";
+  const toggle = dialog.querySelector<HTMLButtonElement>("[data-portal-sitesearch-filters-toggle]");
+  const facets = [...dialog.querySelectorAll<HTMLButtonElement>("[data-portal-sitesearch-facet]")];
+  const selected = new Set<string>();
 
   // Words the reader searched for on the page they came from.
   const arrived = new URLSearchParams(window.location.search).get(HIGHLIGHT_PARAM);
@@ -157,7 +169,7 @@ export function initSiteSearch(): void {
     window.location.assign(hrefFor(hit.entry, input.value));
   };
 
-  const render = (query: string): void => {
+  const render = (query: string, browsing: boolean): void => {
     const wanted = terms(query);
     list.replaceChildren();
     input.removeAttribute("aria-activedescendant");
@@ -193,7 +205,9 @@ export function initSiteSearch(): void {
     });
     const expanded = hits.length > 0;
     input.setAttribute("aria-expanded", String(expanded));
-    if (terms(query).join("").length < 2) status.textContent = "";
+    if (browsing) {
+      status.textContent = `${hits.length} page${hits.length === 1 ? "" : "s"} in ${[...selected].join(", ")}`;
+    } else if (terms(query).join("").length < 2) status.textContent = "";
     else
       status.textContent = expanded
         ? `${hits.length}${hits.length === MAX_RESULTS ? "+" : ""} result${hits.length === 1 ? "" : "s"}`
@@ -207,9 +221,11 @@ export function initSiteSearch(): void {
     return load()
       .then((entries) => {
         if (ticket !== pending) return;
-        hits = search(entries, query);
+        const scope = inSections(entries, selected);
+        const browsing = selected.size > 0 && terms(query).join("").length < 2;
+        hits = browsing ? browse(scope) : search(scope, query);
         hitsFor = query;
-        render(query);
+        render(query, browsing);
       })
       .catch(() => {
         status.textContent = "Search is unavailable right now.";
@@ -226,8 +242,38 @@ export function initSiteSearch(): void {
     void load().catch(() => {
       status.textContent = "Search is unavailable right now.";
     });
-    if (input.value) void run();
+    if (input.value || selected.size > 0) void run();
   };
+
+  const showFilters = (shown: boolean): void => {
+    if (!toggle) return;
+    dialog.dataset.filters = shown ? "open" : "closed";
+    toggle.setAttribute("aria-expanded", String(shown));
+  };
+  showFilters(window.matchMedia("(min-width: 761px)").matches);
+  toggle?.addEventListener("click", () => showFilters(dialog.dataset.filters !== "open"));
+  for (const facet of facets) {
+    facet.addEventListener("click", () => {
+      const label = facet.dataset.portalSitesearchFacet ?? "";
+      if (selected.has(label)) selected.delete(label);
+      else selected.add(label);
+      facet.setAttribute("aria-pressed", String(selected.has(label)));
+      void run();
+    });
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (dialog.open || event.defaultPrevented) return;
+    const slash =
+      event.key === "/" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !isEditable(event.target);
+    if (!slash) return;
+    event.preventDefault();
+    open();
+  });
 
   dialog.addEventListener("close", () => {
     opener.setAttribute("aria-expanded", "false");

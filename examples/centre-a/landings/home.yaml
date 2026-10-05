@@ -1,0 +1,69 @@
+schemaVersion: 1
+title: Centre A Data Portal
+description: A three-column landing on the 12-column grid.
+layout:
+  sections:
+    - id: explore
+      heading: Explore by theme
+    - id: partners
+      heading: Working with partners
+      background:
+        image: ../brand/hero-wave.svg
+blocks:
+  - type: hero
+    heading: Regional climate data, in one place
+    summary: Search the archive, open a dataset, or start with a theme below.
+    align: center
+    width: content
+    actions:
+      - label: Open the Data Browser
+        component: data
+      - label: Precipitation data
+        intent: select-facet
+        component: data
+        flavour: freva
+        facets:
+          variable: pr
+  - type: cards
+    section: explore
+    span: { md: 6, lg: 4 }
+    heading: Temperature
+    items:
+      - title: Daily means
+        summary: Station and gridded daily mean temperature.
+        href: /docs/guide/
+  - type: links
+    section: explore
+    span: { md: 6, lg: 4 }
+    heading: Rainfall
+    items:
+      - label: Precipitation in the archive
+        intent: select-facet
+        component: data
+        facets:
+          variable: pr
+  - type: links
+    section: explore
+    span: { md: 12, lg: 4 }
+    heading: Reanalysis
+    items:
+      - label: Open the daily reanalysis
+        intent: open-dataset
+        component: data
+        dataset: reanalysis-a-daily
+  - type: callout
+    section: partners
+    level: note
+    heading: Shared archive
+    body: Partner centres publish into the same archive and search index.
+    span: { lg: 6 }
+  - type: links
+    section: partners
+    heading: Partner sites
+    span: { lg: 6 }
+    background: surface
+    items:
+      - label: North Agency
+        href: https://north-agency.example.org/
+      - label: Coast Fund
+        href: https://coast-fund.example.org/

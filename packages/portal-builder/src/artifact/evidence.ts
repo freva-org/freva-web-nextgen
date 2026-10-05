@@ -66,6 +66,17 @@ function toPosix(value: string): string {
 }
 
 /**
+ * The builder's own files, but not its installed dependencies: `file` relative to the builder's
+ * root, or undefined. Only the part below the root may not contain `node_modules`, because an
+ * installed builder itself lives under one.
+ */
+export function builderRelative(file: string, root: string = PACKAGE_ROOT): string | undefined {
+  if (!file.startsWith(root)) return undefined;
+  const parts = relative(root, file).split(sep);
+  return parts[0] === ".." || parts.includes("node_modules") ? undefined : parts.join("/");
+}
+
+/**
  * Turn a Rollup module id into a stable, caller-independent reference.
  * Anything that cannot be attributed becomes `unattributed:` rather than an
  * absolute path, so a manifest can never leak a temporary directory name.
@@ -87,10 +98,8 @@ export function normalizeModuleId(id: string, ctx: NormalizeContext): string {
     return `source:${toPosix(relative(ctx.sourceRoot, clean))}`;
   }
 
-  // The builder's own files, but not its installed dependencies.
-  if (clean.startsWith(PACKAGE_ROOT) && !clean.includes(`${sep}node_modules${sep}`)) {
-    return `builder:${toPosix(relative(PACKAGE_ROOT, clean))}`;
-  }
+  const own = builderRelative(clean);
+  if (own !== undefined) return `builder:${own}`;
 
   const owner = owningPackage(clean);
   if (owner) {

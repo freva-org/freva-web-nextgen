@@ -18,6 +18,14 @@ export const loadLocalChunks: ChunkLoader = () => {
     .then(([terminal, console_]) => ({
       createTerminalWindow: terminal.createTerminalWindow,
       defineBrowserPythonConsole: console_.defineBrowserPythonConsole,
+      loadSessions: () =>
+        Promise.all([
+          import("@freva-org/browser-python/session"),
+          import("@freva-org/browser-python"),
+        ]).then(([session, engine]) => ({
+          session,
+          createBrowserPython: engine.createBrowserPython,
+        })),
     }))
     .catch((error: unknown) => {
       pending = null;

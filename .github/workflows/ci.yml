@@ -231,6 +231,73 @@ jobs:
       - name: Browser suites in ${{ matrix.engine }}
         run: npm run ${{ matrix.script }} -w $PKG
 
+      # The notebook kernel on the same engine, runtime and add-ons. Its site is a pinned,
+      # hash-checked JupyterLite build, which needs a Python to run in.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the notebook kernel and its prebuilt extension
+        run: |
+          npm run build -w @freva-org/jupyterlite-freva-kernel
+          npm run build:labextension -w @freva-org/jupyterlite-freva-kernel
+
+      - name: Notebook suites in ${{ matrix.engine }}
+        env:
+          BROWSER_ENGINE: ${{ matrix.engine }}
+        run: npm run test:browser -w @freva-org/jupyterlite-freva-kernel
+
+      # ClimateClaw and the data panel in the trimmed Lab interface, against the mock Freva, on the
+      # same engine and runtime. The site is planned by portal-builder and installs jupyterlite-ai
+      # from PyPI, pinned with hashes.
+      - name: Build the assistant, the data panel and portal-builder
+        run: |
+          npm run build
+          npm run build:labextension -w @freva-org/jupyterlite-climateclaw
+          npm run build:labextension -w @freva-org/jupyterlite-freva-data
+
+      - name: Assistant and data panel suite in ${{ matrix.engine }}
+        env:
+          BROWSER_ENGINE: ${{ matrix.engine }}
+        run: npm run test:browser -w @freva-org/jupyterlite-climateclaw
+
+  # The two extensions installed from their wheels into real JupyterLab: 4.5.0 with jupyterlite-ai
+  # 0.20.1 (its minimum), and 4.4.0 with the data panel alone.
+  jupyterlab-smoke:
+    name: JupyterLab smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: packages/browser-python/.nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the extensions
+        run: |
+          npm run build
+          npm run build:labextension -w @freva-org/jupyterlite-climateclaw
+          npm run build:labextension -w @freva-org/jupyterlite-freva-data
+
+      - name: Install Playwright chromium
+        run: npm exec -w @freva-org/browser-python -- playwright install --with-deps chromium
+
+      - name: JupyterLab smoke test
+        env:
+          BROWSER_STRICT: "1"
+        run: npm run test:jupyterlab -w @freva-org/jupyterlite-climateclaw
+
   # What a consumer installs, and what it weighs. No browser and no runtime.
   browser-python-package:
     name: browser-python (package)
@@ -314,6 +381,12 @@ jobs:
       - name: Build workspace dependencies
         run: npm run build
 
+      # The notebook's assistant and data panel tests plan a site from their prebuilt extensions.
+      - name: Build the notebook extensions
+        run: |
+          npm run build:labextension -w @freva-org/jupyterlite-climateclaw
+          npm run build:labextension -w @freva-org/jupyterlite-freva-data
+
       # The example portal enables the STAC Browser component, so the suites that build it need
       # the prepared materials. Preparing them compiles a third-party application and its ~800
       # dependencies, so the result is cached on the recipe's own key.
@@ -343,6 +416,13 @@ jobs:
       - name: Python playground gate
         run: npm run test:browser:python -w @freva-org/portal-builder
 
+      # Session choices, telemetry, sleep and the notebook, with a real interpreter. The notebook
+      # half runs `prepare-notebook`, so the kernel's prebuilt extension has to exist.
+      - name: Python sessions and notebook gate
+        run: |
+          npm run build:labextension -w @freva-org/jupyterlite-freva-kernel
+          npm run test:browser:sessions -w @freva-org/portal-builder
+
       - name: Runnable snippet controls and editing gate
         run: npm run test:browser:snippets -w @freva-org/portal-builder
 
@@ -363,6 +443,9 @@ jobs:
 
       - name: Per-mode page palette gate (a white light page)
         run: npm run test:browser:paper -w @freva-org/portal-builder
+
+      - name: Customisation fixtures gate (portal-style-v1, portal-template-v1, layout options)
+        run: npm run test:browser:customisation -w @freva-org/portal-builder
 
       - name: Packaging gate
         run: npm run test:packaging -w @freva-org/portal-builder

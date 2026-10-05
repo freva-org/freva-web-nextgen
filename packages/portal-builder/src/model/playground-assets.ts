@@ -19,6 +19,7 @@ import { DEFAULT_PYODIDE_INDEX_URL } from "@freva-org/browser-python";
 import type { DiagnosticBag } from "../diagnostics.js";
 import type { PlaygroundSettings } from "./types.js";
 import { ADDONS_DIR, WHEELHOUSE_DIR } from "./python-materials.js";
+import { allowedAddons, allowedProfiles } from "./python-playground.js";
 
 /** Where one class of asset is served from, and why it ended up there. */
 export interface AssetSource {
@@ -114,8 +115,9 @@ export function resolvePlaygroundAssets(options: ResolveAssetsOptions): Playgrou
 
   // A wheelhouse is a property of the profile: only `freva-client` installs the Freva wheel at
   // startup, so a portal on `minimal` or `xarray-zarr` needs none and is not asked. Hence the
-  // check is against the profile, not against whether the key is set.
-  if (settings.profile === "freva-client") {
+  // check is against the allowed profiles (with session choices, every allowed setup's files must
+  // be served), not against whether the key is set.
+  if (allowedProfiles(settings).includes("freva-client")) {
     const source = decide(
       settings.wheelhouseUrl,
       "wheelhouseUrl",
@@ -126,13 +128,14 @@ export function resolvePlaygroundAssets(options: ResolveAssetsOptions): Playgrou
     if (source) sources.wheelhouse = source;
   }
 
-  if (settings.addons.length > 0) {
+  const addons = allowedAddons(settings);
+  if (addons.length > 0) {
     const source = decide(
       settings.addonBaseUrl,
       "addonBaseUrl",
       ADDONS_DIR,
-      `has ${settings.addons.length === 1 ? "an add-on" : "add-ons"} configured ` +
-        `(${settings.addons.join(", ")}), whose artefacts are static files`,
+      `has ${addons.length === 1 ? "an add-on" : "add-ons"} configured ` +
+        `(${addons.join(", ")}), whose artefacts are static files`,
       "freva-browser-python prepare-addons",
     );
     if (source) sources.addons = source;

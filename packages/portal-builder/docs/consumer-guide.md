@@ -126,6 +126,101 @@ jobs:
 Add `--effective-at` when your configuration contains a dated announcement; the
 builder requires it for a release build and refuses it when nothing uses it.
 
+## Installing with pip
+
+`pip install freva-portal-builder` gives the same `freva-portal-builder` command on a
+machine without Node or npm. The wheel is a small Python launcher with Node from the
+`nodejs-wheel-binaries` wheel; it carries no JavaScript. On first use it has npm install this
+package, `@freva-org/portal-builder`, at the wheel's version (with Playwright) into a per-user
+cache, exactly as `npm install` would, and runs its CLI. Every command then behaves as described
+here. The pinned RST helper, `freva-portal-rst`, ships inside the wheel and is used
+automatically.
+
+```console
+python -m venv .venv && . .venv/bin/activate
+pip install freva-portal-builder
+freva-portal-builder install-engine
+freva-portal-builder engine-info
+```
+
+The wheel adds three commands of its own, and nothing else:
+
+- `install-engine [--force]` installs the pinned engine with npm. Any other command does it on
+  first use; run it in a preparation stage so the build needs no network. It installs into
+  `FREVA_PORTAL_BUILDER_HOME` when set, otherwise the per-user cache, one directory per
+  version. npm's own configuration (registry, mirror, proxy) applies.
+- `install-browser [--with-deps]` installs the Chromium that the engine's Playwright pins,
+  which build-time Mermaid diagrams need. It honours `PLAYWRIGHT_BROWSERS_PATH`;
+  `--with-deps` also installs the system libraries on Linux (as root). A diagram build
+  without it fails with `FP1702` at the diagram and names this command.
+- `engine-info` prints the pinned engine, where it is installed, Node and the RST helper.
+
+STAC Browser materials are prepared on your machine, exactly as with npm:
+`freva-portal-builder prepare-stac --out <dir>` fetches the pinned upstream, verifies and
+patches it and builds it with the wheel's own Node and npm. It needs `git` and runs on Linux
+and macOS.
+
+`install-engine`, `install-browser` and `prepare-stac` are the only commands that use the
+network. Run them in a preparation stage and everything after it offline, as with the npm
+package. For a machine without a network, install the engine elsewhere with
+`FREVA_PORTAL_BUILDER_HOME` set and copy that directory.
+
+### CI with pip
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Preparation: the only steps with a network.
+      - run: |
+          python -m venv .venv
+          .venv/bin/pip install "freva-portal-builder==<version>"
+          echo "FREVA_PORTAL_BUILDER_HOME=$PWD/.freva-portal-builder" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v4
+        with:
+          path: .freva-portal-builder
+          key: freva-portal-builder-<version>-${{ runner.os }}
+
+      - run: |
+          .venv/bin/freva-portal-builder install-engine
+          .venv/bin/freva-portal-builder install-browser --with-deps
+          echo "STAC_KEY=$(.venv/bin/freva-portal-builder prepare-stac --cache-key)" >> "$GITHUB_ENV"
+
+      # Building STAC Browser takes a minute or two; its cache key names everything it uses.
+      - uses: actions/cache@v4
+        with:
+          path: .stac-materials
+          key: stac-materials-${{ env.STAC_KEY }}
+
+      - run: .venv/bin/freva-portal-builder prepare-stac --out .stac-materials
+
+      - id: epoch
+        run: echo "value=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+
+      # No network from here on.
+      - run: |
+          .venv/bin/freva-portal-builder build \
+            --source-root "$PWD" \
+            --config "$PWD/portal/portal.yaml" \
+            --out build/portal \
+            --stac-materials .stac-materials \
+            --source-revision "$GITHUB_SHA"
+          .venv/bin/freva-portal-builder verify --dir build/portal
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
+```
+
+Leave out the STAC steps and `--stac-materials` when the portal does not enable the STAC
+Browser, and `install-browser` when it has no diagrams. Pass absolute paths: `--config` must
+lie inside `--source-root`.
+
 ## Pull-request previews
 
 A preview is a **separate build from complete preview inputs**, with its own

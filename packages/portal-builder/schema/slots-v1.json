@@ -1,0 +1,199 @@
+{
+  "$comment": "Slot names of portal-template-v1, version 1: where each renders, the read-only context it is given and the sealed parts it may insert. Unknown slots, fields and parts are errors.",
+  "version": 1,
+  "profile": "portal-template-v1",
+  "iterationCap": 64,
+  "totalIterationCap": 256,
+  "context": {
+    "site": {
+      "type": "object",
+      "fields": {
+        "title": "string",
+        "subtitle": "string",
+        "language": "string",
+        "institution": {
+          "type": "object",
+          "fields": {
+            "name": "string",
+            "url": "url"
+          }
+        }
+      }
+    },
+    "logo": {
+      "type": "object",
+      "fields": {
+        "src": "image",
+        "light": "image",
+        "dark": "image",
+        "alt": "string"
+      }
+    },
+    "route": {
+      "type": "object",
+      "fields": {
+        "path": "string",
+        "title": "string",
+        "kind": "string",
+        "isHome": "boolean"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "fields": {
+          "label": "string",
+          "href": "url",
+          "external": "boolean",
+          "current": "boolean"
+        }
+      }
+    },
+    "footer": {
+      "type": "object",
+      "fields": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "title": "string",
+              "links": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "fields": {
+                    "label": "string",
+                    "href": "url",
+                    "external": "boolean",
+                    "current": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "legal": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "label": "string",
+              "href": "url",
+              "external": "boolean",
+              "current": "boolean"
+            }
+          }
+        },
+        "logos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "src": "image",
+              "alt": "string",
+              "href": "url"
+            }
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "fields": {
+        "year": "string"
+      }
+    }
+  },
+  "slots": {
+    "headerBrand": {
+      "location": "Inside the header's home link, replacing the lockup's contents.",
+      "parts": ["logo"],
+      "forbiddenElements": ["a"],
+      "extraContext": {}
+    },
+    "headerExtra": {
+      "location": "At the end of the header, after its controls.",
+      "parts": ["logo", "search", "theme-toggle", "auth"],
+      "extraContext": {}
+    },
+    "footerTop": {
+      "location": "At the top of the footer index.",
+      "parts": ["logo", "nav-links", "legal-links"],
+      "extraContext": {}
+    },
+    "footerColumns": {
+      "location": "After the link groups in the footer index, as one more column.",
+      "parts": ["logo", "nav-links", "legal-links"],
+      "extraContext": {}
+    },
+    "footerBottom": {
+      "location": "At the end of the footer index.",
+      "parts": ["logo", "nav-links", "legal-links"],
+      "extraContext": {}
+    },
+    "landingSectionShell": {
+      "location": "Around each section of a laid-out landing. Must insert the section's blocks exactly once.",
+      "parts": ["blocks"],
+      "requiredParts": ["blocks"],
+      "extraContext": {
+        "section": {
+          "type": "object",
+          "fields": {
+            "id": "string",
+            "heading": "string"
+          }
+        }
+      }
+    },
+    "proseAside": {
+      "location": "At the end of a content page's article.",
+      "parts": ["logo", "nav-links"],
+      "extraContext": {
+        "page": {
+          "type": "object",
+          "fields": {
+            "title": "string",
+            "headings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "fields": {
+                  "text": "string",
+                  "href": "url"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "parts": {
+    "logo": {
+      "description": "The header logo (or the site logo), as an image with its alternative text."
+    },
+    "nav-links": {
+      "description": "The header's links, as a list."
+    },
+    "search": {
+      "description": "The documentation search button.",
+      "feature": "site-search"
+    },
+    "theme-toggle": {
+      "description": "The light/dark switch."
+    },
+    "auth": {
+      "description": "The account control.",
+      "feature": "auth",
+      "protected": true
+    },
+    "legal-links": {
+      "description": "The footer's legal links."
+    },
+    "blocks": {
+      "description": "The section's blocks."
+    }
+  }
+}

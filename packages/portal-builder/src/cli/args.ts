@@ -35,6 +35,9 @@ const KNOWN_FLAGS = new Set([
   "keep",
   "stac-materials",
   "python-materials",
+  // `prepare-notebook` and `build`: the notebook site, and the Python that builds it.
+  "notebook",
+  "python",
   // `prepare-playground`: fetch again despite a current cache, and describe without doing.
   "force",
   "dry-run",

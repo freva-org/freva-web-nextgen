@@ -84,10 +84,37 @@ describe("with auth enabled", () => {
 
   it("shows a safe message and a link home for a direct visit", () => {
     const html = readFileSync(join(enabledOut, "auth", "callback", "index.html"), "utf8");
-    expect(html).toContain("data-portal-callback");
+    expect(html).toContain("data-auth-callback");
     expect(html).toMatch(/Back to/);
     expect(html).toContain('name="robots" content="noindex, nofollow"');
   });
+});
+
+describe("with auth enabled in a subdirectory deployment", () => {
+  it("serves the callback under the base path and names no host in the browser's runtime", async () => {
+    const root = writeMatrixSite({
+      databrowser: true,
+      stac: false,
+      auth: true,
+      canonicalUrl: "https://portal.example.org/showroom/",
+    });
+    const out = join(tempRoot("portal-auth-sub-"), "site");
+    const result = await buildFixture(root, out);
+    expect(result.diagnostics.errors).toEqual([]);
+    // The artifact's root is the base path: the page is auth/callback/ in it.
+    const html = readFileSync(join(out, "auth", "callback", "index.html"), "utf8");
+    expect(html).toContain('href="/showroom/"');
+    const policy = JSON.parse(readFileSync(join(out, "host-policy.json"), "utf8")) as {
+      headers: { match: { path?: string } }[];
+    };
+    expect(policy.headers.some((h) => h.match.path === "/showroom/auth/callback/")).toBe(true);
+    // The browser builds the redirect URI from the origin it is served at: a development port
+    // or a staging host calls back to itself, so no canonical host is compiled in.
+    const files = readdirSync(join(out, "_portal")).filter((f) => f.endsWith(".js"));
+    const shipped = files.map((f) => readFileSync(join(out, "_portal", f), "utf8")).join("\n");
+    expect(shipped).not.toContain("https://portal.example.org/showroom/auth/callback/");
+    expect(shipped).toContain("/auth/callback/");
+  }, 120_000);
 });
 
 describe("with auth disabled", () => {

@@ -1,0 +1,52 @@
+---
+/**
+ * The side navigation (`navigation.placement: side | both`): the site's sections as a column at
+ * wide viewports. Below that width the header's menu button carries the same destinations, so the
+ * column is a second way in, never the only one. Static markup; nothing here needs a script.
+ */
+import type { ResolvedPortalModel } from "../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+  currentPath: string;
+}
+
+const { model, currentPath } = Astro.props;
+const homeHref = model.site.basePath;
+const matches = (href: string, pages: { href: string }[]): boolean =>
+  href === currentPath ||
+  (href !== homeHref && currentPath.startsWith(href)) ||
+  pages.some((page) => page.href === currentPath);
+// One entry is current: the most specific one that matches, so /docs/ and /docs/methods/ do not
+// both claim /docs/methods/.
+const currentHref = model.navOutline
+  .filter((section) => matches(section.href, section.pages))
+  .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+---
+
+{
+  model.navOutline.length > 0 && (
+    <nav class="portal-sidenav" data-part="side-nav" aria-label="Sections">
+      <ul class="portal-sidenav-list">
+        {model.navOutline.map((section) => (
+          <li>
+            <a
+              class="portal-sidenav-link"
+              data-part="side-nav-link"
+              data-state={
+                section.href === currentHref ? "current" : section.external ? "external" : undefined
+              }
+              href={section.href}
+              aria-current={section.href === currentPath ? "page" : undefined}
+              target={section.external ? "_blank" : undefined}
+              rel={section.external ? "noopener noreferrer" : undefined}
+            >
+              {section.label}
+              {section.external && <span class="portal-visually-hidden"> (opens in a new tab)</span>}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}

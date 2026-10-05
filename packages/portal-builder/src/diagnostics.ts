@@ -77,6 +77,16 @@ export const CODES = {
   FP1227: "Editable snippets are not available with a separate playground origin",
   FP1228: "A theme option the preset does not use",
   FP1229: "Too many links in the collapsed footer bar",
+  // Customisation (typed layout options)
+  FP1230: "A layout option would hide a protected control",
+  FP1231: "Font file is not WOFF2",
+  FP1232: "Action intent does not match its target component",
+  FP1233: "A layout option has no effect",
+  FP1234: "Header arrangement not supported",
+  FP1235: "Notebook without a separate playground origin",
+  FP1236: "Invalid notebook assistant configuration",
+  FP1237: "Invalid notebook data panel configuration",
+  FP1238: "consoleInPage without a notebook on a separate origin",
   // Announcements
   FP1301: "Missing --effective-at for a dated announcement",
   FP1302: "Invalid announcement interval",
@@ -104,6 +114,22 @@ export const CODES = {
   FP1702: "Build-time renderer unavailable",
   // Reproducibility
   FP1801: "Missing or invalid SOURCE_DATE_EPOCH for a release build",
+  // portal-style-v1 stylesheets
+  FP1901: "Stylesheet could not be parsed",
+  FP1902: "Selector outside the portal-style-v1 public API",
+  FP1903: "At-rule not allowed in portal-style-v1",
+  FP1904: "Property or value not allowed in portal-style-v1",
+  FP1905: "Style would hide a protected control or remove a focus indicator",
+  FP1906: "Style rule for a disabled feature pruned",
+  FP1907: "Customisation asset rejected",
+  // portal-template-v1 slot templates
+  FP1911: "Template syntax error",
+  FP1912: "Unknown or mistyped template field",
+  FP1913: "Unknown, misplaced or repeated slot part",
+  FP1914: "Element or attribute not allowed in portal-template-v1",
+  FP1915: "Part of a disabled feature renders nothing",
+  FP1916: "Template loop exceeds the iteration cap",
+  FP1917: "Template link or image rejected",
 } as const;
 
 export type Code = keyof typeof CODES;

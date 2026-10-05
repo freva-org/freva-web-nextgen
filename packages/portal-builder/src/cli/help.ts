@@ -17,6 +17,7 @@ Usage:
   freva-portal-builder migrate    --from <ui-manifest.json> --out <dir>
   freva-portal-builder stac-plan  --source-root <dir> --config <portal.yaml> [--diagnostics json]
   freva-portal-builder prepare-playground --source-root <dir> --config <portal.yaml> --out <dir> [--force] [--dry-run]
+  freva-portal-builder prepare-notebook --source-root <dir> --config <portal.yaml> --out <dir> [--python <exe>] [--stac-materials <dir>] [--python-materials <dir>] [--force] [--dry-run]
   freva-portal-builder prepare-stac --out <dir> [--force] [--upstream <dir>] [--checkout-dir <dir>]
   freva-portal-builder prepare-stac --cache-key
 
@@ -42,7 +43,14 @@ Options:
                           'verify' like everything else. Adding them afterwards
                           is what makes an artifact unverifiable.
                           FREVA_PORTAL_PYTHON_MATERIALS says the same thing.
-  --force                 For 'prepare-playground' and 'prepare-stac': prepare
+  --notebook <dir>        The notebook site 'prepare-notebook' produced, for a
+                          portal with pythonPlayground.notebook. Checked against
+                          this configuration and copied under the playground
+                          before the manifests. FREVA_PORTAL_NOTEBOOK says the
+                          same thing.
+  --python <exe>          For 'prepare-notebook': Python 3.10+ to run the pinned
+                          JupyterLite build with (default python3).
+  --force                 For 'prepare-playground', 'prepare-notebook' and 'prepare-stac': prepare
                           again even when the output is current and verifies.
   --cache-key             For 'prepare-stac': print the cache key for the
                           shipped recipe and this toolchain, and exit.

@@ -104,6 +104,9 @@ try {
       "client/components/stac.ts",
       "client/components/auth.ts",
       "client/components/auth-callback.ts",
+      // The shared sign-in callback, and the notebook origin's copy of it.
+      "client/auth-relay.ts",
+      "client/playground-auth-callback.ts",
       // Both imported literally by the generated entry module, so a tarball without them builds
       // a portal that cannot mount its own footer badge or draw its own backdrop.
       "client/components/footer-badge.ts",
@@ -554,6 +557,8 @@ try {
       "test:browser:announcements",
       // The per-mode page palette suite: the example portal on a white light page.
       "test:browser:paper",
+      // The customisation fixtures, examples/centre-a and examples/centre-b.
+      "test:browser:customisation",
       "test:security",
       "test:packaging",
       "cosmos:acceptance",

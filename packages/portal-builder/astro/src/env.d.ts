@@ -9,6 +9,7 @@ declare module "virtual:portal-code.css" {}
 declare module "virtual:portal-math.css" {}
 declare module "virtual:portal-stac.css" {}
 declare module "virtual:portal-databrowser.css" {}
+declare module "virtual:portal-custom.css" {}
 declare module "virtual:portal-entry" {}
 declare module "virtual:portal-stac-adapter" {
   export function mountStacBrowser(): Promise<void>;

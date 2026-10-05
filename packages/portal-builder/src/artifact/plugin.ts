@@ -8,6 +8,7 @@
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import postcss from "postcss";
 import type { GraphRecord, NormalizeContext } from "./evidence.js";
 import { normalizeModuleId } from "./evidence.js";
 import { compareCodePoints } from "../util/order.js";
@@ -24,6 +25,8 @@ export interface VirtualSources {
    * makes its absence a property of the graph rather than of a build failure.
    */
   playgroundEntrySource: string;
+  /** The playground origin's sign-in callback entry (empty without one). */
+  playgroundCallbackEntrySource: string;
   themeCss: string;
   codeCss: string;
   /**
@@ -42,7 +45,38 @@ export interface VirtualSources {
    * portal without it gets an empty stylesheet, so the artifact has no rule naming the mount.
    */
   databrowserCssPath?: string;
+  /**
+   * Absolute path of the customisation stylesheet (header and footer variants, side navigation,
+   * landing grid), when the portal uses a customisation option. Otherwise an empty stylesheet.
+   */
+  customCssPath?: string;
+  /**
+   * The cascade layer to put every framework stylesheet in, when a portal-style-v1 stylesheet
+   * is configured: its `portal-site` layer then follows and wins over the framework by layer
+   * order, never by an arms race of specificity. Unset, nothing is layered.
+   */
+  frameworkLayer?: string;
   stacAdapter?: string;
+}
+
+/**
+ * Wrap a framework stylesheet in `@layer <name> { … }`. `@charset`, `@import` and `@property`
+ * cannot be nested in a layer block, so they stay at the top level.
+ */
+export function layerStylesheet(css: string, layer: string): string {
+  const root = postcss.parse(css);
+  const hoisted: string[] = [];
+  root.each((node) => {
+    if (
+      node.type === "atrule" &&
+      ["charset", "import", "property"].includes(node.name.toLowerCase())
+    ) {
+      hoisted.push(node.toString());
+      node.remove();
+    }
+  });
+  const body = root.toString().trim();
+  return `${hoisted.join("\n")}${hoisted.length ? "\n" : ""}@layer ${layer} {\n${body}\n}\n`;
 }
 
 export interface PortalPluginResult {
@@ -109,10 +143,12 @@ export function createPortalPlugin(
   if (!sources.databrowserCssPath) {
     files["portal-databrowser.css"] = "/* no Data Browser embed on this site */\n";
   }
+  if (!sources.customCssPath) files["portal-custom.css"] = "/* no customisation on this site */\n";
   if (sources.stacAdapter) files["stac-adapter.js"] = sources.stacAdapter;
   if (sources.playgroundEntrySource) {
     files["portal-playground-entry.js"] = sources.playgroundEntrySource;
   }
+  files["portal-playground-callback-entry.js"] = sources.playgroundCallbackEntrySource;
 
   for (const [name, content] of Object.entries(files)) {
     writeFileSync(join(sources.generatedRoot, name), content, "utf8");
@@ -129,10 +165,16 @@ export function createPortalPlugin(
       sources.stacCssPath ?? join(sources.generatedRoot, "portal-stac.css"),
     "virtual:portal-databrowser.css":
       sources.databrowserCssPath ?? join(sources.generatedRoot, "portal-databrowser.css"),
+    "virtual:portal-custom.css":
+      sources.customCssPath ?? join(sources.generatedRoot, "portal-custom.css"),
   };
   if (sources.stacAdapter) {
     mapping["virtual:portal-stac-adapter"] = join(sources.generatedRoot, "stac-adapter.js");
   }
+  mapping["virtual:portal-playground-callback-entry"] = join(
+    sources.generatedRoot,
+    "portal-playground-callback-entry.js",
+  );
   if (sources.playgroundEntrySource) {
     mapping["virtual:portal-playground-entry"] = join(
       sources.generatedRoot,
@@ -148,12 +190,31 @@ export function createPortalPlugin(
     chunkModuleBytes: {},
   };
   const modules = new Set<string>();
-
+  const unlayered = new Set(
+    [sources.databrowserCssPath]
+      .filter((f): f is string => Boolean(f))
+      .map((f) => f.replace(/\\/g, "/")),
+  );
   const plugin = {
     name: "freva-portal-builder",
     enforce: "pre" as const,
     resolveId(id: string) {
       return mapping[id];
+    },
+    // Every stylesheet the compiler processes is the framework's: the shell, the theme, the
+    // components' own, and the `?inline` sheets an island adopts at runtime (the dataset tree's),
+    // so their relationships to one another are what they were unlayered. A consumer stylesheet
+    // is never compiled; it is published beside them.
+    //
+    // One exception: the Data Browser host stylesheet. Its counterpart is the stylesheet the
+    // Data Browser package injects at runtime, which the build cannot layer and which, unlayered,
+    // would beat any layered rule. Both stay unlayered, as on a portal without customisation.
+    transform(code: string, id: string) {
+      if (!sources.frameworkLayer) return undefined;
+      const [file, query = ""] = id.split("?");
+      if (!file!.endsWith(".css") || /(^|&)(url|raw|worker)\b/.test(query)) return undefined;
+      if (unlayered.has(file!.replace(/\\/g, "/"))) return undefined;
+      return { code: layerStylesheet(code, sources.frameworkLayer), map: null };
     },
     generateBundle(_options: unknown, bundle: Record<string, MinimalBundleChunk>) {
       for (const chunk of Object.values(bundle)) {

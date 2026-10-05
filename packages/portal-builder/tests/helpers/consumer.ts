@@ -53,6 +53,8 @@ export interface ConsumerOptions {
     persistCredentials?: boolean;
     controls?: "always" | "hover";
     editableSnippets?: boolean;
+    /** Further keys, as YAML already indented two spaces: `sessionChoices`, `notebook`, … */
+    extraYaml?: string;
   };
   runnableDocs?: boolean;
   /** Mark each page's runnable block `editable` too. Implies nothing without `runnableDocs`. */
@@ -183,6 +185,7 @@ function playgroundYaml(options: ConsumerOptions): string {
     (playground.persistCredentials ? `  persistCredentials: true\n` : "") +
     (playground.controls ? `  controls: ${playground.controls}\n` : "") +
     (playground.editableSnippets ? `  editableSnippets: true\n` : "") +
+    (playground.extraYaml ?? "") +
     `  terminal:\n` +
     `    style: freva-client-terminal\n` +
     `    osControls: auto\n` +

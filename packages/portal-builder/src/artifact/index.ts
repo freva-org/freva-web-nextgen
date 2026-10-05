@@ -5,7 +5,6 @@
 // was - the property that lets CI run a build against a live document root without a
 // maintenance window.
 
-import { build as astroBuild } from "astro";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import {
@@ -35,8 +34,13 @@ import {
   playgroundDeployReadme,
   type PlaygroundDeployment,
 } from "./playground-deploy.js";
-import { createPortalPlugin } from "./plugin.js";
-import { generateEntryModule, generatePlaygroundEntryModule } from "./runtime-projection.js";
+import { createPortalPlugin, layerStylesheet } from "./plugin.js";
+import { styleApi } from "../customisation/api.js";
+import {
+  generateEntryModule,
+  generatePlaygroundCallbackEntryModule,
+  generatePlaygroundEntryModule,
+} from "./runtime-projection.js";
 import {
   buildInfo,
   cacheClassFor,
@@ -52,6 +56,7 @@ import {
 import { validateAgainst } from "../config/schema.js";
 import type { ComponentEvidence } from "./evidence.js";
 import { MATERIALS_MANIFEST } from "../model/python-materials.js";
+import { NOTEBOOK_ARTIFACT_DIR } from "../model/notebook.js";
 import { containStylesheet } from "../components/stac-browser/containment.js";
 import { redirectPage } from "../model/redirects.js";
 
@@ -152,12 +157,17 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
       modelJson: JSON.stringify(model),
       entrySource: generateEntryModule(model),
       playgroundEntrySource: playgroundEntry,
+      playgroundCallbackEntrySource: generatePlaygroundCallbackEntryModule(model),
       themeCss: model.theme.css,
       codeCss: resolved.codeCss ?? "/* no highlighted code on this site */\n",
       ...(resolved.mathUsed ? { mathCssPath: mathStylesheet() } : {}),
       ...(model.enabledComponents.some((c) => c.kind === "databrowser")
         ? { databrowserCssPath: join(ASTRO_DIR, "src", "styles", "freva-databrowser.css") }
         : {}),
+      ...(model.customisation
+        ? { customCssPath: join(ASTRO_DIR, "src", "styles", "freva-custom.css") }
+        : {}),
+      ...(model.customisation?.layered ? { frameworkLayer: styleApi().frameworkLayer } : {}),
       ...(resolved.stacAdapter
         ? {
             stacAdapter: resolved.stacAdapter.source,
@@ -186,6 +196,9 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   const callerDirectory = process.cwd();
   process.chdir(PACKAGE_ROOT);
   try {
+    // Loaded here, not at start-up: Astro brings Vite's native bundler (rolldown), which hooks
+    // process exit, and the CLI's other commands (prepare-*, validate, verify) never need it.
+    const { build: astroBuild } = await import("astro");
     await astroBuild({
       configFile: false,
       // The compiler root is the builder package, not the template directory: the island
@@ -252,6 +265,14 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
                     name: "python-shared",
                     test: /[/\\]browser-python[/\\]dist[/\\]transcript-limit\./,
                   },
+                  // The bundler's dynamic-import preload helper, for the same reason: the
+                  // console loads its rich-output renderer and the engine its session
+                  // operations lazily, and a group takes its members' dependencies with it, so
+                  // the console's group would otherwise host the helper every entry needs.
+                  {
+                    name: "preload-helper",
+                    test: /preload-helper/,
+                  },
                   {
                     name: "python-console",
                     // The console is matched by its own path rather than by `node_modules/`:
@@ -276,6 +297,9 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   }
 
   placeStatusPages(tempOut, model.routes);
+  if (model.customisation?.stylesheet) {
+    linkSiteStylesheet(tempOut, model.routes, model.customisation.stylesheet.url);
+  }
 
   // Copy classified static material.
   const copiedFiles: string[] = [];
@@ -306,7 +330,15 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
       if (entry.path.endsWith(".css")) {
         const contained = containStylesheet(readFileSync(source, "utf8"));
         for (const selector of contained.escaped) escapes.push(`${entry.path}: ${selector}`);
-        writeFileSync(target, contained.css);
+        // With a consumer stylesheet the framework sits in a cascade layer, and so must
+        // upstream's: unlayered it would beat every layered portal rule, `freva-stac.css` among
+        // them, whatever their specificity. In the same layer the two relate as they always did.
+        writeFileSync(
+          target,
+          model.customisation?.layered
+            ? layerStylesheet(contained.css, styleApi().frameworkLayer)
+            : contained.css,
+        );
       } else {
         cpSync(source, target);
       }
@@ -354,6 +386,19 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
     if (existsSync(record)) {
       cpSync(record, join(tempOut, MATERIALS_MANIFEST));
       copiedFiles.push(MATERIALS_MANIFEST);
+    }
+  }
+
+  // The notebook site, under the playground's own directory and before `collect()`, so it is
+  // hashed and checksummed like everything else. Copied from its inventory, not a listing.
+  if (resolved.notebook) {
+    const { realRoot, files } = resolved.notebook;
+    for (const path of files) {
+      const rel = `${NOTEBOOK_ARTIFACT_DIR}/${path}`;
+      const target = join(tempOut, ...rel.split("/"));
+      mkdirSync(dirname(target), { recursive: true });
+      cpSync(join(realRoot, ...path.split("/")), target);
+      copiedFiles.push(rel);
     }
   }
 
@@ -416,6 +461,7 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
     tempOut,
     graph,
     listFiles(tempOut),
+    resolved.notebook ? { csp: resolved.notebook.csp } : undefined,
   );
   if (deployment) {
     const dir = join(tempOut, "playground-origin");
@@ -424,7 +470,12 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   }
 
   // Manifests.
-  const statics = [...model.embeddableAssets, ...model.passiveDownloads, ...model.identityFiles];
+  const statics = [
+    ...model.embeddableAssets,
+    ...model.passiveDownloads,
+    ...model.identityFiles,
+    ...(model.customisationFiles ?? []),
+  ];
   const collect = (): ArtifactFile[] =>
     listFiles(tempOut).map((path) => {
       const bytes = readFileSync(join(tempOut, ...path.split("/")));
@@ -469,7 +520,7 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   write("portal-manifest.json", `${JSON.stringify(portalManifest(manifestInputs), null, 2)}\n`);
   write(
     "component-evidence.json",
-    `${JSON.stringify(componentEvidenceManifest(evidence), null, 2)}\n`,
+    `${JSON.stringify(componentEvidenceManifest(evidence, model.customisationEvidence), null, 2)}\n`,
   );
   write("host-policy.json", `${JSON.stringify(hostPolicy(manifestInputs), null, 2)}\n`);
   write("BUILDINFO.json", `${JSON.stringify(buildInfo(manifestInputs, inputJson), null, 2)}\n`);
@@ -563,6 +614,9 @@ function collectInlineHashes(dir: string): { scripts: string[]; styles: string[]
   const styles = new Set<string>();
   for (const path of listFiles(dir)) {
     if (!path.endsWith(".html")) continue;
+    // The playground origin's documents are deployed there, under their own policy
+    // (`playground-origin/deploy.json`): nothing of theirs belongs in the portal's.
+    if (path.startsWith("playground-origin/")) continue;
     const text = readFileSync(join(dir, ...path.split("/")), "utf8");
     for (const match of text.matchAll(SCRIPT_BLOCK)) {
       const attrs = match[1] ?? "";
@@ -609,6 +663,22 @@ export function artifactRelative(root: string, file: string): string {
  * builder renames, and it renames it to the name the route model already declared, so the
  * manifest, the checksums and the host policy all keep describing the artifact that exists.
  */
+/**
+ * Link the portal-style-v1 site stylesheet last in every page's head, after the framework's
+ * stylesheets the compiler linked: an ordinary same-origin `<link>`, so the CSP is unchanged.
+ */
+function linkSiteStylesheet(root: string, routes: readonly ResolvedRoute[], href: string): void {
+  const tag = `<link rel="stylesheet" href="${href}">`;
+  for (const route of routes) {
+    const file = join(root, ...route.file.split("/"));
+    if (!existsSync(file)) continue;
+    const html = readFileSync(file, "utf8");
+    const at = html.indexOf("</head>");
+    if (at < 0) continue;
+    writeFileSync(file, `${html.slice(0, at)}${tag}${html.slice(at)}`, "utf8");
+  }
+}
+
 function placeStatusPages(root: string, routes: readonly ResolvedRoute[]): void {
   for (const route of routes) {
     if (route.kind !== "error") continue;

@@ -10,6 +10,8 @@
  * comes out the other depends on whether the build imported the module that installs a handler.
  */
 
+import type { SessionPolicy } from "@freva-org/browser-python/session";
+
 /** What the build computed for one runnable example. Structural: nothing heavy is imported. */
 export interface RegisteredExampleDigest {
   /**
@@ -42,6 +44,11 @@ export interface PythonPlaygroundConfig {
   maxSessions: number;
   initialSource?: string;
   playgroundOrigin?: string;
+  /**
+   * The path the second origin serves this deployment under: the portal's own base path, which the
+   * compiler writes into every URL of the pages deployed there. `/` when absent.
+   */
+  playgroundBase?: string;
   /** A self-hosted Pyodide directory, when the deployment does not use the pinned CDN. */
   runtimeIndexUrl?: string;
   /** Where the Freva client's wheels are served from, for the `freva-client` profile. */
@@ -79,6 +86,14 @@ export interface PythonPlaygroundConfig {
     alwaysOnTop: boolean;
     rememberAppearance: boolean;
   };
+  /** The session policy, when the deployment configured `sessionChoices`. */
+  sessionChoices?: { policy: SessionPolicy; fingerprint: string };
+  /** Whether the JupyterLite notebook is deployed (on `notebookOrigin`). */
+  notebook?: boolean;
+  /** The notebook's origin: `playgroundOrigin`, or its own when the console is in the page. */
+  notebookOrigin?: string;
+  /** Sessions that may hold a live interpreter at once. Defaults to `maxSessions`. */
+  maxLiveSessions?: number;
   examples: RegisteredExampleDigest[];
   /**
    * Recipe ids this build's profile can actually execute. A live archive has no build-time

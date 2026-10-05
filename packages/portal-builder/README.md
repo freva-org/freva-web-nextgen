@@ -67,6 +67,7 @@ freva-portal-builder host-check --dir build/portal --url https://portal.example.
 freva-portal-builder migrate    --from ui-manifest.json --out portal/
 freva-portal-builder prepare-stac --out .stac-materials        # only if stac-browser is enabled
 freva-portal-builder prepare-playground --source-root . --config portal/portal.yaml --out .python-materials
+freva-portal-builder prepare-notebook --source-root . --config portal/portal.yaml --out .notebook  # only with pythonPlayground.notebook
 ```
 
 `--source-root` is the trust anchor and is mandatory for `validate` and `build`:
@@ -171,6 +172,7 @@ same directory at `/` is a deployment error rather than a supported relocation.
 
 - [Consumer guide](./docs/consumer-guide.md) — repository shapes, CI, deployment
 - [Configuration reference](./docs/configuration.md) — every field, with its rules
+- [Customisation](./docs/customisation.md) — layout options, `portal-style-v1`, `portal-template-v1`
 - [`portal-content-v1`](./docs/content-profile.md) — the accepted Markdown and RST
 - [Components and services](./docs/components.md) — enablement, options, evidence
 - [Hosting](./docs/hosting.md) — the conformance contract and recipes

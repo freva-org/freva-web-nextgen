@@ -66,15 +66,35 @@ export class PlaywrightMissing extends Error {}
  * What to do about a browser that would not start, by cause. The canonical image carries both
  * Playwright and a pinned Chromium; an npm install of this package carries neither - Playwright
  * is an optional peer dependency and its browsers are a separate download - so the two commands
- * an npm consumer needs are named rather than left for them to find.
+ * an npm consumer needs are named rather than left for them to find. The Python launcher installs
+ * Playwright with the engine and sets FREVA_PORTAL_LAUNCHER=python; its remedies are its own
+ * subcommands.
  */
-export function browserHint(error: unknown, pinned = process.env.FREVA_PORTAL_CHROMIUM): string {
-  const install =
-    "  npm install --save-dev playwright\n" +
-    "  npx playwright install --with-deps chromium   # --with-deps: the system libraries, on Linux (needs root)\n" +
-    "or point FREVA_PORTAL_CHROMIUM at a Chromium you already have, or build in the canonical " +
-    "image (ghcr.io/freva-org/portal-builder), which carries both.";
+export function browserHint(
+  error: unknown,
+  pinned = process.env.FREVA_PORTAL_CHROMIUM,
+  launcher = process.env.FREVA_PORTAL_LAUNCHER,
+): string {
+  const python = launcher === "python";
+  const install = python
+    ? "  freva-portal-builder install-browser               # the Chromium this Playwright pins\n" +
+      "  freva-portal-builder install-browser --with-deps   # and its system libraries, on Linux (needs root)\n" +
+      "or point FREVA_PORTAL_CHROMIUM at a Chromium you already have."
+    : "  npm install --save-dev playwright\n" +
+      "  npx playwright install --with-deps chromium   # --with-deps: the system libraries, on Linux (needs root)\n" +
+      "or point FREVA_PORTAL_CHROMIUM at a Chromium you already have, or build in the canonical " +
+      "image (ghcr.io/freva-org/portal-builder), which carries both.";
   if (error instanceof PlaywrightMissing) {
+    if (python) {
+      return (
+        "Mermaid diagrams are drawn at build time in Chromium, driven by Playwright, and the " +
+        "`playwright` package freva-portal-builder installs with the engine could not be loaded, " +
+        "so that installation is incomplete. Install it again:\n" +
+        "  freva-portal-builder install-engine --force\n" +
+        "and install the browser:\n" +
+        install
+      );
+    }
     return (
       "Mermaid diagrams are drawn at build time in Chromium, driven by Playwright, and the " +
       "`playwright` package is not installed next to @freva-org/portal-builder (it is an " +
@@ -101,11 +121,12 @@ export function browserHint(error: unknown, pinned = process.env.FREVA_PORTAL_CH
       text,
     )
   ) {
-    return (
-      "Chromium is installed but the system libraries it needs are missing. Run " +
-      "`npx playwright install --with-deps chromium` (as root, or with sudo), or build in the " +
-      "canonical image."
-    );
+    return python
+      ? "Chromium is installed but the system libraries it needs are missing. Run " +
+          "`freva-portal-builder install-browser --with-deps` (as root, or with sudo)."
+      : "Chromium is installed but the system libraries it needs are missing. Run " +
+          "`npx playwright install --with-deps chromium` (as root, or with sudo), or build in the " +
+          "canonical image.";
   }
   return `The browser could not start. To install one:\n${install}`;
 }

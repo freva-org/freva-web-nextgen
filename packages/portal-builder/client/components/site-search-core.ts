@@ -8,6 +8,7 @@ export interface Entry {
   a?: string;
   x: string;
   p?: string;
+  s?: string;
 }
 
 export interface Prepared extends Entry {
@@ -22,6 +23,7 @@ export interface Hit {
 }
 
 export const MAX_RESULTS = 20;
+export const MAX_BROWSE = 50;
 const SNIPPET = 160;
 
 /** Case- and accent-insensitive form, the same on both sides of every comparison. */
@@ -90,6 +92,23 @@ export function search(entries: Prepared[], query: string): Hit[] {
       ((a.entry.h ?? "") < (b.entry.h ?? "") ? -1 : (a.entry.h ?? "") > (b.entry.h ?? "") ? 1 : 0),
   );
   return hits.slice(0, MAX_RESULTS);
+}
+
+export function inSections<T extends Entry>(entries: T[], sections: ReadonlySet<string>): T[] {
+  if (sections.size === 0) return entries;
+  return entries.filter((entry) => entry.s !== undefined && sections.has(entry.s));
+}
+
+export function browse(entries: Prepared[]): Hit[] {
+  const seen = new Set<string>();
+  const hits: Hit[] = [];
+  for (const entry of entries) {
+    if (seen.has(entry.u)) continue;
+    seen.add(entry.u);
+    hits.push({ entry, score: 0 });
+    if (hits.length === MAX_BROWSE) break;
+  }
+  return hits;
 }
 
 /** A window of the entry's text around its first match. */

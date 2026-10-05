@@ -1,0 +1,115 @@
+# Customisation fixture B: a split header with side navigation, local fonts and a custom type
+# scale, a minimal footer whose funding notice and address come from slot templates, and a
+# landing with a different block order and widths. Fictional, like every example here.
+schemaVersion: 1
+
+site:
+  id: centre-b
+  title: Centre B Observatory
+  subtitle: Observations and model output
+  language: en
+  canonicalUrl: https://centre-b.example.org/portal/
+  identity:
+    logo: ./assets/logo.svg
+    favicon: ./assets/favicon.svg
+  institution:
+    name: Centre B Observatory
+    url: https://centre-b.example.org/
+
+chrome:
+  header:
+    enabled: true
+    variant: split
+    search:
+      enabled: true
+    items: [brand, navToggle, search, auth]
+  footer:
+    enabled: true
+    variant: minimal
+    legalLinks:
+      - label: Imprint
+        href: https://centre-b.example.org/imprint/
+      - label: Privacy
+        href: https://centre-b.example.org/privacy/
+  slots:
+    headerExtra: ./templates/header-extra.html
+    footerTop: ./templates/footer-top.html
+    footerBottom: ./templates/footer-bottom.html
+    landingSectionShell: ./templates/section.html
+    proseAside: ./templates/aside.html
+
+navigation:
+  placement: side
+  header:
+    - landing: home
+      label: Overview
+    - component: data
+      label: Data
+    - href: /docs/
+      label: Documentation
+    - href: /docs/methods/
+      label: Methods
+
+theme:
+  preset: default
+  fonts:
+    - family: Centre Sans
+      src: ./brand/poppins-regular.woff2
+      weight: 400
+    - family: Centre Sans
+      src: ./brand/poppins-bold.woff2
+      weight: 700
+  tokens:
+    colorAccent: "#5b2a86"
+    fontBody: Centre Sans
+    fontHeading: Centre Sans
+    typeScale: large
+    spaceScale: loose
+    contentWidth: 1240
+    borderWidth: thick
+    radius: small
+  stylesheet:
+    profile: portal-style-v1
+    path: ./brand/site.css
+
+rendering:
+  profile: portal-content-v1
+  sources:
+    - root: ./content
+      mount: /docs/
+      files:
+        exclude:
+          - "_fragments/**"
+  assets:
+    - root: ./assets
+      mount: /assets/
+
+landings:
+  home:
+    path: /
+    source: ./landings/home.yaml
+
+services:
+  dataApi:
+    kind: databrowser
+    baseUrl: /api/freva-nextgen/databrowser
+    authentication: optional
+  authBroker:
+    kind: auth
+    baseUrl: /api/freva-nextgen/auth/v2
+
+components:
+  data:
+    kind: databrowser
+    enabled: true
+    service: dataApi
+    route: /data/
+    options:
+      defaultFlavour: freva
+  login:
+    kind: auth
+    enabled: true
+    service: authBroker
+    options:
+      callbackPath: /auth/callback/
+      expectedIssuer: https://identity.example.org/realms/observatory

@@ -27,6 +27,7 @@ export interface OutlinePage {
   href: string;
   /** The page's own headings, nested. Empty for a page with fewer than two. */
   headings: OutlineHeading[];
+  external?: boolean;
 }
 
 /** One top-level site section: a header link, plus whatever sits beneath it. */
@@ -39,6 +40,7 @@ export interface OutlineSection {
    * link - and the narrow chrome links straight to it instead of a drill-down that leads nowhere.
    */
   pages: OutlinePage[];
+  explicit?: boolean;
 }
 
 /**
@@ -111,6 +113,22 @@ export function deriveNavOutline(
       external: link.external,
       pages: [],
     };
+    if (link.links && link.links.length > 0) {
+      const listed = new Set<string>([link.href]);
+      for (const child of link.links) {
+        if (listed.has(child.href)) continue;
+        listed.add(child.href);
+        const route = child.external ? undefined : byHref.get(child.href);
+        section.pages.push({
+          title: child.label,
+          href: child.href,
+          headings: route && (route.toc?.length ?? 0) >= 2 ? nestHeadings(route.toc ?? []) : [],
+          ...(child.external ? { external: true } : {}),
+        });
+      }
+      section.explicit = true;
+      return section;
+    }
     if (link.external) return section;
 
     const seen = new Set<string>([link.href]);
@@ -139,4 +157,32 @@ export function deriveNavOutline(
     }));
     return section;
   });
+}
+
+export function pagerSequence(
+  sections: readonly OutlineSection[],
+  isPage: (href: string) => boolean,
+): string[] {
+  const order: string[] = [];
+  const seen = new Set<string>();
+  for (const section of sections) {
+    for (const href of [section.href, ...section.pages.map((page) => page.href)]) {
+      if (seen.has(href) || !isPage(href)) continue;
+      seen.add(href);
+      order.push(href);
+    }
+  }
+  return order;
+}
+
+export function sectionFor(sections: readonly OutlineSection[], href: string): string | undefined {
+  const exact = sections.find((section) => section.href === href);
+  if (exact) return exact.label;
+  const listed = (section: OutlineSection): boolean =>
+    section.pages.some((page) => page.href === href);
+  const chosen = sections.find((section) => section.explicit && listed(section));
+  if (chosen) return chosen.label;
+  return sections
+    .filter((section) => !section.external && (href.startsWith(section.href) || listed(section)))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.label;
 }

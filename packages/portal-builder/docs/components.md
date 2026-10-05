@@ -192,20 +192,52 @@ options:
     - https://jobs.example.org
 ```
 
-Two values are **derived and not configurable**: the absolute `redirectUri`
-(from `site.canonicalUrl` plus `callbackPath`) and the bearer-resource allowlist
-(the credential-accepting services, plus the origins you listed). The first
-prevents a base-path change from silently breaking login; the second prevents a
-token being attached merely because some URL appeared in site content.
+Two values are **derived and not configurable**: the redirect URI and the
+bearer-resource allowlist (the credential-accepting services, plus the origins
+you listed). The redirect URI is worked out in the browser from the origin the
+page is served at, the deployment's base path (from `site.canonicalUrl`) and
+`callbackPath`, so no host name is built into the page and one artifact signs in
+wherever it is served:
 
-Enabling auth generates `<callbackPath>/index.html`. That page carries
+| Deployment                             | Callback                                      |
+| -------------------------------------- | --------------------------------------------- |
+| `https://example.org/`                 | `https://example.org/auth/callback/`          |
+| `https://example.org/showroom/`        | `https://example.org/showroom/auth/callback/` |
+| `http://localhost:4321/` (development) | `http://localhost:4321/auth/callback/`        |
+
+Every origin a deployment is reached at must be registered. `build` prints the
+URLs for the configured ones.
+
+Enabling auth generates `<callbackPath>/index.html`: one callback for sign-in and
+sign-out, and the one the notebook's sign-in uses too (see
+[python-playground.md](./python-playground.md)). That page carries
 `<meta name="referrer" content="no-referrer">` before any subresource, loads no
-third-party resource, scrubs the callback parameters with `history.replaceState`
-as its first client action, validates the stored same-origin return path, and
-redirects. A direct visit without a transaction shows a safe message and a link
-home. The host must serve it with `no-store`, `Referrer-Policy: no-referrer`, and
+third-party resource, and scrubs the response with `history.replaceState` as its
+first client action. Which flow a response belongs to is read from what the
+starting window recorded, never guessed:
+
+- **Portal sign-in (same tab):** the tab's own transaction (state, PKCE
+  verifier, issuer) is checked and taken, the code is exchanged once, and the tab
+  returns to the page where the sign-in started, validated to be on this origin
+  under the base path, or to the home page. A response whose transaction this tab
+  does not hold (expired, finished already, started in another tab) is reported
+  and not exchanged.
+- **A popup's sign-in or sign-out** (the notebook's): the popup carries a record
+  naming its attempt; the page hands the response to that attempt's tab only and
+  closes. That tab exchanges the code.
+- **Sign-out (same tab):** the provider returns here without a code; the tab goes
+  back to the page where it signed out.
+- **Errors and direct visits:** a cancelled or refused sign-in and an expired one
+  say so, with a link home; a visit with nothing in progress shows a neutral
+  message and a link home.
+
+The host must serve it with `no-store`, `Referrer-Policy: no-referrer`, and
 must redact its query string from access logs; those are conformance
 requirements recorded in `host-policy.json`, not deployment advice.
+
+Register the callback URL with the identity provider (Keycloak: the client's
+_Valid redirect URIs_ and _Valid post logout redirect URIs_) and in freva-rest's
+redirect allow-list.
 
 Disabling auth removes the page, the initializer, the account control and the
 auth client bundle.

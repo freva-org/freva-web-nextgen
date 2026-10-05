@@ -23,13 +23,15 @@ import type { ResolvedBlock } from "../../../src/model/types.js";
 
 interface Props {
   block: ResolvedBlock;
+  /** `block-dataset-tree`, on a customised portal. */
+  part?: string;
 }
 
-const { block } = Astro.props;
+const { block, part } = Astro.props;
 const data = block.datasetTree!;
 ---
 
-<section class="portal-dataset-tree-block" data-block="dataset-tree" data-portal-tree-panel>
+<section class="portal-dataset-tree-block" data-block="dataset-tree" data-portal-tree-panel data-part={part}>
   <div class="portal-dataset-tree-bar">
     <div class="portal-dataset-tree-head">
       {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
@@ -76,6 +78,7 @@ const data = block.datasetTree!;
     data-portal-dataset-tree={data.instanceId}
     data-portal-dataset-tree-expand={JSON.stringify(data.expandedIds)}
     data-portal-dataset-tree-status={data.statusLabel}
+    data-portal-dataset-tree-gridlook={data.gridlook ? "" : undefined}
     data-portal-dataset-tree-generated={data.generatedAt}
     data-portal-dataset-tree-source={data.sourceLabel}
     {/*

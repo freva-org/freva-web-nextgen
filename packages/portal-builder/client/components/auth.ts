@@ -1,14 +1,19 @@
 /**
  * Auth island.
  *
- * The client is configured from derived values only: the redirect URI is `site.canonicalUrl` plus
- * the callback path, and the bearer-resource allowlist is the credential-accepting services plus
- * the origins the consumer listed explicitly. Neither is independently configurable, which is what
- * stops a base-path change from silently breaking the login and stops a token being attached
- * merely because a URL appeared somewhere in site content.
+ * The client is configured from derived values only: the redirect URI is this origin plus the
+ * base path plus the callback path (worked out here, so no host name is built into the page), and
+ * the bearer-resource allowlist is the credential-accepting services plus the origins the
+ * consumer listed explicitly. Neither is independently configurable, which is what stops a
+ * base-path change from silently breaking the login and stops a token being attached merely
+ * because a URL appeared somewhere in site content.
+ *
+ * Sign-out returns through the same callback page: the tab records where it was, the provider
+ * ends its session and sends the tab back to the callback, which returns it there.
  */
 
 import { PyOidcAuthClient } from "@freva-org/ts-oidc-auth-client";
+import { callbackUrl, recordLogoutReturn } from "../auth-relay.js";
 import { PortalSessionStorage } from "./auth-storage.js";
 import type { AuthBridge, AuthRuntime } from "../runtime.js";
 
@@ -18,13 +23,15 @@ let client: PyOidcAuthClient | undefined;
 export function createAuth(runtime: AuthRuntime): AuthBridge {
   if (bridge) return bridge;
 
+  const redirectUri = callbackUrl(window.location.origin, runtime.basePath, runtime.callbackPath);
   client = new PyOidcAuthClient({
     authBaseUrl: runtime.authBaseUrl,
-    redirectUri: runtime.redirectUri,
+    redirectUri,
     storage: new PortalSessionStorage(),
     security: {
       allowedResourceOrigins: runtime.allowedResourceOrigins,
-      allowedRedirectUris: [runtime.redirectUri],
+      allowedRedirectUris: [redirectUri],
+      allowedPostLogoutRedirectUris: [redirectUri],
       // Keycloak stamps RFC 9207 `iss` on every authorization response; without the expected
       // issuer the client rejects that response as `issuer-unexpected`.
       ...(runtime.expectedIssuer ? { expectedIssuer: runtime.expectedIssuer } : {}),
@@ -50,7 +57,12 @@ export function createAuth(runtime: AuthRuntime): AuthBridge {
       void client?.login({ next: window.location.pathname + window.location.search });
     },
     logout: () => {
-      void client?.logout();
+      recordLogoutReturn(
+        window.sessionStorage,
+        window.location.pathname + window.location.search,
+        Date.now(),
+      );
+      void client?.logout({ postLogoutRedirectUri: redirectUri });
     },
   };
 

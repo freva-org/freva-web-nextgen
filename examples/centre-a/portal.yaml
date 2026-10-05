@@ -1,0 +1,118 @@
+# Customisation fixture A: a centred, sticky logo header that is transparent over the hero, a
+# columns footer with a logo wall, a three-column landing grid and a portal-style-v1 stylesheet.
+# Fictional, like every example in this repository.
+schemaVersion: 1
+
+site:
+  id: centre-a
+  title: Centre A Data Portal
+  subtitle: Regional climate data, openly shared
+  language: en
+  canonicalUrl: https://centre-a.example.org/
+  identity:
+    logo: ./assets/logo.svg
+    favicon: ./assets/favicon.svg
+  institution:
+    name: Centre A for Regional Climate
+    url: https://centre-a.example.org/about/
+
+chrome:
+  header:
+    enabled: true
+    variant: centered
+    sticky: true
+    transparentOverHero: true
+    search:
+      enabled: true
+    logo:
+      src: ./brand/logo-light.svg
+      dark: ./brand/logo-dark.svg
+      alt: Centre A
+  footer:
+    enabled: true
+    variant: columns
+    columns: 4
+    order: [about, groups, logos, legal]
+    groups:
+      - title: Data
+        links:
+          - label: Data Browser
+            href: /data/
+          - label: Guide
+            href: /docs/guide/
+      - title: Centre
+        links:
+          - label: About us
+            href: https://centre-a.example.org/about/
+    logos:
+      - src: ./brand/partner-1.svg
+        alt: North Agency
+        href: https://north-agency.example.org/
+      - src: ./brand/partner-2.svg
+        alt: Lake Council
+      - src: ./brand/partner-3.svg
+        alt: Coast Fund
+        href: https://coast-fund.example.org/
+      - src: ./brand/partner-4.svg
+        alt: Hill Trust
+    legalLinks:
+      - label: Privacy
+        href: https://centre-a.example.org/privacy/
+
+theme:
+  preset: default
+  tokens:
+    colorAccent: "#0b6e8a"
+    radius: large
+    shadow: soft
+  stylesheet:
+    profile: portal-style-v1
+    path: ./brand/site.css
+
+rendering:
+  profile: portal-content-v1
+  sources:
+    - root: ./content
+      mount: /docs/
+  assets:
+    - root: ./assets
+      mount: /assets/
+
+landings:
+  home:
+    path: /
+    source: ./landings/home.yaml
+
+services:
+  dataApi:
+    kind: databrowser
+    baseUrl: /api/freva-nextgen/databrowser
+    authentication: optional
+  authBroker:
+    kind: auth
+    baseUrl: /api/freva-nextgen/auth/v2
+
+components:
+  data:
+    kind: databrowser
+    enabled: true
+    service: dataApi
+    route: /data/
+    options:
+      defaultFlavour: freva
+  login:
+    kind: auth
+    enabled: true
+    service: authBroker
+    options:
+      callbackPath: /auth/callback/
+      expectedIssuer: https://identity.example.org/realms/portal
+
+navigation:
+  header:
+    - landing: home
+      label: Home
+    - component: data
+      label: Data Browser
+    - href: /docs/guide/
+      label: Guide

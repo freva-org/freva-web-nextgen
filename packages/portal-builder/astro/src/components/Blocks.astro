@@ -16,6 +16,7 @@ import type {
   ResolvedService,
 } from "../../../src/model/types.js";
 import DatasetTreeBlock from "./DatasetTreeBlock.astro";
+import NotebookBlock from "./NotebookBlock.astro";
 
 interface Props {
   blocks: readonly ResolvedBlock[];
@@ -25,9 +26,21 @@ interface Props {
   components?: readonly ResolvedComponent[];
   /** Emitted services, so the search box can offer values from the real index. */
   services?: readonly ResolvedService[];
+  /** Write the style API's `data-part` hooks (a customised portal). */
+  parts?: boolean;
+  /** Whether this run's first hero is the `h1` (a laid-out landing renders block by block). */
+  firstHeroIsTitle?: boolean;
 }
 
-const { blocks, eyebrow, components = [], services = [] } = Astro.props;
+const {
+  blocks,
+  eyebrow,
+  components = [],
+  services = [],
+  parts = false,
+  firstHeroIsTitle = true,
+} = Astro.props;
+const P = (name: string): string | undefined => (parts ? name : undefined);
 
 /**
  * The service the search box asks for values. Written onto the form as data rather than into a
@@ -93,7 +106,7 @@ const asideKind = aside.some((block) => block.type === "dataset-tree") ? "wide" 
  * The page's single `h1`. A landing may carry several headline-shaped blocks; exactly one may be
  * the `h1`, or the outline announces two page titles. The first hero wins.
  */
-const firstHeroIndex = blocks.findIndex((block) => block.type === "hero");
+const firstHeroIndex = firstHeroIsTitle ? blocks.findIndex((block) => block.type === "hero") : -1;
 
 function hiddenFields(query: string): [string, string][] {
   return [...new URLSearchParams(query).entries()];
@@ -108,7 +121,7 @@ function hiddenFields(query: string): [string, string][] {
           {lead.map((block) => (
             <Fragment>
               {block.type === "hero" && (
-                <section class="portal-hero" data-block="hero">
+                <section class="portal-hero" data-block="hero" data-part={P("block-hero")}>
                   {eyebrow && <p class="portal-eyebrow">{eyebrow}</p>}
                   {block.heading &&
                     (blocks.indexOf(block) === firstHeroIndex ? (
@@ -127,6 +140,7 @@ function hiddenFields(query: string): [string, string][] {
                               : "portal-button"
                           }
                           href={action.href}
+                          data-part={P("button")}
                           target={action.external ? "_blank" : undefined}
                           rel={action.external ? "noopener noreferrer" : undefined}
                         >
@@ -147,7 +161,7 @@ function hiddenFields(query: string): [string, string][] {
           {aside.map((block) => (
             <Fragment>
               {block.type === "component-search" && block.search && (
-                <section class="portal-search-block" data-block="search">
+                <section class="portal-search-block" data-block="search" data-part={P("block-component-search")}>
                   {searchHeading(block) && (
                     <h2 class="portal-block-heading">{searchHeading(block)}</h2>
                   )}
@@ -195,7 +209,7 @@ function hiddenFields(query: string): [string, string][] {
               )}
 
               {block.type === "component-link" && block.link && (
-                <section class="portal-feature-link" data-block="feature-link">
+                <section class="portal-feature-link" data-block="feature-link" data-part={P("block-component-link")}>
                   <a class="portal-feature-link-anchor" href={block.link.href}>
                     <span class="portal-feature-link-label">{block.link.label}</span>
                     <span class="portal-feature-link-open">Open</span>
@@ -205,7 +219,7 @@ function hiddenFields(query: string): [string, string][] {
               )}
 
               {block.type === "dataset-tree" && block.datasetTree && (
-                <DatasetTreeBlock block={block} />
+                <DatasetTreeBlock block={block} part={P("block-dataset-tree")} />
               )}
             </Fragment>
           ))}
@@ -219,7 +233,7 @@ function hiddenFields(query: string): [string, string][] {
   rest.map((block) => {
     if (block.type === "hero") {
       return (
-        <section class="portal-hero" data-block="hero">
+        <section class="portal-hero" data-block="hero" data-part={P("block-hero")}>
           {block.heading && <h2 class="portal-hero-heading">{block.heading}</h2>}
           {block.summary && <p class="portal-hero-text">{block.summary}</p>}
         </section>
@@ -227,23 +241,76 @@ function hiddenFields(query: string): [string, string][] {
     }
 
     if (block.type === "prose") {
+      const figure = block.figure;
       return (
-        <section class="portal-content-block" data-block="content">
+        <section
+          class="portal-content-block"
+          data-block="content"
+          data-part={P("block-prose")}
+          {...(figure ? { "data-figure": "" } : {})}
+        >
           <div class="portal-content-body">
             {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
             <div class="portal-prose" set:html={block.prose?.html ?? ""} />
           </div>
+          {figure && (
+            <figure
+              class="portal-figure"
+              data-portal-figure
+              {...(figure.video
+                ? {
+                    // Each theme's clip, in its formats (space-separated URLs, the first playable wins).
+                    "data-video-light": figure.video.join(" "),
+                    "data-video-dark": (figure.videoDark ?? figure.video).join(" "),
+                  }
+                : {})}
+            >
+              <div class="portal-figure-frame">
+                {/* The still: shown without JavaScript, with reduced motion, and until the video plays. */}
+                <img
+                  class="portal-figure-still"
+                  src={figure.image}
+                  alt={figure.alt}
+                  decoding="async"
+                  {...(figure.imageDark ? { "data-portal-only": "light" } : {})}
+                />
+                {figure.imageDark && (
+                  <img
+                    class="portal-figure-still"
+                    src={figure.imageDark}
+                    alt={figure.alt}
+                    decoding="async"
+                    data-portal-only="dark"
+                  />
+                )}
+                {figure.video && (
+                  <video
+                    class="portal-figure-motion"
+                    muted
+                    loop
+                    playsinline
+                    preload="none"
+                    disablepictureinpicture
+                    aria-hidden="true"
+                    tabindex="-1"
+                    data-portal-figure-video
+                  />
+                )}
+              </div>
+              {figure.caption && <figcaption class="portal-figure-caption">{figure.caption}</figcaption>}
+            </figure>
+          )}
         </section>
       );
     }
 
     if (block.type === "cards") {
       return (
-        <section class="portal-cards" data-block="cards">
+        <section class="portal-cards" data-block="cards" data-part={P("block-cards")}>
           {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
           <ul class="portal-card-grid">
             {block.cards?.map((card) => (
-              <li class="portal-card">
+              <li class="portal-card" data-part={P("card")}>
                 {card.link ? (
                   <a
                     class="portal-card-link"
@@ -266,11 +333,11 @@ function hiddenFields(query: string): [string, string][] {
 
     if (block.type === "links") {
       return (
-        <section class="portal-links" data-block="links">
+        <section class="portal-links" data-block="links" data-part={P("block-links")}>
           {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
           <ul class="portal-card-grid">
             {block.actions?.map((action) => (
-              <li class="portal-card">
+              <li class="portal-card" data-part={P("card")}>
                 <a
                   class="portal-card-link"
                   href={action.href}
@@ -290,7 +357,7 @@ function hiddenFields(query: string): [string, string][] {
     if (block.type === "callout") {
       const level = block.level ?? "note";
       return (
-        <aside class={`portal-admonition portal-admonition-${level}`} data-block="callout">
+        <aside class={`portal-admonition portal-admonition-${level}`} data-block="callout" data-part={P("block-callout")}>
           <p class="portal-admonition-title">
             <span class="portal-admonition-icon" aria-hidden="true" />
             {block.heading ?? level.charAt(0).toUpperCase() + level.slice(1)}
@@ -304,7 +371,7 @@ function hiddenFields(query: string): [string, string][] {
 
     if (block.type === "component-link" && block.link) {
       return (
-        <section class="portal-feature-link" data-block="feature-link">
+        <section class="portal-feature-link" data-block="feature-link" data-part={P("block-component-link")}>
           <a class="portal-feature-link-anchor" href={block.link.href}>
             <span class="portal-feature-link-label">{block.link.label}</span>
             <span class="portal-feature-link-open">Open</span>
@@ -314,12 +381,16 @@ function hiddenFields(query: string): [string, string][] {
     }
 
     if (block.type === "dataset-tree" && block.datasetTree) {
-      return <DatasetTreeBlock block={block} />;
+      return <DatasetTreeBlock block={block} part={P("block-dataset-tree")} />;
+    }
+
+    if (block.type === "notebook" && block.notebook) {
+      return <NotebookBlock block={block} />;
     }
 
     if (block.type === "component-search" && block.search) {
       return (
-        <section class="portal-search-block" data-block="search">
+        <section class="portal-search-block" data-block="search" data-part={P("block-component-search")}>
           {searchHeading(block) && <h2 class="portal-block-heading">{searchHeading(block)}</h2>}
           <form
             class="portal-search-form"

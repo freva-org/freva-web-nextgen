@@ -40,6 +40,51 @@ describe("the FP1702 hint", () => {
   });
 });
 
+describe("the FP1702 hint under the Python launcher", () => {
+  // `pip install freva-portal-builder` installs Playwright with the engine, sets
+  // FREVA_PORTAL_LAUNCHER=python and installs the browser with its own subcommand.
+  it("names install-browser when Playwright has no Chromium", () => {
+    const error = new Error("browserType.launch: Executable doesn't exist at /x/chrome");
+    const hint = browserHint(error, "", "python");
+    expect(hint).toMatch(/has not been downloaded/);
+    expect(hint).toContain("freva-portal-builder install-browser");
+    expect(hint).toContain("freva-portal-builder install-browser --with-deps");
+    expect(hint).not.toMatch(/npx|npm install/);
+  });
+
+  it("names install-browser --with-deps when the system libraries are missing", () => {
+    const error = new Error("error while loading shared libraries: libnss3.so");
+    const hint = browserHint(error, "", "python");
+    expect(hint).toContain("freva-portal-builder install-browser --with-deps");
+    expect(hint).not.toContain("npx");
+  });
+
+  it("calls a missing Playwright an incomplete engine installation", () => {
+    const hint = browserHint(
+      new PlaywrightMissing("Cannot find package 'playwright'."),
+      "",
+      "python",
+    );
+    expect(hint).toContain("freva-portal-builder install-engine --force");
+    expect(hint).toContain("freva-portal-builder install-browser");
+    expect(hint).not.toContain("npm install");
+  });
+
+  it("still blames FREVA_PORTAL_CHROMIUM when it is set", () => {
+    expect(browserHint(new Error("spawn ENOENT"), "/opt/nowhere/chrome", "python")).toContain(
+      "FREVA_PORTAL_CHROMIUM is set to '/opt/nowhere/chrome'",
+    );
+  });
+
+  it("keeps the npm remedies for any other launcher value", () => {
+    const error = new Error("browserType.launch: Executable doesn't exist at /x/chrome");
+    expect(browserHint(error, "", "")).toContain("npx playwright install --with-deps chromium");
+    expect(browserHint(error, "", "conda")).toContain(
+      "npx playwright install --with-deps chromium",
+    );
+  });
+});
+
 describe("a build with a diagram and no usable browser", () => {
   it("fails with FP1702, at the diagram, with the hint", async () => {
     const previous = process.env.FREVA_PORTAL_CHROMIUM;

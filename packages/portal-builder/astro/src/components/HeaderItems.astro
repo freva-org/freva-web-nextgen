@@ -1,0 +1,167 @@
+---
+/**
+ * The header, when `chrome.header.items` sets the order of its parts. The same parts and the same
+ * behaviour as the design's arrangement (`Chrome.astro`), in the configured order, so the reading
+ * and focus order follow what the visitor sees. The menu button always renders, and the account
+ * control whenever auth is enabled; the resolver refuses a configuration that leaves either out.
+ */
+import type { HeaderItemName, ResolvedPortalModel, Segment } from "../../../src/model/types.js";
+import AuthPart from "./parts/AuthPart.astro";
+import LogoPart from "./parts/LogoPart.astro";
+import NavTab from "./NavTab.astro";
+import SearchPart from "./parts/SearchPart.astro";
+import SlotContent from "./parts/SlotContent.astro";
+import ThemeTogglePart from "./parts/ThemeTogglePart.astro";
+
+interface Props {
+  model: ResolvedPortalModel;
+  currentPath: string;
+  slots: Partial<Record<string, Segment[]>>;
+  items: HeaderItemName[];
+}
+
+const { model, currentPath, slots, items } = Astro.props;
+const { site, chrome, navigation } = model;
+const custom = model.customisation!;
+const homeHref = site.basePath;
+const brandName = site.institution?.name ?? site.title;
+const monogram = brandName
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((word) => word[0]!.toUpperCase())
+  .join("");
+const declared = [...navigation.header, ...chrome.header.links];
+const tabs = declared.filter((link) => link.href !== homeHref);
+const isActive = (href: string): boolean =>
+  href === currentPath ||
+  (href !== homeHref && currentPath.startsWith(href)) ||
+  model.navOutline.some(
+    (section) => section.href === href && section.pages.some((page) => page.href === currentPath),
+  );
+// The navigation landmark sits where the first of `links` and `navToggle` is listed.
+const navAt = Math.min(
+  ...["links", "navToggle"].map((name) => items.indexOf(name as never)).filter((i) => i >= 0),
+);
+const placed = items.filter(
+  (item, index) => !((item === "links" || item === "navToggle") && index !== navAt),
+);
+// Adjacent controls share one group, as in the design: search, theme switch, then the account
+// control behind a divider.
+const CONTROLS = new Set<HeaderItemName>(["search", "themeToggle", "auth"]);
+type Entry = HeaderItemName | HeaderItemName[];
+const order: Entry[] = [];
+for (const item of placed) {
+  const last = order.at(-1);
+  if (CONTROLS.has(item) && Array.isArray(last)) last.push(item);
+  else order.push(CONTROLS.has(item) ? [item] : item);
+}
+const linksShown = items.includes("links");
+const brandSlot = slots.headerBrand;
+const extraSlot = slots.headerExtra;
+---
+
+<header
+  class="portal-header"
+  id="portal-header"
+  data-scrolled="false"
+  data-branding="on"
+  data-part="header"
+  data-variant={custom.header.variant}
+  data-layout="items"
+>
+  {
+    order.map((item) =>
+      Array.isArray(item) ? (
+        <div class="portal-header-controls" data-part="header-controls">
+          {item.map((control, index) =>
+            control === "search" ? (
+              <SearchPart model={model} />
+            ) : control === "themeToggle" ? (
+              <ThemeTogglePart />
+            ) : (
+              <Fragment>
+                {index > 0 && <span class="portal-header-divider" aria-hidden="true" />}
+                <AuthPart model={model} />
+              </Fragment>
+            ),
+          )}
+        </div>
+      ) : item === "brand" ? (
+        <a class="portal-brand" data-part="header-brand" href={homeHref} aria-label={`${brandName} - portal home`}>
+          {brandSlot ? (
+            <SlotContent segments={brandSlot} model={model} currentPath={currentPath} decorativeLogo />
+          ) : (
+            <Fragment>
+              <span class="portal-brand-mark" aria-hidden="true" data-kind={site.identity.logo.url || custom.header.logo ? "logo" : "monogram"} data-part="header-logo">
+                {site.identity.logo.url || custom.header.logo ? <LogoPart model={model} decorative /> : monogram}
+              </span>
+              <span class="portal-brand-text" data-part="header-title">
+                <span class="portal-brand-name">{brandName}</span>
+                {site.subtitle && <span class="portal-brand-tagline">{site.subtitle}</span>}
+              </span>
+            </Fragment>
+          )}
+        </a>
+      ) : item === "links" || item === "navToggle" ? (
+        <nav class="portal-nav" aria-label="Portal" data-part="header-nav">
+          <ul class="portal-nav-list" data-part="header-links" data-portal-links={linksShown ? undefined : "hidden"}>
+            {tabs.map((link) => (
+              <NavTab link={link} currentPath={currentPath} isActive={isActive} parts />
+            ))}
+          </ul>
+          <div class="portal-menu portal-more">
+            <button
+              type="button"
+              class="portal-nav-item portal-more-button"
+              aria-expanded="false"
+              aria-haspopup="true"
+              aria-label="More navigation entries"
+              hidden
+            >
+              More
+            </button>
+            <div class="portal-panel" role="menu" hidden />
+          </div>
+          <div class="portal-compact">
+            <button
+              type="button"
+              class="portal-nav-item portal-compact-button"
+              data-part="nav-toggle"
+              aria-expanded="false"
+              aria-haspopup="dialog"
+              aria-controls="portal-navpanel"
+              hidden
+            >
+              <Fragment set:html={`<svg class="portal-compact-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`} />
+              <span>Menu</span>
+            </button>
+            <noscript>
+              <div class="portal-panel portal-compact-fallback" role="menu">
+                {declared.flatMap((link) => [link, ...(link.links ?? [])]).map((link) => (
+                  <a
+                    class="portal-panel-item"
+                    role="menuitem"
+                    href={link.href}
+                    data-active={isActive(link.href) ? "true" : undefined}
+                    target={link.external ? "_blank" : undefined}
+                    rel={link.external ? "noopener noreferrer" : undefined}
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            </noscript>
+          </div>
+        </nav>
+      ) : null,
+    )
+  }
+  {
+    extraSlot && (
+      <div class="portal-header-extra" data-part="header-extra">
+        <SlotContent segments={extraSlot} model={model} currentPath={currentPath} />
+      </div>
+    )
+  }
+</header>

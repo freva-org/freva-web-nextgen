@@ -56,7 +56,11 @@
               "identity",
               "subsite-policy",
               "subsite-file",
-              "component-asset"
+              "component-asset",
+              "font",
+              "stylesheet",
+              "template",
+              "customisation-asset"
             ]
           },
           "digest": {

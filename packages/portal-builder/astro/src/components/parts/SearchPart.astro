@@ -1,0 +1,29 @@
+---
+/** The `search` part: the documentation search button. Renders nothing when search is off. */
+import type { ResolvedPortalModel } from "../../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+}
+
+const { model } = Astro.props;
+---
+
+{
+  model.search && (
+    <button
+      type="button"
+      class="portal-sitesearch-open"
+      data-part="header-search"
+      data-portal-sitesearch-open
+      aria-haspopup="dialog"
+      aria-controls="portal-sitesearch"
+      aria-keyshortcuts="/"
+      hidden
+    >
+      <Fragment set:html={`<svg class="portal-sitesearch-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>`} />
+      <span class="portal-sitesearch-open-label">Search</span>
+      <kbd class="portal-sitesearch-key" aria-hidden="true">/</kbd>
+    </button>
+  )
+}

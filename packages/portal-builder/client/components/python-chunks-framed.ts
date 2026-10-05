@@ -16,7 +16,14 @@ let pending: Promise<Chunks> | null = null;
 export const loadFramedChunks: ChunkLoader = () => {
   if (pending) return pending;
   pending = import("@freva-org/freva-client-terminal")
-    .then((terminal) => ({ createTerminalWindow: terminal.createTerminalWindow }) as Chunks)
+    .then(
+      (terminal): Chunks => ({
+        createTerminalWindow: terminal.createTerminalWindow,
+        // The policy check and descriptions only; the interpreter is the child's.
+        loadSessions: () =>
+          import("@freva-org/browser-python/session").then((session) => ({ session })),
+      }),
+    )
     .catch((error: unknown) => {
       pending = null;
       throw error;

@@ -351,6 +351,53 @@ a {
 .portal-panel-item:hover {
   background: var(--chip);
 }
+.portal-panel-item[data-active="true"] {
+  color: var(--accent-text, var(--accent));
+  font-weight: 600;
+}
+.portal-panel-subitem {
+  padding-left: 24px;
+  font-size: 13px;
+}
+.portal-nav-group {
+  display: flex;
+  align-items: center;
+}
+.portal-nav-group-link {
+  padding-right: 3px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.portal-nav-caret {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 7px 0 3px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.portal-nav-caret svg {
+  transition: transform 0.15s ease;
+}
+.portal-nav-caret[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.portal-nav-group:hover > .portal-nav-item {
+  background: var(--chrome-chip);
+  color: var(--chrome-ink);
+}
+.portal-nav-group > .portal-nav-item[data-active="true"] {
+  background: var(--chrome-chip-hi);
+}
+.portal-nav-dropdown {
+  position: fixed;
+  top: var(--header-h, 64px);
+  right: auto;
+  left: 0;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100dvh - var(--header-h, 64px) - 16px);
+  overflow-y: auto;
+}
 .portal-panel-item-danger {
   color: var(--danger);
 }
@@ -712,8 +759,15 @@ a {
   max-width: 52ch;
 }
 .portal-block-heading {
-  font-size: 17px;
+  font-size: clamp(19px, 1.35vw, 22px);
   margin-bottom: 18px;
+}
+/* A block with a figure opens a section of the page: its heading leads, larger and bolder. */
+.portal-content-block[data-figure] .portal-block-heading {
+  font-size: clamp(26px, 2.3vw, 36px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
 }
 
 /*
@@ -789,6 +843,72 @@ a {
   .portal-hero-row[data-columns="two"][data-aside="wide"] {
     grid-template-columns: minmax(0, 1fr);
     gap: clamp(24px, 4vw, 40px);
+  }
+}
+
+/*
+ * A prose block with a figure: the text first, the illustration beside it at the end side, wider
+ * than the text because a picture loses more than a paragraph does when it narrows. One column on
+ * a narrow screen, the figure after the text.
+ */
+.portal-content-block[data-figure] {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(24px, 3vw, 56px);
+  align-items: center;
+}
+.portal-figure {
+  margin: 0;
+  min-width: 0;
+}
+/* The still gives the frame its size; the video lies over it and fades in once it plays. */
+.portal-figure-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line-2, var(--line));
+  border-radius: var(--r-12, 12px);
+  box-shadow: var(--shadow-card);
+}
+.portal-figure-still {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.portal-figure-motion {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.portal-figure[data-playing] .portal-figure-motion {
+  opacity: 1;
+}
+.portal-figure-still[data-portal-only="dark"] {
+  display: none;
+}
+:root[data-theme="dark"] .portal-figure-still[data-portal-only="dark"] {
+  display: block;
+}
+:root[data-theme="dark"] .portal-figure-still[data-portal-only="light"] {
+  display: none;
+}
+.portal-figure-caption {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+@media (max-width: 900px) {
+  .portal-content-block[data-figure] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Reduced motion: the still, always; the island does not load the video either. */
+@media (prefers-reduced-motion: reduce) {
+  .portal-figure-motion {
+    display: none;
   }
 }
 
@@ -1102,6 +1222,60 @@ a {
 
 /* Content. */
 
+.portal-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.portal-pager-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(50% - 6px);
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-9, 9px);
+  color: var(--ink);
+  text-decoration: none;
+}
+.portal-pager-link:hover {
+  background: var(--chip);
+}
+.portal-pager-link[data-direction="next"] {
+  margin-left: auto;
+  text-align: right;
+}
+.portal-pager-link svg {
+  flex: none;
+  color: var(--muted);
+}
+.portal-pager-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.portal-pager-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.portal-pager-title {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.portal-pager-link:hover .portal-pager-title {
+  color: var(--accent-text, var(--accent));
+}
+@media (max-width: 640px) {
+  .portal-pager-link {
+    max-width: 100%;
+    flex: 1 1 100%;
+  }
+}
 .portal-document-title {
   font-size: clamp(28px, 2.4vw, 40px);
   letter-spacing: -0.02em;
@@ -3618,6 +3792,176 @@ details.portal-admonition > summary.portal-admonition-title:focus-visible {
   }
 }
 
+/* Notebook block: the portal's notebook framed in the page. */
+
+.portal-notebook-block {
+  margin-bottom: clamp(28px, 3.4vw, 56px);
+}
+.portal-notebook-head > .portal-block-heading {
+  margin-top: 0;
+}
+.portal-notebook-summary {
+  color: var(--ink-2, var(--muted));
+  margin: 0 0 14px;
+  max-width: 68ch;
+}
+/* Keeps the block's place in the page while its window is maximized, so nothing below moves. */
+.portal-notebook-stage {
+  height: clamp(520px, 78vh, 920px);
+}
+.portal-notebook-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line-2, var(--line));
+  border-radius: var(--r-12, 12px);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.portal-notebook-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 2.4rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2, var(--surface));
+}
+.portal-notebook-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+/* Jupyter's three orbits, as three dots in its colours. */
+.portal-notebook-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.portal-notebook-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.portal-notebook-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+/* The dataset browser's control: icon at rest, its name on hover and focus. */
+.portal-notebook-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-height: 1.62rem;
+  padding: 0.22rem 0.42rem;
+  border: 1px solid var(--line-2, var(--line));
+  border-radius: var(--r-6, 0.35rem);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    gap 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+.portal-notebook-action[hidden] {
+  display: none;
+}
+.portal-notebook-action-text {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-width 0.18s ease,
+    opacity 0.14s ease;
+}
+.portal-notebook-action:hover,
+.portal-notebook-action:focus-visible {
+  gap: 6px;
+  border-color: var(--accent);
+  color: var(--accent-text, var(--accent));
+}
+.portal-notebook-action:hover > .portal-notebook-action-text,
+.portal-notebook-action:focus-visible > .portal-notebook-action-text {
+  max-width: 14rem;
+  opacity: 1;
+}
+.portal-notebook-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  .portal-notebook-action {
+    gap: 6px;
+  }
+  .portal-notebook-action-text {
+    max-width: 14rem;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-notebook-action,
+  .portal-notebook-action-text {
+    transition: none;
+  }
+}
+.portal-notebook-icon {
+  flex: 0 0 auto;
+}
+.portal-notebook-icon[data-icon="shrink"],
+.portal-notebook-block[data-expanded="true"] .portal-notebook-icon[data-icon="grow"] {
+  display: none;
+}
+.portal-notebook-block[data-expanded="true"] .portal-notebook-icon[data-icon="shrink"] {
+  display: inline;
+}
+.portal-notebook-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+/*
+ * Maximized: the window pinned between the header and the footer (and the footer's badge), over a
+ * dim on the page's content. In place, never moved: a moved iframe loads again. It stays inside
+ * the landing's stacking context, so the header, the footer and the overlay root (a Python window,
+ * the badge) keep painting above it - which is why it is fitted between them.
+ */
+.portal-notebook-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: color-mix(in srgb, #05070c 62%, transparent);
+}
+.portal-notebook-backdrop[hidden] {
+  display: none;
+}
+.portal-notebook-block[data-expanded="true"] .portal-notebook-window {
+  position: fixed;
+  z-index: 1001;
+  top: calc(var(--portal-notebook-top, 0px) + clamp(8px, 1.4vh, 18px));
+  right: clamp(10px, 2.4vw, 44px);
+  bottom: calc(var(--portal-notebook-bottom, 0px) + clamp(10px, 1.8vh, 26px));
+  left: clamp(10px, 2.4vw, 44px);
+  height: auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+:root[data-notebook-expanded="true"] body {
+  overflow: hidden;
+}
 /* Overlay layer. */
 
 /*
