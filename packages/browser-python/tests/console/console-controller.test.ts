@@ -24,6 +24,9 @@ import type {
   OutputEvent,
   PushResult,
   StatusEvent,
+  CellResult,
+  SessionResources,
+  WorkspaceWriteResult,
 } from "../../src/types.js";
 
 /** Records everything the controller asks the surface to do. */
@@ -94,6 +97,18 @@ class FakeSurface implements ConsoleSurfaceAdapter {
   clear(): void {
     this.clears += 1;
     this.text.length = 0;
+  }
+  /** One execution's entries go, text and displays, as the real adapter does. */
+  clearExecution(executionId: string): number {
+    const before = this.text.length + this.displays.length;
+    const keep = <T extends { executionId?: string }>(list: T[]) => {
+      const kept = list.filter((entry) => entry.executionId !== executionId);
+      list.length = 0;
+      list.push(...kept);
+    };
+    keep(this.text);
+    keep(this.displays);
+    return before - this.text.length - this.displays.length;
   }
   focus(): void {}
   settle(options: { focus: boolean }): void {
@@ -261,6 +276,23 @@ class MockEngine implements BrowserPython {
   get outputListeners(): number {
     return this.#output.size;
   }
+
+  // Notebook and session operations: not used by the console, present for the interface.
+  executeCell(): Promise<CellResult> {
+    return Promise.reject(new Error("not used by the console"));
+  }
+  cancelQueuedCells(): number {
+    return 0;
+  }
+  writeWorkspaceFile(): Promise<WorkspaceWriteResult> {
+    return Promise.reject(new Error("not used by the console"));
+  }
+  observeResources(): Promise<SessionResources> {
+    return Promise.reject(new Error("not used by the console"));
+  }
+  quiesce(): Promise<() => void> {
+    return Promise.reject(new Error("not used by the console"));
+  }
 }
 
 export { FakeSurface, MockEngine };
@@ -400,6 +432,50 @@ describe("a command typed before the engine is ready", () => {
     engine.emitStatus("ready"); // a second ready must not replay it
     await settle();
     expect(engine.pushes).toEqual(["second"]);
+  });
+});
+
+describe("clear_output", () => {
+  const show = (engine: MockEngine, executionId: string, text: string) =>
+    engine.emitOutput({
+      type: "display_data",
+      executionId,
+      data: { "text/plain": text },
+      metadata: {},
+    });
+  const shown = (surface: FakeSurface) => surface.displays.map((d) => d.data);
+
+  it("clears the execution's output now, and keeps everything else", async () => {
+    const { controller, engine, surface } = build();
+    await controller.submit("earlier()");
+    show(engine, "e0", "'kept'");
+    // display("old"); clear_output(); display("new")
+    engine.emitOutput({ type: "stdout", executionId: "e1", text: "progress 1\n" });
+    show(engine, "e1", "'old'");
+    engine.emitOutput({ type: "clear_output", executionId: "e1", wait: false });
+    show(engine, "e1", "'new'");
+    await frame();
+    expect(shown(surface)).toEqual(["'kept'", "'new'"]);
+    expect(surface.text.some((t) => t.text.includes("progress 1"))).toBe(false);
+    // The command stays, in the screen and in the copyable transcript.
+    expect(surface.text.some((t) => t.kind === "command" && t.text === "earlier()")).toBe(true);
+    expect(controller.transcript()).toContain(">>> earlier()");
+    expect(controller.transcript()).not.toContain("'old'");
+    expect(controller.transcript()).toContain("'new'");
+  });
+
+  it("with wait=True, clears when the next output arrives, not before", async () => {
+    const { engine, surface } = build();
+    show(engine, "e1", "'10%'");
+    engine.emitOutput({ type: "clear_output", executionId: "e1", wait: true });
+    expect(shown(surface)).toEqual(["'10%'"]);
+    show(engine, "e2", "'other execution'");
+    expect(shown(surface)).toEqual(["'10%'", "'other execution'"]);
+    show(engine, "e1", "'20%'");
+    expect(shown(surface)).toEqual(["'other execution'", "'20%'"]);
+    // Once only: the next display adds to it.
+    show(engine, "e1", "'done'");
+    expect(shown(surface)).toEqual(["'other execution'", "'20%'", "'done'"]);
   });
 });
 

@@ -19,12 +19,15 @@ import { supportsOptional } from "./addon-capabilities.js";
 import {
   PROTOCOL_VERSION,
   createIdFactory,
+  validateBundle,
   validateDisplay,
   type ArtifactChunkMessage,
   type ArtifactLeaseMessage,
   type WorkerMessage,
   type WorkerRequest,
 } from "./protocol.js";
+import type * as EngineSessions from "./engine-sessions.js";
+import type { EngineInternals, EngineShared, WorkerSession } from "./engine-internals.js";
 import {
   BrowserPythonError,
   type ArtifactData,
@@ -39,7 +42,11 @@ import {
   type BrowserPythonProfile,
   type BrowserPythonReadyInfo,
   type BrowserPythonState,
+  type CellOptions,
+  type CellResult,
   type CompletionResult,
+  type SessionResources,
+  type WorkspaceWriteResult,
   type ExecutionResult,
   type OutputEvent,
   type OutputListener,
@@ -89,23 +96,18 @@ type Pending = {
   timer?: ReturnType<typeof setTimeout>;
 };
 
-/**
- * One Worker instance, and everything that identifies it. A transfer captures the session it
- * opened its lease in; when the session is replaced `alive` goes false and the transfer fails
- * rather than running on against a Worker that has reissued that lease id to somebody else.
- */
-interface WorkerSession {
-  readonly id: string;
-  readonly generation: number;
-  readonly worker: Worker;
-  alive: boolean;
-}
-
 /** A transfer the engine can reach into and stop, from outside its own promise chain. */
 interface LiveTransfer {
   readonly session: WorkerSession;
   cancel(error: unknown): void;
 }
+
+/** Worker message kinds that ARE output events, and the event type each becomes. */
+const OUTPUT_TYPES = {
+  "execute-input": "execute_input",
+  "clear-output": "clear_output",
+  "cell-error": "error",
+} as const;
 
 class BrowserPythonEngine implements BrowserPython {
   #state: BrowserPythonState = "idle";
@@ -147,6 +149,14 @@ class BrowserPythonEngine implements BrowserPython {
   #transfers = new Set<LiveTransfer>();
   /** Bytes currently reserved by running transfers. See `#reserveTransfer`. */
   #reservedBytes = 0;
+  /** Cells submitted and not yet started: cancellable. */
+  #queuedCells = new Set<() => void>();
+  /** State shared with `engine-sessions.ts`: see `EngineShared`. */
+  readonly #shared: EngineShared = { imports: 0, quiesced: false, sample: null, sampling: null };
+  /** Ends each session's `ended` signal. */
+  readonly #sessionEnds = new WeakMap<WorkerSession, AbortController>();
+  /** When the current `start()`/`restart()` began. */
+  #bootStarted = 0;
 
   readonly #options: Required<
     Pick<BrowserPythonOptions, "profile" | "packages" | "addons" | "optionalAddons">
@@ -333,7 +343,15 @@ class BrowserPythonEngine implements BrowserPython {
     return attempt;
   }
 
+  /** Refuse new work while a checkpoint holds the engine. */
+  #open(): void {
+    if (this.#shared.quiesced) {
+      throw new BrowserPythonError("quiesced", "Python is being put to sleep; nothing new runs.");
+    }
+  }
+
   async push(line: string, options: { owner?: string } = {}): Promise<PushResult> {
+    this.#open();
     const owner = options.owner ?? ANONYMOUS_OWNER;
     // ONE line buffer, and whoever is mid-statement owns it: several components share one engine
     // and `PyodideConsole` has a single buffer, so a line pushed from a second console would be
@@ -366,6 +384,7 @@ class BrowserPythonEngine implements BrowserPython {
    * though - both change the same interpreter and their ORDER is the program.
    */
   async run(code: string): Promise<ExecutionResult> {
+    this.#open();
     return this.#submit(async (session, release) => {
       const executionId = this.#nextExecutionId();
       return this.#whileBusy(() => {
@@ -439,12 +458,100 @@ class BrowserPythonEngine implements BrowserPython {
    * front of it would discard a line the caller had already been told was accepted.
    */
   async clearBuffer(): Promise<void> {
+    this.#open();
     return this.#submit(async (session) => {
       await this.#request<void>("ack", (id) => ({ kind: "clear-buffer", id }), { session });
       // The buffer is gone, so nobody owns it. This is the documented way out of a continuation
       // whose owner has been closed, unmounted or navigated away from.
       this.#continuationOwner = null;
     });
+  }
+
+  /**
+   * One notebook cell. The queue is HELD until the reply, so a cell behind it is still in this
+   * engine, unsent, and can be cancelled: `cancelQueuedCells()`, or the cell's own `signal`.
+   */
+  async executeCell(source: string, options: CellOptions = {}): Promise<CellResult> {
+    this.#open();
+    const cell = { executionId: this.#nextExecutionId(), dropped: false };
+    const cancel = (): void => {
+      cell.dropped = true;
+    };
+    this.#queuedCells.add(cancel);
+    // Queued NOW, in call order; the request is built by the lazily loaded module when it runs.
+    return this.#submit<CellResult>(async (session) => {
+      this.#queuedCells.delete(cancel);
+      const module = await import("./engine-sessions.js");
+      return module.executeCell(this.#internals(), session, cell, source, options);
+    }).finally(() => this.#queuedCells.delete(cancel));
+  }
+
+  cancelQueuedCells(): number {
+    const queued = [...this.#queuedCells];
+    this.#queuedCells.clear();
+    for (const cancel of queued) cancel();
+    return queued.length;
+  }
+
+  // Session operations live in `engine-sessions.ts`, loaded on first use: a page that only runs
+  // code never downloads them. They reach the engine only through `#internals()`.
+
+  writeWorkspaceFile(
+    name: string,
+    source: Blob | ArrayBuffer | ArrayBufferView | ReadableStream<Uint8Array>,
+    options: { size?: number; overwrite?: boolean; signal?: AbortSignal } = {},
+  ): Promise<WorkspaceWriteResult> {
+    try {
+      this.#open();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    // Queued NOW, in call order, and bound to the interpreter of this moment (like a cell): a
+    // cell submitted after this runs after it, and a restart in between makes it fail rather
+    // than write into the replacement interpreter.
+    this.#shared.imports += 1;
+    let ran = false;
+    return this.#submit<WorkspaceWriteResult>(async (session) => {
+      ran = true;
+      const module = await import("./engine-sessions.js");
+      return module.writeWorkspaceFile(this.#internals(), session, name, source, options);
+    }).finally(() => {
+      this.#shared.imports -= 1;
+      // Never reached its turn: the caller's stream is released, not left locked or pending.
+      if (!ran && source instanceof ReadableStream && !source.locked) {
+        source.cancel().catch(() => undefined);
+      }
+    });
+  }
+
+  observeResources(): Promise<SessionResources> {
+    return this.#sessions().then((m) => m.observeResources(this.#internals()));
+  }
+
+  quiesce(): Promise<() => void> {
+    return this.#sessions().then((m) => m.quiesce(this.#internals()));
+  }
+
+  #sessions(): Promise<typeof EngineSessions> {
+    return Promise.resolve().then(() => (this.#open(), import("./engine-sessions.js")));
+  }
+
+  #internals(): EngineInternals {
+    return {
+      submit: (work) => this.#submit(work),
+      request: (expect, build, options) => this.#request(expect, build, options),
+      session: () => this.#session,
+      state: () => this.#state,
+      artifacts: () => this.artifacts(),
+      executions: () => this.#busyCount + this.#queuedCells.size,
+      whileBusy: (work) => this.#whileBusy(work),
+      transfers: () => this.#transfers.size,
+      shared: this.#shared,
+      error: (kind, message) =>
+        kind === "aborted"
+          ? new ArtifactTransferAborted()
+          : new BrowserPythonError(kind, message ?? kind),
+    };
   }
 
   /**
@@ -891,6 +998,7 @@ class BrowserPythonEngine implements BrowserPython {
   }
 
   async deleteArtifact(name: string): Promise<void> {
+    this.#open();
     // Held: a delete changes what follows it, so the queue waits for the acknowledgement.
     await this.#artifactOperation<ArtifactsEvent>(
       "artifacts",
@@ -966,6 +1074,9 @@ class BrowserPythonEngine implements BrowserPython {
   // internals
 
   async #boot(): Promise<BrowserPythonReadyInfo> {
+    this.#bootStarted = Date.now();
+    this.#shared.quiesced = false;
+    this.#shared.startupMs = this.#shared.timeToUsableMs = undefined;
     this.#setState("loading", "starting worker");
     // Checked AFTER the status event, because listeners run synchronously inside it: a host that
     // disposes from a `loading` listener would otherwise get a Worker built anyway, and report
@@ -992,12 +1103,15 @@ class BrowserPythonEngine implements BrowserPython {
     // The session identity, created with the Worker and dead with it. Everything long-running
     // captures this object rather than "whatever Worker is current", so a restart makes those
     // operations fail instead of silently retargeting them.
+    const end = new AbortController();
     const session: WorkerSession = {
       id: `ws-${generation}-${Math.random().toString(36).slice(2, 10)}`,
       generation,
       worker,
       alive: true,
+      ended: end.signal,
     };
+    this.#sessionEnds.set(session, end);
     this.#session = session;
 
     worker.onmessage = (event: MessageEvent) => {
@@ -1083,6 +1197,8 @@ class BrowserPythonEngine implements BrowserPython {
           );
         }
       }
+      this.#shared.startupMs = info.startupMs;
+      this.#shared.timeToUsableMs = Date.now() - this.#bootStarted;
       this.#setState("ready");
       return info;
     } catch (error) {
@@ -1182,7 +1298,7 @@ class BrowserPythonEngine implements BrowserPython {
   #request<T>(
     expect: WorkerMessage["kind"],
     build: (id: string) => WorkerRequest,
-    options: { timeoutMs?: number; session?: WorkerSession } = {},
+    options: { timeoutMs?: number; session?: WorkerSession; transfer?: Transferable[] } = {},
   ): Promise<T> {
     // A request addressed to a SESSION goes to that session or nowhere. Otherwise a message built
     // for one Worker is posted to whichever is current when it is sent - for a transfer that
@@ -1228,7 +1344,7 @@ class BrowserPythonEngine implements BrowserPython {
       }
       this.#pending.set(id, entry);
       try {
-        worker.postMessage(build(id));
+        worker.postMessage(build(id), options.transfer ?? []);
       } catch (error) {
         // `postMessage` can throw - a value that will not structured-clone, a port already closed
         // by a `terminate()` that raced this call. The pending entry is registered by then, so
@@ -1314,14 +1430,34 @@ class BrowserPythonEngine implements BrowserPython {
         this.#settle(message.id, "ready", message.info);
         return;
       case "push-reply":
-        this.#settle(message.id, "push-reply", message.result);
-        return;
       case "run-reply":
-        this.#settle(message.id, "run-reply", message.result);
-        return;
+      case "cell-reply":
       case "completion":
-        this.#settle(message.id, "completion", message.result);
+        this.#settle(message.id, message.kind, message.result);
         return;
+      case "import-handle":
+        this.#settle(message.id, "import-handle", message);
+        return;
+      case "resources-reply":
+        this.#settle(message.id, "resources-reply", message.sample);
+        return;
+      case "execute-input":
+      case "clear-output":
+      case "cell-error": {
+        // Already shaped as the event, by the worker: plain strings and numbers, no markup.
+        const { kind, ...event } = message;
+        this.#emitOutput({ ...event, type: OUTPUT_TYPES[kind] } as OutputEvent);
+        return;
+      }
+      case "bundle": {
+        // Re-validated on arrival, like a display: see `validateBundle`.
+        const checked = validateBundle(message);
+        if (!checked.ok) return this.#dropped(message.executionId, checked.error);
+        const event: Partial<typeof message> = { ...message };
+        delete event.kind;
+        this.#emitOutput({ ...event, ...checked.value } as OutputEvent);
+        return;
+      }
       case "ack":
         this.#settle(message.id, "ack", undefined);
         return;
@@ -1375,14 +1511,7 @@ class BrowserPythonEngine implements BrowserPython {
       case "display": {
         // Re-validated on arrival. See `validateDisplay` for why both sides check.
         const checked = validateDisplay(message);
-        if (!checked.ok) {
-          this.#emitOutput({
-            type: "stderr",
-            executionId: message.executionId,
-            text: `[browser-python] dropped a display payload: ${checked.error}\n`,
-          });
-          return;
-        }
+        if (!checked.ok) return this.#dropped(message.executionId, checked.error);
         this.#emitOutput({
           type: "display",
           executionId: message.executionId,
@@ -1403,6 +1532,15 @@ class BrowserPythonEngine implements BrowserPython {
     }
   }
 
+  /** A payload refused at this boundary, said where it would have appeared. */
+  #dropped(executionId: string, error: string): void {
+    this.#emitOutput({
+      type: "stderr",
+      executionId,
+      text: `[browser-python] dropped a display payload: ${error}\n`,
+    });
+  }
+
   #onFatal(error: BrowserPythonError): void {
     if (this.#state === "disposed") return;
     // The interpreter is gone, and with it the OPFS session that held the artifacts. Reporting a
@@ -1419,7 +1557,11 @@ class BrowserPythonEngine implements BrowserPython {
     const session = this.#session;
     this.#worker = null;
     this.#session = null;
-    if (session) session.alive = false;
+    if (session) {
+      session.alive = false;
+      this.#sessionEnds.get(session)?.abort();
+      this.#sessionEnds.delete(session);
+    }
     this.#generation += 1;
     if (!worker) return;
     worker.onmessage = null;

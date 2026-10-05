@@ -29,7 +29,10 @@ export class FakeWorker implements Partial<Worker> {
   /** Set by a test to answer requests automatically. Return null to leave one hanging. */
   autoRespond: ((request: WorkerRequest) => WorkerMessage | null) | null = null;
 
-  postMessage(message: WorkerRequest): void {
+  postMessage(message: WorkerRequest, options?: Transferable[] | StructuredSerializeOptions): void {
+    // A transfer detaches the sender's buffers, as a real worker's does; the copy is what arrives.
+    const transfer = Array.isArray(options) ? options : options?.transfer;
+    if (transfer?.length) message = structuredClone(message, { transfer });
     this.sent.push(message);
     const reply = this.autoRespond?.(message);
     // Asynchronous, like a real worker: a synchronous reply would let a test pass against an
@@ -222,6 +225,19 @@ export function healthyWorker({ initOnly = false } = {}): FakeWorker {
       case "clear-buffer":
       case "dispose":
         return { kind: "ack", id: request.id };
+      case "execute-cell":
+        return {
+          kind: "cell-reply",
+          id: request.id,
+          result: { executionId: request.executionId, status: "ok", executionCount: null },
+        };
+      case "resources":
+        return { kind: "resources-reply", id: request.id, sample: {} };
+      case "import-open":
+      case "import-chunk":
+      case "import-close":
+        // Workspace imports are scripted by the tests that need them (tests/cells.test.ts).
+        return null;
     }
   };
   /** How many leases the worker still holds - a transfer that leaks one freezes an artifact. */

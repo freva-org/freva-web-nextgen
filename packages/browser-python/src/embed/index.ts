@@ -16,12 +16,15 @@ export {
   newChallenge,
   newIdentity,
   newSessionId,
+  parseSetupCapability,
+  SETUP_CAPABILITY_VERSION,
   type BridgeOp,
   type ChunkAck,
   type ChunkMessage,
   type EmbeddedArtifact,
   type HostMessage,
   type PlaygroundMessage,
+  type SetupCapability,
 } from "./protocol.js";
 export {
   DEFAULT_CLEANUP_MS,

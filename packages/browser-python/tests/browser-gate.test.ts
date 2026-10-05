@@ -297,7 +297,7 @@ describe("every suite has an explicit engine classification", () => {
         .map(([suite]) => suite)
         .sort(),
     );
-    expect(CROSS_BROWSER.length).toBe(7);
+    expect(CROSS_BROWSER.length).toBe(8);
   });
 
   it.each(["firefox", "webkit"])(

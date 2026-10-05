@@ -217,6 +217,27 @@ export function bundleConsole() {
   return "/bundle/console.js";
 }
 
+/**
+ * Bundle `@freva-org/browser-python/display` for a test page, as a consumer's bundler would: it
+ * imports DOMPurify by package name, which a browser cannot resolve on its own.
+ */
+export function bundleDisplay() {
+  const entry = join(TEST_BUNDLE, "display-entry.js");
+  const out = join(TEST_BUNDLE, "display.js");
+  mkdirSync(TEST_BUNDLE, { recursive: true });
+  writeFileSync(entry, 'export * from "../dist/display/index.js";\n');
+  const esbuild = join(PKG, "..", "..", "node_modules", ".bin", "esbuild");
+  execFileSync(
+    esbuild,
+    [entry, "--bundle", "--format=esm", `--outfile=${out}`, "--log-level=error"],
+    {
+      cwd: PKG,
+      stdio: "pipe",
+    },
+  );
+  return "/bundle/display.js";
+}
+
 /** True when the local runtime carries the wheels a profile needs. */
 export function runtimeHasPackages(names) {
   const lock = join(RUNTIME_DIR, "pyodide-lock.json");

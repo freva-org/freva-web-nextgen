@@ -13,7 +13,7 @@
  */
 
 export { createBrowserPython, DEFAULT_PYODIDE_INDEX_URL } from "./browser-python.js";
-export { BrowserPythonError, MAX_WORKSPACE_FILES } from "./types.js";
+export { BrowserPythonError, MAX_WORKSPACE_FILES, NOTICE_MIME } from "./types.js";
 export {
   ArtifactTransferAborted,
   CHUNK_BYTES,
@@ -32,7 +32,13 @@ export {
   supportsOptional,
 } from "./addons.js";
 export type { AddonDescription } from "./addons.js";
-export { PROTOCOL_VERSION, isDisplayMime, validateDisplay } from "./protocol.js";
+export {
+  PROTOCOL_VERSION,
+  isBundleMime,
+  isDisplayMime,
+  validateBundle,
+  validateDisplay,
+} from "./protocol.js";
 export { CSP_DIRECTIVES, PACKAGE_INDEX_ORIGINS, contentSecurityPolicy } from "./csp.js";
 export { isActiveMime, mimeForName, previewKind, previewRefusal } from "./artifact-mime.js";
 
@@ -50,7 +56,17 @@ export type {
   BrowserPythonProfile,
   BrowserPythonReadyInfo,
   BrowserPythonState,
+  BundleEvent,
+  BundleMetadata,
+  BundleMime,
+  CellOptions,
+  CellResult,
+  CellStartEvent,
+  ClearOutputEvent,
   CompletionResult,
+  MimeBundle,
+  SessionResources,
+  WorkspaceWriteResult,
   DisplayEvent,
   DisplayMime,
   ErrorEvent,

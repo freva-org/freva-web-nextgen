@@ -9,14 +9,19 @@
  */
 
 import type { NoticeKind } from "./notices.js";
+import { NOTICE_MIME } from "./types.js";
 import type {
   ArtifactInfo,
   BrowserPythonAddon,
   BrowserPythonProfile,
   BrowserPythonReadyInfo,
   BrowserPythonState,
+  BundleMetadata,
+  BundleMime,
+  CellResult,
   CompletionResult,
   DisplayMime,
+  MimeBundle,
   ExecutionResult,
   PushResult,
   UnsupportedReason,
@@ -29,9 +34,10 @@ import type {
  * stream. v3 added `workerSession`, since lease ids are per-Worker counters a replacement Worker
  * reissues. v4 added curated add-ons; v5 added OPTIONAL ones. A NEW page with an OLD worker
  * fails quietly: a v3 worker ignores `addons` and the page goes Ready over an interpreter with
- * no Dask in it; a v4 worker treats every add-on as required and refuses to start.
+ * no Dask in it; a v4 worker treats every add-on as required and refuses to start. v6 added
+ * notebook cells, MIME bundles, workspace imports and resource samples.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 // ------ main thread -> worker
 
@@ -80,6 +86,48 @@ export interface RunRequest {
   id: string;
   executionId: string;
   code: string;
+}
+
+/** One notebook cell. Answered by `cell-reply`; output arrives between, tagged `executionId`. */
+export interface ExecuteCellRequest {
+  kind: "execute-cell";
+  id: string;
+  executionId: string;
+  source: string;
+  token?: string;
+  silent: boolean;
+  storeHistory: boolean;
+  filename?: string;
+}
+
+/** Answered from outside the queue, like `interrupt`: a sample must not wait behind a cell. */
+export interface ResourcesRequest {
+  kind: "resources";
+  id: string;
+}
+
+/** Bytes INTO `/workspace`, one bounded chunk at a time: see `BrowserPython.writeWorkspaceFile`. */
+export interface WorkspaceImportOpenRequest {
+  kind: "import-open";
+  id: string;
+  name: string;
+  size: number;
+  overwrite: boolean;
+}
+
+export interface WorkspaceImportChunkRequest {
+  kind: "import-chunk";
+  id: string;
+  handle: string;
+  offset: number;
+  bytes: ArrayBuffer;
+}
+
+export interface WorkspaceImportCloseRequest {
+  kind: "import-close";
+  id: string;
+  handle: string;
+  commit: boolean;
 }
 
 export interface CompleteRequest {
@@ -176,6 +224,11 @@ export type WorkerRequest =
   | InitRequest
   | PushRequest
   | RunRequest
+  | ExecuteCellRequest
+  | ResourcesRequest
+  | WorkspaceImportOpenRequest
+  | WorkspaceImportChunkRequest
+  | WorkspaceImportCloseRequest
   | CompleteRequest
   | ClearBufferRequest
   | InterruptRequest
@@ -222,6 +275,68 @@ export interface DisplayMessage {
   encoding: "base64" | "utf8";
   data: string;
   metadata?: { figure?: number; width?: number; height?: number };
+}
+
+/** A cell started: always before any of its output. */
+export interface CellStartMessage {
+  kind: "execute-input";
+  executionId: string;
+  token?: string;
+  executionCount: number | null;
+}
+
+/** Shaped as the `BundleEvent` it becomes, plus `kind`. */
+export interface BundleMessage {
+  kind: "bundle";
+  type: "display_data" | "execute_result";
+  executionId: string;
+  data: MimeBundle;
+  metadata?: BundleMetadata;
+  executionCount?: number | null;
+  background?: true;
+}
+
+export interface ClearOutputMessage {
+  kind: "clear-output";
+  executionId: string;
+  wait: boolean;
+  background?: true;
+}
+
+/** A cell's exception, once, in order with its output. `text` is the traceback joined. */
+export interface CellErrorMessage {
+  kind: "cell-error";
+  executionId: string;
+  text: string;
+  ename: string;
+  evalue: string;
+  traceback: readonly string[];
+}
+
+export interface CellReplyMessage {
+  kind: "cell-reply";
+  id: string;
+  result: CellResult;
+}
+
+/** What only the worker can measure. Absent fields are unknown, never zero. */
+export interface WorkerResourceSample {
+  wasmCapacityBytes?: number;
+  workspaceBytes?: number;
+  fetchedDecodedBytes?: number;
+  transferBytesEstimate?: number;
+}
+
+export interface ResourcesReplyMessage {
+  kind: "resources-reply";
+  id: string;
+  sample: WorkerResourceSample;
+}
+
+export interface ImportHandleMessage {
+  kind: "import-handle";
+  id: string;
+  handle: string;
 }
 
 export interface PushReplyMessage {
@@ -354,6 +469,13 @@ export type WorkerMessage =
   | DisplayMessage
   | PushReplyMessage
   | RunReplyMessage
+  | CellStartMessage
+  | BundleMessage
+  | ClearOutputMessage
+  | CellErrorMessage
+  | CellReplyMessage
+  | ResourcesReplyMessage
+  | ImportHandleMessage
   | CompletionMessage
   | AckMessage
   | InterruptReplyMessage
@@ -368,6 +490,14 @@ export type WorkerMessage =
 // ------ boundary validation
 
 const DISPLAY_MIMES: readonly DisplayMime[] = ["image/png", "text/plain"];
+
+/** What a bundle may carry: the display types plus markup and the typed notice. */
+export const BUNDLE_MIMES: readonly BundleMime[] = [
+  ...DISPLAY_MIMES,
+  "text/html",
+  "image/svg+xml",
+  NOTICE_MIME,
+];
 
 /**
  * Hard ceilings on ONE display payload, enforced before any expensive conversion. Every
@@ -388,6 +518,21 @@ export const MAX_DISPLAY_BYTES = 18 * 1024 * 1024;
  */
 export const MAX_DISPLAY_TEXT_CHARS = 256 * 1024;
 
+/** One `text/html` representation: markup to parse. A pandas or xarray repr is tens of KiB. */
+export const MAX_DISPLAY_HTML_CHARS = 1024 * 1024;
+
+/** One `image/svg+xml` representation. */
+export const MAX_DISPLAY_SVG_CHARS = 4 * 1024 * 1024;
+
+/** One notice: a kind and a paragraph. */
+export const MAX_DISPLAY_NOTICE_CHARS = 16 * 1024;
+
+/** Every representation of ONE bundle together. Mirrored in `rich_display.py`. */
+export const MAX_BUNDLE_CHARS = 24 * 1024 * 1024;
+
+/** A cell's traceback, all lines together. A deep recursion is not worth a frozen tab. */
+export const MAX_TRACEBACK_CHARS = 256 * 1024;
+
 /**
  * How much text ONE execution may send the page before the rest is dropped.
  * `for i in range(2_000_000): print(i)` is a typo away from any legitimate loop, and an unbounded
@@ -405,12 +550,16 @@ export const MAX_EXECUTION_DISPLAY_CHARS = 64 * 1024 * 1024;
 const ENCODINGS = ["base64", "utf8"] as const;
 
 /**
- * True for a MIME type this protocol will carry. Short deliberately: `text/html` and
- * `image/svg+xml` are the obvious next candidates and both can carry script, which would make it
- * this package's job to sanitise arbitrary Python-authored markup.
+ * True for a MIME type a single `display` event will carry. Short deliberately: `text/html` and
+ * `image/svg+xml` carry script, so they travel only inside bundles (`isBundleMime`), and only reach
+ * a DOM through the sanitiser in `@freva-org/browser-python/display`.
  */
 export function isDisplayMime(value: unknown): value is DisplayMime {
   return typeof value === "string" && (DISPLAY_MIMES as readonly string[]).includes(value);
+}
+
+export function isBundleMime(value: unknown): value is BundleMime {
+  return typeof value === "string" && (BUNDLE_MIMES as readonly string[]).includes(value);
 }
 
 export function isDisplayEncoding(value: unknown): value is "base64" | "utf8" {
@@ -468,27 +617,8 @@ export function validateDisplay(
   // cloned across `postMessage` once, and refusing here stops it being decoded, re-encoded into a
   // Blob and retained by the DOM as well. Text and images have separate budgets because a repr is
   // not a figure, and the message states the reason so the limit is discoverable.
-  const limit = c.mime === "text/plain" ? MAX_DISPLAY_TEXT_CHARS : MAX_DISPLAY_ENCODED_CHARS;
-  if (c.data.length > limit) {
-    return {
-      ok: false,
-      error:
-        `${c.mime} payload is ${Math.round(c.data.length / 1024 / 1024)} MiB, over the ` +
-        `${Math.round(limit / 1024 / 1024)} MiB limit for one display. Reduce the figure size or ` +
-        `dpi, or save it to a file in /workspace and download it instead.`,
-    };
-  }
-  if (c.encoding === "base64" && !isCanonicalBase64(c.data)) {
-    return { ok: false, error: "data is not valid base64" };
-  }
-  // A binary MIME must not arrive as text: a consumer branching on `mime` alone would then hand
-  // raw bytes to a text node, or a text blob to an <img>.
-  if (c.mime === "image/png" && c.encoding !== "base64") {
-    return { ok: false, error: "image/png must be base64" };
-  }
-  if (c.mime === "text/plain" && c.encoding !== "utf8") {
-    return { ok: false, error: "text/plain must be utf8" };
-  }
+  const problem = checkRepresentation(c.mime, c.data, c.encoding);
+  if (problem) return { ok: false, error: problem };
 
   const value: Omit<DisplayMessage, "kind" | "executionId"> = {
     mime: c.mime,
@@ -505,6 +635,100 @@ export function validateDisplay(
     if (Object.keys(out).length > 0) value.metadata = out;
   }
   return { ok: true, value };
+}
+
+/** The per-representation limit, in characters. */
+const LIMITS: Partial<Record<BundleMime, number>> = {
+  "text/plain": MAX_DISPLAY_TEXT_CHARS,
+  "text/html": MAX_DISPLAY_HTML_CHARS,
+  "image/svg+xml": MAX_DISPLAY_SVG_CHARS,
+  [NOTICE_MIME]: MAX_DISPLAY_NOTICE_CHARS,
+};
+
+export function displayLimit(mime: BundleMime): number {
+  return LIMITS[mime] ?? MAX_DISPLAY_ENCODED_CHARS;
+}
+
+const mib = (chars: number): string => `${(chars / 1048576).toFixed(1)} MiB`;
+
+/** Size, encoding and shape of one representation; null when it may be carried. */
+function checkRepresentation(mime: BundleMime, data: string, encoding: string): string | null {
+  const limit = displayLimit(mime);
+  if (data.length > limit) {
+    return (
+      `${mime} payload is ${mib(data.length)}, over the ${mib(limit)} limit for one display. ` +
+      `Reduce the figure size or dpi, or save it to a file in /workspace and download it instead.`
+    );
+  }
+  // A binary MIME must not arrive as text: a consumer branching on `mime` alone would then hand
+  // raw bytes to a text node, or a text blob to an <img>.
+  if (mime === "image/png") {
+    return encoding !== "base64"
+      ? "image/png must be base64"
+      : isCanonicalBase64(data)
+        ? null
+        : "data is not valid base64";
+  }
+  // A notice's JSON is parsed - and refused when malformed - where it is drawn (`renderNotice`).
+  return encoding !== "utf8" ? `${mime} must be utf8` : null;
+}
+
+/**
+ * Validate one MIME bundle, at both boundaries. Every key must be a carried MIME type and
+ * `text/plain` must be present: Python only ever sends those, so anything else is forged and the
+ * whole bundle is refused rather than partly shown. Metadata keeps pixel sizes only.
+ */
+export function validateBundle(
+  candidate: unknown,
+):
+  | { ok: true; value: { data: MimeBundle; metadata: BundleMetadata } }
+  | { ok: false; error: string } {
+  const c = (candidate ?? {}) as { data?: unknown; metadata?: Record<string, unknown> };
+  if (!c.data || typeof c.data !== "object") return { ok: false, error: "data must be an object" };
+  const data: Record<string, string> = {};
+  const metadata: Record<string, Record<string, number>> = {};
+  let total = 0;
+  // An array's keys are "0", "1", …: refused below as unsupported MIME types.
+  for (const [mime, value] of Object.entries(c.data)) {
+    const error = !isBundleMime(mime)
+      ? `unsupported mime ${mime}`
+      : typeof value !== "string"
+        ? `${mime} must be a string`
+        : checkRepresentation(mime, value, mime === "image/png" ? "base64" : "utf8");
+    if (error) return { ok: false, error };
+    total += (data[mime] = value as string).length;
+    const meta = (c.metadata?.[mime] ?? {}) as Record<string, unknown>;
+    const sizes = Object.fromEntries(
+      ["width", "height"]
+        .map((key) => [key, meta[key]] as const)
+        .filter(([, n]) => typeof n === "number" && n > 0 && n <= 100_000),
+    ) as Record<string, number>;
+    if (Object.keys(sizes).length > 0) metadata[mime] = sizes;
+  }
+  if (typeof data["text/plain"] !== "string") return { ok: false, error: "text/plain is missing" };
+  if (total > MAX_BUNDLE_CHARS) {
+    return {
+      ok: false,
+      error: `one output is ${mib(total)}, over the ${mib(MAX_BUNDLE_CHARS)} limit`,
+    };
+  }
+  return { ok: true, value: { data: data as MimeBundle, metadata: metadata as BundleMetadata } };
+}
+
+/** Bound a traceback to {@link MAX_TRACEBACK_CHARS}, keeping its head and saying what was cut. */
+export function boundTraceback(lines: readonly unknown[]): string[] {
+  const out: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    const text = String(line);
+    if (used + text.length > MAX_TRACEBACK_CHARS) {
+      out.push(`[browser-python] traceback truncated: ${lines.length - out.length} lines omitted`);
+      break;
+    }
+    used += text.length + 1;
+    out.push(text);
+  }
+  return out;
 }
 
 /** A monotonic, collision-free id source. One per engine instance and one per worker. */

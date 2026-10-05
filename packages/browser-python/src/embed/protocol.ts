@@ -76,8 +76,75 @@ interface Envelope {
   sessionId: string;
 }
 
+/**
+ * The `setup` capability: one session's setup choice and the fingerprint of the policy it was
+ * validated under, and nothing else. Optional within envelope version 3 (a peer that does not
+ * know it ignores it) and versioned on its own by `capabilityVersion`. Child -> parent it
+ * reports the setup a session locked; parent -> child it proposes one ("same as current"),
+ * which the child validates against its own policy before offering it.
+ */
+export const SETUP_CAPABILITY_VERSION = 1;
+
+export interface SetupCapability {
+  kind: "setup";
+  capabilityVersion: typeof SETUP_CAPABILITY_VERSION;
+  setup: {
+    profile: string;
+    addons: string[];
+    runStarter: boolean;
+    frontend: "console" | "notebook";
+  };
+  /** Lowercase hex SHA-256 of the sender's session policy. */
+  policy: string;
+}
+
+const SETUP_MESSAGE_KEYS = new Set([
+  "channel",
+  "version",
+  "challenge",
+  "sessionId",
+  "targetSession",
+  "kind",
+  "capabilityVersion",
+  "setup",
+  "policy",
+]);
+const SETUP_KEYS = ["addons", "frontend", "profile", "runStarter"];
+
+/**
+ * A `setup` message as data: exactly the documented fields and shapes, or `null`. Whether the
+ * setup is ALLOWED is the receiver's policy's question, not the protocol's.
+ */
+export function parseSetupCapability(value: unknown): Omit<SetupCapability, "kind"> | null {
+  if (!value || typeof value !== "object") return null;
+  const m = value as Record<string, unknown>;
+  if (m.kind !== "setup" || m.capabilityVersion !== SETUP_CAPABILITY_VERSION) return null;
+  if (Object.keys(m).some((key) => !SETUP_MESSAGE_KEYS.has(key))) return null;
+  if (typeof m.policy !== "string" || !/^[0-9a-f]{64}$/.test(m.policy)) return null;
+  const setup = m.setup as Record<string, unknown> | null;
+  if (!setup || typeof setup !== "object" || Array.isArray(setup)) return null;
+  if (Object.keys(setup).sort().join() !== SETUP_KEYS.join()) return null;
+  if (typeof setup.profile !== "string" || setup.profile.length > 64) return null;
+  if (!Array.isArray(setup.addons) || setup.addons.length > 16) return null;
+  if (!setup.addons.every((id) => typeof id === "string" && id.length <= 64)) return null;
+  if (typeof setup.runStarter !== "boolean") return null;
+  if (setup.frontend !== "console" && setup.frontend !== "notebook") return null;
+  return {
+    capabilityVersion: SETUP_CAPABILITY_VERSION,
+    setup: {
+      profile: setup.profile,
+      addons: [...(setup.addons as string[])],
+      runStarter: setup.runStarter,
+      frontend: setup.frontend,
+    },
+    policy: m.policy,
+  };
+}
+
 /** child -> parent, without the envelope the sender adds. */
 export type PlaygroundPayload =
+  /** The setup this session locked. See `SetupCapability`. */
+  | SetupCapability
   /** "I exist." Carries no challenge yet; it only prompts the parent to hail. */
   | { kind: "hello" }
   /** The answer to a specific hail. THIS is what establishes a session. */
@@ -135,7 +202,9 @@ export type HostPayload =
    * "Perform this operation on yourself." One of four names and a request id, with nowhere to put
    * a command, a method name or a payload. See `BridgeOp`.
    */
-  | { kind: "op"; requestId: string; op: BridgeOp; targetSession?: string };
+  | { kind: "op"; requestId: string; op: BridgeOp; targetSession?: string }
+  /** A proposed setup for a session about to choose one. See `SetupCapability`. */
+  | (SetupCapability & { targetSession?: string });
 
 /** parent -> child */
 export type HostMessage = Envelope & HostPayload;

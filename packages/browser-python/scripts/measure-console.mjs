@@ -32,20 +32,63 @@ const CONSOLE_CEILING = 124 * 1024;
 /** The headless engine must stay small enough that importing it is never a decision. */
 const ROOT_CEILING = 8 * 1024;
 
+/**
+ * The console's LAZY rich-output chunk: the HTML/SVG sanitiser (DOMPurify plus the Freva
+ * allowlist), the renderers and the pandas/xarray stylesheet, fetched only when a `display()`
+ * bundle carrying HTML or SVG arrives. About 14.5 KiB gz without the notice-card rules (the
+ * console has its own copy); the ceiling stays close.
+ */
+const RICH_OUTPUT_CEILING = 18 * 1024;
+
+/**
+ * Bundle one entry as a consumer's bundler would: minified, ESM, code-split. What a page pays to
+ * LOAD the entry is the entry chunk and every chunk it imports statically; a chunk reached only
+ * through `import()` is fetched when that code runs - for the console, the HTML/SVG sanitiser,
+ * loaded when such an output first arrives - and is reported separately, against its own ceiling.
+ */
 function bundle(name, source) {
   const entry = join(scratch, `${name}.js`);
-  const out = join(scratch, `${name}.bundle.js`);
+  const outdir = join(scratch, `${name}.out`);
+  const meta = join(scratch, `${name}.meta.json`);
   writeFileSync(entry, source);
-  execFileSync(ESBUILD, [entry, "--bundle", "--format=esm", "--minify", `--outfile=${out}`], {
-    cwd: PKG,
-    stdio: "pipe",
-  });
-  const bytes = readFileSync(out);
-  return {
-    raw: bytes.length,
-    gz: gzipSync(bytes, { level: 9 }).length,
-    text: bytes.toString("utf8"),
+  execFileSync(
+    ESBUILD,
+    [
+      entry,
+      "--bundle",
+      "--format=esm",
+      "--minify",
+      "--splitting",
+      `--outdir=${outdir}`,
+      `--metafile=${meta}`,
+    ],
+    { cwd: PKG, stdio: "pipe" },
+  );
+  const outputs = JSON.parse(readFileSync(meta, "utf8")).outputs;
+  const key = Object.keys(outputs).find((k) => outputs[k].entryPoint);
+  const initial = new Set();
+  const visit = (file) => {
+    if (initial.has(file)) return;
+    initial.add(file);
+    for (const dep of outputs[file]?.imports ?? []) {
+      if (dep.kind === "import-statement") visit(dep.path);
+    }
   };
+  visit(key);
+  const sum = (files) => {
+    let raw = 0;
+    let gz = 0;
+    let text = "";
+    for (const file of files) {
+      const bytes = readFileSync(join(PKG, file));
+      raw += bytes.length;
+      gz += gzipSync(bytes, { level: 9 }).length;
+      text += bytes.toString("utf8");
+    }
+    return { raw, gz, text };
+  };
+  const lazyFiles = Object.keys(outputs).filter((f) => !initial.has(f) && f.endsWith(".js"));
+  return { ...sum([...initial]), lazy: sum(lazyFiles) };
 }
 
 const pad = (v, n) => String(v).padStart(n);
@@ -89,6 +132,18 @@ try {
 
   const consoleDelta = consoleOnly.gz - engine.gz;
   console.log(`\n  console layer over the headless engine: ${kib(consoleDelta)} gz`);
+  console.log(
+    `  + loaded on first HTML/SVG output:       ${kib(consoleOnly.lazy.gz)} gz ` +
+      `(ceiling ${kib(RICH_OUTPUT_CEILING)})`,
+  );
+  if (consoleOnly.lazy.gz > RICH_OUTPUT_CEILING) {
+    console.log(`\n  The rich-output chunk is over its ceiling of ${kib(RICH_OUTPUT_CEILING)} gz.`);
+    process.exitCode = 1;
+  }
+  console.log(
+    `  root entry, loaded on first session operation (sleep, import, telemetry): ` +
+      `${kib(engine.lazy.gz)} gz`,
+  );
   console.log(`  brief's target:                        ${kib(CONSOLE_TARGET)} gz`);
   if (consoleDelta > CONSOLE_TARGET) {
     console.log(
@@ -145,6 +200,7 @@ try {
           rootEntryGz: engine.gz,
           consoleEntryGz: consoleOnly.gz,
           consoleLayerGz: consoleDelta,
+          consoleRichOutputGz: consoleOnly.lazy.gz,
           jqueryGz: jq.gz,
           jqueryTerminalGz: jqt.gz,
           prismGz: prism.gz,

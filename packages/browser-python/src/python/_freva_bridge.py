@@ -92,6 +92,11 @@ _interrupt_requested = False
 _USER_FILES = frozenset({"<console>", "<snippet>", "<exec>"})
 
 
+def _is_user_file(name):
+    """The fixed names above, or a notebook cell's own ``<cell-…>`` filename."""
+    return name in _USER_FILES or name.startswith("<cell-")
+
+
 def _user_frames(tb):
     """Advance a traceback to the first frame that is the visitor's.
 
@@ -106,7 +111,7 @@ def _user_frames(tb):
     showing none.
     """
     frames = tb
-    while frames is not None and frames.tb_frame.f_code.co_filename not in _USER_FILES:
+    while frames is not None and not _is_user_file(frames.tb_frame.f_code.co_filename):
         frames = frames.tb_next
     return frames if frames is not None else tb
 
@@ -341,6 +346,7 @@ def make_console(stdout_callback, stderr_callback):
             finally:
                 _running_task = None
 
+    _rich_display.install_builtins()
     main = _sys.modules["__main__"].__dict__
     _console = _InterruptibleConsole(
         main,
@@ -488,6 +494,78 @@ async def run_source(source):
         _running_task = None
         _interrupt_requested = False
     return (False, "", None)
+
+
+def set_publisher(callback):
+    """Where `display()`, `clear_output()` and a cell's result go: one JSON string per message."""
+    _rich_display.set_publisher(callback)
+    return True
+
+
+def _cell_traceback(exc):
+    """Jupyter's ``traceback``: the lines Python prints, from the cell's own first frame."""
+    frames = exc.__traceback__
+    while frames is not None and not _is_user_file(frames.tb_frame.f_code.co_filename):
+        frames = frames.tb_next
+    if frames is None or isinstance(exc, SyntaxError):
+        text = "".join(_traceback.format_exception_only(type(exc), exc))
+    else:
+        text = "".join(_traceback.format_exception(type(exc), exc, frames))
+    return text.rstrip("\n").split("\n")
+
+
+def _flush_figures():
+    try:
+        _rich_display.flush_figures()
+    except Exception as exc:  # the figure is lost, not the cell's result
+        _sys.stderr.write("[display] figures could not be drawn: %s\n" % exc)
+
+
+async def run_cell(source, filename, count, silent):
+    """One notebook cell: CPython semantics, the last expression's value as `execute_result`.
+
+    Returns ``(status, ename, evalue, traceback, notice)``; output, figures and the result have
+    already been published by then, in order.
+    """
+    global _running_task, _interrupt_requested
+    from pyodide.code import eval_code_async
+
+    main = _sys.modules["__main__"].__dict__
+    _running_task = _asyncio.current_task()
+    _rich_display.begin_cell()
+    try:
+        with _stream_redirection():
+            try:
+                value = await eval_code_async(
+                    source,
+                    main,
+                    return_mode="last_expr",
+                    quiet_trailing_semicolon=True,
+                    filename=filename,
+                )
+                if value is not None and not silent:
+                    _rich_display.publish_result(value, count)
+            finally:
+                _flush_figures()
+    except _asyncio.CancelledError as cancelled:
+        if not _interrupt_requested:
+            raise
+        text = _format_interrupt(cancelled.__traceback__).rstrip("\n").split("\n")
+        return ("error", "KeyboardInterrupt", "", text, None)
+    except BaseException as exc:  # noqa: BLE001 - a cell reports every exception
+        if _needs_jspi(exc):
+            first = REMOTE_DATA_NEEDS_JSPI.split("\n", 1)[0]
+            return ("error", "RuntimeError", first.partition(": ")[2], [], "needs-jspi")
+        try:
+            evalue = str(exc)
+        except Exception:
+            evalue = "<unprintable %s>" % type(exc).__name__
+        return ("error", type(exc).__name__, evalue, _cell_traceback(exc), None)
+    finally:
+        _rich_display.end_cell()
+        _running_task = None
+        _interrupt_requested = False
+    return ("ok", None, None, None, None)
 
 
 def clear_buffer():

@@ -188,7 +188,9 @@ export class ConsoleController {
    * limits as the surface. PLAIN TEXT only - rich display output is a one-line note naming its
    * MIME type, because a host hands this to a clipboard or a `.txt` file.
    */
-  #transcript: string[] = [];
+  #transcript: Array<{ text: string; executionId?: string }> = [];
+  /** Executions whose output a `clear_output(wait=True)` clears when their next output comes. */
+  #clearOnNext = new Set<string>();
 
   constructor(
     surface: ConsoleSurfaceAdapter,
@@ -346,6 +348,31 @@ export class ConsoleController {
   }
 
   #onOutput(event: OutputEvent): void {
+    if (event.type === "clear_output") {
+      const id = event.background === true ? BACKGROUND_EXECUTION_ID : event.executionId;
+      // What it printed before the call is shown, then cleared - now, or with its next output.
+      this.#flush();
+      if (event.wait) {
+        this.#clearOnNext.add(id);
+        // Bounded: an execution that never printed again leaves its id behind.
+        if (this.#clearOnNext.size > 64) {
+          this.#clearOnNext.delete(this.#clearOnNext.values().next().value as string);
+        }
+      } else {
+        this.#clearOnNext.delete(id);
+        this.#clearExecution(id);
+      }
+      return;
+    }
+    if (this.#clearOnNext.size > 0) {
+      const id =
+        "background" in event && event.background === true
+          ? BACKGROUND_EXECUTION_ID
+          : "executionId" in event
+            ? event.executionId
+            : undefined;
+      if (id !== undefined && this.#clearOnNext.delete(id)) this.#clearExecution(id);
+    }
     switch (event.type) {
       case "stderr":
         if (event.notice !== undefined && this.#appendNotice(event)) return;
@@ -378,6 +405,44 @@ export class ConsoleController {
         this.#flush();
         this.#emit({ kind: "result", text: event.text, executionId: event.executionId });
         return;
+      case "display_data":
+      case "execute_result": {
+        // A `display()` bundle (the console's own results stay `result` text): the richest form
+        // the surface can draw, with the plain text as the fallback. Markup goes only through
+        // `appendMarkup`, which sanitises; a surface without it shows the text.
+        this.#flush();
+        const data = event.data;
+        const markup =
+          data["text/html"] !== undefined
+            ? "text/html"
+            : data["image/svg+xml"] !== undefined
+              ? "image/svg+xml"
+              : null;
+        const drawn =
+          markup !== null &&
+          this.#surface.appendMarkup?.({
+            mime: markup,
+            encoding: "utf8",
+            data: data[markup] ?? "",
+            fallback: data["text/plain"],
+            executionId: event.executionId,
+          }) === true;
+        if (!drawn) {
+          const png = data["image/png"];
+          this.#surface.appendDisplay({
+            mime: png !== undefined ? "image/png" : "text/plain",
+            encoding: png !== undefined ? "base64" : "utf8",
+            data: png ?? data["text/plain"],
+            executionId: event.executionId,
+            ...(png !== undefined && event.metadata["image/png"]
+              ? { metadata: { ...event.metadata["image/png"] } }
+              : {}),
+          });
+        }
+        this.#record(`${data["text/plain"]}\n`, event.executionId);
+        this.#countExecution();
+        return;
+      }
       case "display":
         this.#flush();
         this.#surface.appendDisplay({
@@ -387,7 +452,7 @@ export class ConsoleController {
           executionId: event.executionId,
           ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
         });
-        this.#record(`[${event.mime} output]\n`);
+        this.#record(`[${event.mime} output]\n`, event.executionId);
         this.#countExecution();
         return;
     }
@@ -412,7 +477,10 @@ export class ConsoleController {
     });
     if (!drawn) return false;
     this.#characterCount += event.text.length;
-    this.#record(event.text);
+    this.#record(
+      event.text,
+      event.background === true ? BACKGROUND_EXECUTION_ID : event.executionId,
+    );
     this.#countExecution();
     return true;
   }
@@ -461,6 +529,7 @@ export class ConsoleController {
       output.prompt !== undefined
         ? `${output.prompt}${output.text}`
         : mirrorText(output.kind, output.text),
+      output.executionId,
     );
     this.#countExecution();
   }
@@ -472,8 +541,29 @@ export class ConsoleController {
    * no newline of its own, so a copied transcript would run together as
    * `>>> import numpy>>> x = 1>>> print(x)1`. A block already ending in a newline is untouched.
    */
-  #record(text: string): void {
-    this.#transcript.push(text.endsWith("\n") ? text : `${text}\n`);
+  #record(text: string, executionId?: string): void {
+    this.#transcript.push({
+      text: text.endsWith("\n") ? text : `${text}\n`,
+      ...(executionId !== undefined ? { executionId } : {}),
+    });
+  }
+
+  /**
+   * `clear_output()`: the execution's output goes - from the surface and from the text mirror -
+   * and everything else stays: the commands, earlier executions, other output. A surface that
+   * cannot clear one execution keeps it (nothing else is lost instead).
+   */
+  #clearExecution(executionId: string): void {
+    const removed = this.#surface.clearExecution?.(executionId);
+    if (!removed) return;
+    let characters = 0;
+    this.#transcript = this.#transcript.filter((entry) => {
+      if (entry.executionId !== executionId) return true;
+      characters += entry.text.length;
+      return false;
+    });
+    this.#executionCount = Math.max(0, this.#executionCount - removed);
+    this.#characterCount = Math.max(0, this.#characterCount - characters);
   }
 
   /**
@@ -511,12 +601,12 @@ export class ConsoleController {
   /** Drop from the OLDEST end of the text mirror until it is inside both limits. */
   #trimTranscript(keepEntries: number, keepCharacters: number): void {
     let characters = 0;
-    for (const entry of this.#transcript) characters += entry.length;
+    for (const entry of this.#transcript) characters += entry.text.length;
     while (
       this.#transcript.length > 0 &&
       (this.#transcript.length > keepEntries || characters > keepCharacters)
     ) {
-      characters -= (this.#transcript.shift() as string).length;
+      characters -= this.#transcript.shift()!.text.length;
     }
   }
 
@@ -867,6 +957,7 @@ export class ConsoleController {
     }
     this.#surface.clear();
     this.#transcript = [];
+    this.#clearOnNext.clear();
     this.#executionCount = 0;
     this.#characterCount = 0;
   }
@@ -877,7 +968,7 @@ export class ConsoleController {
    * markup. Bounded by `outputOptions`.
    */
   transcript(): string {
-    return this.#transcript.join("");
+    return this.#transcript.map((entry) => entry.text).join("");
   }
 
   /**
