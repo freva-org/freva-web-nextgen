@@ -180,10 +180,10 @@ describe("is_complete", () => {
   });
 
   // The table checked against the CPython on this machine, where there is one recent enough
-  // (3.12+, PEP 701): every row is what its `codeop` says.
+  // (3.13+): every row is what its `codeop` says.
   const python = (() => {
     try {
-      const v = execFileSync("python3", ["-c", "import sys;print(sys.version_info[:2]>=(3,12))"]);
+      const v = execFileSync("python3", ["-c", "import sys;print(sys.version_info[:2]>=(3,13))"]);
       return String(v).trim() === "True";
     } catch {
       return false;
