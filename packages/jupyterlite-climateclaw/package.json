@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/jupyterlite-climateclaw",
-  "version": "2610.0.0",
+  "version": "2609.0.0",
   "description": "ClimateClaw (Freva) for JupyterLite and JupyterLab: a provider for jupyterlite-ai, Freva login in a popup, chat toolbar items, slash commands and \"Run & fix at DKRZ\".",
   "keywords": [
     "jupyter",

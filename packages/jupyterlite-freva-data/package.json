@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/jupyterlite-freva-data",
-  "version": "2610.0.0",
+  "version": "2609.0.0",
   "description": "A site data panel for JupyterLite and JupyterLab: browse a Freva portal's dataset tree, open registered Python access examples in a notebook, insert them, inspect stores, and ask ClimateClaw.",
   "keywords": [
     "jupyter",
