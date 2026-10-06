@@ -52,6 +52,8 @@ export default tseslint.config(
       "examples/**/*.js",
       // Deliberately plain, unbundled browser JavaScript
       "packages/*/demo/**/*.js",
+      // A static page's own script (the notebook's login callback)
+      "packages/*/callback/*.js",
     ],
     languageOptions: { globals: { ...globals.browser } },
     rules: { "no-console": "off" },
@@ -114,6 +116,12 @@ export default tseslint.config(
       "packages/jupyterlite-freva-kernel/lib/**",
       "packages/jupyterlite-freva-kernel/labextension/**",
       "packages/jupyterlite-freva-kernel/.test-site-*/**",
+      // The same for the assistant and the data panel, and the JupyterLab environments their
+      // smoke test caches.
+      "packages/jupyterlite-climateclaw/lib/**",
+      "packages/jupyterlite-climateclaw/labextension/**",
+      "packages/jupyterlite-climateclaw/.test-site-*/**",
+      "packages/jupyterlite-climateclaw/.jupyterlab-env-*/**",
     ],
   },
 );
