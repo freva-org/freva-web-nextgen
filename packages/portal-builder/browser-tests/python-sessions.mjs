@@ -624,6 +624,15 @@ try {
       await page.waitForFunction(() => (window.__msgs ?? []).includes("setup"), null, {
         timeout: 20_000,
       });
+      // The window names the reported setup on its next telemetry tick (every 2 s), not at once.
+      await page
+        .waitForFunction(
+          () =>
+            /minimal/.test(document.querySelector(".portal-python-status-text")?.textContent ?? ""),
+          null,
+          { timeout: 20_000, polling: 500 },
+        )
+        .catch(() => undefined);
       assert.match(await status(page), /minimal/);
 
       // A new session opens on the child's own chooser, proposed "same as current".
