@@ -1,5 +1,28 @@
 # @freva-org/portal-builder
 
+## 2610.0.0
+
+### Major Changes
+
+- 35ffa4b: Customise a portal from its own repository, typed header, footer, navigation, font and scale and landing layout options
+
+### Patch Changes
+
+- Updated dependencies [643fd97]
+- Updated dependencies [647c735]
+- Updated dependencies [c33097c]
+- Updated dependencies [e7ef9b6]
+- Updated dependencies [ffed06a]
+- Updated dependencies [9ffa6a0]
+- Updated dependencies [038abf9]
+  - @freva-org/data-inspector@2610.0.0
+  - @freva-org/browser-python@2610.0.0
+  - @freva-org/jupyterlite-climateclaw@2610.0.0
+  - @freva-org/jupyterlite-freva-data@2610.0.0
+  - @freva-org/jupyterlite-freva-kernel@2610.0.0
+  - @freva-org/freva-badge@2610.0.0
+  - @freva-org/databrowser@2609.1.3
+
 ## 2609.2.0
 
 ### Minor Changes
