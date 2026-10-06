@@ -28,6 +28,10 @@ packages/browser-python/.addons/
 packages/stac-browser/.upstream/
 # Prepared third-party STAC materials.
 packages/stac-browser/materials/
+# The notebook kernel's build outputs and the notebook sites its browser suites build.
+packages/jupyterlite-freva-kernel/lib/
+packages/jupyterlite-freva-kernel/labextension/
+packages/jupyterlite-freva-kernel/.test-site-*/
 
 # The builder's Astro type shims and its generated inventories.
 packages/portal-builder/.astro/

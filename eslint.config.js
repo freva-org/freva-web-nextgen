@@ -109,6 +109,11 @@ export default tseslint.config(
       "packages/portal-builder/reports/**",
       // The RST helper's virtualenv from `npm run bootstrap`: docutils ships its own JavaScript.
       "**/.venv/**",
+      // The notebook kernel's compiled output, its prebuilt extension, and the JupyterLite sites
+      // its browser suites build: generated, and mostly third-party.
+      "packages/jupyterlite-freva-kernel/lib/**",
+      "packages/jupyterlite-freva-kernel/labextension/**",
+      "packages/jupyterlite-freva-kernel/.test-site-*/**",
     ],
   },
 );
