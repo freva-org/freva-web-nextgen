@@ -351,6 +351,7 @@ const result = await inBrowser(async (page) => {
 
     // Where files cannot be kept, sleep is refused and the session stays awake.
     const nostore = await page.evaluate(async () => {
+      await window.__b.close();
       const c = window.__s.make(
         "sd",
         { profile: "minimal", addons: [], runStarter: false, frontend: "console" },
@@ -364,7 +365,6 @@ const result = await inBrowser(async (page) => {
       const state = c.state;
       await c.close();
       await window.__a.close();
-      await window.__b.close();
       return { refused, state, held: await window.__s.slots.held() };
     });
     check(
