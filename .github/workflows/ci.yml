@@ -387,9 +387,11 @@ jobs:
       - name: Build workspace dependencies
         run: npm run build
 
-      # The notebook's assistant and data panel tests plan a site from their prebuilt extensions.
+      # The notebook tests plan and check sites from the kernel's, the assistant's and the data
+      # panel's prebuilt extensions, and the sessions gate below runs `prepare-notebook`.
       - name: Build the notebook extensions
         run: |
+          npm run build:labextension -w @freva-org/jupyterlite-freva-kernel
           npm run build:labextension -w @freva-org/jupyterlite-climateclaw
           npm run build:labextension -w @freva-org/jupyterlite-freva-data
 
@@ -422,12 +424,9 @@ jobs:
       - name: Python playground gate
         run: npm run test:browser:python -w @freva-org/portal-builder
 
-      # Session choices, telemetry, sleep and the notebook, with a real interpreter. The notebook
-      # half runs `prepare-notebook`, so the kernel's prebuilt extension has to exist.
+      # Session choices, telemetry, sleep and the notebook, with a real interpreter.
       - name: Python sessions and notebook gate
-        run: |
-          npm run build:labextension -w @freva-org/jupyterlite-freva-kernel
-          npm run test:browser:sessions -w @freva-org/portal-builder
+        run: npm run test:browser:sessions -w @freva-org/portal-builder
 
       - name: Runnable snippet controls and editing gate
         run: npm run test:browser:snippets -w @freva-org/portal-builder
