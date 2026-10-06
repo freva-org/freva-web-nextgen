@@ -15,6 +15,13 @@
 
 export const MAX_LIVE_INTERPRETERS = 2;
 
+/** Why no slot is free: every live slot of the page (one or both) runs code. */
+export function slotsInUse(capacity: number): string {
+  return capacity === 1
+    ? "The live Python slot on this page is in use by code that is running."
+    : "Both live Python slots on this page are in use by code that is running.";
+}
+
 export interface Slot {
   readonly index: number;
   readonly owner: string;

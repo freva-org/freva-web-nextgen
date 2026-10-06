@@ -74,7 +74,9 @@ metadata (`freva_data.copy_of`), so it stays theirs when they rename or move it;
 cannot be read while looking, nothing new is made.
 
 **GridLook** is a third-party viewer, loaded from `https://gridlook.pages.dev` into a sandboxed
-frame without a referrer; the notebook's policy must allow it in `frame-src`. It fetches the store
+frame without a referrer; the notebook's policy must allow it in `frame-src`. WebKit sends the
+notebook's origin to the frame despite its `referrerpolicy`, so serve the notebook with
+`Referrer-Policy: no-referrer`, as portal-builder's playground deployment does. It fetches the store
 itself and never gets a token, so only stores readable without one are shown: for a protected
 store the inspector keeps the tab disabled and says why.
 

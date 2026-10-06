@@ -11,7 +11,7 @@
 import type { BrowserPython, SessionResources } from "../types.js";
 import { CheckpointError, type CheckpointManifest, type CheckpointStore } from "./checkpoint.js";
 import { sameSetup, type SessionSetup } from "./policy.js";
-import type { Slot, SlotBroker, SlotHolder } from "./slots.js";
+import { slotsInUse, type Slot, type SlotBroker, type SlotHolder } from "./slots.js";
 
 export type SessionState =
   | "configured"
@@ -68,9 +68,9 @@ export interface SessionSnapshot {
   checkpoint?: { files: number; bytes: number };
 }
 
-const NO_SLOT =
-  "Both live Python slots on this page are in use by code that is running. Wait for it to " +
-  "finish or stop it, then try again.";
+/** No live slot for this session: every one runs code (one or both, as the page allows). */
+const noSlot = (capacity: number): string =>
+  `${slotsInUse(capacity)} Wait for it to finish or stop it, then try again.`;
 
 /** What an idle session says once it was put to sleep to make room for another. */
 export const RECLAIMED =
@@ -159,8 +159,8 @@ export class SessionController {
           throw this.#closedDuringStart();
         }
         if (!slot) {
-          this.#set("crashed", NO_SLOT);
-          throw new SessionError("no-slot", NO_SLOT);
+          this.#set("crashed", noSlot(this.#options.slots.capacity));
+          throw new SessionError("no-slot", noSlot(this.#options.slots.capacity));
         }
         this.#slot = slot;
       }
@@ -289,8 +289,8 @@ export class SessionController {
       throw this.#closedDuringStart();
     }
     if (!slot) {
-      this.#set(phase === "waking" ? "asleep" : this.#state, NO_SLOT);
-      throw new SessionError("no-slot", NO_SLOT);
+      this.#set(phase === "waking" ? "asleep" : this.#state, noSlot(this.#options.slots.capacity));
+      throw new SessionError("no-slot", noSlot(this.#options.slots.capacity));
     }
     this.#slot = slot;
     this.#set(phase);

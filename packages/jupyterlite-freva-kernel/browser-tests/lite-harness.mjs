@@ -177,9 +177,13 @@ export async function serveSite(
   const notebook = await origin(
     { "/": site },
     {
-      // The policy on EVERY response a document or worker can come from, as a deployment sends it.
-      headers: (path) =>
-        /\.(html|m?js)$|\/$/.test(path) ? { "content-security-policy": csp } : {},
+      // As a deployment sends them: the policy on every response a document or worker can come
+      // from, and no referrer for the whole origin (WebKit sends the origin to a frame despite the
+      // frame's `referrerpolicy`).
+      headers: (path) => ({
+        "referrer-policy": "no-referrer",
+        ...(/\.(html|m?js)$|\/$/.test(path) ? { "content-security-policy": csp } : {}),
+      }),
       override: (path) => {
         if (override) {
           const replaced = override(path, urls);
