@@ -68,11 +68,6 @@ function hrefFor(entry: Entry, query: string): string {
   return `${entry.u}?${params.toString()}${anchor}`;
 }
 
-function isEditable(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
-}
-
 /**
  * Mark the searched words in the article the reader arrived at. Text nodes only, and never inside
  * code a reader might copy: the copy control reads the code block's text, not its markup, but a
@@ -261,19 +256,6 @@ export function initSiteSearch(): void {
       void run();
     });
   }
-
-  document.addEventListener("keydown", (event) => {
-    if (dialog.open || event.defaultPrevented) return;
-    const slash =
-      event.key === "/" &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      !isEditable(event.target);
-    if (!slash) return;
-    event.preventDefault();
-    open();
-  });
 
   dialog.addEventListener("close", () => {
     opener.setAttribute("aria-expanded", "false");

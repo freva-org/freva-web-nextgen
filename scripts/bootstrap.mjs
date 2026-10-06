@@ -221,7 +221,11 @@ const BUILD_ORDER = [
   "@freva-org/portal-builder",
 ];
 
-const LABEXTENSIONS = ["@freva-org/jupyterlite-climateclaw", "@freva-org/jupyterlite-freva-data"];
+const LABEXTENSIONS = [
+  "@freva-org/jupyterlite-freva-kernel",
+  "@freva-org/jupyterlite-climateclaw",
+  "@freva-org/jupyterlite-freva-data",
+];
 
 function bootstrapBuild() {
   step("workspace builds");

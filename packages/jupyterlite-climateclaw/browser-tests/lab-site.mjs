@@ -80,6 +80,7 @@ export async function planInputs() {
       // The site is served at its origin's root here: the shipped callback page, which speaks
       // the shared callback's protocol (the portal's /auth/callback/ is the showroom's to test).
       authCallbackPath: "/freva-login-callback.html",
+      basePath: "/",
       assistant: {
         host: MOCK,
         authBaseUrl: `${MOCK}${AUTH}`,

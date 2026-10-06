@@ -25,26 +25,12 @@
 .portal-sitesearch-open[hidden] {
   display: none;
 }
-.portal-sitesearch-key {
-  margin-left: 18px;
-  padding: 1px 6px;
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
-  font-family: inherit;
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--chrome-ink-2);
-  opacity: 0.85;
-}
 /* On a narrow header the control is its icon; the label is still its accessible name. */
 @media (max-width: 760px) {
   .portal-sitesearch-open {
     width: 34px;
     padding: 0;
     justify-content: center;
-  }
-  .portal-sitesearch-key {
-    display: none;
   }
   .portal-sitesearch-open-label {
     position: absolute;

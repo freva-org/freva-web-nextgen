@@ -203,9 +203,9 @@ describe("the artifact", () => {
     expect(html).toContain('class="portal-sitesearch-open"');
     expect(html).toContain('placeholder="Search Waterpark"');
     expect(html).toMatch(/<input[^>]*role="combobox"/);
-    expect(html).toContain('aria-keyshortcuts="/"');
-    expect(html).not.toMatch(/Control\+K|Meta\+K|Ctrl K/);
-    expect(html).toContain('class="portal-sitesearch-key"');
+    // freva-web-nextgen#17: no keyboard shortcut, announced or shown.
+    expect(html).not.toContain("aria-keyshortcuts");
+    expect(html).not.toContain("portal-sitesearch-key");
 
     const evidence = result.evidence?.find((c) => c.id === "site-search");
     expect(evidence?.enabled).toBe(true);

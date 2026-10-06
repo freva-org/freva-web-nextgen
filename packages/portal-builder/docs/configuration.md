@@ -111,9 +111,8 @@ once, same-origin, and searches it in the page: every term must match; title bea
 body text; case and accents are ignored. Arrow keys move through the results, Enter follows one,
 and the destination (`?h=<terms>`) marks the words in its article.
 
-The control shows its shortcut: <kbd>/</kbd> opens the dialog from anywhere outside a text
-field. There is deliberately no <kbd>Ctrl</kbd> <kbd>K</kbd>, which browsers use.
-The page behind is blurred. A **Filters** panel beside the results lists the site's sections - the
+There is no keyboard shortcut, so no key typed elsewhere on the page (a `/` in the Python console,
+a browser's own shortcut) is taken by the search. The page behind is blurred. A **Filters** panel beside the results lists the site's sections - the
 `navigation.header` entries - with the number of pages in each; choosing one or more limits the
 results to them, and with no query lists their pages. The filter button in the search field
 shows and hides the panel; it starts hidden on narrow screens.
