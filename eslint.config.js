@@ -122,6 +122,8 @@ export default tseslint.config(
       "packages/jupyterlite-climateclaw/labextension/**",
       "packages/jupyterlite-climateclaw/.test-site-*/**",
       "packages/jupyterlite-climateclaw/.jupyterlab-env-*/**",
+      "packages/jupyterlite-freva-data/lib/**",
+      "packages/jupyterlite-freva-data/labextension/**",
     ],
   },
 );

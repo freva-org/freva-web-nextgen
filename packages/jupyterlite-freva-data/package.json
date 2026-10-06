@@ -1,0 +1,122 @@
+{
+  "name": "@freva-org/jupyterlite-freva-data",
+  "version": "2610.0.0",
+  "description": "A site data panel for JupyterLite and JupyterLab: browse a Freva portal's dataset tree, open registered Python access examples in a notebook, insert them, inspect stores, and ask ClimateClaw.",
+  "keywords": [
+    "jupyter",
+    "jupyterlab-extension",
+    "jupyterlite",
+    "freva",
+    "dataset-tree"
+  ],
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/jupyterlite-freva-data"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./panel-data": {
+      "types": "./lib/panel-data.d.ts",
+      "import": "./lib/panel-data.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "labextension",
+    "schema",
+    "style",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "style/*.css",
+    "style/index.js"
+  ],
+  "style": "style/index.css",
+  "styleModule": "style/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:labextension": "node scripts/build-labextension.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "prepack": "npm run build && npm run build:labextension"
+  },
+  "dependencies": {
+    "@freva-org/data-inspector": "2609.1.0",
+    "@freva-org/dataset-tree": "2610.0.1",
+    "@jupyterlab/application": "^4.4.0",
+    "@jupyterlab/apputils": "^4.5.0",
+    "@jupyterlab/coreutils": "^6.4.0",
+    "@jupyterlab/filebrowser": "^4.4.0",
+    "@jupyterlab/launcher": "^4.4.0",
+    "@jupyterlab/notebook": "^4.4.0",
+    "@jupyterlab/services": "^7.4.0",
+    "@jupyterlab/settingregistry": "^4.4.0",
+    "@jupyterlab/ui-components": "^4.4.0",
+    "@lumino/coreutils": "^2.2.0",
+    "@lumino/dragdrop": "^2.1.0",
+    "@lumino/signaling": "^2.1.0",
+    "@lumino/widgets": "^2.6.0"
+  },
+  "devDependencies": {
+    "@jupyter/builder": "1.2.3",
+    "@jupyterlab/core-meta": "4.6.4",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
+  },
+  "jupyterlab": {
+    "extension": "lib/index.js",
+    "outputDir": "labextension",
+    "schemaDir": "schema",
+    "sharedPackages": {
+      "@freva-org/dataset-tree": {
+        "bundled": true,
+        "singleton": false
+      },
+      "@freva-org/data-inspector": {
+        "bundled": true,
+        "singleton": false
+      },
+      "@jupyterlab/application": {
+        "requiredVersion": "^4.4.0"
+      },
+      "@jupyterlab/apputils": {
+        "requiredVersion": "^4.5.0"
+      },
+      "@jupyterlab/coreutils": {
+        "requiredVersion": "^6.4.0"
+      },
+      "@jupyterlab/filebrowser": {
+        "requiredVersion": "^4.4.0"
+      },
+      "@jupyterlab/launcher": {
+        "requiredVersion": "^4.4.0"
+      },
+      "@jupyterlab/notebook": {
+        "requiredVersion": "^4.4.0"
+      },
+      "@jupyterlab/services": {
+        "requiredVersion": "^7.4.0"
+      },
+      "@jupyterlab/settingregistry": {
+        "requiredVersion": "^4.4.0"
+      },
+      "@jupyterlab/ui-components": {
+        "requiredVersion": "^4.4.0"
+      }
+    }
+  }
+}
