@@ -5,6 +5,7 @@ import {
   SessionController,
   createSlotBroker,
   openCheckpointStore,
+  slotsInUse,
   type CheckpointStore,
   type SessionSetup,
   type SlotBroker,
@@ -230,7 +231,11 @@ describe("SessionController", () => {
     two.engines[0]!.emit("busy");
     await expect(one.controller.wake()).rejects.toMatchObject({ code: "no-slot" });
     expect(one.controller.state).toBe("asleep");
-    expect(one.controller.snapshot().message).toMatch(/slots on this page are in use/);
+    // One slot on this page: the message says so (not "both").
+    expect(one.controller.snapshot().message).toMatch(
+      /^The live Python slot on this page is in use by code that is running\./,
+    );
+    expect(slotsInUse(2)).toMatch(/^Both live Python slots on this page are in use/);
   });
 
   it("a session needing a slot puts the least recently used idle one to sleep, files kept", async () => {
@@ -300,7 +305,9 @@ describe("SessionController", () => {
     a.engines[0]!.emit("error");
     await b.controller.start();
     b.engines[0]!.emit("busy");
-    await expect(a.controller.restart()).rejects.toThrow(/slots on this page are in use/);
+    await expect(a.controller.restart()).rejects.toThrow(
+      "The live Python slot on this page is in use by code that is running.",
+    );
     expect(a.controller.state).toBe("crashed");
     expect(await slots.held()).toBe(1);
   });
