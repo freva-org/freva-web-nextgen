@@ -140,6 +140,27 @@ describe("route 1: a store read directly", () => {
     expect(calls.some((c) => c.url.endsWith("/share-zarr"))).toBe(false);
   });
 
+  it("the host's viewer-off stays through every read: Load, Retry and another store", async () => {
+    backend({ stores: [FOREIGN] });
+    const el = realDialog();
+    el.setAttribute("viewer-off", "The 3D viewer is not enabled on this site.");
+    el.setAttribute("view", "viewer");
+    el.setAttribute("open", "");
+    const reader = attachInspector(el, { getAuthHeaders: signedIn });
+    const grid = () => el.querySelector<HTMLButtonElement>("#nc-tab-gridlook")!;
+    await reader.load(FOREIGN);
+    // A public store, read: the viewer would be available, but the host said no.
+    expect(el.getAttribute("status")).toBe("ready");
+    expect(el.getAttribute("zarr-url")).toBe(FOREIGN);
+    expect(grid().disabled).toBe(true);
+    expect(el.activeView).toBe("metadata");
+    await reader.load(FOREIGN, { reload: true });
+    await reader.load(STORE);
+    expect(el.getAttribute("viewer-off")).toBe("The 3D viewer is not enabled on this site.");
+    expect(grid().disabled).toBe(true);
+    expect(el.querySelector("iframe")).toBeNull();
+  });
+
   it("a protected store gets a share link before the viewer", async () => {
     const calls = backend();
     const el = dialog();

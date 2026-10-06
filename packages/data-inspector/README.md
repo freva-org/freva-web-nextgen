@@ -139,6 +139,9 @@ export function Inspector({ file }: { file: string }) {
 | `is-aggregation`   | boolean                     | Enables aggregation mode                          |
 | `error-action`     | `string`                    | Label of an extra button beside Retry             |
 | `viewer-disabled`  | `string`                    | Disables the 3D tab; the value is its tooltip     |
+| `viewer-off`       | `string`                    | The host's policy: no 3D viewer (reads keep it)   |
+| `embedded`         | boolean                     | No dialog chrome; fills its container (see below) |
+| `view`             | `metadata \| viewer`        | The view to show (default `metadata`)             |
 
 ### `<data-inspector>` JS properties
 
@@ -147,12 +150,26 @@ export function Inspector({ file }: { file: string }) {
 | `output`            | `string \| null`                           | HTML string from xarray repr (too large for an attribute)    |
 | `aggregationConfig` | `Partial<AggregationConfigValues> \| null` | What Aggregate / Retry submit until the user edits the form  |
 | `loadOptions`       | `Record<string, unknown> \| null`          | Single-file loader options Retry re-submits; reset by `file` |
+| `activeView`        | `metadata \| viewer` (read-only)           | The view shown now: the viewer only while it can show        |
 
 `error` and `file` are rendered as **text** (never parsed as HTML). `output` is injected as HTML, so pass only trusted markup - the xarray repr from `loadZarrMetadataHtml` / `buildXarrayRepr` is safe; arbitrary remote HTML is not.
 
+#### In a host's own pane: `embedded`
+
+A host that shows the inspector in a tab or pane of its own - which already names the file and
+closes it - sets `embedded`: no backdrop, title, close button, path field or focus trap, and the
+inspector fills its container (give it a height). The views, the tabs between them, errors (with
+Retry and `error-action`) and loading stay. `view="viewer"` opens on the 3D viewer once the store
+is read; while the viewer cannot show (a read under way, `viewer-disabled`), the metadata does, and
+`activeView` says which is shown.
+
 #### GridLook 3D viewer
 
-GridLook cannot send a token, so `zarr-url` must be readable without one - a share link for a protected freva store. When there is none, set `viewer-disabled`.
+GridLook cannot send a token, so `zarr-url` must be readable without one - a share link for a
+protected freva store. When there is none, set `viewer-disabled`. A host whose page may not frame
+GridLook at all (its CSP) sets `viewer-off` instead: the pipeline clears `viewer-disabled` at every
+read, never `viewer-off`, so the viewer stays off through Load, Retry and another store, and no
+frame is made.
 
 The viewer is shown in a sandboxed iframe (`sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"`, `referrerpolicy="no-referrer"`). The iframe is created once on first view and reused, so switching tabs or other re-renders no longer reload it. The Zarr URL is placed in the viewer's URL fragment **verbatim** (GridLook reads `location.hash` as-is):
 
