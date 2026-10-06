@@ -145,4 +145,17 @@ check("no master, tool, result or demo", () => {
   }
 });
 
+console.log("the contact button is optional");
+check("an empty email leaves no contact button and no focus stop", () => {
+  const runtime = readFileSync(join(DIST, "freva-badge.js"), "utf8");
+  assert.ok(
+    runtime.includes('(content.email ? \'<a class="pop-mail"'),
+    "the contact button is unconditional",
+  );
+  assert.ok(
+    runtime.includes("[docsTile, apiTile, popContact, popClose].filter(Boolean)"),
+    "the focus order still includes a missing contact button",
+  );
+});
+
 console.log(`\n${checks} checks passed.`);
