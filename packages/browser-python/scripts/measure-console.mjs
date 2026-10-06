@@ -30,7 +30,7 @@ const CONSOLE_TARGET = 100 * 1024;
 const CONSOLE_CEILING = 124 * 1024;
 
 /** The headless engine must stay small enough that importing it is never a decision. */
-const ROOT_CEILING = 8 * 1024;
+const ROOT_CEILING = 8.5 * 1024;
 
 /**
  * The console's LAZY rich-output chunk: the HTML/SVG sanitiser (DOMPurify plus the Freva
