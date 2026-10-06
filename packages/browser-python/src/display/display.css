@@ -1,0 +1,573 @@
+/*
+ * Rich output: the ONLY styling Python-authored HTML gets. Python's own <style> blocks and style
+ * attributes are removed by the sanitiser, so pandas and xarray reprs are styled by these reviewed,
+ * static rules instead, every selector scoped under `.fv-html`.
+ *
+ * Written against the class names of pandas 3.0.2 and xarray 2026.2.0, the versions in the pinned
+ * Pyodide 314.0.6 lock. The xarray rules are adapted from xarray's own
+ * `xarray/static/css/style.css` (Apache-2.0, Copyright xarray Developers), re-scoped and with its
+ * colour variables mapped onto ours. Re-check them when the runtime pin moves.
+ */
+
+.fv-output {
+  /* Tokens: the notebook's when present, the console's, then derived from the text colour. */
+  --fv-fg0: var(--jp-content-font-color0, var(--bp-fg, currentColor));
+  --fv-fg2: var(--jp-content-font-color2, color-mix(in srgb, currentColor 62%, transparent));
+  --fv-fg3: var(--jp-content-font-color3, color-mix(in srgb, currentColor 45%, transparent));
+  --fv-border: var(--jp-border-color2, color-mix(in srgb, currentColor 22%, transparent));
+  --fv-disabled: var(--jp-layout-color3, color-mix(in srgb, currentColor 35%, transparent));
+  --fv-bg: var(--jp-layout-color0, transparent);
+  --fv-row-even: var(--jp-layout-color1, color-mix(in srgb, currentColor 4%, transparent));
+  --fv-row-odd: var(--jp-layout-color2, color-mix(in srgb, currentColor 9%, transparent));
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.25em 0;
+}
+
+.fv-output img {
+  max-width: 100%;
+  height: auto;
+}
+
+.fv-svg img {
+  background: #fff;
+}
+
+.fv-html {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.fv-html p {
+  margin: 0.3em 0;
+}
+
+.fv-html pre,
+.fv-html code {
+  font-family: var(--jp-code-font-family, var(--bp-font, ui-monospace, monospace));
+}
+
+.fv-html a {
+  color: var(--jp-content-link-color, inherit);
+  text-decoration: underline;
+}
+
+/* A <svg> holding only <defs> (xarray's icon sprites) lost its inline hiding to the sanitiser. */
+.fv-html svg.fv-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Tables (pandas.DataFrame) */
+
+.fv-html table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  border: none;
+  margin: 0 0 0.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fv-html th,
+.fv-html td {
+  padding: 0.25em 0.6em;
+  border: none;
+  vertical-align: middle;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.fv-html thead {
+  border-bottom: 1px solid var(--fv-border);
+  vertical-align: bottom;
+}
+
+.fv-html th {
+  font-weight: bold;
+}
+
+.fv-html tbody tr:nth-child(odd) {
+  background: var(--fv-row-even);
+}
+
+.fv-html tbody tr:hover {
+  background: var(--fv-row-odd);
+}
+
+/* pandas' own scoped rules, which the sanitiser removed with its <style> block. */
+.fv-html .dataframe tbody tr th:only-of-type {
+  vertical-align: middle;
+}
+
+.fv-html .dataframe tbody tr th {
+  vertical-align: top;
+}
+
+.fv-html .dataframe thead th {
+  text-align: right;
+}
+
+/* xarray */
+
+.fv-html .xr-wrap {
+  /* xarray hides this inline and un-hides it from its own stylesheet; both are gone. */
+  display: block;
+  min-width: 300px;
+  max-width: 700px;
+  line-height: 1.6;
+  padding-bottom: 4px;
+  text-align: left;
+}
+
+.fv-html .xr-text-repr-fallback {
+  display: none;
+}
+
+.fv-html .xr-header {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-bottom: solid 1px var(--fv-border);
+  margin-bottom: 4px;
+}
+
+.fv-html .xr-header > div,
+.fv-html .xr-header > ul {
+  display: inline;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.fv-html .xr-obj-type,
+.fv-html .xr-obj-name {
+  margin-left: 2px;
+  margin-right: 10px;
+}
+
+.fv-html .xr-obj-type,
+.fv-html .xr-group-box-contents > label {
+  color: var(--fv-fg2);
+  display: block;
+}
+
+.fv-html .xr-sections {
+  padding-left: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 150px auto auto 1fr 0 20px 0 20px;
+}
+
+.fv-html .xr-section-item {
+  display: contents;
+}
+
+.fv-html .xr-section-item > input,
+.fv-html .xr-group-box-contents > input,
+.fv-html .xr-array-wrap > input {
+  display: block;
+  opacity: 0;
+  height: 0;
+  margin: 0;
+}
+
+.fv-html .xr-section-item > input + label,
+.fv-html .xr-var-item > input + label {
+  color: var(--fv-disabled);
+}
+
+.fv-html .xr-section-item > input:enabled + label,
+.fv-html .xr-var-item > input:enabled + label,
+.fv-html .xr-array-wrap > input:enabled + label,
+.fv-html .xr-group-box-contents > input:enabled + label {
+  cursor: pointer;
+  color: var(--fv-fg2);
+}
+
+.fv-html .xr-section-item > input:focus-visible + label,
+.fv-html .xr-var-item > input:focus-visible + label,
+.fv-html .xr-array-wrap > input:focus-visible + label,
+.fv-html .xr-group-box-contents > input:focus-visible + label {
+  outline: auto;
+}
+
+.fv-html .xr-section-item > input:enabled + label:hover,
+.fv-html .xr-var-item > input:enabled + label:hover,
+.fv-html .xr-array-wrap > input:enabled + label:hover,
+.fv-html .xr-group-box-contents > input:enabled + label:hover {
+  color: var(--fv-fg0);
+}
+
+.fv-html .xr-section-summary {
+  grid-column: 1;
+  color: var(--fv-fg2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.fv-html .xr-section-summary > em {
+  font-weight: normal;
+}
+
+.fv-html .xr-span-grid {
+  grid-column-end: -1;
+}
+
+.fv-html .xr-section-summary > span {
+  display: inline-block;
+  padding-left: 0.3em;
+}
+
+.fv-html .xr-group-box-contents > input:checked + label > span {
+  display: inline-block;
+  padding-left: 0.6em;
+}
+
+.fv-html .xr-section-summary-in:disabled + label {
+  color: var(--fv-fg2);
+}
+
+.fv-html .xr-section-summary-in + label::before {
+  display: inline-block;
+  content: "►";
+  font-size: 11px;
+  width: 15px;
+  text-align: center;
+}
+
+.fv-html .xr-section-summary-in:disabled + label::before {
+  color: var(--fv-disabled);
+}
+
+.fv-html .xr-section-summary-in:checked + label::before {
+  content: "▼";
+}
+
+.fv-html .xr-section-summary-in:checked + label > span {
+  display: none;
+}
+
+.fv-html .xr-section-summary,
+.fv-html .xr-section-inline-details,
+.fv-html .xr-group-box-contents > label {
+  padding-top: 4px;
+}
+
+.fv-html .xr-section-inline-details {
+  grid-column: 2 / -1;
+}
+
+.fv-html .xr-section-details {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  margin-bottom: 5px;
+}
+
+.fv-html .xr-section-summary-in ~ .xr-section-details {
+  display: none;
+}
+
+.fv-html .xr-section-summary-in:checked ~ .xr-section-details {
+  display: contents;
+}
+
+.fv-html .xr-children {
+  display: inline-grid;
+  grid-template-columns: 100%;
+  grid-column: 1 / -1;
+  padding-top: 4px;
+}
+
+.fv-html .xr-group-box {
+  display: inline-grid;
+  grid-template-columns: 0 30px auto;
+}
+
+.fv-html .xr-group-box-vline {
+  grid-column-start: 1;
+  border-right: 0.2em solid;
+  border-color: var(--fv-border);
+  width: 0;
+  align-self: stretch;
+}
+
+.fv-html .xr-group-box-hline {
+  grid-column-start: 2;
+  grid-row-start: 1;
+  height: 1em;
+  width: 26px;
+  border-bottom: 0.2em solid;
+  border-color: var(--fv-border);
+}
+
+.fv-html .xr-group-box-contents {
+  grid-column-start: 3;
+  padding-bottom: 4px;
+}
+
+.fv-html .xr-group-box-contents > label::before {
+  content: "📂";
+  padding-right: 0.3em;
+}
+
+.fv-html .xr-group-box-contents > input:checked + label::before {
+  content: "📁";
+}
+
+.fv-html .xr-group-box-contents > input:checked + label {
+  padding-bottom: 0;
+}
+
+.fv-html .xr-group-box-contents > input:checked ~ .xr-sections {
+  display: none;
+}
+
+.fv-html .xr-group-box-contents > input + label > span {
+  display: none;
+}
+
+.fv-html .xr-group-box-ellipsis {
+  font-size: 1.4em;
+  font-weight: 900;
+  color: var(--fv-fg2);
+  letter-spacing: 0.15em;
+  cursor: default;
+}
+
+.fv-html .xr-array-wrap {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 20px auto;
+}
+
+.fv-html .xr-array-wrap > label {
+  grid-column: 1;
+  vertical-align: top;
+}
+
+.fv-html .xr-preview {
+  color: var(--fv-fg3);
+}
+
+.fv-html .xr-array-preview,
+.fv-html .xr-array-data {
+  padding: 0 5px;
+  grid-column: 2;
+}
+
+.fv-html .xr-array-data,
+.fv-html .xr-array-in:checked ~ .xr-array-preview {
+  display: none;
+}
+
+.fv-html .xr-array-in:checked ~ .xr-array-data,
+.fv-html .xr-array-preview {
+  display: inline-block;
+}
+
+.fv-html .xr-dim-list {
+  display: inline-block;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.fv-html .xr-dim-list li {
+  display: inline-block;
+  padding: 0;
+  margin: 0;
+}
+
+.fv-html .xr-dim-list::before {
+  content: "(";
+}
+
+.fv-html .xr-dim-list::after {
+  content: ")";
+}
+
+.fv-html .xr-dim-list li:not(:last-child)::after {
+  content: ",";
+  padding-right: 5px;
+}
+
+.fv-html .xr-has-index {
+  font-weight: bold;
+}
+
+.fv-html .xr-var-list,
+.fv-html .xr-var-item {
+  display: contents;
+}
+
+.fv-html .xr-var-item > div,
+.fv-html .xr-var-item label,
+.fv-html .xr-var-item > .xr-var-name span {
+  background-color: var(--fv-row-even);
+  border-color: var(--fv-row-odd);
+  margin-bottom: 0;
+  padding-top: 2px;
+}
+
+.fv-html .xr-var-item > .xr-var-name:hover span {
+  padding-right: 5px;
+}
+
+.fv-html .xr-var-list > li:nth-child(odd) > div,
+.fv-html .xr-var-list > li:nth-child(odd) > label,
+.fv-html .xr-var-list > li:nth-child(odd) > .xr-var-name span {
+  background-color: var(--fv-row-odd);
+  border-color: var(--fv-row-even);
+}
+
+.fv-html .xr-var-name {
+  grid-column: 1;
+}
+
+.fv-html .xr-var-dims {
+  grid-column: 2;
+}
+
+.fv-html .xr-var-dtype {
+  grid-column: 3;
+  text-align: right;
+  color: var(--fv-fg2);
+}
+
+.fv-html .xr-var-preview {
+  grid-column: 4;
+}
+
+.fv-html .xr-index-preview {
+  grid-column: 2 / 5;
+  color: var(--fv-fg2);
+}
+
+.fv-html .xr-var-name,
+.fv-html .xr-var-dims,
+.fv-html .xr-var-dtype,
+.fv-html .xr-preview,
+.fv-html .xr-attrs dt {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 10px;
+}
+
+.fv-html .xr-var-name:hover,
+.fv-html .xr-var-dims:hover,
+.fv-html .xr-var-dtype:hover,
+.fv-html .xr-attrs dt:hover {
+  overflow: visible;
+  width: auto;
+  z-index: 1;
+}
+
+.fv-html .xr-var-attrs,
+.fv-html .xr-var-data,
+.fv-html .xr-index-data {
+  display: none;
+  border-top: 2px dotted var(--fv-bg);
+  padding-bottom: 20px;
+  padding-top: 10px;
+}
+
+.fv-html .xr-var-attrs-in + label,
+.fv-html .xr-var-data-in + label,
+.fv-html .xr-index-data-in + label {
+  padding: 0 1px;
+}
+
+.fv-html .xr-var-attrs-in:checked ~ .xr-var-attrs,
+.fv-html .xr-var-data-in:checked ~ .xr-var-data,
+.fv-html .xr-index-data-in:checked ~ .xr-index-data {
+  display: block;
+}
+
+.fv-html .xr-var-data > table {
+  float: right;
+}
+
+.fv-html .xr-var-data > pre,
+.fv-html .xr-index-data > pre,
+.fv-html .xr-var-data > table > tbody > tr {
+  background-color: transparent;
+}
+
+.fv-html .xr-var-name span,
+.fv-html .xr-var-data,
+.fv-html .xr-index-name div,
+.fv-html .xr-index-data,
+.fv-html .xr-attrs {
+  padding-left: 25px;
+}
+
+.fv-html .xr-attrs,
+.fv-html .xr-var-attrs,
+.fv-html .xr-var-data,
+.fv-html .xr-index-data {
+  grid-column: 1 / -1;
+}
+
+.fv-html dl.xr-attrs {
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 125px auto;
+}
+
+.fv-html .xr-attrs dt,
+.fv-html .xr-attrs dd {
+  padding: 0;
+  margin: 0;
+  float: left;
+  padding-right: 10px;
+  width: auto;
+}
+
+.fv-html .xr-attrs dt {
+  font-weight: normal;
+  grid-column: 1;
+}
+
+.fv-html .xr-attrs dt:hover span {
+  display: inline-block;
+  background: var(--fv-bg);
+  padding-right: 10px;
+}
+
+.fv-html .xr-attrs dd {
+  grid-column: 2;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.fv-html .xr-icon-database,
+.fv-html .xr-icon-file-text2,
+.fv-html .xr-no-icon {
+  display: inline-block;
+  vertical-align: middle;
+  width: 1em;
+  height: 1.5em;
+  stroke-width: 0;
+  stroke: currentColor;
+  fill: currentColor;
+}
+
+.fv-html .xr-var-attrs-in:checked + label > .xr-icon-file-text2,
+.fv-html .xr-var-data-in:checked + label > .xr-icon-database,
+.fv-html .xr-index-data-in:checked + label > .xr-icon-database {
+  color: var(--fv-fg0);
+  stroke-width: 0.8px;
+}
+
+/* The console's notice card outside the console: its colour tokens, from the notebook's. */
+.fv-notice-host {
+  --bp-console-foreground: var(--jp-content-font-color0, currentColor);
+  --bp-console-background: var(--jp-layout-color0, Canvas);
+  --bp-console-muted: var(--jp-content-font-color2, GrayText);
+  --bp-console-accent: var(--jp-brand-color1, #1976d2);
+  --bp-console-error: var(--jp-error-color1, #d32f2f);
+  --bp-console-font-family: var(--jp-ui-font-family, system-ui, sans-serif);
+}

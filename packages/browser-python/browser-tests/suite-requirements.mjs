@@ -27,10 +27,15 @@ export const SUITE_REQUIREMENTS = Object.freeze({
   "console-paste-and-caret.mjs": [],
   "console-mobile.mjs": [],
   "console-files.mjs": [],
+  "rich-output.mjs": [],
   // The interpreter and nothing else: what these measure is the REPL, the display pipeline and
   // the HTTP helpers, none of which is a wheel.
   "repl.mjs": [],
   "display.mjs": [],
+  // Real objects' reprs: a DataFrame, an xarray object and Matplotlib figures, as cell results.
+  "cells.mjs": ["pandas", "xarray", "numpy", "matplotlib"],
+  // Two profiles side by side; the second imports xarray.
+  "sessions.mjs": ["xarray", "numpy"],
   "http-adapter.mjs": [],
   "cmip6.mjs": ["xarray", "zarr", "fsspec", "numcodecs", "numpy"],
   // The live deployment, on the freva-client profile - so it needs that profile's wheel.

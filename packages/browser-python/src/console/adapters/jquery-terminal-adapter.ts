@@ -25,7 +25,7 @@ import type {
 import { renderNeedsJspi } from "../notice-card.js";
 import { highlightedElement, tokenClassesPerCharacter } from "../highlight.js";
 import { hasLink, linkifyInto } from "../linkify.js";
-import { renderDisplay } from "../display-renderers.js";
+import { renderDisplay, renderMarkup } from "../display-renderers.js";
 import { SAFE_OPTIONS } from "./surface-options.js";
 
 /** The terminal plugin factory, cast to what it actually does. jquery.terminal types its
@@ -682,6 +682,31 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
     });
   }
 
+  appendMarkup(output: ConsoleDisplayOutput): boolean {
+    const terminal = this.#terminal;
+    if (!terminal) return false;
+    const doc = this.#options.document;
+    const element = renderMarkup(output, {
+      document: doc,
+      track: (url) => this.#objectUrls.add(url),
+    });
+    if (!element) return false;
+    this.#afterOutput();
+    terminal.echo("", {
+      raw: false,
+      finalize: (rawContainer: unknown) => {
+        const container = this.#unwrap(rawContainer);
+        if (!container) return;
+        const wrapper = doc.createElement("div");
+        wrapper.className = "bp-line bp-display";
+        if (output.executionId) wrapper.dataset.executionId = output.executionId;
+        wrapper.append(element);
+        container.replaceChildren(wrapper);
+      },
+    });
+    return true;
+  }
+
   appendNotice(output: ConsoleNoticeOutput): boolean {
     const terminal = this.#terminal;
     if (!terminal || output.notice !== "needs-jspi") return false;
@@ -730,6 +755,23 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
     this.#emitFollowState();
     this.#terminal?.clear();
     this.#revokeAll();
+  }
+
+  /** `clear_output()`: one execution's rendered output goes, the rest of the transcript stays. */
+  clearExecution(executionId: string): number {
+    const root = this.#mount?.querySelector(".terminal-output");
+    if (!root) return 0;
+    let removed = 0;
+    for (const line of root.querySelectorAll<HTMLElement>(".bp-line")) {
+      if (line.dataset.executionId !== executionId) continue;
+      // Its images' object URLs go with it; the others' stay valid.
+      for (const img of line.querySelectorAll<HTMLImageElement>('img[src^="blob:"]')) {
+        if (this.#objectUrls.delete(img.src)) URL.revokeObjectURL(img.src);
+      }
+      (line.closest("div[data-index]") ?? line).remove();
+      removed += 1;
+    }
+    return removed;
   }
 
   /** Drop the oldest rendered lines until the transcript fits, and report how many went. The
