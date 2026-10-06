@@ -105,9 +105,9 @@
     "yaml": "^2.8.1"
   },
   "peerDependencies": {
-    "@freva-org/jupyterlite-climateclaw": "2610.0.0",
-    "@freva-org/jupyterlite-freva-data": "2610.0.0",
-    "@freva-org/jupyterlite-freva-kernel": "2610.0.0",
+    "@freva-org/jupyterlite-climateclaw": "2609.0.0",
+    "@freva-org/jupyterlite-freva-data": "2609.0.0",
+    "@freva-org/jupyterlite-freva-kernel": "2609.0.0",
     "playwright": "^1.56.0"
   },
   "peerDependenciesMeta": {
@@ -126,9 +126,9 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@freva-org/jupyterlite-climateclaw": "2610.0.0",
-    "@freva-org/jupyterlite-freva-data": "2610.0.0",
-    "@freva-org/jupyterlite-freva-kernel": "2610.0.0",
+    "@freva-org/jupyterlite-climateclaw": "2609.0.0",
+    "@freva-org/jupyterlite-freva-data": "2609.0.0",
+    "@freva-org/jupyterlite-freva-kernel": "2609.0.0",
     "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.8",
     "axe-core": "^4.12.0",
