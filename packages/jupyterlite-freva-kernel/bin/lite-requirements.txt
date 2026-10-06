@@ -1,0 +1,8 @@
+# The JupyterLite build toolchain, pinned with hashes and installed with --require-hashes
+# --no-deps --only-binary=:all: into an isolated environment. jupyterlite-core 0.8.5 carries the
+# Notebook 7.6.3 / JupyterLab 4.6.4 application bundles itself; nothing else is installed.
+jupyterlite-core==0.8.5 --hash=sha256:296767f7f8a99b493a83b8a75439e8969fe38b6d3d1816925d374755ccc78871
+doit==0.37.0 --hash=sha256:a9f181566aa90faac515e276f85e6526019554ed7e13c12cf9dc094ffecf3e1b
+jupyter-core==5.9.1 --hash=sha256:ebf87fdc6073d142e114c72c9e29a9d7ca03fad818c5d300ce2adc1fb0743407
+platformdirs==4.12.2 --hash=sha256:29dbf06d96c500bc6bdbce75fb0a14d63279c93b1842f97e72a135b33e856983
+traitlets==5.16.1 --hash=sha256:f775618166caa0396c8e337099240f2bd3e5e917d203b2e6fbe21a58d3cb1f6b

@@ -67,6 +67,25 @@ const result = await inBrowser(async (browser) => {
       detail: (await browser.evaluate(() => window.__c.text())).trim().slice(-40),
     });
 
+    // clear_output(): that execution's earlier output goes; the commands and other output stay.
+    await browser.evaluate(() => window.__c.element.clear());
+    await type('print("kept")');
+    await type('display("old"); clear_output(); display("new")');
+    await type('display("a"); clear_output(wait=True); display("b")');
+    await browser.waitForTimeout(400);
+    const cleared = await browser.evaluate(() => window.__c.text());
+    checks.push({
+      name: "clear_output() clears its own execution's output, now or (wait=True) on the next",
+      pass:
+        cleared.includes("kept") &&
+        cleared.includes("'new'") &&
+        !cleared.includes("'old'") &&
+        cleared.includes("'b'") &&
+        !cleared.includes("'a'") &&
+        cleared.includes('display("old"); clear_output(); display("new")'),
+      detail: cleared.trim().slice(-200),
+    });
+
     await browser.evaluate(() => window.__c.element.clear());
     await type("value = 40");
     await type("value + 2");

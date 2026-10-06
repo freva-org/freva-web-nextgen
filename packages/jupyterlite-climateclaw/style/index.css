@@ -1,0 +1,676 @@
+@import url("./panel.css");
+
+/* ClimateClaw's dialogs, menus and toolbar items; nothing here styles jupyterlite-ai's panel. */
+.jp-ClimateClaw-blocked-link {
+  color: var(--jp-content-link-color);
+  text-decoration: underline;
+}
+/* Chat header: the model chip, the conversations button, the account avatar. */
+.jp-ClimateClaw-modelChip {
+  display: flex;
+  align-items: center;
+}
+.jp-ClimateClaw-modelChip-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--jp-ui-font-color1);
+  font: inherit;
+  font-size: var(--jp-ui-font-size1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jp-ClimateClaw-modelChip-button:hover,
+.jp-ClimateClaw-modelChip-button:focus-visible {
+  background: var(--jp-layout-color2);
+}
+.jp-ClimateClaw-modelChip-logo {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+.jp-ClimateClaw-modelChip[data-tier="logo"] .jp-ClimateClaw-modelChip-button {
+  padding: 0 4px;
+}
+.jp-ClimateClaw-modelChip-text {
+  max-width: 18em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--jp-ui-font-color1);
+}
+.jp-ClimateClaw-caret {
+  color: var(--jp-ui-font-color2);
+  font-size: 0.8em;
+}
+.jp-ClimateClaw-account.jp-mod-signedIn .jp-ToolbarButtonComponent-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--jp-brand-color1);
+  color: var(--jp-ui-inverse-font-color0, #fff);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.jp-ClimateClaw-account:not(.jp-mod-signedIn) .jp-ToolbarButtonComponent-label {
+  color: var(--jp-brand-color1);
+  font-weight: 600;
+}
+.jp-ClimateClaw-account.jp-mod-signedIn::after {
+  content: "▾";
+  margin-left: 2px;
+  color: var(--jp-ui-font-color2);
+  font-size: 0.8em;
+}
+
+/* Composer controls (items in the chat input's own toolbar). */
+.jp-ClimateClaw-composerItem {
+  display: inline-flex;
+  align-items: center;
+}
+.jp-ClimateClaw-composerButton-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.jp-ClimateClaw-composerIcon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.jp-ClimateClaw-composerSpacer {
+  flex: 1 1 auto;
+}
+
+/* The status beside Send: ClimateClaw at work (bird, phase, clock), then the jump to its cells. */
+.jp-ClimateClaw-status:empty {
+  display: none;
+}
+.jp-ClimateClaw-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 4px;
+  border: 1px solid color-mix(in srgb, var(--jp-brand-color1) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--jp-brand-color1) 10%, transparent);
+  color: var(--jp-brand-color1);
+  font-size: var(--jp-ui-font-size1);
+  white-space: nowrap;
+}
+.jp-ClimateClaw-status[data-tier="narrow"] .jp-ClimateClaw-busy {
+  padding: 0 4px;
+}
+.jp-ClimateClaw-busy-bird {
+  width: 20px;
+  height: 20px;
+  transform-origin: 50% 85%;
+  animation: jp-ClimateClaw-peck 1.4s ease-in-out infinite;
+}
+/* Writing code: lines typed one after another, a caret blinking. */
+.jp-ClimateClaw-busy-code {
+  flex: 0 0 auto;
+  color: var(--jp-brand-color1);
+}
+.jp-ClimateClaw-busy-codeBracket,
+.jp-ClimateClaw-busy-codeLine {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jp-ClimateClaw-busy-codeLine {
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  animation: jp-ClimateClaw-type 1.6s steps(8, end) infinite;
+}
+.jp-ClimateClaw-busy-caret {
+  fill: currentcolor;
+  animation: jp-ClimateClaw-blink 0.8s steps(1, end) infinite;
+}
+@keyframes jp-ClimateClaw-type {
+  0% {
+    stroke-dashoffset: 16;
+  }
+  45%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes jp-ClimateClaw-blink {
+  50% {
+    opacity: 0;
+  }
+}
+/* Drawing a figure: a curve plotted on small axes, the pen at its tip (see busy-line.ts). */
+.jp-ClimateClaw-busy-plot {
+  flex: 0 0 auto;
+  overflow: visible;
+  color: var(--jp-brand-color1);
+}
+.jp-ClimateClaw-busy-plotAxes,
+.jp-ClimateClaw-busy-plotCurve {
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jp-ClimateClaw-busy-plotAxes {
+  stroke-width: 1.3;
+  opacity: 0.45;
+}
+.jp-ClimateClaw-busy-plotCurve {
+  stroke-width: 1.8;
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: jp-ClimateClaw-plot 1.8s linear infinite;
+}
+.jp-ClimateClaw-busy-plotPen {
+  fill: var(--jp-warn-color1, #f59e0b);
+  stroke: var(--jp-layout-color1, #fff);
+  stroke-width: 0.8;
+}
+@keyframes jp-ClimateClaw-plot {
+  0% {
+    stroke-dashoffset: 30;
+    opacity: 1;
+  }
+  70% {
+    stroke-dashoffset: 0;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.2;
+  }
+}
+/* Running at DKRZ: its logo, turning. */
+.jp-ClimateClaw-busy-dkrz {
+  flex: 0 0 auto;
+  width: auto;
+  height: 14px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-ClimateClaw-busy-codeLine {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .jp-ClimateClaw-busy-caret {
+    animation: none;
+  }
+  .jp-ClimateClaw-busy-plotCurve {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+.jp-ClimateClaw-busy-label {
+  font-weight: 600;
+  background: linear-gradient(
+      90deg,
+      var(--jp-brand-color1) 0%,
+      var(--jp-brand-color1) 40%,
+      var(--jp-brand-color3, #a0c4f0) 50%,
+      var(--jp-brand-color1) 60%,
+      var(--jp-brand-color1) 100%
+    )
+    0 0 / 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: jp-ClimateClaw-sheen 2.2s linear infinite;
+}
+.jp-ClimateClaw-busy-time {
+  color: var(--jp-ui-font-color2);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes jp-ClimateClaw-peck {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  20% {
+    transform: translateY(2px) rotate(-14deg);
+  }
+  35% {
+    transform: translateY(0) rotate(3deg);
+  }
+}
+@keyframes jp-ClimateClaw-sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-ClimateClaw-busy-bird,
+  .jp-ClimateClaw-busy-label {
+    animation: none;
+  }
+  .jp-ClimateClaw-busy-label {
+    color: var(--jp-brand-color1);
+  }
+}
+.jp-ClimateClaw-visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.jp-ClimateClaw-cells .jp-ClimateClaw-composerLabel {
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jp-ClimateClaw-cells svg .jp-icon3[stroke] {
+  stroke: var(--jp-brand-color1);
+}
+
+/* The Conversations drawer (right sidebar). */
+.jp-ClimateClaw-conversations {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color1);
+  font-size: var(--jp-ui-font-size1);
+}
+.jp-ClimateClaw-conversations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.jp-ClimateClaw-conversations-title {
+  margin: 0;
+  font-size: var(--jp-ui-font-size3);
+  font-weight: 600;
+}
+.jp-ClimateClaw-conversations-close,
+.jp-ClimateClaw-conversation-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--jp-ui-font-color2);
+  font-size: 18px;
+  cursor: pointer;
+}
+.jp-ClimateClaw-conversations-close:hover,
+.jp-ClimateClaw-conversation-more:hover,
+.jp-ClimateClaw-conversations-close:focus-visible,
+.jp-ClimateClaw-conversation-more:focus-visible {
+  background: var(--jp-layout-color2);
+}
+.jp-ClimateClaw-conversations-new {
+  align-self: flex-end;
+}
+.jp-ClimateClaw-conversations-search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--jp-border-color1);
+  border-radius: 6px;
+  background: var(--jp-layout-color0);
+  color: var(--jp-ui-font-color1);
+  font: inherit;
+}
+.jp-ClimateClaw-conversations-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.jp-ClimateClaw-conversations-signin[hidden] {
+  display: none;
+}
+.jp-ClimateClaw-conversations-status {
+  margin: 0;
+  color: var(--jp-ui-font-color2);
+}
+.jp-ClimateClaw-conversations-status:empty {
+  display: none;
+}
+.jp-ClimateClaw-conversations-groupTitle {
+  margin: 6px 0;
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.jp-ClimateClaw-conversations-group ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.jp-ClimateClaw-conversation {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 8px;
+  background: var(--jp-layout-color0);
+}
+.jp-ClimateClaw-conversation:hover {
+  border-color: var(--jp-border-color1);
+}
+.jp-ClimateClaw-conversation.jp-mod-current {
+  border-color: var(--jp-brand-color2);
+  background: var(--jp-layout-color2);
+}
+.jp-ClimateClaw-conversation-open {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 4px 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.jp-ClimateClaw-conversation-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+.jp-ClimateClaw-conversation-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.jp-ClimateClaw-conversation-topic {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.jp-ClimateClaw-conversation-time {
+  color: var(--jp-ui-font-color2);
+  font-size: var(--jp-ui-font-size0);
+}
+.jp-ClimateClaw-conversation-more {
+  margin-right: 4px;
+}
+.jp-ClimateClaw-conversations-more {
+  padding: 6px;
+  border: 1px solid var(--jp-border-color1);
+  border-radius: 6px;
+  background: var(--jp-layout-color0);
+  color: var(--jp-ui-font-color1);
+  font: inherit;
+  cursor: pointer;
+}
+.jp-ClimateClaw-conversations-more[hidden] {
+  display: none;
+}
+
+/* In a reply: chips for code that ran at DKRZ into a notebook cell, and how it ended. */
+.jp-ClimateClaw-ran,
+.jp-ClimateClaw-outcome {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  margin: 2px 0;
+  vertical-align: middle;
+  /* Between a rectangle and a pill. */
+  border-radius: 6px;
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size1);
+  line-height: 22px;
+  white-space: nowrap;
+}
+.jp-ClimateClaw-ran {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--jp-brand-color1) 45%, transparent);
+  background: var(--jp-layout-color1);
+}
+.jp-ClimateClaw-ran > span {
+  padding: 0 9px;
+}
+/* Where the code ran: DKRZ, with its logo (blue on white, in either theme). */
+.jp-ClimateClaw-ran-at {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #fff;
+  color: #1f5aa6;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.jp-ClimateClaw-ran-at::before {
+  content: "";
+  width: 21px;
+  height: 12px;
+  background: url("./logo/dkrz.png") center / contain no-repeat;
+}
+.jp-ClimateClaw-ran-cell {
+  background: color-mix(in srgb, var(--jp-brand-color1) 14%, transparent);
+  color: var(--jp-brand-color1);
+  font-weight: 600;
+}
+.jp-ClimateClaw-ran-nb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--jp-ui-font-color2);
+  font-family: var(--jp-code-font-family);
+  font-size: 0.92em;
+}
+.jp-ClimateClaw-outcome {
+  margin-left: 4px;
+  padding: 0 9px;
+  border: 1px solid var(--jp-border-color2);
+  color: var(--jp-ui-font-color2);
+  font-weight: 600;
+}
+.jp-ClimateClaw-outcome.jp-mod-ok {
+  border-color: color-mix(in srgb, var(--jp-success-color1) 50%, transparent);
+  background: color-mix(in srgb, var(--jp-success-color1) 12%, transparent);
+  color: var(--jp-success-color1);
+}
+.jp-ClimateClaw-outcome.jp-mod-error {
+  border-color: color-mix(in srgb, var(--jp-error-color1) 50%, transparent);
+  background: color-mix(in srgb, var(--jp-error-color1) 12%, transparent);
+  color: var(--jp-error-color1);
+}
+.jp-ClimateClaw-outcome.jp-mod-figure {
+  border-color: color-mix(in srgb, #8e5cf0 50%, transparent);
+  background: color-mix(in srgb, #8e5cf0 12%, transparent);
+  color: color-mix(in srgb, #8e5cf0 80%, var(--jp-ui-font-color1));
+}
+
+/* A run at DKRZ in a reply: its line (where, which cell, how it ended), which folds its code;
+   its output, error and figures always show below. */
+.jp-ClimateClaw-run {
+  margin: 10px 0;
+  overflow: hidden;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 12px;
+  background: var(--jp-layout-color1);
+}
+.jp-ClimateClaw-run.jp-mod-error {
+  border-color: color-mix(in srgb, var(--jp-error-color1) 40%, var(--jp-border-color2));
+}
+.jp-ClimateClaw-runHead {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  padding: 5px 6px;
+  list-style: none;
+}
+summary.jp-ClimateClaw-runHead {
+  cursor: pointer;
+  user-select: none;
+}
+.jp-ClimateClaw-runHead::-webkit-details-marker {
+  display: none;
+}
+summary.jp-ClimateClaw-runHead:hover {
+  background: color-mix(in srgb, var(--jp-brand-color1) 6%, transparent);
+}
+summary.jp-ClimateClaw-runHead:focus-visible {
+  outline: 2px solid var(--jp-brand-color1);
+  outline-offset: -2px;
+}
+.jp-ClimateClaw-runHead .jp-ClimateClaw-ran,
+.jp-ClimateClaw-runHead .jp-ClimateClaw-outcome {
+  margin: 0 0 0 4px;
+}
+.jp-ClimateClaw-runHead .jp-ClimateClaw-ran {
+  margin-left: 0;
+}
+/* "Code" and a chevron at the line's end: down when the code is folded, up when it shows. */
+.jp-ClimateClaw-runToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 0 8px 0 10px;
+  color: var(--jp-ui-font-color2);
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size0);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.jp-ClimateClaw-runToggle::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentcolor;
+  border-bottom: 2px solid currentcolor;
+  transform: translateY(-25%) rotate(45deg);
+  transition: transform 150ms ease;
+}
+.jp-ClimateClaw-runCode[open] .jp-ClimateClaw-runToggle::after {
+  transform: translateY(20%) rotate(-135deg);
+}
+summary.jp-ClimateClaw-runHead:hover .jp-ClimateClaw-runToggle {
+  color: var(--jp-brand-color1);
+}
+/* The code, when shown, sits on a tinted band between the line and the outputs. */
+.jp-ClimateClaw-runCode[open] {
+  background: color-mix(in srgb, var(--jp-layout-color2) 60%, transparent);
+}
+.jp-ClimateClaw-runCode[open] > .jp-ClimateClaw-runHead {
+  border-bottom: 1px solid var(--jp-border-color2);
+  background: var(--jp-layout-color1);
+}
+.jp-ClimateClaw-runCode > :not(summary) {
+  margin: 10px 12px;
+}
+/* A line followed by outputs gets a rule under it. */
+.jp-ClimateClaw-run > :first-child:not(:last-child) {
+  border-bottom: 1px solid var(--jp-border-color2);
+}
+.jp-ClimateClaw-run > :not(:first-child) {
+  margin-right: 12px;
+  margin-left: 12px;
+}
+.jp-ClimateClaw-run > :not(:first-child):last-child {
+  margin-bottom: 12px;
+}
+.jp-ClimateClaw-runSection {
+  margin-top: 10px;
+  margin-bottom: 4px;
+  color: var(--jp-ui-font-color2);
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size0);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.jp-ClimateClaw-runSection.jp-mod-error {
+  color: var(--jp-error-color1);
+}
+/* Each part of what the run gave folds by a click on its header (open to start with). */
+.jp-ClimateClaw-runPart > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.jp-ClimateClaw-runPart > summary::-webkit-details-marker {
+  display: none;
+}
+.jp-ClimateClaw-runPart > summary::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(-45deg);
+  transition: transform 150ms ease;
+}
+.jp-ClimateClaw-runPart[open] > summary::after {
+  transform: translateY(-2px) rotate(45deg);
+}
+.jp-ClimateClaw-runPart > summary:hover {
+  color: var(--jp-ui-font-color1);
+}
+.jp-ClimateClaw-runPart > summary:focus-visible {
+  outline: 2px solid var(--jp-brand-color1);
+  outline-offset: 2px;
+}
+.jp-ClimateClaw-run pre {
+  max-height: 320px;
+  overflow: auto;
+}
+.jp-ClimateClaw-run img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* Run at DKRZ's models: a tick beside the one in use. */
+.jp-ClimateClaw-runAtModels .lm-Menu-itemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+}
+.jp-ClimateClaw-runAtModels .lm-Menu-item.lm-mod-toggled > .lm-Menu-itemIcon::before {
+  content: "✓";
+  color: var(--jp-brand-color1);
+  font-weight: 600;
+}
+.jp-ClimateClaw-runAtModels .lm-Menu-item.lm-mod-toggled > .lm-Menu-itemLabel {
+  color: var(--jp-brand-color1);
+  font-weight: 600;
+}

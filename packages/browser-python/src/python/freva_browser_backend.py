@@ -42,5 +42,9 @@ def show(*_args, **_kwargs):
     """
     from matplotlib import _pylab_helpers
 
+    # A notebook cell draws in place, so output keeps the order the code produced it in.
+    if rich_display.cell_mode():
+        rich_display.show_now()
+        return
     for manager in _pylab_helpers.Gcf.get_all_fig_managers():
         rich_display.mark_figure(manager.num)

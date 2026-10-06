@@ -13,6 +13,8 @@
 import {
   MAX_EXECUTION_DISPLAY_CHARS,
   MAX_EXECUTION_TEXT_CHARS,
+  boundTraceback,
+  validateBundle,
   validateDisplay,
   type WorkerMessage,
 } from "../protocol.js";
@@ -215,6 +217,33 @@ export class OutputBridge {
     this.#post({ kind: "stderr", ...this.#attribution(), text });
   }
 
+  /** A package-authored line outside the text budget. See `#notice`. */
+  notice(text: string): void {
+    this.#notice(text);
+  }
+
+  /** Where output posted now belongs. See `#attribution`. */
+  attribution(): { executionId: string; background?: true } {
+    return this.#attribution();
+  }
+
+  /** Spend display budget for one payload; false (after one notice) when it is exhausted. */
+  spendDisplay(chars: number): boolean {
+    if (this.#displayChars + chars > MAX_EXECUTION_DISPLAY_CHARS) {
+      if (!this.#announcedDisplay) {
+        this.#announcedDisplay = true;
+        this.#notice(
+          `[browser-python] display output limit reached: this execution has already produced ` +
+            `${mib(MAX_EXECUTION_DISPLAY_CHARS)} of figures, so the rest are not shown. Draw fewer ` +
+            `figures per cell, or save them to /workspace and download them.\n`,
+        );
+      }
+      return false;
+    }
+    this.#displayChars += chars;
+    return true;
+  }
+
   /**
    * One stderr line that reports a known environmental condition (see `StreamEvent.notice`). Sent
    * whole and at once, like `#notice`: it replaces a traceback, and a UI draws it as one card.
@@ -245,20 +274,82 @@ export class OutputBridge {
       this.#notice(`[browser-python] dropped a display payload: ${checked.error}\n`);
       return;
     }
-    if (this.#displayChars + checked.value.data.length > MAX_EXECUTION_DISPLAY_CHARS) {
-      if (!this.#announcedDisplay) {
-        this.#announcedDisplay = true;
-        this.#notice(
-          `[browser-python] display output limit reached: this execution has already produced ` +
-            `${mib(MAX_EXECUTION_DISPLAY_CHARS)} of figures, so the rest are not shown. Draw fewer ` +
-            `figures per cell, or save them to /workspace and download them.\n`,
-        );
-      }
-      return;
-    }
-    this.#displayChars += checked.value.data.length;
+    if (!this.spendDisplay(checked.value.data.length)) return;
     this.flush();
     this.#post({ kind: "display", executionId: this.#executionId, ...checked.value });
+  }
+}
+
+export interface BundleCandidate {
+  output?: unknown;
+  data?: unknown;
+  metadata?: unknown;
+  executionCount?: unknown;
+  wait?: unknown;
+}
+
+/** Cell and bundle output: the same ordering and budgets as text and figures. */
+export class CellOutput {
+  readonly #bridge: OutputBridge;
+  readonly #post: Post;
+  constructor(bridge: OutputBridge, post: Post) {
+    this.#bridge = bridge;
+    this.#post = post;
+  }
+
+  /** Before any of the cell's output: binds the caller's request to this execution. */
+  start(executionId: string, executionCount: number | null, token?: string): void {
+    this.#bridge.flush();
+    this.#post({
+      kind: "execute-input",
+      executionId,
+      executionCount,
+      ...(token !== undefined ? { token } : {}),
+    });
+  }
+
+  /** One message from Python's publisher (`rich_display._publish`), as parsed JSON. */
+  publish(candidate: BundleCandidate): void {
+    const where = this.#bridge.attribution();
+    if (candidate.output === "clear_output") {
+      this.#bridge.flush();
+      this.#post({ kind: "clear-output", ...where, wait: candidate.wait === true });
+      return;
+    }
+    const output = candidate.output === "execute_result" ? "execute_result" : "display_data";
+    const checked = validateBundle(candidate);
+    if (!checked.ok) {
+      this.#bridge.notice(`[browser-python] dropped a display payload: ${checked.error}\n`);
+      return;
+    }
+    let size = 0;
+    for (const value of Object.values(checked.value.data)) size += value?.length ?? 0;
+    if (!this.#bridge.spendDisplay(size)) return;
+    this.#bridge.flush();
+    const count = candidate.executionCount;
+    this.#post({
+      kind: "bundle",
+      type: output,
+      ...where,
+      data: checked.value.data,
+      metadata: checked.value.metadata,
+      ...(output === "execute_result"
+        ? { executionCount: typeof count === "number" ? count : null }
+        : {}),
+    });
+  }
+
+  error(executionId: string, ename: string, evalue: string, traceback: readonly unknown[]): void {
+    this.#bridge.flush();
+    const lines = boundTraceback(traceback);
+    this.#post({
+      kind: "cell-error",
+      executionId,
+      text: lines.join("\n"),
+      ename,
+      evalue,
+      traceback: lines,
+    });
   }
 }
 

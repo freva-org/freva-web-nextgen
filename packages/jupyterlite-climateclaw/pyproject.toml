@@ -1,0 +1,35 @@
+# The pip package: the same prebuilt federated extension the npm package ships, installed where
+# Jupyter looks for one. Build it after `npm run build && npm run build:labextension`.
+[build-system]
+requires = ["hatchling==1.32.4", "hatch-nodejs-version==0.4.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jupyterlite-climateclaw"
+dynamic = ["version", "description", "authors", "urls", "keywords"]
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+classifiers = [
+  "Framework :: Jupyter",
+  "Framework :: Jupyter :: JupyterLab :: Extensions :: Prebuilt",
+  "Programming Language :: Python :: 3",
+]
+# jupyterlite-ai is installed beside it, pinned, by the operator.
+dependencies = []
+
+[tool.hatch.version]
+source = "nodejs"
+
+[tool.hatch.metadata.hooks.nodejs]
+fields = ["description", "authors", "urls", "keywords"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/jupyterlite_climateclaw"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"labextension" = "share/jupyter/labextensions/@freva-org/jupyterlite-climateclaw"
+
+[tool.hatch.build.targets.sdist]
+include = ["/python", "/labextension", "/README.md", "/LICENSE", "/package.json", "/pyproject.toml"]

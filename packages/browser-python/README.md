@@ -31,6 +31,9 @@ CDN or from your own origin. Nothing typed at the prompt reaches your infrastruc
 | `@freva-org/browser-python/console.css`    | the stylesheet, for hosts that prefer a `<link>`.              |
 | `@freva-org/browser-python/embed`          | the two-origin playground bridge and host.                     |
 | `@freva-org/browser-python/embed/examples` | the registered-example manifest helpers.                       |
+| `@freva-org/browser-python/display`        | the rich-output sanitiser and renderers (HTML, SVG, PNG).      |
+| `@freva-org/browser-python/display.css`    | the static styles for pandas and xarray HTML output.           |
+| `@freva-org/browser-python/session`        | setup choices, live slots, telemetry and manual sleep.         |
 
 `/console` is side-effect free and safe to import during a server render; `/console/auto` is not.
 
@@ -38,7 +41,7 @@ CDN or from your own origin. Nothing typed at the prompt reaches your infrastruc
 
 ```ts
 createBrowserPython({ profile: "minimal" }); // an interpreter, and nothing else
-createBrowserPython({ profile: "xarray-zarr" }); // + xarray, zarr, fsspec, numcodecs
+createBrowserPython({ profile: "xarray-zarr" }); // + xarray, zarr, fsspec, numcodecs, cftime
 createBrowserPython({ profile: "freva-client" }); // + the Freva client
 ```
 
@@ -76,20 +79,20 @@ opening from its host: see `pageUrl`, `openExternal` and the embedding section.
 
 Nothing is fetched until `start()`.
 
-| what                                   | on the wire                                               | when                                 |
-| -------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
-| this package, engine only              | <!-- size:root-entry-gz --> 7.0 KiB gzipped               | with your bundle                     |
-| this package, with the console         | <!-- size:console-entry-gz --> 128.7 KiB gzipped          | with your bundle, `/console` only    |
-| Pyodide runtime + stdlib               | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
-| xarray, zarr, fsspec, numcodecs, numpy | 9.6 MB, 17 wheels                                         | first `start()`, `xarray-zarr` only  |
-| the derived Freva wheel + PyPI deps    | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
-| matplotlib                             | ~5 MB                                                     | the first `import matplotlib`        |
-| dataset chunks                         | as much as you ask for                                    | when you read data                   |
+| what                                           | on the wire                                               | when                                 |
+| ---------------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
+| this package, engine only                      | <!-- size:root-entry-gz --> 8.1 KiB gzipped               | with your bundle                     |
+| this package, with the console                 | <!-- size:console-entry-gz --> 131.0 KiB gzipped          | with your bundle, `/console` only    |
+| Pyodide runtime + stdlib                       | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
+| xarray, zarr, fsspec, numcodecs, cftime, numpy | 10.0 MB, 18 wheels                                        | first `start()`, `xarray-zarr` only  |
+| the derived Freva wheel + PyPI deps            | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
+| matplotlib                                     | ~5 MB                                                     | the first `import matplotlib`        |
+| dataset chunks                                 | as much as you ask for                                    | when you read data                   |
 
 The emitted headless-engine files - everything in `dist/` except the console and optional embed
 bridge - are
 
-<!-- size:engine-dist-gz --> 82.3 KiB gzipped against a budget of
+<!-- size:engine-dist-gz --> 82.2 KiB gzipped against a budget of
 <!-- size:engine-budget-gz --> 83.0 KiB. None of the runtime is in your bundle: it is a dynamic
 
 import by URL, and `npm run check:bytes` fails the build if that stops being true, or if the
@@ -135,13 +138,65 @@ python.onOutput((event) => {
 });
 ```
 
-The protocol carries only `image/png` and `text/plain`, validated at both boundaries - not
-`text/html`, not `image/svg+xml`, because both carry script and the payload was authored by
-whatever the visitor typed. Render with `textContent`, never `innerHTML`.
+A `display` event carries only `image/png` and `text/plain`, validated at both boundaries. HTML and
+SVG arrive only as MIME bundles (below), and only reach a page through `/display`'s sanitiser,
+because both carry script and the payload was authored by whatever the visitor typed. Render text
+with `textContent`, never `innerHTML`.
 
 Plotting needs `plt.show()`, as outside a notebook: it marks the open figures, which are rendered
 to PNG and closed after the command. `MPLBACKEND=Agg` is set before anything can import Matplotlib,
 whose default Pyodide backend reaches for `window` at import time.
+
+### Notebook cells
+
+```ts
+const result = await python.executeCell("import pandas as pd\npd.DataFrame({'a': [1, 2]})", {
+  token: "msg-1", // echoed on the start event, to bind output to a request
+  silent: false, // no result, no count
+  storeHistory: true,
+  filename: "<cell-1>", // tracebacks name it
+});
+// { executionId, token, status: "ok" | "error" | "cancelled", executionCount,
+//   ename?, evalue?, traceback?, notice? }
+python.cancelQueuedCells(); // cells not yet started resolve "cancelled", with no count
+```
+
+A cell is plain CPython: the last expression's value is its result (a trailing `;` suppresses it),
+`__main__.__dict__` is the namespace, and top-level `await` works. Cells run one at a time in
+submission order. Each emits an `execute_input` event (with its count and token) before any of its
+output, then `stdout`/`stderr`, `display_data`, `execute_result`, `clear_output` and a structured
+`error` (`ename`, `evalue`, `traceback`). A count is assigned when the cell starts, a failed cell
+keeps it, a cancelled cell gets none, and a new interpreter starts again at 1. Matplotlib figures
+are displayed when the cell ends, and `display(obj)` / `clear_output(wait=False)` are built in; the
+console keeps `plt.show()` and clears an execution's own output on `clear_output()` (with
+`wait=True`, at its next output).
+
+A bundle holds `text/plain` always, plus whichever of `text/html`, `image/svg+xml` and `image/png`
+the object offers, asked in the order `_repr_mimebundle_`, `_repr_html_`, `_repr_svg_`,
+`_repr_png_`. Limits apply before conversion (1 MiB of HTML, 4 MiB of SVG, 24 MiB per bundle); a
+repr that raises, or returns something over a limit, costs a `[display]` line on stderr and the
+plain-text fallback. Without JSPI, an operation that needs it ends the cell with a notice instead
+of a traceback: an `application/vnd.freva.notice+json` bundle, `{"notice": "needs-jspi", "text":
+...}`, beside the same text as `text/plain`.
+
+### Rich output at the DOM boundary
+
+```ts
+import { adoptDisplayStyles, renderBundle } from "@freva-org/browser-python/display";
+
+adoptDisplayStyles(document);
+const urls: string[] = [];
+const node = renderBundle(event.data, event.metadata, { document, track: (url) => urls.push(url) });
+// later: urls.forEach(URL.revokeObjectURL)
+```
+
+`renderBundle` picks the notice, then HTML, SVG, PNG, then text. HTML goes through DOMPurify with
+an allowlist: no scripts, event handlers, forms, frames, `<style>`, `<link>`, `style` attributes
+or external loads; links open in a new tab without a referrer; ids are namespaced so a cell cannot
+clobber the page. pandas and xarray are styled by `display.css` (static, scoped to `.fv-output`).
+SVG is sanitised and shown as an `<img>` from a Blob URL, never inline. A PNG is refused from its
+header when it is over 16384 px on a side or 40 megapixels. The console uses the same renderer for
+HTML and SVG display bundles.
 
 ## Installing packages
 
@@ -453,14 +508,14 @@ incomplete, state persists between lines, and top-level `await` works.
 |                       | `@freva-org/browser-python`             | `@freva-org/browser-python/console`          |
 | --------------------- | --------------------------------------- | -------------------------------------------- |
 | What you get          | engine, events, `push()`                | the above plus a rendered console            |
-| Bundled, gzipped      | <!-- size:root-entry-gz --> **7.0 KiB** | <!-- size:console-entry-gz --> **128.7 KiB** |
+| Bundled, gzipped      | <!-- size:root-entry-gz --> **8.1 KiB** | <!-- size:console-entry-gz --> **131.0 KiB** |
 | Touches `document`    | no                                      | yes, on `connectedCallback`                  |
 | Safe to import in SSR | yes                                     | `/console` yes, `/console/auto` no           |
 | jQuery in the bundle  | never (asserted by a test)              | yes, as a private instance                   |
 
-The console layer over the headless engine is <!-- size:console-layer-gz --> 121.7 KiB gzipped, of
+The console layer over the headless engine is <!-- size:console-layer-gz --> 122.9 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
-a target - 124 KiB for the layer, 8 KiB for the root entry - and fails if it finds a jQuery or
+a target - 124 KiB for the layer, 8.5 KiB for the root entry - and fails if it finds a jQuery or
 worker-only add-on pin fingerprint in the root bundle.
 
 ### Attributes, properties, methods
@@ -554,6 +609,71 @@ the pinned library's own defaults by a test: `processArguments` (which turns `{"
 into something Python never sees), `exit`, `clear`, `convertLinks`, `anyLinks`, `invokeMethods`,
 `execHash`, `historyState`, `checkArity`. The library is a private instance - `window.$` stays
 `undefined` - behind `ConsoleSurfaceAdapter`, the seam to implement for a smaller surface.
+
+## Sessions
+
+`@freva-org/browser-python/session` is what a host offering more than one fixed interpreter uses:
+
+```ts
+import {
+  SessionController,
+  createSlotBroker,
+  openCheckpointStore,
+  policyFingerprint,
+  validateSetup,
+} from "@freva-org/browser-python/session";
+
+const check = validateSetup(policy, choice); // a choice from a peer is data: validate it
+const slots = createSlotBroker({ capacity: 2 }); // or { scope } to share across frames (Web Locks)
+const session = new SessionController({
+  id: "s1",
+  setup: check.setup,
+  policy: policyFingerprint(policy),
+  slots,
+  createEngine: (setup) => createBrowserPython({ profile: setup.profile, addons: setup.addons }),
+  store: () => openCheckpointStore(), // null where the private file system cannot be written
+  starter: (engine) => engine.run(initialSource),
+  attach: (engine) => (consoleElement.engine = engine),
+  detach: () => (consoleElement.engine = undefined),
+});
+await session.start(); // reserves a live slot (an idle one may sleep for it) or rejects "no-slot"
+// { wasmCapacityBytes, workspaceBytes, fetchedDecodedBytes, ..., live, capacity }
+await session.resources();
+await session.sleep(); // files saved and verified; the interpreter and its slot released
+await session.wake(); // a fresh interpreter, files restored before any code runs
+```
+
+A setup (`{profile, addons, runStarter, frontend}`) is locked for the controller's life. A page has
+at most two live interpreters, counted by what runs: when both slots are taken, a reservation puts
+the least recently used idle holder to sleep (a controller sleeps as below, with a message saying
+why; `reserve(owner, holder)` lets any front end take part), also in another document of a scoped
+broker. Only holders running code, or ones that cannot sleep, make it fail. Across documents, offers
+and requests to sleep name the reservation, not just the slot, so a request arriving after its
+reservation ended (the slot released, perhaps taken again) puts nothing to sleep.
+
+Sleep quiesces the engine (`quiesce()` refuses while code runs, a transfer is in flight or Python
+holds a file open), streams every committed file into a checkpoint under
+`browser-python-checkpoints/` with its SHA-256, and writes the manifest last. Waking verifies each
+file as it streams back through `writeWorkspaceFile()` - a mismatch fails before the last byte and
+nothing lands - and a checkpoint that does not verify is quarantined. Python variables do not
+survive, and cells are never replayed. Checkpoints no live page owns are removed.
+
+The engine's own session operations, usable without the controller:
+
+- `writeWorkspaceFile(name, source, { size, overwrite, signal })` writes into `/workspace` from
+  outside Python, 1 MiB at a time, holding the execution queue; the file appears only when every
+  byte arrived.
+- `observeResources()` samples at most once a second, answered between awaits; a synchronous loop
+  cannot answer, so the last values come back marked `sampleStale`. WASM capacity is linear-memory
+  capacity after growth, not memory use.
+- `quiesce()` returns a release function; while quiesced, executions and writes reject with
+  `quiesced`.
+
+In a two-origin embedding the chooser lives in the playground, and the two halves exchange one
+optional message, `{ kind: "setup", capabilityVersion: 1, setup: {profile, addons, runStarter,
+frontend}, policy }` - the child reports the setup it locked, the portal proposes one for a new
+session ("same as current"). Each side checks the shape (`parseSetupCapability`) and the receiver
+validates the setup against its own policy. It travels in envelope version 3.
 
 ## Registered examples
 

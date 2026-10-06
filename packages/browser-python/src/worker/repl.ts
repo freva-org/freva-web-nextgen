@@ -17,9 +17,17 @@
  * counts them so a test can assert it returns to zero after a hundred commands.
  */
 
-import type { OutputBridge } from "./output.js";
+import { boundTraceback } from "../protocol.js";
+import type { CellOutput, OutputBridge } from "./output.js";
 import type { PyodideApi } from "./pyodide-runtime.js";
-import type { CompletionResult, ExecutionResult, PushResult, ReplSyntaxState } from "../types.js";
+import {
+  NOTICE_MIME,
+  type CellResult,
+  type CompletionResult,
+  type ExecutionResult,
+  type PushResult,
+  type ReplSyntaxState,
+} from "../types.js";
 import { lastMeaningfulLine } from "./startup-failure.js";
 
 /** Python's character offset as a JS string index - the ONE place the two units meet. */
@@ -53,6 +61,8 @@ interface Bridge extends Destroyable {
   console_push(line: string): unknown;
   run_future(future: unknown): Promise<unknown>;
   run_source(source: string): unknown;
+  run_cell(source: string, filename: string, count: number | null, silent: boolean): unknown;
+  set_publisher(publish: (json: string) => void): boolean;
   clear_buffer(): boolean;
   interrupt(): boolean;
   complete(source: string): unknown;
@@ -90,10 +100,24 @@ export interface ReplOptions {
   jspi?: boolean;
 }
 
+/** One cell, as the worker received it. */
+export interface CellRequest {
+  executionId: string;
+  source: string;
+  silent: boolean;
+  storeHistory: boolean;
+  filename?: string;
+  token?: string;
+}
+
 export class Repl {
   readonly #pyodide: PyodideApi;
   readonly #output: OutputBridge;
   readonly #jspi: boolean;
+  #cells: CellOutput | null = null;
+  /** Execution counts: assigned when a cell starts, reset with the interpreter. */
+  #cellCount = 0;
+  #silentCount = 0;
   #needsJspiText: string | null = null;
   #bridge: Bridge | null = null;
   /** Temporaries currently held. Asserted back to zero by the browser suite - see the header. */
@@ -103,6 +127,11 @@ export class Repl {
     this.#pyodide = pyodide;
     this.#output = output;
     this.#jspi = options.jspi ?? true;
+  }
+
+  /** Where cells and `display()` publish. Call before `start()`. */
+  useCells(cells: CellOutput): void {
+    this.#cells = cells;
   }
 
   /** Temporary proxies currently outstanding. Zero whenever no call is in progress. */
@@ -141,6 +170,85 @@ export class Repl {
     const text =
       typeof this.#bridge.needs_jspi_text === "function" ? this.#bridge.needs_jspi_text() : null;
     this.#needsJspiText = typeof text === "string" && text !== "" ? text.trimEnd() : null;
+    const cells = this.#cells;
+    if (cells && typeof this.#bridge.set_publisher === "function") {
+      // A JSON string, not a dict: nothing of Python's crosses, so nothing needs destroying.
+      this.#bridge.set_publisher((json: string) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(String(json));
+        } catch {
+          this.#output.stderr("[browser-python] dropped a display payload: not JSON\n");
+          return;
+        }
+        cells.publish(parsed && typeof parsed === "object" ? parsed : {});
+      });
+    }
+  }
+
+  /**
+   * One notebook cell. The count is assigned here, when the cell actually starts, and announced
+   * before anything the cell prints; a cell that fails keeps its count.
+   */
+  async executeCell(request: CellRequest): Promise<CellResult> {
+    const bridge = this.#requireBridge();
+    const cells = this.#cells;
+    if (!cells) throw new Error("This worker has no cell output.");
+    const count = request.storeHistory && !request.silent ? ++this.#cellCount : null;
+    cells.start(request.executionId, count, request.token);
+    const filename = request.filename ?? `<cell-${count ?? `s${++this.#silentCount}`}>`;
+    await this.#pyodide.loadPackagesFromImports(request.source);
+    const returned = (await bridge.run_cell(
+      request.source,
+      filename,
+      count,
+      request.silent,
+    )) as Sequence;
+    this.#live += 1;
+    let status: string;
+    let ename = "";
+    let evalue = "";
+    let traceback: string[] = [];
+    let notice: string | null = null;
+    try {
+      status = String(this.#at(returned, 0));
+      ename = String(this.#at(returned, 1) ?? "");
+      evalue = String(this.#at(returned, 2) ?? "");
+      const lines = this.#at(returned, 3);
+      if (isDestroyable(lines)) {
+        this.#live += 1;
+        try {
+          const plain = (lines as Sequence).toJs?.({ create_pyproxies: false });
+          traceback = Array.isArray(plain) ? boundTraceback(plain) : [];
+        } finally {
+          lines.destroy();
+          this.#live -= 1;
+        }
+      }
+      notice = (this.#at(returned, 4) as string | null) ?? null;
+    } finally {
+      returned.destroy();
+      this.#live -= 1;
+    }
+    const base = {
+      executionId: request.executionId,
+      executionCount: count,
+      ...(request.token !== undefined ? { token: request.token } : {}),
+    };
+    if (status !== "error") return { ...base, status: "ok" };
+    if (notice === "needs-jspi" && this.#needsJspiText !== null) {
+      const text = `${this.#needsJspiText}\n`;
+      cells.publish({
+        output: "display_data",
+        data: {
+          "text/plain": text,
+          [NOTICE_MIME]: JSON.stringify({ notice: "needs-jspi", text }),
+        },
+      });
+      return { ...base, status: "error", ename, evalue, traceback: [], notice: "needs-jspi" };
+    }
+    cells.error(request.executionId, ename, evalue, traceback);
+    return { ...base, status: "error", ename, evalue, traceback };
   }
 
   /** An execution's error, on stderr - marked as a notice when it is the no-JSPI remote read. */

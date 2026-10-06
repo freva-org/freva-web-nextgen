@@ -1,0 +1,166 @@
+{
+  "title": "ClimateClaw (Freva)",
+  "description": "ClimateClaw at a Freva instance. Operators set these through settings overrides; nothing here is a credential.",
+  "jupyter.lab.toolbars": {
+    "Chat": [
+      {
+        "name": "climateclawModel",
+        "rank": 1
+      },
+      {
+        "name": "climateclawHistory",
+        "command": "climateclaw:history",
+        "rank": 3
+      },
+      {
+        "name": "climateclawAccount",
+        "command": "climateclaw:account",
+        "rank": 4
+      }
+    ],
+    "Notebook": [
+      {
+        "name": "climateclawRunAndFix",
+        "command": "climateclaw:run-and-fix",
+        "rank": 35
+      }
+    ],
+    "Cell": [
+      {
+        "name": "climateclawStopRunAndFix",
+        "command": "climateclaw:stop-run-and-fix",
+        "rank": 5
+      }
+    ]
+  },
+  "jupyter.lab.menus": {
+    "context": [
+      {
+        "command": "climateclaw:run-and-fix",
+        "selector": ".jp-Notebook .jp-CodeCell",
+        "rank": 20
+      },
+      {
+        "command": "climateclaw:new-dkrz-thread",
+        "selector": ".jp-Notebook",
+        "rank": 21
+      }
+    ]
+  },
+  "type": "object",
+  "properties": {
+    "host": {
+      "title": "Freva host",
+      "description": "The Freva instance, e.g. https://freva.example.org. ClimateClaw and the login are reached under it.",
+      "type": "string",
+      "default": ""
+    },
+    "authBaseUrl": {
+      "title": "Auth base URL",
+      "description": "Defaults to {host}/api/freva-nextgen/auth/v2.",
+      "type": "string",
+      "default": ""
+    },
+    "apiPath": {
+      "title": "ClimateClaw API path",
+      "description": "Where ClimateClaw is served under the host.",
+      "type": "string",
+      "default": "/api/chatbot"
+    },
+    "callbackPath": {
+      "title": "Login callback path",
+      "description": "The sign-in callback, on this page's origin: a path (\"/auth/callback/\", resolved against this origin) or a same-origin URL. It hands the response back to this tab. Must be registered with the identity provider and in freva-rest's redirect allow-list. Defaults to the page shipped with this extension.",
+      "type": "string",
+      "default": ""
+    },
+    "expectedIssuer": {
+      "title": "Expected issuer",
+      "description": "The identity provider's issuer (RFC 9207), when it sends one.",
+      "type": "string",
+      "default": ""
+    },
+    "defaultModel": {
+      "title": "Default model",
+      "type": "string",
+      "default": ""
+    },
+    "runAndFixModel": {
+      "title": "Run & fix model",
+      "description": "A fast model for \"Run & fix at DKRZ\". Defaults to the default model.",
+      "type": "string",
+      "default": ""
+    },
+    "scopeNote": {
+      "title": "Scope note",
+      "description": "Prepended to the first message of every new thread and shown in the chat. It steers the assistant; it does not restrict it.",
+      "type": "string",
+      "default": ""
+    },
+    "examples": {
+      "title": "Example prompts",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": ["title", "prompt"],
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "hideCodeByDefault": {
+      "title": "Hide code by default",
+      "type": "boolean",
+      "default": false
+    },
+    "codeToNotebook": {
+      "title": "Code into the notebook",
+      "description": "Code ClimateClaw runs at DKRZ becomes new cells in the open notebook (a new one if none is open), with its output and figures; the chat keeps the explanation and says which cell. Off: code and output are shown in the chat.",
+      "type": "boolean",
+      "default": true
+    },
+    "hostLabel": {
+      "title": "Host label",
+      "description": "A short name for the Freva host in the chat header, e.g. DKRZ. Empty: derived from the host (nextgems.dkrz.de -> DKRZ).",
+      "type": "string",
+      "default": ""
+    },
+    "hideCode": {
+      "title": "Hide code",
+      "description": "The chat's code toggle: true folds the code of each run in the chat (it still goes into its notebook cell); outputs, errors and figures always show. null: hidden when codeToNotebook, else hideCodeByDefault.",
+      "type": ["boolean", "null"],
+      "default": null
+    },
+    "codeDisplay": {
+      "title": "Code display (replaced)",
+      "description": "Replaced by hideCode. Kept so settings saved by an earlier version still load; read once into hideCode, then removed.",
+      "type": ["string", "null"],
+      "default": null
+    },
+    "runModel": {
+      "title": "Run at DKRZ model",
+      "description": "The model chosen for Run at DKRZ; null uses runAndFixModel.",
+      "type": ["string", "null"],
+      "default": null
+    },
+    "previewOrigin": {
+      "title": "Figure origin",
+      "description": "The origin ClimateClaw's saved figures are served from (its preview_url), which the notebook may show pictures from. Empty: the host.",
+      "type": "string",
+      "default": ""
+    },
+    "registerUrl": {
+      "title": "Registration page",
+      "description": "Where a visitor without an account registers, linked from the chat's first page (an https URL). Empty hides the note.",
+      "type": "string",
+      "default": "https://luv.dkrz.de/register/"
+    }
+  },
+  "additionalProperties": false
+}

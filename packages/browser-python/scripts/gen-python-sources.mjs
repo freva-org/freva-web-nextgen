@@ -4,10 +4,16 @@
  * survive `tsc`, and a runtime `fetch("./python/browser_http.py")` would resolve against whatever
  * path a consumer's bundler produced. Embedding them as strings leaves one module graph, no assets,
  * no paths; `--check` fails when the generated file has drifted.
+ *
+ * `#` comments are removed on the way (see `strip-python-comments.mjs`): they are a quarter of the
+ * engine's gzipped bytes and no browser needs them. Lines are kept, so a traceback's line numbers
+ * still point into `src/python/*.py`; `tests/python-sources.test.ts` checks the AST is unchanged.
  */
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { stripPythonComments } from "./strip-python-comments.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PY_DIR = join(HERE, "..", "src", "python");
@@ -29,12 +35,12 @@ function render() {
   ];
   const names = [];
   for (const file of files) {
-    const source = readFileSync(join(PY_DIR, file), "utf8");
+    const source = stripPythonComments(readFileSync(join(PY_DIR, file), "utf8"));
     const name = constName(file);
     names.push([file, name]);
     // JSON.stringify is the encoder, not a template literal: Python is full of backslashes,
     // backticks and `${`, and every one of them is a syntax error or an injection in a template.
-    parts.push(`/** Verbatim contents of src/python/${file}. */`);
+    parts.push(`/** src/python/${file}, comments removed, lines kept. */`);
     parts.push(`export const ${name}: string = ${JSON.stringify(source)};`);
     parts.push("");
   }

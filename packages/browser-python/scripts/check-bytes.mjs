@@ -68,6 +68,11 @@ function walk(dir) {
 // importing `/console`. One combined number would hide the first behind the second.
 const CONSOLE_PREFIX = "console";
 const EMBED_PREFIX = "embed";
+// `/display`: the sanitiser and rich-output renderers. Optional like `/embed`: a host that shows
+// no HTML never imports it, and the console loads it only when HTML or SVG output arrives.
+const DISPLAY_PREFIX = "display";
+// `/session`: choices, slots, checkpoints and sleep. Imported only by a host offering sessions.
+const SESSION_PREFIX = "session";
 const files = walk(DIST).filter((f) => f.endsWith(".js"));
 if (files.length === 0) {
   console.error("dist/ has no JavaScript - run `npm run build` first.");
@@ -83,6 +88,10 @@ let consoleRaw = 0;
 let consoleGz = 0;
 let embedRaw = 0;
 let embedGz = 0;
+let displayRaw = 0;
+let displayGz = 0;
+let sessionRaw = 0;
+let sessionGz = 0;
 const rows = [];
 for (const file of files.sort()) {
   const name = file.slice(DIST.length + 1);
@@ -91,6 +100,12 @@ for (const file of files.sort()) {
   if (name.startsWith(CONSOLE_PREFIX)) {
     consoleRaw += bytes.length;
     consoleGz += gz;
+  } else if (name.startsWith(DISPLAY_PREFIX)) {
+    displayRaw += bytes.length;
+    displayGz += gz;
+  } else if (name.startsWith(SESSION_PREFIX)) {
+    sessionRaw += bytes.length;
+    sessionGz += gz;
   } else if (name.startsWith(EMBED_PREFIX)) {
     // MEASURED SEPARATELY rather than quietly folded in. `/embed` is the two-origin portal
     // bridge, which a host that embeds nothing never imports, just as one wanting no REPL never
@@ -116,6 +131,12 @@ console.log(
 );
 console.log(
   `  ${"EMBED (optional two-origin bridge)".padEnd(40)} ${pad(embedRaw, 8)} B  ${pad(embedGz, 7)} B gz`,
+);
+console.log(
+  `  ${"DISPLAY (optional rich output)".padEnd(40)} ${pad(displayRaw, 8)} B  ${pad(displayGz, 7)} B gz`,
+);
+console.log(
+  `  ${"SESSION (optional sessions and sleep)".padEnd(40)} ${pad(sessionRaw, 8)} B  ${pad(sessionGz, 7)} B gz`,
 );
 console.log(
   "\n  The console additionally loads jQuery, jQuery Terminal and Prism at run time; those are\n" +
@@ -178,6 +199,8 @@ if (AS_JSON) {
         engineRaw: raw,
         budgetGz: BUDGET_BYTES,
         consoleOwnGz: consoleGz,
+        displayOwnGz: displayGz,
+        sessionOwnGz: sessionGz,
         tarballBytes: packed.size,
         tarballFiles: packed.entryCount,
       },

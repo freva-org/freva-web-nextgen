@@ -14,9 +14,18 @@
  *   zarr-status-code  Number (backend status code from ZarrPoller)
  *   is-aggregation    Boolean
  *   error-action      Label of an extra button beside Retry (e.g. "Sign in")
- *   viewer-disabled   Why GridLook cannot open this store; disables its tab, shown as tooltip
+ *   viewer-disabled   Why GridLook cannot open this store; disables its tab, shown as tooltip.
+ *                     Per read: the read pipeline clears and sets it.
+ *   viewer-off        The host's policy: no 3D viewer here at all (its value is the reason, e.g.
+ *                     the page's CSP does not frame GridLook). Never changed by a read, a Retry
+ *                     or a new file; while present no GridLook frame is made.
+ *   embedded          Boolean - no backdrop, title, close button, path field or focus trap; fills
+ *                     its container (a host's own tab or pane, which names the file). Views stay.
+ *   view              "metadata" | "viewer" - the view to show (default "metadata"); the viewer
+ *                     falls back to metadata while it cannot show (see `activeView`)
  *
  * ── JS-only properties ─────────────────────────────────────────────────────
+ *   activeView        "metadata" | "viewer" (read-only) - the view shown now
  *   output            string | null  (trusted xarray-repr HTML; too large for an attribute)
  *   aggregationConfig Partial<AggregationConfigValues> | null - what Aggregate / Retry submit
  *                     until the user edits the form; null restores its defaults
@@ -211,6 +220,19 @@ data-inspector{
 .di-gridlook-frame{width:100%;height:calc(95vh - 280px);min-height:500px;background:var(--_di-surface);border-radius:8px;overflow:hidden;border:1px solid var(--_di-border);}
 .di-gridlook-frame iframe{width:100%;height:100%;border:none;display:block;}
 .di-agg-form{padding:16px;overflow-y:auto;}
+data-inspector[embedded]{display:block;height:100%;}
+.di-embedded{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:var(--_di-bg);color:var(--_di-fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.5;}
+.di-embedded>#nc-tabs-wrap{display:flex;flex-direction:column;flex:1;min-height:0;}
+.di-embedded>#nc-tabs-wrap[hidden]{display:none;}
+.di-embedded .di-zarr-row{margin:8px 12px 0;}
+.di-embedded .di-tabs{padding:0 8px;}
+.di-embedded .di-tab{padding:8px 14px;font-size:13px;}
+.di-embedded .di-body{flex:1;min-height:0;max-height:none;padding:12px;}
+.di-embedded #nc-gridlook:not([hidden]){display:flex;flex-direction:column;height:100%;}
+.di-embedded .di-gridlook-bar{padding:0;margin:0 0 8px;background:none;border:0;}
+.di-embedded .di-gridlook-inner{justify-content:flex-end;}
+.di-embedded .di-gridlook-ico,.di-embedded .di-gridlook-label,.di-embedded .di-gridlook-code{display:none;}
+.di-embedded .di-gridlook-frame{flex:1;height:auto;min-height:320px;}
 .di-agg-form h5{margin:0 0 12px;font-size:1.05rem;font-weight:600;}
 .di-agg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}
 .di-empty-ico{font-size:40px;color:var(--_di-border);margin-bottom:12px;display:block;}
@@ -275,7 +297,55 @@ export class DataInspectorElement extends HTMLElement {
       "is-aggregation",
       "error-action",
       "viewer-disabled",
+      "viewer-off",
+      "embedded",
+      "view",
     ];
+  }
+
+  /** Without dialog chrome, inside a host's own pane (see the `embedded` attribute). */
+  get embedded(): boolean {
+    return this.hasAttribute("embedded");
+  }
+  set embedded(v: boolean) {
+    v ? this.setAttribute("embedded", "") : this.removeAttribute("embedded");
+  }
+
+  /** The view asked for (`view`): "viewer" for the 3D viewer, else the metadata. */
+  get view(): "metadata" | "viewer" {
+    return this.getAttribute("view") === "viewer" ? "viewer" : "metadata";
+  }
+  set view(v: "metadata" | "viewer") {
+    this.setAttribute("view", v);
+  }
+
+  /** The view shown now: the viewer only while it can show (a read store, not disabled). */
+  get activeView(): "metadata" | "viewer" {
+    return this._activeTab === "gridlook" && this._viewerAvailable() ? "viewer" : "metadata";
+  }
+
+  /** Whether the 3D viewer can show: the store was read and nothing disabled it. */
+  private _viewerAvailable(): boolean {
+    return (
+      this.open &&
+      this.status === NcDumpDialogState.READY &&
+      this._output != null &&
+      this._output !== "" &&
+      !!this.zarrUrl &&
+      this._viewerBlocked() === null
+    );
+  }
+
+  /** Why the viewer cannot show: the host's policy first, then this read's reason; or null. */
+  private _viewerBlocked(): string | null {
+    if (this.hasAttribute("viewer-off")) {
+      return this.getAttribute("viewer-off") || "The 3D viewer is not available here.";
+    }
+    return this.getAttribute("viewer-disabled");
+  }
+
+  private _requestedTab(): "metadata" | "gridlook" {
+    return this.view === "viewer" ? "gridlook" : "metadata";
   }
 
   // ── Attribute accessors ───────────────────────────────────────────────────
@@ -389,7 +459,7 @@ export class DataInspectorElement extends HTMLElement {
       // Opened: remember what to restore focus to, reset to metadata tab,
       // clear transient flags, auto-submit in single-file mode.
       if (this._restoreFocusTo === null) this._restoreFocusTo = document.activeElement;
-      this._activeTab = "metadata";
+      this._activeTab = this._requestedTab();
       this._copied = false;
       this._gridlookCopied = false;
       const f = this.file;
@@ -415,13 +485,17 @@ export class DataInspectorElement extends HTMLElement {
         this._loadOptions = null;
         this._output = null;
         this._domOutput = undefined;
-        this._activeTab = "metadata";
+        this._activeTab = this._requestedTab();
         this._copied = false;
         this._gridlookCopied = false;
         if (this.hasAttribute("error")) this.removeAttribute("error");
         if (this.hasAttribute("zarr-url")) this.removeAttribute("zarr-url");
       }
     }
+
+    if (name === "view") this._activeTab = this._requestedTab();
+    // A different layout is a different skeleton.
+    if (name === "embedded" && this._built) this._built = false;
 
     // Entering the error state returns to the metadata tab so the error banner
     // is shown on its own (no stale metadata / 3D viewer behind it).
@@ -530,7 +604,12 @@ export class DataInspectorElement extends HTMLElement {
       this._teardown();
       return;
     }
-    if (!this._built || this._builtMode !== this.isAggregation) this._build();
+    if (!this._built || this._builtMode !== this.isAggregation) {
+      // A rebuild (another layout) keeps the store's state but makes the nodes again.
+      this._domOutput = undefined;
+      this._domIframeUrl = undefined;
+      this._build();
+    }
     this._update();
   }
 
@@ -675,7 +754,24 @@ export class DataInspectorElement extends HTMLElement {
         <p id="nc-empty-main-text" class="di-empty-text"></p>
       </div>`;
 
-    this.innerHTML = `
+    // Embedded: the host's pane names the file and closes it; the dialog's chrome is not drawn.
+    this.innerHTML = this.embedded
+      ? `
+      <div class="di-embedded">
+        <div id="nc-zarr-row" class="di-zarr-row" hidden>
+          <div class="di-zarr-inner">
+            <span class="di-muted" style="display:inline-flex;flex-shrink:0">${ico(IC.link)}</span>
+            <span class="di-muted" style="font-weight:500;flex-shrink:0">Zarr:</span>
+            <code id="nc-zarr-url" class="di-code"></code>
+            <button id="nc-copy-zarr" class="di-btn di-btn-outline" title="Copy Zarr URL">${ico(IC.copy)}</button>
+          </div>
+        </div>
+        ${aggForm}
+        ${preLoading}
+        ${tabsWrap}
+        ${emptyMain}
+      </div>`
+      : `
       <div id="nc-backdrop" class="di-backdrop">
         <div class="di-modal" role="dialog" aria-modal="true" aria-labelledby="nc-title" tabindex="-1">
           ${header}
@@ -700,7 +796,8 @@ export class DataInspectorElement extends HTMLElement {
 
     this._built = true;
     this._attach();
-    this._initialFocus();
+    // A dialog takes the focus; an embedded inspector leaves it to its host.
+    if (!this.embedded) this._initialFocus();
   }
 
   private _ensureIframe(): HTMLIFrameElement | null {
@@ -895,19 +992,22 @@ export class DataInspectorElement extends HTMLElement {
     if (preText) preText.textContent = loadingText;
     this._q("#nc-pre-steps")?.setAttribute("status-code", code);
 
-    // Tabs
+    // Tabs. `viewer-disabled`: the 3D tab stays visible but disabled, with the reason as its
+    // tooltip. A store read without a viewer (no output, no store URL) shows its metadata.
+    const viewerBlocked = this._viewerBlocked();
+    if (viewerBlocked !== null && this._activeTab === "gridlook") this._activeTab = "metadata";
+    // The view asked for stays asked for; until the viewer can show, the metadata does.
+    const tab: "metadata" | "gridlook" =
+      this._activeTab === "gridlook" && !(hasOutput && zarrUrl) ? "metadata" : this._activeTab;
     const metaTab = this._q<HTMLButtonElement>('[data-tab="metadata"]');
     const gridTab = this._q<HTMLButtonElement>('[data-tab="gridlook"]');
     if (metaTab) {
-      const active = this._activeTab === "metadata";
+      const active = tab === "metadata";
       metaTab.classList.toggle("di-tab-active", active);
       metaTab.setAttribute("aria-selected", String(active));
     }
-    // `viewer-disabled`: the tab stays visible but disabled, with the reason as its tooltip.
-    const viewerBlocked = this.getAttribute("viewer-disabled");
-    if (viewerBlocked !== null && this._activeTab === "gridlook") this._activeTab = "metadata";
     if (gridTab) {
-      const active = this._activeTab === "gridlook";
+      const active = tab === "gridlook";
       gridTab.disabled = status !== NcDumpDialogState.READY || !hasOutput || viewerBlocked !== null;
       if (viewerBlocked) gridTab.setAttribute("title", viewerBlocked);
       else gridTab.removeAttribute("title");
@@ -916,7 +1016,7 @@ export class DataInspectorElement extends HTMLElement {
     }
 
     // Body: error
-    this._toggle(this._q("#nc-error"), isError && this._activeTab === "metadata");
+    this._toggle(this._q("#nc-error"), isError && tab === "metadata");
     const errMsg = this._q("#nc-error-msg");
     if (errMsg) errMsg.textContent = this.error ?? "";
     // Optional host button beside Retry; label set as text, never HTML.
@@ -937,7 +1037,7 @@ export class DataInspectorElement extends HTMLElement {
     // Never shown in the error state - the error must appear alone.
     this._toggle(
       this._q("#nc-metadata"),
-      this._activeTab === "metadata" && hasOutput && !isLoading && !isError,
+      tab === "metadata" && hasOutput && !isLoading && !isError,
     );
     const inner = this._q("#nc-metadata-inner");
     if (inner && this._domOutput !== this._output) {
@@ -947,7 +1047,7 @@ export class DataInspectorElement extends HTMLElement {
 
     // Body: gridlook (persistent iframe; created on first view, src set only
     // when the URL changes - never recreated on unrelated re-renders)
-    const showGrid = this._activeTab === "gridlook" && !!zarrUrl;
+    const showGrid = tab === "gridlook" && !!zarrUrl;
     this._toggle(this._q("#nc-gridlook"), showGrid);
     if (zarrUrl) {
       const url = gridlookUrl(zarrUrl);

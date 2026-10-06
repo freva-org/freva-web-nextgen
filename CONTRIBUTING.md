@@ -74,15 +74,18 @@ going through the release PR.
 
 ```
 packages/
-  browser-python/        # @freva-org/browser-python
-  data-inspector/        # @freva-org/data-inspector
-  databrowser/           # @freva-org/databrowser
-  dataset-tree/          # @freva-org/dataset-tree
-  freva-badge/           # @freva-org/freva-badge
-  portal-builder/        # @freva-org/portal-builder
-  stac-browser/          # @freva-org/stac-browser (private)
-  ts-oidc-auth-client/   # @freva-org/ts-oidc-auth-client
-  your-new-package/      # add future packages here
+  browser-python/            # @freva-org/browser-python
+  data-inspector/            # @freva-org/data-inspector
+  databrowser/               # @freva-org/databrowser
+  dataset-tree/              # @freva-org/dataset-tree
+  freva-badge/               # @freva-org/freva-badge
+  jupyterlite-climateclaw/   # @freva-org/jupyterlite-climateclaw
+  jupyterlite-freva-data/    # @freva-org/jupyterlite-freva-data
+  jupyterlite-freva-kernel/  # @freva-org/jupyterlite-freva-kernel
+  portal-builder/            # @freva-org/portal-builder
+  stac-browser/              # @freva-org/stac-browser (private)
+  ts-oidc-auth-client/       # @freva-org/ts-oidc-auth-client
+  your-new-package/          # add future packages here
 ```
 
 Each package is independently versioned and published.

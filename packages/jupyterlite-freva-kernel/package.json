@@ -1,0 +1,101 @@
+{
+  "name": "@freva-org/jupyterlite-freva-kernel",
+  "version": "2609.0.0",
+  "description": "The \"Freva Python\" kernel for JupyterLite: a prebuilt extension that runs notebook cells in @freva-org/browser-python, with sanitised rich output.",
+  "keywords": [
+    "jupyter",
+    "jupyterlab-extension",
+    "jupyterlite",
+    "jupyterlite-kernel"
+  ],
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/jupyterlite-freva-kernel"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./kernel": {
+      "types": "./lib/kernel.d.ts",
+      "import": "./lib/kernel.js"
+    },
+    "./prepare": {
+      "types": "./bin/prepare-notebook.d.mts",
+      "import": "./bin/prepare-notebook.mjs"
+    },
+    "./csp": {
+      "types": "./bin/notebook-csp.d.mts",
+      "import": "./bin/notebook-csp.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "freva-prepare-notebook": "./bin/prepare-notebook.mjs"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "labextension",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:labextension": "node scripts/build-labextension.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:browser": "BROWSER_STRICT=1 node browser-tests/notebook.mjs && BROWSER_STRICT=1 node browser-tests/notebook-integrity.mjs",
+    "prepack": "npm run build && npm run build:labextension"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "4.1.1",
+    "@freva-org/browser-python": "2609.1.0",
+    "@jupyterlab/application": "~4.6.4",
+    "@jupyterlab/apputils": "~4.7.4",
+    "@jupyterlab/coreutils": "~6.6.4",
+    "@jupyterlab/mainmenu": "~4.6.4",
+    "@jupyterlab/notebook": "~4.6.4",
+    "@jupyterlab/rendermime-interfaces": "~3.14.4",
+    "@jupyterlab/services": "~7.6.4",
+    "@jupyterlab/settingregistry": "~4.6.4",
+    "@jupyterlab/statedb": "~4.6.4",
+    "@jupyterlite/services": "~0.8.5",
+    "@lumino/coreutils": "^2.2.2",
+    "@lumino/signaling": "^2.1.5",
+    "@lumino/widgets": "~2.8.0",
+    "json5": "2.2.3"
+  },
+  "devDependencies": {
+    "@jupyter/builder": "1.2.3",
+    "@jupyterlab/core-meta": "4.6.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
+  },
+  "jupyterlab": {
+    "extension": "lib/index.js",
+    "outputDir": "labextension",
+    "webpackConfig": "./webpack.config.cjs",
+    "sharedPackages": {
+      "@freva-org/browser-python": {
+        "bundled": true,
+        "singleton": false
+      },
+      "@jupyterlite/services": {
+        "bundled": false,
+        "singleton": true
+      }
+    },
+    "mimeExtension": "lib/mime.js"
+  }
+}

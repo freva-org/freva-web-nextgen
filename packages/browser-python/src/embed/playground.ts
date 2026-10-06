@@ -22,6 +22,9 @@ import {
   OPEN_LINK_ALLOWLIST,
   portalPage,
   type PlaygroundPayload,
+  parseSetupCapability,
+  SETUP_CAPABILITY_VERSION,
+  type SetupCapability,
 } from "./protocol.js";
 import type { ExampleRegistry, RegisteredExample } from "./examples.js";
 import type { ArtifactInfo, BrowserPython } from "../types.js";
@@ -69,6 +72,11 @@ export interface PlaygroundBridgeOptions {
    * reopen, rather than the frame's own address.
    */
   onPage?: (url: string) => void;
+  /**
+   * The portal proposed a setup for this session (`SetupCapability`), already checked for shape.
+   * Validate it against this playground's own policy before offering it.
+   */
+  onSetupProposal?: (proposal: { setup: SetupCapability["setup"]; policy: string }) => void;
   /** Injectable for tests; defaults to this frame's own window. */
   scope?: Window;
 }
@@ -82,6 +90,13 @@ export interface PlaygroundBridge {
   openLink(url: string): boolean;
   /** Push the current artifact list to the parent. Called automatically on every change. */
   announce(): Promise<void>;
+  /** Tell the portal which setup this session locked. Nothing is sent before a session. */
+  announceSetup(setup: SetupCapability["setup"], policy: string): boolean;
+  /**
+   * Serve a different engine from now on - a session woken from sleep has a new one. Transfers
+   * from the previous engine are stopped and the list is announced again.
+   */
+  useEngine(engine: BrowserPython): void;
   stop(): void;
 }
 
@@ -117,6 +132,7 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
    * the parent had with the PREVIOUS document in this frame is refused here as well as there.
    */
   let challenge = "";
+  let engine = options.engine;
 
   const send = (message: PlaygroundPayload): void => {
     parent.postMessage(
@@ -209,7 +225,7 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
 
   /** An explicit request from the portal: exactly one Worker listing, and one reply. */
   const list = async (): Promise<void> => {
-    announce(await options.engine.artifacts());
+    announce(await engine.artifacts());
   };
 
   // Serve one download into the port the parent transferred. The sink is the port: each chunk is
@@ -260,7 +276,7 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
       });
 
     try {
-      const result = await options.engine.streamArtifact(
+      const result = await engine.streamArtifact(
         name,
         {
           async write(chunk: Uint8Array) {
@@ -405,6 +421,12 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
       void perform(data.requestId, data.op);
       return;
     }
+    if (data.kind === "setup") {
+      if (data.targetSession && data.targetSession !== sessionId) return;
+      const proposal = parseSetupCapability(data);
+      if (proposal) options.onSetupProposal?.({ setup: proposal.setup, policy: proposal.policy });
+      return;
+    }
     if (data.kind === "download") {
       const port = event.ports[0];
       if (!port) {
@@ -422,7 +444,7 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
   scope.addEventListener("message", onMessage);
   // The event already carries the list. Forwarding it is the entire handler: no `await`, no
   // request, and therefore no way for this listener to cause the event that calls it again.
-  const unsubscribe = options.engine.onArtifacts((event) => announce(event.artifacts));
+  let unsubscribe = engine.onArtifacts((event) => announce(event.artifacts));
   // ATTACHING ASKS THE WORKER FOR NOTHING. The portal sends `list` as soon as the handshake
   // completes, and that is the initial listing; a second one here would be one request nobody
   // asked for, on every attach, forever.
@@ -436,6 +458,19 @@ export function attachPlaygroundBridge(options: PlaygroundBridgeOptions): Playgr
       return true;
     },
     announce: list,
+    announceSetup(setup, policy) {
+      if (!challenge) return false;
+      send({ kind: "setup", capabilityVersion: SETUP_CAPABILITY_VERSION, setup, policy });
+      return true;
+    },
+    useEngine(next) {
+      if (next === engine) return;
+      unsubscribe();
+      abortAll("the session's interpreter was replaced");
+      engine = next;
+      unsubscribe = engine.onArtifacts((event) => announce(event.artifacts));
+      void list().catch(() => undefined);
+    },
     stop() {
       scope.removeEventListener("message", onMessage);
       unsubscribe();

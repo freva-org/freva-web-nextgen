@@ -13,6 +13,7 @@ export const SUITES = [
   "console-paste-and-caret.mjs", // a real clipboard paste, and whether the cursor is painted
   "console-mobile.mjs", // the component at 390px with touch, where there are no modifier keys
   "console-files.mjs", // the file panel: preview, download, two-step delete
+  "rich-output.mjs", // the HTML/SVG sanitiser and renderers against a hostile corpus, every engine
   "console-real-engine.mjs", // the component, against a real interpreter
   "repl.mjs", // needs the interpreter only - runs anywhere
   "workspace-errors.mjs", // the disk-backed workspace's failure paths, with the failures injected
@@ -26,6 +27,8 @@ export const SUITES = [
   "bundled-consumer.mjs", // packs, installs and BUNDLES the package, the way a portal does
   "http-adapter.mjs", // needs the interpreter only - runs anywhere
   "display.mjs", // needs the interpreter only - runs anywhere
+  "cells.mjs", // notebook cells: results, bundles, counts, ordering - pandas, xarray, matplotlib
+  "sessions.mjs", // per-session setups, live slots, telemetry, sleep and wake with a checkpoint
   "fsspec-adapter.mjs", // needs the fsspec wheel (pure Python, so widely obtainable)
   "s3-adapter.mjs", // anonymous s3:// mapping and refusals; the fsspec wheel only
   "zarr.mjs", // needs the scientific wheels
@@ -119,11 +122,16 @@ export const SUITE_CLASSES = Object.freeze({
   "console-lifecycle.mjs": { category: "console" },
   "console-paste-and-caret.mjs": { category: "console" },
   "console-files.mjs": { category: "console" },
+  // No interpreter: the DOM boundary for Python-authored markup, which each engine parses itself.
+  "rich-output.mjs": { category: "console" },
 
   // portable - the real interpreter
   "console-real-engine.mjs": { category: "portable" },
   "repl.mjs": { category: "portable" },
   "display.mjs": { category: "portable" },
+  "cells.mjs": { category: "portable" },
+  // A browser without writable OPFS streams is checked for refusing sleep instead.
+  "sessions.mjs": { category: "portable" },
   "http-adapter.mjs": { category: "portable" }, // awaited reads only: no JSPI involved
   "fsspec-adapter.mjs": { category: "portable" }, // awaited reads only
   "s3-adapter.mjs": { category: "portable" }, // awaited reads only

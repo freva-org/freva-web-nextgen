@@ -16,11 +16,14 @@ import {
   newChallenge,
   newIdentity,
   OPEN_LINK_ALLOWLIST,
+  parseSetupCapability,
+  SETUP_CAPABILITY_VERSION,
   type BridgeOp,
   type ChunkMessage,
   type EmbeddedArtifact,
   type HostPayload,
   type PlaygroundMessage,
+  type SetupCapability,
 } from "./protocol.js";
 
 /** The artifact a picker is opened for: its metadata, plus the name to suggest saving it as. */
@@ -88,6 +91,11 @@ export interface PlaygroundHostOptions {
    */
   onTranscript?: (transcript: { text: string; truncated: boolean }) => void;
   /**
+   * The setup the playground's session locked (`SetupCapability`), checked for shape only: compare
+   * the policy fingerprint and validate against the portal's own policy before believing it.
+   */
+  onSetup?: (report: { setup: SetupCapability["setup"]; policy: string }) => void;
+  /**
    * How long a bounded operation may wait for its answer, in milliseconds. A number rather than
    * "forever", because a child that stopped answering leaves a menu row broken with no message.
    */
@@ -140,6 +148,8 @@ export interface PlaygroundHost {
    * name. Rejects with the child's own reason, and on a timeout.
    */
   perform(op: BridgeOp, targetSession?: string): Promise<void>;
+  /** Propose a setup to a playground that is about to choose one ("same as current"). */
+  proposeSetup(setup: SetupCapability["setup"], policy: string, targetSession?: string): void;
   /**
    * Save one artifact. MUST be called from the portal's own user gesture, and `openSink` MUST be
    * called synchronously by whatever the portal passes here: a picker opened after an `await` has
@@ -428,6 +438,11 @@ export function createPlaygroundHost(options: PlaygroundHostOptions): Playground
         );
       return;
     }
+    if (data.kind === "setup") {
+      const report = parseSetupCapability(data);
+      if (report) options.onSetup?.({ setup: report.setup, policy: report.policy });
+      return;
+    }
     if (data.kind === "artifacts") {
       // COPIED AND CHECKED. Keeping the peer's own array would hand every caller of `artifacts` a
       // reference the peer's next message replaces underneath them, and unchecked entries would let
@@ -482,6 +497,20 @@ export function createPlaygroundHost(options: PlaygroundHostOptions): Playground
           reject(error instanceof Error ? error : new Error(String(error)));
         }
       });
+    },
+    proposeSetup(setup, policy, targetSession) {
+      refuseIfStopped("propose a setup");
+      const message: SetupCapability & { targetSession?: string } = {
+        kind: "setup",
+        capabilityVersion: SETUP_CAPABILITY_VERSION,
+        setup,
+        policy,
+        ...(targetSession !== undefined ? { targetSession } : {}),
+      };
+      // Refused here too: a malformed proposal is a portal bug, not something to send.
+      if (!parseSetupCapability(message))
+        throw new Error("proposeSetup: not a valid setup message");
+      post(message);
     },
     get artifacts() {
       // A COPY, every time: a caller that sorts or splices what it is given must not be editing

@@ -67,7 +67,9 @@ export const PROFILE_PACKAGES: Readonly<Record<BrowserPythonProfile, readonly st
   // is absent from a fresh interpreter. micropip is small and is the ONLY way a visitor can add a
   // package to a session with no backend, so loading it lazily would break the documented
   // command on a slow first call or on a deployment whose index cannot be reached.
-  "xarray-zarr": ["xarray", "zarr", "fsspec", "numcodecs", "micropip"],
+  // `cftime` decodes the non-standard calendars of climate model output (noleap, 360_day), which
+  // xarray needs at open time; without it such a store opens with raw numbers for its times.
+  "xarray-zarr": ["xarray", "zarr", "fsspec", "numcodecs", "cftime", "micropip"],
   // The Freva profile EXTENDS xarray-zarr, and every name here comes from the runtime's own lock -
   // none of it is fetched from PyPI. The Freva wheels are not Pyodide packages and are installed
   // from same-origin assets, after these, by `installFrevaClient`. `pygments` is explicit and is
@@ -79,6 +81,7 @@ export const PROFILE_PACKAGES: Readonly<Record<BrowserPythonProfile, readonly st
     "zarr",
     "fsspec",
     "numcodecs",
+    "cftime",
     "micropip",
     // freva-client's own import-time dependencies, all from the Pyodide lock
     "requests",
@@ -99,12 +102,13 @@ export const PROFILE_PACKAGES: Readonly<Record<BrowserPythonProfile, readonly st
 /** Which modules to report versions for once a profile is up. */
 export const PROFILE_REPORTED: Readonly<Record<BrowserPythonProfile, readonly string[]>> = {
   minimal: [],
-  "xarray-zarr": ["xarray", "zarr", "fsspec", "numcodecs", "numpy", "micropip"],
+  "xarray-zarr": ["xarray", "zarr", "fsspec", "numcodecs", "cftime", "numpy", "micropip"],
   "freva-client": [
     "xarray",
     "zarr",
     "fsspec",
     "numcodecs",
+    "cftime",
     "numpy",
     "micropip",
     "freva_client",

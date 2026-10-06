@@ -20,6 +20,7 @@
 
 import { mimeForName, safeBlobType } from "../artifact-mime.js";
 import { MAX_WORKSPACE_FILES } from "../types.js";
+import { IMPORT_PREFIX, workspaceNameProblem } from "../workspace-names.js";
 import type { ArtifactInfo, WorkspaceStatus, WorkspaceUnavailableReason } from "../types.js";
 
 // internals
@@ -38,6 +39,37 @@ interface EmscriptenFS {
    * `FS.unlink` calls `destroyNode`; `FS.rename` does NOT for the destination it overwrites. */
   hashRemoveNode(node: FSNode): void;
   destroyNode(node: FSNode): void;
+  open(path: string, flags: string): EmscriptenStream;
+  write(
+    stream: EmscriptenStream,
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+    position?: number,
+  ): number;
+  close(stream: EmscriptenStream): void;
+  rename(from: string, to: string): void;
+}
+
+/** An open Emscripten file descriptor, opaque here. */
+type EmscriptenStream = object;
+
+/** A file being written INTO the workspace from outside Python. See `Workspace.beginImport`. */
+interface Import {
+  stream: EmscriptenStream | null;
+  temp: string;
+  target: string;
+  name: string;
+  size: number;
+  written: number;
+}
+
+/** Path segments a workspace import may use; checkpoints share the rule (workspace-names.ts). */
+function importSegments(name: string): string[] {
+  const problem = workspaceNameProblem(name);
+  if (problem)
+    throw new Error(`${JSON.stringify(name)} is not a valid workspace file name: ${problem}.`);
+  return name.split("/");
 }
 
 interface FSNode {
@@ -398,6 +430,8 @@ export class Workspace {
   /** Open transfer leases, by id. See `openLease`. */
   #leases = new Map<string, Lease>();
   #nextLease = 0;
+  #imports = new Map<string, Import>();
+  #nextImport = 0;
 
   private constructor(init: {
     pyodide: { FS: unknown; runPython(code: string): unknown };
@@ -569,6 +603,7 @@ export class Workspace {
 
   #walk(dir: FSNode, prefix: string, out: ArtifactInfo[]): void {
     for (const [name, node] of Object.entries(dir.contents ?? NO_CONTENTS)) {
+      if (name.startsWith(IMPORT_PREFIX)) continue;
       const path = prefix ? `${prefix}/${name}` : name;
       if (this.#FS.isDir(node.mode)) {
         this.#walk(node, path, out);
@@ -818,6 +853,104 @@ export class Workspace {
     this.#FS.unlink(`${WORKSPACE_PATH}/${name}`);
   }
 
+  // imports
+
+  /**
+   * Start writing a file INTO the workspace: a checkpoint being restored, a notebook saved to
+   * `/workspace`. Bytes go to a hidden staging name and only become `name` on a committed
+   * `endImport`, so a failed or abandoned import never leaves a partial file under the real name.
+   * Through Emscripten's FS, so the import obeys the same slot limit as Python's own files.
+   */
+  beginImport(name: string, size: number, overwrite: boolean): string {
+    const parts = importSegments(name);
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Invalid size ${size}.`);
+    const existing = this.#resolve(name);
+    if (existing && (this.#FS.isDir(existing.mode) || !overwrite)) {
+      throw new Error(`${name} already exists in the workspace.`);
+    }
+    if (existing && ((existing.openCount ?? 0) > 0 || (existing.leases?.size ?? 0) > 0)) {
+      throw new Error(`${name} is open or being downloaded and cannot be replaced now.`);
+    }
+    const dir = [WORKSPACE_PATH, ...parts.slice(0, -1)].join("/");
+    this.#FS.mkdirTree(dir);
+    const handle = `import-${++this.#nextImport}`;
+    const temp = `${dir}/${IMPORT_PREFIX}${this.#nextImport}`;
+    const stream = this.#FS.open(temp, "w");
+    this.#imports.set(handle, {
+      stream,
+      temp,
+      target: `${WORKSPACE_PATH}/${parts.join("/")}`,
+      name,
+      size,
+      written: 0,
+    });
+    return handle;
+  }
+
+  /** Append one chunk. Offsets must be contiguous and never pass the declared size. */
+  writeImport(handle: string, offset: number, bytes: Uint8Array): void {
+    const held = this.#imports.get(handle);
+    if (!held?.stream) throw new Error("This import has already finished or was cancelled.");
+    if (offset !== held.written || held.written + bytes.byteLength > held.size) {
+      throw new Error(`Import of ${held.name}: bytes at ${offset} do not follow ${held.written}.`);
+    }
+    let done = 0;
+    while (done < bytes.byteLength) {
+      const n = this.#FS.write(held.stream, bytes, done, bytes.byteLength - done);
+      if (n <= 0) throw new Error(`Import of ${held.name} stopped at byte ${held.written + done}.`);
+      done += n;
+    }
+    held.written += done;
+  }
+
+  /** Commit (rename into place) or abandon (unlink) an import. Idempotent for an abandon. */
+  endImport(handle: string, commit: boolean): string {
+    const held = this.#imports.get(handle);
+    if (!held) {
+      if (commit) throw new Error("This import has already finished or was cancelled.");
+      return "";
+    }
+    this.#imports.delete(handle);
+    try {
+      if (held.stream) this.#FS.close(held.stream);
+      held.stream = null;
+      const staged = this.#FS.lookupPath(held.temp).node;
+      if (commit) {
+        if (held.written !== held.size) {
+          throw new Error(`Import of ${held.name} ended at ${held.written} of ${held.size} bytes.`);
+        }
+        if (staged.failure) throw new Error(this.#incompleteMessage(held.name, staged.failure));
+        this.#FS.rename(held.temp, held.target);
+        return held.name;
+      }
+    } catch (error) {
+      this.#discard(held.temp);
+      throw error;
+    }
+    this.#discard(held.temp);
+    return "";
+  }
+
+  /** Abandon every import, e.g. at shutdown. */
+  abandonImports(): void {
+    for (const handle of [...this.#imports.keys()]) this.endImport(handle, false);
+  }
+
+  #discard(path: string): void {
+    try {
+      this.#FS.unlink(path);
+    } catch {
+      // already gone
+    }
+  }
+
+  /** Bytes held by ready and open files: what a checkpoint of this workspace would copy. */
+  bytesUsed(): number {
+    let total = 0;
+    for (const entry of this.list()) total += entry.size;
+    return total;
+  }
+
   /** How many more files may exist at once. */
   freeSlots(): number {
     return this.#pool.free();
@@ -855,6 +988,11 @@ export class Workspace {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    try {
+      this.abandonImports();
+    } catch {
+      // the session directory is removed below either way
+    }
     this.#pool.closeAll();
     try {
       this.#lock?.close();
