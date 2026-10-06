@@ -131,10 +131,14 @@ const result = await inBrowser(async (page) => {
       window.__b = b;
       window.__c = c;
       await Promise.all([a.start(), a.start(), b.start(), b.start()]);
+      const runningA = a.engine.run("import time\ntime.sleep(3)");
+      const runningB = b.engine.run("import time\ntime.sleep(3)");
+      await new Promise((r) => setTimeout(r, 300));
       const third = await c.start().then(
         () => "started",
         (e) => e.code,
       );
+      await Promise.all([runningA, runningB]);
       const created = window.__s.created();
       const starterA = await window.__s.py(a, "print(STARTED)");
       const starterB = await window.__s.py(b, "print('STARTED' in globals())");
