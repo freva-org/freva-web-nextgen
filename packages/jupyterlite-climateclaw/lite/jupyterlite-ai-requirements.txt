@@ -1,0 +1,14 @@
+# jupyterlite-ai 0.20.1 and the prebuilt extensions it needs in JupyterLite, pinned with hashes.
+# A site's prepare step downloads these from PyPI (--require-hashes --no-deps --only-binary=:all:)
+# and JupyterLite reads each wheel's prebuilt extension; nothing is installed and nothing of it is
+# committed or hosted by this project. The Python dependencies of their server extensions
+# (jupyter_server and friends) are not needed in JupyterLite and are not downloaded.
+jupyterlite-ai==0.20.1 --hash=sha256:7515feedc4dc75b18122b69b7456e102426303dc4a1cb0d248e8f60457e2d2fb
+jupyternaut-persona==0.20.1 --hash=sha256:ebb3edca9b6972f63020d9dfb60d9de5d4a61c762bbd12cd5cf0efe30af2cce7
+jupyter-chat-components==0.6.0 --hash=sha256:2e5993e03ab082c2c81d3590e52b0eeccba3deb3c01b1808728e18c385385c65
+jupyter-secrets-manager==0.5.1 --hash=sha256:68aaea228fee1c9c49a5700a8cfd40b188b4598a6fc1f46828d47d400aa7a6a8
+jupyterlab-ai-commands==0.3.1 --hash=sha256:d084bd3275e40755bfeadd4538d63e15f47225723fa0ce5a03ee28ee5cb866d1
+jupyter-mcp-manager==0.2.1 --hash=sha256:018224543d3a3ae17be37a0862949323ea83c7419a91d7aea3f14c3a42971879
+jupyterlab-diff==0.6.1 --hash=sha256:ed963a7e83caf19f42b7cb6c4df242038d94170d447a9919ccbb043b20e13d3a
+jupyterlab-cell-input-footer==0.3.2 --hash=sha256:2a45fb0942023f402cbb1c2ec0669ca4fbca8d51a1b8cb269d2322d3eaf96201
+jupyterlab-eventlistener==0.4.0 --hash=sha256:7b4a1dbd602d148791692dc40a35b902734557021fce5c3d274424039f4d9620

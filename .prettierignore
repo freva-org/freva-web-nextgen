@@ -32,6 +32,11 @@ packages/stac-browser/materials/
 packages/jupyterlite-freva-kernel/lib/
 packages/jupyterlite-freva-kernel/labextension/
 packages/jupyterlite-freva-kernel/.test-site-*/
+# The same for the assistant and the data panel, and the JupyterLab environments the smoke test caches.
+packages/jupyterlite-climateclaw/lib/
+packages/jupyterlite-climateclaw/labextension/
+packages/jupyterlite-climateclaw/.test-site-*/
+packages/jupyterlite-climateclaw/.jupyterlab-env-*/
 
 # The builder's Astro type shims and its generated inventories.
 packages/portal-builder/.astro/

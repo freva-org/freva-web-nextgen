@@ -1,0 +1,28 @@
+// DKRZ's logo, small: its first frame as a 55 x 32 PNG (shown at 16 px high), for the Run at
+// DKRZ button at rest. While a cell runs the button shows the logo's animation instead (a
+// brief rest, then the turn at about 20 frames a second: about 2.5 s a loop)
+// (`style/logo/dkrz-running.webp`, shipped beside the extension and fetched only then). The bytes
+// are those of `style/logo/dkrz.png` (a unit test keeps the two in step).
+
+export const DKRZ_LOGO_DATA_URL =
+  "data:image/png;base64,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";
+
+/** The animation's file, beside the extension (see webpack.config.cjs). */
+export const DKRZ_RUNNING_FILE = "dkrz-running.webp";
+
+/** Where the animation is served from, once the extension knows (set when it activates). */
+let runningUrl = "";
+
+export function setDkrzRunningUrl(url: string): void {
+  runningUrl = url;
+}
+
+/** Whether the reader asked for less motion: then the logo stays still. */
+export function reducedMotion(): boolean {
+  return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+/** DKRZ's logo in motion, or the still one before its address is known or with less motion. */
+export function dkrzRunningUrl(): string {
+  return (!reducedMotion() && runningUrl) || DKRZ_LOGO_DATA_URL;
+}
