@@ -17,6 +17,7 @@ export {
 export {
   MAX_LIVE_INTERPRETERS,
   createSlotBroker,
+  slotsInUse,
   type Slot,
   type SlotBroker,
   type SlotBrokerOptions,

@@ -40,13 +40,17 @@ import { AUTH } from "./mock-freva.mjs";
 const KNOWN_PROBE = (v) =>
   v.directive.startsWith("script-src") &&
   v.blocked === "eval" &&
-  /\/extensions\/@jupyternaut\/persona\/static\/[0-9a-f.]+\.js$/.test(v.source);
+  // A chunk of that one bundle, `<id>.<hash>.js`, with the `?v=<the same hash>` JupyterLab adds.
+  /\/extensions\/@jupyternaut\/persona\/static\/\d+\.([0-9a-f]+)\.js(\?v=\1)?$/.test(v.source);
 
 const checks = [];
 const check = (name, pass, detail = "") => {
   checks.push({ name, pass: Boolean(pass), detail: pass ? "" : String(detail).slice(0, 600) });
 };
+const started = Date.now();
 const step = async (name, fn) => {
+  const from = checks.length;
+  const at = Date.now();
   try {
     await fn();
   } catch (error) {
@@ -58,10 +62,18 @@ const step = async (name, fn) => {
     }
     if (process.env.DEBUG_DOM) {
       const dom = await page
-        .evaluate(() => document.getElementById("@jupyterlite/ai:chat-panel")?.outerHTML ?? "")
+        .evaluate(() => document.getElementById("climateclaw-chat-panel")?.outerHTML ?? "")
         .catch(() => "");
       console.log(`--- ${name}\n${dom.replace(/<svg[\s\S]*?<\/svg>/g, "<svg/>").slice(0, 6000)}`);
     }
+  } finally {
+    // Progress per step on stderr; the full report follows at the end.
+    const mine = checks.slice(from);
+    const passed = mine.filter((c) => c.pass).length;
+    const secs = (ms) => `${Math.round(ms / 1000)}s`;
+    process.stderr.write(
+      `[${secs(Date.now() - started).padStart(5)}] ${passed === mine.length ? "ok  " : "FAIL"} ${name} (${passed}/${mine.length}, ${secs(Date.now() - at)})\n`,
+    );
   }
 };
 
@@ -136,48 +148,97 @@ async function showLeft(title) {
   }
   await tab.click();
 }
-const chatPanel = () => page.locator('[id="@jupyterlite/ai:chat-panel"]');
+/** ClimateClaw's own chat panel (jupyterlite-ai's chat panel plugin is disabled on the site). */
+const PANEL = "#climateclaw-chat-panel";
+const chatPanel = () => page.locator(PANEL);
+/** The chat the panel shows now (its other chats stay in the DOM, hidden). */
+const SHOWN_CHAT = `${PANEL} .jp-ClimateClaw-sideChat:not(.lm-mod-hidden)`;
+/** Shows the panel, and a chat in it (the first page's New chat, when it shows that page). */
 async function openChatPanel() {
-  const open = await page.evaluate(() => {
-    const panel = document.getElementById("@jupyterlite/ai:chat-panel");
+  const open = await page.evaluate((id) => {
+    const panel = document.querySelector(id);
     return !!panel && !panel.classList.contains("lm-mod-hidden") && panel.offsetWidth > 0;
-  });
-  if (!open) await showLeft("Chat");
-  await chatPanel()
-    .locator(".jp-chat-input-container, .jp-chat-input")
-    .first()
-    .waitFor({ timeout: 30_000 });
+  }, PANEL);
+  if (!open) await showLeft("ClimateClaw");
+  const view = await chatPanel().getAttribute("data-view");
+  if (view === "history")
+    await chatPanel().locator(".jp-ClimateClaw-headerButton.jp-mod-back").click();
+  if ((await chatPanel().getAttribute("data-view")) === "welcome") {
+    await chatPanel().locator(".jp-ClimateClaw-welcomeNew").click();
+  }
+  await page.locator(`${SHOWN_CHAT} .jp-chat-input-container`).first().waitFor({ timeout: 30_000 });
 }
-/** A ClimateClaw toolbar command, in the toolbar or in its overflow popup. */
-async function toolbarCommand(command) {
-  const direct = page.locator(`[data-command="${command}"]:visible`).first();
-  if (await direct.count()) return direct;
-  const opener = chatPanel()
-    .locator(
-      ".jp-Toolbar-responsive-opener:visible, [data-jp-item-name='toolbar-popup-opener'] button:visible",
-    )
-    .first();
-  if (await opener.count()) await opener.click();
-  return page.locator(`[data-command="${command}"]:visible`).first();
-}
+/** The panel's account button: "Sign in", or the signed-in user's initials. */
+const accountButton = () => chatPanel().locator(".jp-ClimateClaw-account");
+const signedIn = () =>
+  page.waitForFunction(
+    () => !!document.querySelector(".jp-ClimateClaw-account.jp-mod-signedIn"),
+    null,
+    { timeout: 30_000 },
+  );
 async function chatInput() {
-  return chatPanel().locator("textarea:not([aria-hidden='true'])").last();
+  return page.locator(`${SHOWN_CHAT} textarea:not([aria-hidden='true'])`).last();
 }
 async function sendChat(text) {
-  // Away from the composer's buttons first: a hovered button's tooltip sits over the input.
+  // One question at a time: a question sent while a reply streams is queued by jupyterlite-ai,
+  // which is not what these steps are about. Stop shows exactly while a reply streams.
+  await page.waitForFunction(
+    (shown) => !document.querySelector(`${shown} .jp-ClimateClaw-stop`),
+    SHOWN_CHAT,
+    { timeout: 60_000 },
+  );
+  // Away from the composer's buttons first: a hovered button's tooltip sits over the input (and
+  // may stay a moment, so the input is focused rather than clicked).
   await page.mouse.move(1, 1);
   const input = await chatInput();
-  await input.click();
+  await input.focus();
   await input.fill(text);
   await input.press("Enter");
 }
+/** The shown chat's messages, each once. */
 const botMessages = () =>
-  page.evaluate(() =>
-    [
-      ...document.querySelectorAll(
-        '[id="@jupyterlite/ai:chat-panel"] .jp-chat-rendered-message, [id="@jupyterlite/ai:chat-panel"] .jp-chat-message',
-      ),
-    ].map((m) => ({ text: m.textContent ?? "", html: m.innerHTML })),
+  page.evaluate(
+    (shown) =>
+      [...document.querySelectorAll(`${shown} .jp-chat-message`)].map((m) => ({
+        text: m.textContent ?? "",
+        html: m.innerHTML,
+      })),
+    SHOWN_CHAT,
+  );
+/** What the last reply matching `match` shows of its runs: one card per run of code at DKRZ. */
+const runCards = (match) =>
+  page.evaluate(
+    ({ shown, source }) => {
+      const reply = [...document.querySelectorAll(`${shown} .jp-chat-rendered-message`)]
+        .filter((m) => new RegExp(source).test(m.textContent ?? ""))
+        .at(-1);
+      return [...(reply?.querySelectorAll(".jp-ClimateClaw-run") ?? [])].map((card) => {
+        const ran = card.querySelector(".jp-ClimateClaw-ran");
+        const style = ran && getComputedStyle(ran);
+        const code = card.querySelector("details.jp-ClimateClaw-runCode");
+        const parts = Object.fromEntries(
+          [...card.querySelectorAll("details.jp-ClimateClaw-runPart")].map((p) => [
+            p.querySelector("summary")?.textContent ?? "",
+            { open: p.open, text: p.textContent ?? "", html: p.innerHTML },
+          ]),
+        );
+        return {
+          // Rendered, not as text: a chip laid out by its own style.
+          at: ran?.querySelector(".jp-ClimateClaw-ran-at")?.textContent ?? "",
+          cell: ran?.querySelector(".jp-ClimateClaw-ran-cell")?.textContent ?? "",
+          title: ran?.getAttribute("title") ?? "",
+          pill: style ? `${style.display} ${style.borderTopLeftRadius}` : "",
+          outcomes: [...card.querySelectorAll(".jp-ClimateClaw-outcome")].map(
+            (o) => `${o.className.replace("jp-ClimateClaw-outcome", "").trim()}:${o.textContent}`,
+          ),
+          code: code
+            ? { open: code.open, text: code.querySelector("pre")?.textContent ?? "" }
+            : null,
+          parts,
+        };
+      });
+    },
+    { shown: SHOWN_CHAT, source: match.source },
   );
 async function waitForChat(predicate, timeout = 60_000) {
   const deadline = Date.now() + timeout;
@@ -190,6 +251,18 @@ async function waitForChat(predicate, timeout = 60_000) {
       );
     await page.waitForTimeout(250);
   }
+}
+/** Brings a notebook tab whose label matches `name` to the front. */
+async function showNotebook(name) {
+  const tab = page.locator(".lm-DockPanel-tabBar .lm-TabBar-tab", { hasText: name }).first();
+  await tab.click();
+  await page.waitForFunction(
+    (el) => el.classList.contains("lm-mod-current"),
+    await tab.elementHandle(),
+    {
+      timeout: 10_000,
+    },
+  );
 }
 /** The visible notebook's cells (others stay in the DOM, hidden). */
 const NOTEBOOK = ".lm-DockPanel .jp-NotebookPanel:not(.lm-mod-hidden) .jp-Notebook";
@@ -218,22 +291,9 @@ async function waitForCell(which, ready = () => true, timeout = 30_000) {
 }
 /** The account button's text (initials, or "Sign in") and its tooltip. */
 const accountLabel = async () => {
-  const button = await toolbarCommand("climateclaw:account");
+  const button = accountButton();
   return `${await button.textContent()} | ${(await button.getAttribute("title")) ?? ""}`;
 };
-/**
- * An item of the visible chat's header. A narrow side panel folds the header into its "More
- * commands" popup (jupyterlite-ai's responsive toolbar): open it when the item is not shown.
- */
-async function headerItem(selector) {
-  const shown = page.locator(`${selector}:visible`).last();
-  if (await shown.count()) return shown;
-  const opener = chatPanel()
-    .locator(".jp-chat-sidepanel-widget-toolbar .jp-Toolbar-responsive-opener:visible")
-    .last();
-  if (await opener.count()) await opener.click();
-  return shown;
-}
 /** Drag the left side panel's edge to `width` pixels (what a user does to make room). */
 async function widenLeftPanel(width) {
   const box = await page.evaluate(() => {
@@ -269,15 +329,18 @@ await step("launcher", async () => {
         `${c.closest(".jp-Launcher-section")?.querySelector(".jp-Launcher-sectionTitle")?.textContent}: ${c.querySelector(".jp-LauncherCard-label")?.textContent}`,
     ),
   );
+  // Notebook and Console on the one kernel (the console stays on purpose: see portal-builder's
+  // LAB_DISABLED_EXTENSIONS), then the site's own cards.
   const want = [
     "Notebook: Freva Python",
+    "Console: Freva Python",
     `${SITE_TITLE}: New ${SITE_TITLE} notebook`,
     `${SITE_TITLE}: Browse data`,
     `${SITE_TITLE}: Example notebooks`,
     `${SITE_TITLE}: Ask ClimateClaw`,
   ];
   check(
-    "the trimmed launcher shows one kernel and only the site's cards",
+    "the trimmed launcher shows one kernel (notebook and console) and only the site's cards",
     JSON.stringify(cards) === JSON.stringify(want),
     JSON.stringify(cards),
   );
@@ -286,20 +349,33 @@ await step("launcher", async () => {
       (t) => (t.getAttribute("title") ?? "").split(" (")[0],
     ),
   );
+  // ClimateClaw's own panel first (jupyterlite-ai's chat panel is disabled on the site).
   check(
-    "left side: files, the data panel, running, contents, chat",
-    [
-      "File Browser",
-      `${SITE_TITLE} data`,
-      "Running Terminals and Kernels",
-      "Table of Contents",
-      "Chat with AI assistant",
-    ].every((t) => tabs.includes(t)),
+    "left side: ClimateClaw, the data panel, files, running, contents",
+    JSON.stringify(tabs) ===
+      JSON.stringify([
+        "ClimateClaw",
+        `${SITE_TITLE} data`,
+        "File Browser",
+        "Running Terminals and Kernels",
+        "Table of Contents",
+      ]),
     JSON.stringify(tabs),
   );
-  const consoleErrors = record.console.filter(
-    (l) => /^error/.test(l) && !/Failed to load resource/.test(l),
-  );
+  // Firefox also logs the tolerated probe as a console error: excused once per probe the page
+  // reported (KNOWN_PROBE), and never when the line names another file.
+  let probes = (await page.evaluate(() => window.__cspDetail)).filter(KNOWN_PROBE).length;
+  const consoleErrors = record.console.filter((l) => {
+    if (!/^error/.test(l) || /Failed to load resource/.test(l)) return false;
+    const probe =
+      /blocked a JavaScript eval \(script-src\)/.test(l) &&
+      !/\{file: "(?![^"]*\/extensions\/@jupyternaut\/persona\/static\/)[^"]*"/.test(l);
+    if (probe && probes > 0) {
+      probes -= 1;
+      return false;
+    }
+    return true;
+  });
   check(
     "no plugin fails to activate",
     consoleErrors.length === 0 && record.errors.length === 0,
@@ -373,8 +449,9 @@ await step("data panel: View on globe shows a public store on GridLook", async (
       ),
     JSON.stringify(gridlookRequests),
   );
+  // View on globe opens the inspector on its 3D viewer, in a tab of its own.
   await page
-    .locator(".lm-DockPanel-tabBar .lm-TabBar-tab", { hasText: "Inspect sfcwind" })
+    .locator(".lm-DockPanel-tabBar .lm-TabBar-tab", { hasText: "Globe: sfcwind.zarr" })
     .locator(".lm-TabBar-tabCloseIcon")
     .click();
   await search.fill("");
@@ -407,7 +484,7 @@ await step("popup blocked", async () => {
     window.__open = window.open;
     window.open = () => null;
   });
-  await (await toolbarCommand("climateclaw:account")).click();
+  await accountButton().click();
   const dialog = page.locator(".jp-Dialog", {
     hasText: "Allow pop-ups or open the login in a new tab",
   });
@@ -419,14 +496,10 @@ await step("popup blocked", async () => {
     window.open = window.__open;
   });
   const [tab] = await Promise.all([context.waitForEvent("page"), link.click()]);
-  await page.waitForFunction(
-    () => !!document.querySelector('[data-command="climateclaw:account"].jp-mod-signedIn'),
-    null,
-    { timeout: 30_000 },
-  );
+  await signedIn();
   check(
     "the login in a new tab signs this page in",
-    /jdoe/.test(await accountLabel()),
+    /^JD \| Signed in as Jane Doe$/.test(await accountLabel()),
     await accountLabel(),
   );
   await tab.close().catch(() => undefined);
@@ -441,10 +514,23 @@ await step("popup blocked", async () => {
 
 await step("logout", async () => {
   const revokes = mock.log.filter((r) => r.path === `${AUTH}/revoke`).length;
-  await (await toolbarCommand("climateclaw:account")).click();
-  await page.locator(".lm-Menu-itemLabel", { hasText: "Sign out" }).click();
+  await accountButton().click();
+  // The account card names the user and offers sign-out (which also ends the provider's
+  // session, in a popup of its own).
+  const card = page.locator(".jp-ClimateClaw-accountPopover");
+  await card.waitFor({ timeout: 10_000 });
+  check(
+    "the account card names the user and offers sign-out",
+    /jdoe/.test(await card.textContent()) &&
+      (await card.locator(".jp-ClimateClaw-signOut").count()) === 1,
+    await card.textContent(),
+  );
+  const [end] = await Promise.all([
+    context.waitForEvent("page"),
+    card.locator(".jp-ClimateClaw-signOut").click(),
+  ]);
   await page.waitForFunction(
-    () => !document.querySelector('[data-command="climateclaw:account"].jp-mod-signedIn'),
+    () => !document.querySelector(".jp-ClimateClaw-account.jp-mod-signedIn"),
     null,
     { timeout: 15_000 },
   );
@@ -452,24 +538,19 @@ await step("logout", async () => {
     "sign-out revokes the credential and signs the page out",
     mock.log.filter((r) => r.path === `${AUTH}/revoke`).length > revokes,
   );
+  await end.waitForEvent("close", { timeout: 10_000 }).catch(() => undefined);
+  check("the end-session window closes by itself", end.isClosed());
 });
 
 // popup login
 
 await step("popup login with a severed opener", async () => {
   const before = mock.log.filter((r) => r.path === `${AUTH}/callback`).length;
-  const [popup] = await Promise.all([
-    context.waitForEvent("page"),
-    (await toolbarCommand("climateclaw:account")).click(),
-  ]);
-  await page.waitForFunction(
-    () => !!document.querySelector('[data-command="climateclaw:account"].jp-mod-signedIn'),
-    null,
-    { timeout: 30_000 },
-  );
+  const [popup] = await Promise.all([context.waitForEvent("page"), accountButton().click()]);
+  await signedIn();
   check(
     "the popup login completes over BroadcastChannel (the provider page severs the opener)",
-    /jdoe/.test(await accountLabel()),
+    /Signed in as Jane Doe/.test(await accountLabel()),
   );
   check(
     "signed in, the account button is an avatar with the initials",
@@ -514,7 +595,7 @@ await step("a foreign or wrong-origin message is ignored", async () => {
     "no foreign callback message reaches the auth server",
     mock.log.filter((r) => r.path === `${AUTH}/callback`).length === before,
   );
-  check("still signed in as before", /jdoe/.test(await accountLabel()));
+  check("still signed in as before", /Signed in as Jane Doe/.test(await accountLabel()));
 });
 
 await step("the page never navigated and the draft and kernel survived", async () => {
@@ -574,16 +655,17 @@ await step("chat: code, output, image, scope note", async () => {
     "assistant text streams in",
     reply.text.includes("Here is") && reply.text.includes("the global mean."),
   );
-  // codeToNotebook (the default): the code is a new cell in the open notebook, with its output
-  // and figure; the chat says where it went. The chat rendering is checked with it off, below.
+  // codeToNotebook (the default): the code is a new cell in the chat's own notebook (named after
+  // the chat, bound to its thread), with its output and figure; the reply says where it went.
+  // The chat rendering is checked with it off, below.
   const ranCell = await waitForCell(
     (c) => c.source.includes("np.mean([1, 2, 3])"),
     (c) => c.html.includes("<img"),
   );
   check(
-    "the code it ran is a new code cell in the open notebook",
+    "the code it ran is a new code cell in the chat's notebook",
     ranCell?.kind === "code" && ranCell.source.includes("import numpy as np"),
-    `${reply.text.match(/DKRZ ?Cell[^\n]*/)?.[0]} | ${JSON.stringify((await nbCells()).map((c) => [c.source.slice(0, 40), c.text.slice(0, 80), c.html.slice(0, 200)]))}`,
+    JSON.stringify((await nbCells()).map((c) => [c.source.slice(0, 40), c.text.slice(0, 80)])),
   );
   check("…with its output", ranCell?.text.includes("2.0"), ranCell?.text);
   check(
@@ -601,40 +683,32 @@ await step("chat: code, output, image, scope note", async () => {
         : 0;
     }, NOTEBOOK)) === 96,
   );
-  // The chips the reply shows in the code's place: rendered (sanitised, styled), not as text.
-  const chips = await page.evaluate(() => {
-    const replies = [
-      ...document.querySelectorAll('[id="@jupyterlite/ai:chat-panel"] .jp-chat-rendered-message'),
-    ].filter((m) => m.textContent.includes("the mean is 2.0"));
-    const ran = replies.at(-1)?.querySelector(".jp-ClimateClaw-ran");
-    const style = ran && getComputedStyle(ran);
-    return {
-      at: ran?.querySelector(".jp-ClimateClaw-ran-at")?.textContent ?? "",
-      cell: ran?.querySelector(".jp-ClimateClaw-ran-cell")?.textContent ?? "",
-      notebook: ran?.querySelector(".jp-ClimateClaw-ran-nb")?.textContent ?? "",
-      title: ran?.getAttribute("title") ?? "",
-      pill: style ? `${style.display} ${style.borderTopLeftRadius}` : "",
-      outcomes: [...(replies.at(-1)?.querySelectorAll(".jp-ClimateClaw-outcome") ?? [])].map(
-        (o) => `${o.className.replace("jp-ClimateClaw-outcome", "").trim()}:${o.textContent}`,
-      ),
-    };
-  });
+  // The run, in the reply: one card whose line says where it ran and which cell (rendered,
+  // sanitised and styled, not as text), how it ended and that it drew a figure; then its code -
+  // folded: with codeToNotebook, Hide code starts on, the code being in its cell - its output and
+  // its figure.
+  const [card] = await runCards(/the mean is 2\.0/);
   check(
-    "the chat shows a chip where the code ran instead of repeating it",
-    chips.at === "DKRZ" &&
-      /^Cell \d+$/.test(chips.cell) &&
-      /\.ipynb$/.test(chips.notebook) &&
-      /^Ran at DKRZ by ClimateClaw \(gpt-test\)/.test(chips.title) &&
-      chips.pill.startsWith("inline-flex") &&
-      !reply.html.includes("np.mean") &&
-      !/data:image\/png/.test(reply.html),
-    JSON.stringify(chips),
+    "the reply shows the run as a card: where it ran and the cell its code went to",
+    card?.at === "DKRZ" &&
+      /^Cell \d+$/.test(card.cell) &&
+      /^Ran at DKRZ by ClimateClaw \(gpt-test\).*Click to go there\.$/.test(card.title) &&
+      /^(inline-)?flex /.test(card.pill),
+    JSON.stringify(card),
   );
   check(
     "…then how it ended, and its figure",
-    JSON.stringify(chips.outcomes) ===
+    JSON.stringify(card?.outcomes) ===
       JSON.stringify(["jp-mod-ok:✓ ran · output", "jp-mod-figure:◩ figure"]),
-    JSON.stringify(chips.outcomes),
+    JSON.stringify(card?.outcomes),
+  );
+  check(
+    "…its code (folded under the line), its output and its figure",
+    card?.code?.open === false &&
+      card.code.text.includes("np.mean([1, 2, 3])") &&
+      card.parts.Output?.text.includes("2.0") &&
+      /<img[^>]+src="data:image\/png;base64,iVBOR/.test(card.parts.Figures?.html ?? ""),
+    JSON.stringify(card).slice(0, 600),
   );
   check("a busy hint is a status line", reply.text.includes("Executing previous code blocks"));
   check("a tool call is a short status line", reply.text.includes("Using web search"));
@@ -666,46 +740,58 @@ await step("chat: code types into its cell; ClimateClaw at work; the jump back",
   await openChatPanel();
   const count = (await botMessages()).length;
   await sendChat("TYPEOUT: write it out");
-  // Sampled while the reply streams: the status line, the cell's code, any old persona name.
+  // Sampled while the reply streams: the reply's status line, the cell's code, any old persona.
   const labels = new Set();
+  const phases = new Set();
   const lengths = new Set();
-  let bird = "";
   let sawJupyternaut = false;
   let fullLength = 0;
   const deadline = Date.now() + 60_000;
   for (;;) {
-    const sample = await page.evaluate((root) => {
-      const busy = document.querySelector(".jp-ClimateClaw-busy");
-      const cell = [...(document.querySelector(root)?.querySelectorAll(".jp-Cell") ?? [])]
-        .map((c) => c.querySelector(".cm-content")?.textContent ?? "")
-        .find((t) => t.startsWith("# typed by ClimateClaw"));
-      const chat = document.getElementById("@jupyterlite/ai:chat-panel");
-      return {
-        label: busy?.getAttribute("title") ?? "",
-        bird: busy?.querySelector("img")?.getAttribute("src")?.slice(0, 22) ?? "",
-        code: cell ?? "",
-        jupyternaut: /Jupyternaut/.test(chat?.textContent ?? ""),
-        done: /All typed\./.test(chat?.textContent ?? ""),
-      };
-    }, NOTEBOOK);
-    if (sample.label) labels.add(sample.label.split(" · ")[0]);
-    if (sample.bird) bird = sample.bird;
+    const sample = await page.evaluate(
+      ({ root, shown }) => {
+        const lines = [...document.querySelectorAll(`${shown} .jp-ClimateClaw-busy`)];
+        const cell = [...(document.querySelector(root)?.querySelectorAll(".jp-Cell") ?? [])]
+          .map((c) => c.querySelector(".cm-content")?.textContent ?? "")
+          .find((t) => t.startsWith("# typed by ClimateClaw"));
+        const chat = document.querySelector(shown);
+        return {
+          labels: lines.map(
+            (b) =>
+              `${(b.getAttribute("title") ?? "").split(" · ")[0]}${b.closest(".jp-chat-message") ? "" : " (not in the reply)"}`,
+          ),
+          phases: lines.map(
+            (b) => `${b.dataset.phase}:${b.firstElementChild?.getAttribute("class") ?? ""}`,
+          ),
+          code: cell ?? "",
+          jupyternaut: /Jupyternaut/.test(chat?.textContent ?? ""),
+          done: /All typed\./.test(chat?.textContent ?? ""),
+        };
+      },
+      { root: NOTEBOOK, shown: SHOWN_CHAT },
+    );
+    sample.labels.forEach((l) => labels.add(l));
+    sample.phases.forEach((p) => phases.add(p));
     if (sample.code) lengths.add(sample.code.length);
     sawJupyternaut ||= sample.jupyternaut;
-    if (sample.done && !sample.label) {
+    if (sample.done && sample.labels.length === 0) {
       fullLength = sample.code.length;
       break;
     }
     if (Date.now() > deadline) throw new Error(`no end: ${JSON.stringify([...labels])}`);
     await page.waitForTimeout(60);
   }
+  // In ClimateClaw's panel the line is under the reply being written, with a mark per phase.
   check(
-    "while it works, a status line beside Send shows the bird and what it is doing",
-    bird === "data:image/webp;base64" &&
-      labels.has("Thinking") &&
+    "while it works, a status line under the reply shows what it is doing, with a mark for each",
+    labels.has("Thinking") &&
       labels.has("Writing code") &&
-      labels.has("Running code at DKRZ"),
-    `${bird} ${JSON.stringify([...labels])}`,
+      labels.has("Running code at DKRZ") &&
+      [...labels].every((l) => !l.endsWith("(not in the reply)")) &&
+      phases.has("thinking:jp-ClimateClaw-busy-wave") &&
+      phases.has("coding:jp-ClimateClaw-busy-code") &&
+      phases.has("running:jp-ClimateClaw-busy-dkrz"),
+    `${JSON.stringify([...labels])} ${JSON.stringify([...phases])}`,
   );
   const partial = [...lengths].filter((n) => n > 0 && n < fullLength);
   check(
@@ -713,22 +799,26 @@ await step("chat: code types into its cell; ClimateClaw at work; the jump back",
     partial.length >= 3 && fullLength > 400,
     `${fullLength} ${JSON.stringify([...lengths])}`,
   );
-  const reply = (await waitForChat((m) => m.length > count && /All typed/.test(m.at(-1).text))).at(
-    -1,
-  );
-  const number = Number(/DKRZ ?Cell (\d+)/.exec(reply.text)?.[1] ?? 0);
-  check("the chat names the cell, not the code", number > 0 && !reply.text.includes("x11 = 11"));
-  const chip = composerButton("jp-ClimateClaw-cells");
-  await chip.waitFor({ timeout: 10_000 });
+  await waitForChat((m) => m.length > count && /All typed/.test(m.at(-1).text));
+  const [card] = await runCards(/All typed/);
+  const number = Number(/^Cell (\d+)$/.exec(card?.cell ?? "")?.[1] ?? 0);
   check(
-    "when it is done, the status line becomes a jump to that cell",
-    (await page.locator(".jp-ClimateClaw-busy").count()) === 0 &&
-      (await chip.getAttribute("title"))?.includes(`cell ${number}`),
-    await chip.getAttribute("title"),
+    "the reply's card names the cell the code went to",
+    number > 0 && card.at === "DKRZ",
+    JSON.stringify(card),
   );
+  check(
+    "when it is done, the status line is gone",
+    (await page.locator(`${SHOWN_CHAT} .jp-ClimateClaw-busy`).count()) === 0,
+  );
+  // The card's chip is the jump back: it selects the cell the reply wrote.
   await nbCell(0).click();
   await page.mouse.move(1, 1);
-  await chip.click();
+  await page
+    .locator(`${SHOWN_CHAT} .jp-chat-rendered-message`, { hasText: "All typed" })
+    .last()
+    .locator(".jp-ClimateClaw-ran")
+    .click();
   await page.waitForTimeout(400);
   const active = await page.evaluate((root) => {
     const cells = [...(document.querySelector(root)?.querySelectorAll(".jp-Cell") ?? [])];
@@ -740,17 +830,15 @@ await step("chat: code types into its cell; ClimateClaw at work; the jump back",
     active.index === number - 1 && active.code.startsWith("# typed by ClimateClaw"),
     JSON.stringify(active),
   );
-  const header = await page.evaluate(() => {
-    const headers = [
-      ...document.querySelectorAll('[id="@jupyterlite/ai:chat-panel"] .jp-chat-message-header'),
-    ];
+  const header = await page.evaluate((shown) => {
+    const headers = [...document.querySelectorAll(`${shown} .jp-chat-message-header`)];
     const last = headers.at(-1);
     return {
       text: last?.textContent ?? "",
       avatar: last?.querySelector("img")?.getAttribute("alt") ?? "",
       src: last?.querySelector("img")?.getAttribute("src")?.slice(0, 22) ?? "",
     };
-  });
+  }, SHOWN_CHAT);
   check(
     "replies are ClimateClaw's, with its logo; Jupyternaut is never shown",
     header.text.includes("ClimateClaw") &&
@@ -765,13 +853,11 @@ await step("chat: a run that failed at DKRZ says so", async () => {
   const count = (await botMessages()).length;
   await sendChat("BROKEN: divide");
   await waitForChat((m) => m.length > count && /divided by zero/.test(m.at(-1).text));
-  const outcome = await page.evaluate(() => {
-    const replies = [
-      ...document.querySelectorAll('[id="@jupyterlite/ai:chat-panel"] .jp-chat-rendered-message'),
-    ];
+  const outcome = await page.evaluate((shown) => {
+    const replies = [...document.querySelectorAll(`${shown} .jp-chat-rendered-message`)];
     const chip = replies.at(-1)?.querySelector(".jp-ClimateClaw-outcome");
     return { text: chip?.textContent ?? "", cls: chip?.className ?? "", title: chip?.title ?? "" };
-  });
+  }, SHOWN_CHAT);
   check(
     "the error's name is a red chip, the message its tooltip",
     outcome.text === "✗ ZeroDivisionError" &&
@@ -781,106 +867,101 @@ await step("chat: a run that failed at DKRZ says so", async () => {
   );
 });
 
-await step("header: model chip and account menu", async () => {
-  let chip = await headerItem(".jp-ClimateClaw-modelChip-button");
+await step("the model beside Send, and the panel's header", async () => {
+  // ClimateClaw's panel names the chat's model beside Send (a brain, then its name).
+  const models = () => page.locator(`${SHOWN_CHAT} .jp-ClimateClaw-models button`).last();
+  const model = await models().evaluate((b) => ({
+    text: b.textContent,
+    title: b.title,
+    icon: !!b.querySelector(".jp-ClimateClaw-composerIcon svg"),
+  }));
   check(
-    "the header names the host and this chat's model (in full in its tooltip)",
-    /127\.0\.0\.1, model gpt-test/.test((await chip.getAttribute("title")) ?? ""),
-    await chip.getAttribute("title"),
+    "beside Send, the composer names this chat's model (in full in its tooltip)",
+    model.text === "gpt-test" && /^Model: gpt-test\./.test(model.title) && model.icon,
+    JSON.stringify(model),
   );
-  const narrowTier = await chip.evaluate((b) => b.parentElement.dataset.tier);
-  check(
-    "in the default narrow panel the chip shrinks (or folds into the header's popup in full)",
-    narrowTier === "logo" || narrowTier === "full",
-    narrowTier,
-  );
-  await chip.click();
-  await page
-    .locator(".jp-ClimateClaw-modelMenu .lm-Menu-itemLabel", { hasText: "gpt-fast" })
-    .click();
-  await page.waitForFunction(
-    () =>
-      [...document.querySelectorAll(".jp-ClimateClaw-modelChip-button")].some(
-        (b) => b.offsetWidth > 0 && b.dataset.model === "gpt-fast",
-      ),
-    null,
-    { timeout: 10_000 },
-  );
+  const choose = async (name) => {
+    await models().click();
+    await page
+      .locator(".jp-ClimateClaw-modelPopover .jp-ClimateClaw-modelOption", { hasText: name })
+      .click();
+    await page.waitForFunction(
+      ({ shown, name }) =>
+        [...document.querySelectorAll(`${shown} .jp-ClimateClaw-models button`)].some(
+          (b) => b.offsetWidth > 0 && b.textContent === name,
+        ),
+      { shown: SHOWN_CHAT, name },
+      { timeout: 10_000 },
+    );
+  };
+  await choose("gpt-fast");
   const count = (await botMessages()).length;
   await sendChat("Which model answers?");
   await waitForChat((m) => m.length > count && m.at(-1).text.includes("the mean is 2.0"));
   check(
-    "switching the model in the header sends this chat's next question to it",
+    "switching the model sends this chat's next question to it",
     api("streamresponse").at(-1)?.body?.chatbot === "gpt-fast",
     JSON.stringify(api("streamresponse").at(-1)?.body),
   );
-  chip = await headerItem(".jp-ClimateClaw-modelChip-button");
-  await chip.click();
-  await page
-    .locator(".jp-ClimateClaw-modelMenu .lm-Menu-itemLabel", { hasText: "gpt-test" })
-    .click();
+  await choose("gpt-test");
 
-  // With room (a wider side panel), the header shows them in a row: model, conversations, avatar.
+  // With room (a wider side panel), the header shows its actions in a row, labelled: New chat,
+  // History, and the signed-in avatar.
   await widenLeftPanel(560);
-  const inline = await page.evaluate(() => {
-    const header = [...document.querySelectorAll(".jp-chat-sidepanel-widget-toolbar")].find(
-      (t) => t.offsetWidth > 0,
-    );
+  const header = await page.evaluate((id) => {
+    const panel = document.querySelector(id);
     const shown = (selector) => {
-      const node = header?.querySelector(selector);
-      return !!node && node.getBoundingClientRect().width > 0;
+      const node = panel?.querySelector(selector);
+      return !!node && !node.hidden && node.getBoundingClientRect().width > 0;
     };
     return {
-      model: shown(".jp-ClimateClaw-modelChip-button"),
-      text: header?.querySelector(".jp-ClimateClaw-modelChip-text")?.textContent ?? "",
-      history: shown('[data-command="climateclaw:history"]'),
-      account: shown('[data-command="climateclaw:account"].jp-mod-signedIn'),
+      newChat: shown(".jp-ClimateClaw-headerButton.jp-mod-new"),
+      history: shown(".jp-ClimateClaw-headerButton.jp-mod-history"),
+      account: shown(".jp-ClimateClaw-account.jp-mod-signedIn"),
+      labels: [...(panel?.querySelectorAll(".jp-ClimateClaw-headerLabel") ?? [])]
+        .filter((l) => l.getBoundingClientRect().width > 0)
+        .map((l) => l.textContent),
     };
-  });
+  }, PANEL);
   check(
-    "in a wider panel the header shows the model, conversations and avatar inline",
-    inline.model && inline.history && inline.account && inline.text === "127.0.0.1 · gpt-test",
-    JSON.stringify(inline),
+    "in a wider panel the header shows New chat, History and the avatar inline",
+    header.newChat &&
+      header.history &&
+      header.account &&
+      header.labels.includes("New chat") &&
+      header.labels.includes("History"),
+    JSON.stringify(header),
   );
-
-  await (await toolbarCommand("climateclaw:account")).click();
-  const labels = await page
-    .locator(".jp-ClimateClaw-accountMenu .lm-Menu-itemLabel")
-    .allTextContents();
-  check(
-    "the account menu names the user and offers sign-out",
-    labels.some((l) => /Signed in as jdoe/.test(l)) && labels.includes("Sign out"),
-    JSON.stringify(labels),
-  );
-  await page.keyboard.press("Escape");
 });
 
 await step("composer: context from the notebook", async () => {
   const visible = async (className) => (await composerButton(className).count()) > 0;
+  // In ClimateClaw's panel the examples are a new chat's cards, not a Prompts menu.
   check(
-    "the composer has Add context, Prompts and the code toggle",
+    "the composer has Add context and the code toggle (the examples are a new chat's cards)",
     (await visible("jp-ClimateClaw-addContext")) &&
-      (await visible("jp-ClimateClaw-prompts")) &&
-      (await visible("jp-ClimateClaw-codeToggle")),
+      (await visible("jp-ClimateClaw-codeToggle")) &&
+      !(await visible("jp-ClimateClaw-prompts")),
   );
   check(
     "…and no second attach button beside Add context",
     (await chatPanel().locator(".jp-chat-attach-button:visible").count()) === 0,
   );
   // The draft notebook's first cell becomes the active cell.
+  await showNotebook("Untitled");
   await nbCell(0).locator(".cm-content").click();
   await page.keyboard.press("Escape");
   await openChatPanel();
   // The input's chips (sent messages show theirs too).
-  const chips = chatPanel().locator(".jp-chat-input-container .jp-chat-attachment:visible");
+  const chips = page.locator(`${SHOWN_CHAT} .jp-chat-input-container .jp-chat-attachment:visible`);
   await composerButton("jp-ClimateClaw-addContext").click();
   await page.locator(".lm-Menu-itemLabel", { hasText: /^Active cell of / }).click();
   await chips.first().waitFor({ timeout: 10_000 });
   check(
     "Add context → Active cell shows a removable chip",
     /\.ipynb: code cell/.test(await chips.first().textContent()) &&
-      (await chatPanel()
-        .locator(".jp-chat-input-container .jp-chat-attachment-remove:visible")
+      (await page
+        .locator(`${SHOWN_CHAT} .jp-chat-input-container .jp-chat-attachment-remove:visible`)
         .count()) === 1,
     await chips.first().textContent(),
   );
@@ -910,8 +991,8 @@ await step("composer: context from the notebook", async () => {
     (await chips.count()) === 1 &&
       (api("streamresponse").at(-1)?.body?.input ?? "").includes("x = 41"),
   );
-  await chatPanel()
-    .locator(".jp-chat-input-container .jp-chat-attachment-remove:visible")
+  await page
+    .locator(`${SHOWN_CHAT} .jp-chat-input-container .jp-chat-attachment-remove:visible`)
     .first()
     .click();
   await page.waitForTimeout(300);
@@ -926,11 +1007,20 @@ await step("composer: context from the notebook", async () => {
 });
 
 await step("examples and slash commands", async () => {
-  await composerButton("jp-ClimateClaw-prompts").click();
-  await page.locator(".lm-Menu-itemLabel", { hasText: EXAMPLES[1].title }).first().click();
+  // A new chat shows the examples as cards: a card asks its question.
+  await chatPanel().locator(".jp-ClimateClaw-headerButton.jp-mod-new").click();
+  const card = page.locator(`${SHOWN_CHAT} .jp-ClimateClaw-promptCard`, {
+    hasText: EXAMPLES[1].title,
+  });
+  await card.waitFor({ timeout: 10_000 });
+  const before = api("streamresponse").length;
+  await card.click();
+  await waitForChat((m) => m.some((x) => x.text.includes("the mean is 2.0")));
   check(
-    "an example fills the input",
-    (await (await chatInput()).inputValue()) === EXAMPLES[1].prompt,
+    "an example card asks its question",
+    api("streamresponse").length === before + 1 &&
+      (api("streamresponse").at(-1)?.body?.input ?? "").endsWith(EXAMPLES[1].prompt),
+    api("streamresponse").at(-1)?.body?.input,
   );
   const input = await chatInput();
   await input.fill("");
@@ -953,76 +1043,112 @@ await step("examples and slash commands", async () => {
 
 await step("hide code", async () => {
   const toggle = composerButton("jp-ClimateClaw-codeToggle");
-  // A round icon: its tooltip and pressed state say what it does.
+  // A round icon: its tooltip and pressed state say what it does. With codeToNotebook (this
+  // site's default) it starts on: the code is in its notebook cell, not repeated in the chat.
   check(
-    "the code toggle is an icon, off, and says so",
+    "the code toggle is an icon, on, and says so",
     !(await toggle.textContent()).trim() &&
-      /^Hide code is off/.test((await toggle.getAttribute("title")) ?? "") &&
-      (await toggle.getAttribute("aria-pressed")) === "false",
+      /^Hide code is on/.test((await toggle.getAttribute("title")) ?? "") &&
+      (await toggle.getAttribute("aria-pressed")) === "true",
+    `${await toggle.getAttribute("title")} ${await toggle.getAttribute("aria-pressed")}`,
   );
   await toggle.click();
   await page.waitForFunction(
     () =>
       [...document.querySelectorAll(".jp-ClimateClaw-codeToggle button")].some(
-        (b) => b.offsetWidth > 0 && b.getAttribute("aria-pressed") === "true",
+        (b) => b.offsetWidth > 0 && b.getAttribute("aria-pressed") === "false",
       ),
     null,
     { timeout: 10_000 },
   );
   check(
-    "…and, toggled, that code is hidden",
-    /^Hide code is on/.test((await toggle.getAttribute("title")) ?? "") &&
-      (await toggle.getAttribute("aria-pressed")) === "true",
+    "…and, toggled, that code is shown",
+    /^Hide code is off/.test((await toggle.getAttribute("title")) ?? "") &&
+      (await toggle.getAttribute("aria-pressed")) === "false",
   );
   const count = (await botMessages()).length;
   await sendChat("Again please");
-  const messages = await waitForChat(
-    (m) => m.length > count && m.at(-1).text.includes("the mean is 2.0"),
-  );
-  const reply = messages.at(-1);
+  await waitForChat((m) => m.length > count && m.at(-1).text.includes("the mean is 2.0"));
+  let [card] = await runCards(/the mean is 2\.0/);
   check(
-    "with Hide code the reply has no code block",
-    !reply.html.includes("np.mean"),
-    reply.html.slice(0, 300),
+    "with Hide code off the card shows the run's code",
+    card?.code?.open === true && card.code.text.includes("np.mean"),
+    JSON.stringify(card).slice(0, 400),
   );
   const again = await waitForCell(
     (c, all) => c === all.at(-1) && c.source.includes("np.mean"),
     (c) => c.text.includes("2.0"),
   );
-  check("with Hide code the code still runs into the notebook, with its output", !!again);
+  check("the code also runs into the notebook, with its output", !!again);
+  // On again: every card's code folds - the one shown included; outputs and figures stay.
   await composerButton("jp-ClimateClaw-codeToggle").click();
+  await page.waitForFunction(
+    (shown) =>
+      [...document.querySelectorAll(`${shown} details.jp-ClimateClaw-runCode`)].every(
+        (d) => !d.open,
+      ),
+    SHOWN_CHAT,
+    { timeout: 10_000 },
+  );
+  [card] = await runCards(/the mean is 2\.0/);
+  check(
+    "with Hide code the card's code is folded; its output and figure still show",
+    card?.code?.open === false && !!card.parts.Output?.open && !!card.parts.Figures?.open,
+    JSON.stringify(card).slice(0, 400),
+  );
 });
 
 await step("stop", async () => {
   await sendChat("SLOW: a long analysis");
   await waitForChat((m) => m.some((x) => x.text.includes("Working on it")));
-  // jupyterlite-ai's panel here, with its own Stop.
-  const stop = page.locator("button[title='Stop streaming']:visible").first();
-  await stop.waitFor({ timeout: 10_000 }).catch(async () => {
-    const buttons = await page.evaluate(() =>
-      [...document.querySelectorAll("button[title]")]
-        .map((b) => `${b.title}:${b.offsetWidth}`)
-        .join(", "),
-    );
-    const thread = [...mock.threads.entries()].find(([, t]) =>
-      t.variants.some((v) => v.content === "SLOW: a long analysis"),
-    );
-    throw new Error(
-      `no stop button; slow=${JSON.stringify(thread?.[1].slowEnded)} stops=${JSON.stringify(mock.stops)}; log=${JSON.stringify(mock.log.slice(-8).map((r) => `${r.method} ${r.path}`))}; ${buttons}; streaming=${thread?.[1].streaming} thread=${thread?.[0]} first=${firstThread}; ` +
-        `chat: ${JSON.stringify((await botMessages()).map((m) => m.text.slice(-80)).slice(-4))}`,
-    );
-  });
-  await stop.click();
-  const deadline = Date.now() + 15_000;
-  while (mock.stops.length === 0 && Date.now() < deadline) await page.waitForTimeout(200);
+  const thread = [...mock.threads.entries()].find(([, t]) =>
+    t.variants.some((v) => v.content === "SLOW: a long analysis"),
+  )?.[0];
+  // ClimateClaw's own Stop: in Send's place while the box is empty, beside Send while typing.
+  const inPlace = page.locator(`${SHOWN_CHAT} .jp-ClimateClaw-stop[data-place="send"] button`);
+  const sendShown = () => page.locator(`${SHOWN_CHAT} .jp-chat-send-button:visible`).count();
+  await inPlace.waitFor({ timeout: 10_000 });
+  check("while a reply streams, Stop takes Send's place", (await sendShown()) === 0);
   check(
-    "stop sends POST /stop with the thread",
-    mock.stops.at(-1) === firstThread,
-    JSON.stringify(mock.stops),
+    "jupyterlite-ai's own Stop is not shown",
+    (await page.locator("button[title='Stop streaming']:visible").count()) === 0,
   );
+  const input = await chatInput();
+  await input.fill("Next question");
+  await page
+    .locator(`${SHOWN_CHAT} .jp-ClimateClaw-stop[data-place="beside"] button`)
+    .waitFor({ timeout: 5_000 });
+  check("typing brings Send back, with Stop beside it", (await sendShown()) === 1);
+  await input.fill("");
+  await inPlace.waitFor({ timeout: 5_000 });
+  await inPlace.click();
+  const deadline = Date.now() + 15_000;
+  while (!mock.stops.includes(thread) && Date.now() < deadline) await page.waitForTimeout(200);
+  check(
+    "stop sends POST /stop with the chat's thread",
+    !!thread && mock.stops.at(-1) === thread,
+    `${thread} ${JSON.stringify(mock.stops)}`,
+  );
+  await page.waitForFunction(
+    (shown) => !document.querySelector(`${shown} .jp-ClimateClaw-stop`),
+    SHOWN_CHAT,
+    { timeout: 15_000 },
+  );
+  check("once stopped, Send is back alone", (await sendShown()) === 1);
 });
 
-await step("conversations drawer", async () => {
+/** Shows History in ClimateClaw's panel (its list of the account's conversations). */
+async function showHistory() {
+  await openChatPanel();
+  if ((await chatPanel().getAttribute("data-view")) !== "history") {
+    await chatPanel().locator(".jp-ClimateClaw-headerButton.jp-mod-history").click();
+  }
+  const list = page.locator("#climateclaw-conversations");
+  await list.waitFor({ state: "visible", timeout: 10_000 });
+  return list;
+}
+
+await step("conversations: History", async () => {
   // An older conversation, and enough of them that the list has a second page.
   const variants = (topic) => [
     { variant: "User", content: topic },
@@ -1032,9 +1158,7 @@ await step("conversations drawer", async () => {
   for (let i = 0; i < 21; i += 1) {
     mock.seedThread(`seed-${i}`, "jdoe", `Old question ${i}`, variants(`Old question ${i}`));
   }
-  await (await toolbarCommand("climateclaw:history")).click();
-  const drawer = page.locator("#climateclaw-conversations");
-  await drawer.waitFor({ state: "visible", timeout: 10_000 });
+  const drawer = await showHistory();
   const opens = drawer.locator(".jp-ClimateClaw-conversation-open");
   await opens.first().waitFor({ timeout: 10_000 });
   check(
@@ -1054,7 +1178,7 @@ await step("conversations drawer", async () => {
   check("Show more loads the next page", (await opens.count()) > 20, String(await opens.count()));
   const groups = await drawer.locator(".jp-ClimateClaw-conversations-groupTitle").allTextContents();
   check(
-    "the drawer groups conversations by day, today's first",
+    "History groups conversations by day, today's first",
     groups[0] === "Today" && groups.at(-1) === "Earlier",
     JSON.stringify(groups),
   );
@@ -1071,32 +1195,31 @@ await step("conversations drawer", async () => {
     .locator(`.jp-ClimateClaw-conversation-open[data-thread-id="${firstThread}"]`)
     .click();
   await page.waitForFunction(
-    () => {
-      const panel = document.getElementById("@jupyterlite/ai:chat-panel");
-      return !!panel && panel.offsetWidth > 0 && panel.textContent.includes("And the maximum?");
+    (shown) => {
+      const chat = document.querySelector(shown);
+      return !!chat && chat.offsetWidth > 0 && chat.textContent.includes("And the maximum?");
     },
-    null,
+    SHOWN_CHAT,
     { timeout: 20_000 },
   );
   // Messages render one by one: the replies may follow the questions.
   await page
     .waitForFunction(
-      () =>
-        document
-          .getElementById("@jupyterlite/ai:chat-panel")
-          ?.textContent?.includes("the global mean"),
-      null,
+      (shown) => document.querySelector(shown)?.textContent?.includes("the global mean"),
+      SHOWN_CHAT,
       { timeout: 10_000 },
     )
     .catch(() => undefined);
   const opened = await page.evaluate(
-    () => document.getElementById("@jupyterlite/ai:chat-panel").textContent,
+    (shown) => document.querySelector(shown)?.textContent ?? "",
+    SHOWN_CHAT,
   );
   check(
     "a conversation opens in the chat panel with its messages",
     opened.includes("the global mean"),
     opened.slice(0, 600),
   );
+  await showHistory();
   check(
     "…and is marked as the current one",
     (await drawer
@@ -1105,16 +1228,16 @@ await step("conversations drawer", async () => {
   );
 });
 
-await step("history: open beside the notebook and continue", async () => {
-  const drawer = page.locator("#climateclaw-conversations");
+await step("history: open in a tab and continue", async () => {
+  const drawer = await showHistory();
   const row = drawer.locator(".jp-ClimateClaw-conversation", {
     has: page.locator(`[data-thread-id="${firstThread}"]`),
   });
   await row.locator(".jp-ClimateClaw-conversation-more").click();
-  await page.locator(".lm-Menu-itemLabel", { hasText: "Open beside the notebook" }).click();
+  await page.locator(".lm-Menu-itemLabel", { hasText: "Open in a tab" }).click();
   await page.waitForFunction(
     () =>
-      [...document.querySelectorAll(".lm-DockPanel .jp-MainAreaWidget")].some(
+      [...document.querySelectorAll(".lm-DockPanel .jp-ClimateClaw-mainChat")].some(
         (w) => w.offsetWidth > 0 && w.textContent.includes("And the maximum?"),
       ),
     null,
@@ -1122,21 +1245,26 @@ await step("history: open beside the notebook and continue", async () => {
   );
   const text = await page.evaluate(
     () =>
-      [...document.querySelectorAll(".lm-DockPanel .jp-MainAreaWidget")].find(
+      [...document.querySelectorAll(".lm-DockPanel .jp-ClimateClaw-mainChat")].find(
         (w) => w.offsetWidth > 0 && w.textContent.includes("And the maximum?"),
       )?.textContent ?? "",
   );
   check(
-    "the thread opens in a new chat with its messages",
+    "the thread opens in a tab with its messages",
     text.includes("the global mean") && text.includes("And the maximum?"),
     text.slice(0, 300),
   );
-  await drawer.locator(".jp-ClimateClaw-conversations-close").click();
+  // History closes from the panel header's ×, back to the chat.
+  await showHistory();
+  await chatPanel().locator(".jp-ClimateClaw-headerButton.jp-mod-close").click();
   await page.waitForTimeout(300);
-  check("the drawer closes from its own button", !(await drawer.isVisible()));
+  check(
+    "History closes from its own button",
+    !(await drawer.isVisible()) && (await chatPanel().getAttribute("data-view")) !== "history",
+  );
   const before = api("newthread").length;
   const input = page
-    .locator(".lm-DockPanel .jp-MainAreaWidget:visible")
+    .locator(".lm-DockPanel .jp-ClimateClaw-mainChat:visible")
     .last()
     .locator("textarea:not([aria-hidden='true'])")
     .last();
@@ -1156,17 +1284,41 @@ await step("history: open beside the notebook and continue", async () => {
   );
 });
 
-await step("clear starts a new thread", async () => {
+await step("a new chat starts a new thread", async () => {
+  // ClimateClaw's panel has no /clear: a conversation is ended by starting a new one.
   await openChatPanel();
   const before = api("newthread").length;
-  await sendChat("/clear");
-  await page.waitForTimeout(500);
+  await chatPanel().locator(".jp-ClimateClaw-headerButton.jp-mod-new").click();
+  await page
+    .locator(`${SHOWN_CHAT} .jp-ClimateClaw-promptCard`)
+    .first()
+    .waitFor({ timeout: 10_000 });
   await sendChat("Fresh start");
   await waitForChat((m) => m.some((x) => x.text.includes("the mean is 2.0")));
-  check("after /clear a new thread is started", api("newthread").length === before + 1);
+  check("after New chat a new thread is started", api("newthread").length === before + 1);
 });
 
 // Run & fix
+
+/** The visible notebook's "Run at DKRZ" (the face of its split button). */
+const runAtDkrz = () =>
+  page
+    .locator(
+      ".jp-NotebookPanel:not(.lm-mod-hidden) .jp-NotebookPanel-toolbar .jp-ClimateClaw-runAt-main",
+    )
+    .first();
+/** Run at DKRZ's menu → Reset DKRZ session (offered once the active cell is not running). */
+async function resetDkrzSession() {
+  await page
+    .locator(
+      ".jp-NotebookPanel:not(.lm-mod-hidden) .jp-NotebookPanel-toolbar .jp-ClimateClaw-runAt-caret",
+    )
+    .first()
+    .click();
+  await page
+    .locator(".jp-ClimateClaw-runAtMenu .lm-Menu-itemLabel", { hasText: "Reset DKRZ session" })
+    .click();
+}
 
 await step("Run & fix", async () => {
   await page
@@ -1175,10 +1327,7 @@ await step("Run & fix", async () => {
     .click();
   await setCell(page, 2, "y = 1/0\nprint(y)");
   const threadsBefore = api("newthread").length;
-  await page
-    .locator('.jp-NotebookPanel-toolbar [data-command="climateclaw:run-and-fix"]:visible')
-    .first()
-    .click();
+  await runAtDkrz().click();
   await page.waitForFunction(
     () =>
       document
@@ -1239,10 +1388,7 @@ await step("Run & fix", async () => {
   await page.keyboard.press("d");
   await page.keyboard.press("d");
   await page.locator(".jp-Notebook .jp-Cell").nth(2).click();
-  await page
-    .locator('.jp-NotebookPanel-toolbar [data-command="climateclaw:run-and-fix"]:visible')
-    .first()
-    .click();
+  await runAtDkrz().click();
   await page.waitForFunction(
     () =>
       document
@@ -1266,13 +1412,11 @@ await step("Run & fix", async () => {
   // Two quick clicks are one job; an edit made after the request is never overwritten.
   await setCell(page, 2, "y = 1/0\nprint(y)");
   const streamsBefore = api("streamresponse").length;
-  const runButton = page
-    .locator('.jp-NotebookPanel-toolbar [data-command="climateclaw:run-and-fix"]:visible')
-    .first();
-  // Both presses in one task, before the first can await anything (the button acts on mousedown).
+  const runButton = runAtDkrz();
+  // Both presses in one task, before the first can await anything.
   await runButton.evaluate((button) => {
     for (let i = 0; i < 2; i += 1) {
-      button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
     }
   });
   await page.waitForFunction(
@@ -1303,10 +1447,7 @@ await step("Run & fix", async () => {
   );
 
   await setCell(page, 2, "print('hi')");
-  await page
-    .locator('.jp-NotebookPanel-toolbar [data-command="climateclaw:run-and-fix"]:visible')
-    .first()
-    .click();
+  await runAtDkrz().click();
   await page.waitForFunction(
     () =>
       document.querySelectorAll(".jp-Notebook .jp-Cell")[2]?.textContent?.includes("ran at dkrz"),
@@ -1324,20 +1465,16 @@ await step("Run & fix", async () => {
     `${api("newthread").length} vs ${threadsBefore}`,
   );
 
-  // "New DKRZ thread" (the notebook's context menu) forgets it.
-  await page.locator(`${NOTEBOOK} .jp-Cell`).nth(2).click({ button: "right" });
-  await page.locator(".lm-Menu-itemLabel", { hasText: "New DKRZ thread" }).click();
-  await page
-    .locator('.jp-NotebookPanel-toolbar [data-command="climateclaw:run-and-fix"]:visible')
-    .first()
-    .click();
+  // "Reset DKRZ session" (in Run at DKRZ's menu) forgets it.
+  await resetDkrzSession();
+  await runAtDkrz().click();
   await page.waitForFunction(
     () =>
       document.querySelectorAll(".jp-Notebook .jp-Cell")[2]?.textContent?.includes("ran at dkrz"),
     null,
     { timeout: 30_000 },
   );
-  check("New DKRZ thread starts a new thread", api("newthread").length === threadsBefore + 2);
+  check("Reset DKRZ session starts a new thread", api("newthread").length === threadsBefore + 2);
 
   // A kernel restart is a new session, and so is the thread.
   await page.locator(".lm-MenuBar-itemLabel", { hasText: "Kernel" }).click();
@@ -1350,10 +1487,7 @@ await step("Run & fix", async () => {
     .first()
     .click();
   await kernelIdle(page, 180_000);
-  await page
-    .locator('.jp-NotebookPanel-toolbar [data-command="climateclaw:run-and-fix"]:visible')
-    .first()
-    .click();
+  await runAtDkrz().click();
   await page.waitForTimeout(500);
   await page.waitForFunction(
     () =>
@@ -1366,7 +1500,7 @@ await step("Run & fix", async () => {
   // Two cells of one notebook share its DKRZ thread: the second waits for the first.
   const press = () =>
     runButton.evaluate((button) =>
-      button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })),
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 })),
     );
   const conflictsBefore = mock.conflicts.length;
   await setCell(page, 2, "slow = 1  # SLOWFIX");
@@ -1446,9 +1580,10 @@ await step("Run & fix", async () => {
     `${mock.conflicts.length - conflictsBefore} conflicts: ${await cellText(1)}`,
   );
 
-  // "New DKRZ thread" while the thread is still being made: the old session's thread is not kept.
-  await page.locator(`${NOTEBOOK} .jp-Cell`).nth(2).click({ button: "right" });
-  await page.locator(".lm-Menu-itemLabel", { hasText: "New DKRZ thread" }).click();
+  // A reset while the thread is still being made: the old session's thread is not kept. While a
+  // cell runs, Run at DKRZ shows Stop instead of its menu; a kernel restart resets the session
+  // the same way (and is what a user can do then).
+  await resetDkrzSession();
   let releaseThread;
   const threadGate = new Promise((resolve) => (releaseThread = resolve));
   const newThreadUrl = `${MOCK}/api/chatbot/newthread**`;
@@ -1461,8 +1596,15 @@ await step("Run & fix", async () => {
   await page.keyboard.press("Escape");
   await press();
   await page.waitForTimeout(500);
-  await page.locator(`${NOTEBOOK} .jp-Cell`).nth(2).click({ button: "right" });
-  await page.locator(".lm-Menu-itemLabel", { hasText: "New DKRZ thread" }).click();
+  await page.locator(".lm-MenuBar-itemLabel", { hasText: "Kernel" }).click();
+  await page
+    .locator(".lm-Menu-itemLabel", { hasText: /^Restart Kernel…$|^Restart Kernel\.\.\.$/ })
+    .first()
+    .click();
+  await page
+    .locator(".jp-Dialog button.jp-mod-accept, .jp-Dialog button.jp-mod-warn")
+    .first()
+    .click();
   releaseThread();
   await page.waitForFunction(
     () =>
@@ -1512,10 +1654,11 @@ await step("data panel: browse, search, open in a notebook that runs", async () 
     /sfcwind\.zarr/.test(await panel.locator(".jp-FrevaData-selectedName").innerText()),
   );
   await panel.locator(".jp-FrevaData-action.jp-mod-primary").click();
+  // Its own notebook, in front (named after the store).
   await page.waitForFunction(
     () =>
-      [...document.querySelectorAll(".lm-DockPanel-tabBar .lm-TabBar-tab")].some((t) =>
-        t.textContent.includes("sfcwind"),
+      [...document.querySelectorAll(".lm-DockPanel-tabBar .lm-TabBar-tab.lm-mod-current")].some(
+        (t) => /^sfcwind.*\.ipynb$/.test(t.textContent.trim()),
       ),
     null,
     { timeout: 30_000 },
@@ -1568,12 +1711,13 @@ await step("data panel: inspect, ask, copy, globe", async () => {
   const panel = page.locator(".jp-FrevaData");
   await panel.locator('[data-dt-row="s3://data/sfcwind.zarr/"]').first().click();
   await panel.locator('[data-command="freva-data:inspect"]').click();
-  const tab = page.locator(".jp-FrevaData-inspector data-inspector");
+  // The inspector in front (a globe opened earlier is a tab of its own, closed by then).
+  const tab = page.locator(".jp-FrevaData-inspector:not(.lm-mod-hidden) data-inspector");
   await tab.waitFor({ state: "attached", timeout: 20_000 });
   await page.waitForFunction(
     () =>
       document
-        .querySelector(".jp-FrevaData-inspector data-inspector")
+        .querySelector(".jp-FrevaData-inspector:not(.lm-mod-hidden) data-inspector")
         ?.textContent?.includes("sfcWind"),
     null,
     { timeout: 30_000 },
@@ -1635,7 +1779,7 @@ await step("example notebooks are copied, not edited", async () => {
       await page.keyboard.press("Control+Shift+L");
     });
   await page.locator(".jp-LauncherCard", { hasText: "Example notebooks" }).click();
-  await page.locator(".jp-FrevaData-example", { hasText: "ERA5 walkthrough" }).click();
+  await page.locator(".jp-FrevaData-galleryCard", { hasText: "ERA5 walkthrough" }).click();
   await page.waitForFunction(
     () =>
       [...document.querySelectorAll(".lm-DockPanel-tabBar .lm-TabBar-tab")].some((t) =>
@@ -1683,36 +1827,36 @@ await step("chat with codeToNotebook off: code, output and image in the chat", a
       await dataPanel.locator('[data-command="freva-data:view-on-globe"]').isDisabled(),
     );
     await dataPanel.locator('[data-command="freva-data:inspect"]').click();
-    const inspector = page.locator(".jp-FrevaData-inspector data-inspector");
+    const inspector = page.locator(".jp-FrevaData-inspector:not(.lm-mod-hidden) data-inspector");
     await page.waitForFunction(
       () =>
         document
-          .querySelector(".jp-FrevaData-inspector data-inspector")
+          .querySelector(".jp-FrevaData-inspector:not(.lm-mod-hidden) data-inspector")
           ?.textContent?.includes("sfcWind"),
       null,
       { timeout: 30_000 },
     );
+    // The site's policy (`viewer-off`), which no read changes - not a store's (`viewer-disabled`).
     check(
       "…and Inspect's 3D viewer is off, even for a store anyone may read",
-      (await inspector.getAttribute("viewer-disabled")) ===
+      (await inspector.getAttribute("viewer-off")) ===
         "The 3D viewer is not enabled on this site." &&
         (await inspector.locator("#nc-tab-gridlook").isDisabled()),
-      await inspector.getAttribute("viewer-disabled"),
+      await inspector.getAttribute("viewer-off"),
     );
+    await showLeft("ClimateClaw");
+    await Promise.all([other.waitForEvent("page"), accountButton().click()]);
+    await signedIn();
+    // Signed in from its first page, the panel opens a new chat by itself.
+    await page.waitForFunction((id) => document.querySelector(id)?.dataset.view === "chat", PANEL, {
+      timeout: 30_000,
+    });
     await openChatPanel();
-    await Promise.all([
-      other.waitForEvent("page"),
-      (await toolbarCommand("climateclaw:account")).click(),
-    ]);
-    await page.waitForFunction(
-      () => !!document.querySelector('[data-command="climateclaw:account"].jp-mod-signedIn'),
-      null,
-      { timeout: 30_000 },
-    );
     const notebooksBefore = await page.locator(".jp-NotebookPanel").count();
     await sendChat(EXAMPLES[0].prompt);
     const messages = await waitForChat((m) => m.some((x) => /the mean is 2\.0/.test(x.text)));
     const reply = messages.find((x) => /the mean is 2\.0/.test(x.text));
+    // Without a notebook for it, the run's card holds its code (a python block), output and image.
     check(
       "code is a python block",
       /<pre[\s>]/.test(reply.html) &&
@@ -1736,10 +1880,11 @@ await step("chat with codeToNotebook off: code, output and image in the chat", a
       (m) => m.length > count && m.at(-1).text.includes("the mean is 2.0"),
     );
     const last = hidden.at(-1);
+    const [card] = await runCards(/the mean is 2\.0/);
     check(
-      "with Hide code the reply has no code block",
-      !last.html.includes("np.mean"),
-      last.html.slice(0, 300),
+      "with Hide code the run's code is folded under its line",
+      card?.code?.open === false && card.code.text.includes("np.mean"),
+      JSON.stringify(card).slice(0, 300),
     );
     check("with Hide code the output is still shown", last.text.includes("Output"));
   } finally {
