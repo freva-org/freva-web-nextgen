@@ -856,12 +856,13 @@ export function createPythonPlayground(
         if (sessions.length >= maxSessions) return `This page allows ${maxSessions} sessions.`;
         // Reserved here, atomically, before the session exists: Start either gets a live slot
         // or says why, and never leaves a session waiting for one.
-        const slot = await (await pageSlots()).reserve(`${idBase}-choose`);
+        const broker = await pageSlots();
+        const slot = await broker.reserve(`${idBase}-choose`);
         if (!slot) {
           // An idle session would have been put to sleep for it: every one is running code.
           return (
-            "Both live Python slots on this page are in use by code that is running. Wait for " +
-            "it to finish or stop it, then start this one."
+            `${chunk.session.slotsInUse(broker.capacity)} Wait for it to finish or stop it, ` +
+            "then start this one."
           );
         }
         hideSheet();

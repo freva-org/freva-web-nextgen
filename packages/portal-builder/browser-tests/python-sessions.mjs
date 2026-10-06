@@ -474,7 +474,23 @@ try {
         assert.match(transcript, /yes/, "the starter did not run in the default setup");
 
         // The chooser: same-as-current names the setup; a custom one is reviewed; Start says why it
-        // cannot, because the one live slot is taken - and two presses still make no session.
+        // cannot, because the one live slot is held by code that is RUNNING (an idle session would
+        // be put to sleep for it, below) - and two presses still make no session.
+        await page.evaluate(() => {
+          const el = [...document.querySelectorAll(".portal-python-session")]
+            .find((s) => !s.hidden)
+            ?.querySelector("freva-python-console");
+          // Not awaited: it runs while the chooser is used.
+          void el.execute("import time\nfor _ in range(300): time.sleep(0.1)\nprint('busy done')");
+        });
+        await page.waitForFunction(
+          () =>
+            [...document.querySelectorAll(".portal-python-session")]
+              .find((s) => !s.hidden)
+              ?.querySelector("freva-python-console")?.engine?.state === "busy",
+          null,
+          { timeout: 10_000 },
+        );
         assert.ok(await menu(page, "New session"));
         await page.waitForSelector(".portal-python-chooser", { timeout: 10_000 });
         const same = await page.locator(".portal-python-chooser-option").first().textContent();
@@ -493,13 +509,26 @@ try {
           timeout: 10_000,
         });
         const refusal = await page.locator('.portal-python-chooser [role="alert"]').textContent();
-        assert.match(refusal ?? "", /Every live Python slot/, refusal ?? "");
+        assert.match(
+          refusal ?? "",
+          /^The live Python slot on this page is in use by code that is running\./,
+          refusal ?? "",
+        );
         assert.equal(
           await page.locator(".portal-python-tab").count(),
           1,
           "a session was created without a slot",
         );
         await page.locator(".portal-python-sheet-close").click();
+        // Its output line (not the echoed command), and the interpreter idle again.
+        await page.waitForFunction(
+          () => {
+            const el = document.querySelector("freva-python-console");
+            return /^busy done$/m.test(el?.transcript() ?? "") && el?.engine?.state === "ready";
+          },
+          null,
+          { timeout: 120_000, polling: 500 },
+        );
 
         // Sleep keeps the transcript and the file, and frees the slot.
         assert.ok(await menu(page, "Sleep session"));
@@ -541,14 +570,8 @@ try {
         );
         assert.match(transcript, /True False/, "the second session does not have its own setup");
 
-        // Back to the first: waking needs the slot, so the second sleeps first.
-        assert.ok(await menu(page, "Sleep session"));
-        await page.waitForFunction(
-          () =>
-            /asleep/.test(document.querySelector(".portal-python-status-text")?.textContent ?? ""),
-          null,
-          { timeout: 60_000 },
-        );
+        // Back to the first: waking needs the one slot, so the second - idle - is put to sleep
+        // for it (its files kept), and says why.
         await page.locator(".portal-python-tab").first().click();
         assert.ok(await menu(page, "Wake session"));
         await page.waitForFunction(
@@ -564,6 +587,15 @@ try {
           "print(open('/workspace/kept.txt').read(), 'x' in globals(), STARTED)",
         );
         assert.match(transcript, /kept False yes/, transcript.slice(-400));
+        await page.locator(".portal-python-tab").nth(1).click();
+        await page.waitForFunction(
+          () =>
+            /is asleep/.test(
+              document.querySelector(".portal-python-status-text")?.textContent ?? "",
+            ),
+          null,
+          { timeout: 10_000 },
+        );
 
         assert.deepEqual(violations, [], violations.join(", "));
         assert.deepEqual(foreign, [], foreign.join(", "));
@@ -614,11 +646,12 @@ try {
       await second.locator(".portal-python-chooser-option").first().click();
       await second.locator(".portal-python-chooser button", { hasText: "Start session" }).click();
       // One live slot, held by the first frame, which is idle: it is put to sleep (its files
-      // kept) and the second starts - what counts is what runs, not what is open.
+      // kept) and the second starts - what counts is what runs, not what is open. Polled on a
+      // timer: the first frame is hidden now and runs no animation frames.
       await first.waitForFunction(
         () => /asleep/.test(document.querySelector("#playground-session span")?.textContent ?? ""),
         null,
-        { timeout: 60_000 },
+        { timeout: 60_000, polling: 500 },
       );
       await page.locator(".portal-python-tab").nth(1).click();
       await second.waitForFunction(
@@ -697,7 +730,12 @@ try {
       const block = page.locator("[data-portal-notebook]");
       const src = `${nbChildS.origin}/notebook/tree/index.html`;
       assert.equal(await block.locator("iframe").getAttribute("src"), src);
-      assert.equal(await block.locator("[data-portal-notebook-open]").getAttribute("href"), src);
+      // The new tab opens in the page's theme (notebook-embed.ts reads it the same way).
+      const theme = await page.evaluate(() =>
+        document.documentElement.dataset.theme === "dark" ? "dark" : "light",
+      );
+      const href = await block.locator("[data-portal-notebook-open]").getAttribute("href");
+      assert.ok(href === src || href === `${src}?theme=${theme}`, `${href} (theme ${theme})`);
       assert.equal(
         await block.locator("[data-portal-notebook-open]").getAttribute("target"),
         "_blank",
