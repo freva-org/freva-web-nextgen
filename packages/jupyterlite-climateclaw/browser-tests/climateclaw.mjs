@@ -391,6 +391,17 @@ await step("a notebook with a draft and kernel state", async () => {
   await kernelIdle(page, 180_000);
   await setCell(page, 0, "x = 41");
   await page.keyboard.press("Shift+Enter");
+  // Its count, not the idle indicator alone: right after Shift+Enter the request may not have
+  // reached the kernel yet, and the indicator still says idle (seen in Firefox on CI).
+  await page.waitForFunction(
+    () =>
+      /\[\d+\]/.test(
+        document.querySelector(".jp-NotebookPanel:not(.lm-mod-hidden) .jp-InputPrompt")
+          ?.textContent ?? "",
+      ),
+    null,
+    { timeout: 180_000, polling: 250 },
+  );
   await kernelIdle(page, 180_000);
   await setCell(page, 1, "draft: do not lose me");
   await page.keyboard.press("Escape");
