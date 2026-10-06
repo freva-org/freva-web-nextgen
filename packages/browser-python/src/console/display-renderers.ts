@@ -1,9 +1,10 @@
 /**
  * display-renderers.ts - rich output, as controlled DOM. A registry rather than a switch, so a
- * safe renderer can be added later without editing the console. What is absent is as deliberate
- * as what is here: no `text/html` and no SVG renderer, because both carry script and the payload
- * was authored by whatever Python the visitor typed. The engine refuses those MIME types at the
- * worker boundary as well - it guards the protocol, this guards the DOM.
+ * safe renderer can be added later without editing the console. What is absent from the registry
+ * is as deliberate as what is in it: no `text/html` and no SVG renderer, because both carry script
+ * and the payload was authored by whatever Python the visitor typed. Those arrive only inside a
+ * `display()` bundle and are drawn by `renderMarkup`, which hands them to `../display/` - the
+ * sanitiser shared with the notebook, loaded only when such an output first arrives.
  */
 
 import type { ConsoleDisplayOutput, DisplayRenderer } from "./console-types.js";
@@ -105,6 +106,40 @@ const renderText: DisplayRenderer = (output, context) => {
   // textContent. This whole module exists so that this is never `innerHTML`.
   pre.textContent = output.data;
   return pre;
+};
+
+/**
+ * HTML and SVG from a `display()` bundle. NOT in the registry above, which stays the two types a
+ * single `display` event may carry: markup arrives only inside a bundle and is drawn only by this
+ * function, through the sanitiser. A placeholder shows the plain text at once and is replaced
+ * when the display module has loaded; its stylesheet is adopted into whichever root the output
+ * landed in - the console's shadow root - not the page.
+ */
+export const renderMarkup: DisplayRenderer = (output, context) => {
+  if (output.mime !== "text/html" && output.mime !== "image/svg+xml") return null;
+  if (output.encoding !== "utf8") return null;
+  const holder = context.document.createElement("div");
+  holder.className = "bp-display-rich";
+  holder.setAttribute("part", "display");
+  const plain = context.document.createElement("pre");
+  plain.className = "bp-display-text";
+  plain.textContent = output.fallback ?? `[${output.mime} output]`;
+  holder.append(plain);
+  import("../display/render.js")
+    .then((display) => {
+      const ctx = { document: context.document, track: (url: string) => context.track(url) };
+      const node =
+        output.mime === "text/html"
+          ? display.renderHtml(output.data, ctx)
+          : display.renderSvg(output.data, ctx);
+      if (!node) return;
+      holder.replaceChildren(node);
+      display.adoptDisplayStyles(holder.getRootNode());
+    })
+    .catch(() => {
+      // The plain text stays: correct, if less rich.
+    });
+  return holder;
 };
 
 registerDisplayRenderer("image/png", renderPng);

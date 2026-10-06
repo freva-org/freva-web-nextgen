@@ -14,6 +14,7 @@ packages/browser-python/src/worker/addon-pins.generated.ts
 # Same arrangement for the console stylesheet: generated from src/console/styles.css, and
 # `gen-console-styles.mjs --check` compares it byte for byte.
 packages/browser-python/src/console/styles.generated.ts
+packages/browser-python/src/display/styles.generated.ts
 # The pinned Pyodide distribution, vendored locally for tests and the demo.
 packages/browser-python/.runtime/
 # Scratch bundles written by the browser suites and the size measurement.

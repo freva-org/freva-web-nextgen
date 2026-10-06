@@ -252,6 +252,14 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
                     name: "python-shared",
                     test: /[/\\]browser-python[/\\]dist[/\\]transcript-limit\./,
                   },
+                  // The bundler's dynamic-import preload helper, for the same reason: the
+                  // console loads its rich-output renderer and the engine its session
+                  // operations lazily, and a group takes its members' dependencies with it, so
+                  // the console's group would otherwise host the helper every entry needs.
+                  {
+                    name: "preload-helper",
+                    test: /preload-helper/,
+                  },
                   {
                     name: "python-console",
                     // The console is matched by its own path rather than by `node_modules/`:

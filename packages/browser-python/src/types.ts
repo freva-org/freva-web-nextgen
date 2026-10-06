@@ -311,8 +311,56 @@ export interface CompletionResult {
   matches: readonly string[];
 }
 
-/** MIME types the protocol will carry. Anything else is rejected at the boundary. */
+/**
+ * The typed notice a notebook cell carries instead of stderr: `{"notice": NoticeKind, "text":
+ * string}` as JSON, always beside a `text/plain` copy of `text`.
+ */
+export const NOTICE_MIME = "application/vnd.freva.notice+json";
+
+/** MIME types a single `display` event carries (figures from `plt.show()` in the console). */
 export type DisplayMime = "image/png" | "text/plain";
+
+/**
+ * MIME types a bundle carries. Anything else is rejected at the boundary. `text/html` and
+ * `image/svg+xml` are Python-authored markup: render them only through the sanitiser in
+ * `@freva-org/browser-python/display`, never with `innerHTML`.
+ */
+export type BundleMime = DisplayMime | "text/html" | "image/svg+xml" | typeof NOTICE_MIME;
+
+/** One output in every representation Python offered; `text/plain` is always present. */
+export type MimeBundle = { readonly "text/plain": string } & {
+  readonly [M in Exclude<BundleMime, "text/plain">]?: string;
+};
+
+/** Pixel size per representation, the only metadata carried. */
+export type BundleMetadata = {
+  readonly [M in BundleMime]?: { readonly width?: number; readonly height?: number };
+};
+
+/** Options for {@link BrowserPython.executeCell}. */
+export interface CellOptions {
+  /** Echoed on the cell's start event and result, so a caller can bind its request first. */
+  token?: string;
+  /** Publish no `execute_result`, and assign no execution count. */
+  silent?: boolean;
+  /** Assign an execution count. Default true unless `silent`. */
+  storeHistory?: boolean;
+  /** The filename tracebacks show. Default `<cell-N>`, unique per execution. */
+  filename?: string;
+}
+
+/** How a cell ended. A `cancelled` cell never started and has no count. */
+export interface CellResult {
+  executionId: string;
+  token?: string;
+  status: "ok" | "error" | "cancelled";
+  executionCount: number | null;
+  ename?: string;
+  evalue?: string;
+  traceback?: readonly string[];
+  /** Set when the failure is an environment condition, reported as a notice bundle instead. */
+  notice?: NoticeKind;
+}
 
 export interface StatusEvent {
   type: "status";
@@ -353,6 +401,37 @@ export interface ErrorEvent {
   executionId: string;
   /** A Python traceback, as text. */
   text: string;
+  /** A cell's exception, structured as Jupyter's `error` message wants it. */
+  ename?: string;
+  evalue?: string;
+  traceback?: readonly string[];
+}
+
+/** A cell has started: sent before any of its output, with the count it was given. */
+export interface CellStartEvent {
+  type: "execute_input";
+  executionId: string;
+  token?: string;
+  executionCount: number | null;
+}
+
+/** A MIME bundle: `display()`, a figure, or (`execute_result`) a cell's last expression. */
+export interface BundleEvent {
+  type: "display_data" | "execute_result";
+  executionId: string;
+  data: MimeBundle;
+  metadata: BundleMetadata;
+  /** Only on `execute_result`. */
+  executionCount?: number | null;
+  background?: true;
+}
+
+/** `clear_output()`: clear this execution's output now, or when the next output arrives. */
+export interface ClearOutputEvent {
+  type: "clear_output";
+  executionId: string;
+  wait: boolean;
+  background?: true;
 }
 
 /**
@@ -377,7 +456,13 @@ export type UnsupportedReason =
   | "runtime-unreachable" // the pinned indexURL did not serve pyodide.mjs
   | "packages-unreachable"; // the runtime came up, but a profile's wheels did not arrive
 
-export type OutputEvent = StreamEvent | DisplayEvent | ErrorEvent;
+export type OutputEvent =
+  | StreamEvent
+  | DisplayEvent
+  | ErrorEvent
+  | CellStartEvent
+  | BundleEvent
+  | ClearOutputEvent;
 
 export type Unsubscribe = () => void;
 export type StatusListener = (event: StatusEvent) => void;
@@ -457,6 +542,34 @@ export interface BrowserPython {
   ): Promise<ArtifactStreamResult>;
   deleteArtifact(name: string): Promise<void>;
 
+  /**
+   * Run one notebook cell: CPython semantics, with the last expression's value published as an
+   * `execute_result` bundle. Cells run one at a time in submission order; an `execute_input`
+   * event precedes any of a cell's output. Resolves with the outcome - a Python exception is an
+   * `error` result, not a rejection.
+   */
+  executeCell(source: string, options?: CellOptions): Promise<CellResult>;
+  /** Cancel every cell that has not started yet. Returns how many were cancelled. */
+  cancelQueuedCells(): number;
+  /**
+   * Write a file INTO `/workspace` from outside Python, a bounded chunk at a time. The file
+   * appears under `name` only when every byte arrived; an aborted or failed write leaves nothing.
+   * Takes its turn with executions, and holds it until done.
+   */
+  writeWorkspaceFile(
+    name: string,
+    source: Blob | ArrayBuffer | ArrayBufferView | ReadableStream<Uint8Array>,
+    options?: { size?: number; overwrite?: boolean; signal?: AbortSignal },
+  ): Promise<WorkspaceWriteResult>;
+  /** A bounded, rate-limited resource sample; never rejects for a busy worker (`sampleStale`). */
+  observeResources(): Promise<SessionResources>;
+  /**
+   * Stop accepting work, for a checkpoint. Rejects with `busy` if anything is running, queued,
+   * transferring or open in Python. While quiesced, executions and writes reject with `quiesced`;
+   * reading artifacts still works. Call the returned function to resume.
+   */
+  quiesce(): Promise<() => void>;
+
   onStatus(listener: StatusListener): Unsubscribe;
   onOutput(listener: OutputListener): Unsubscribe;
   /** Fires after every execution that changed the workspace, and after a delete. */
@@ -468,6 +581,37 @@ export interface BrowserPython {
   readonly credentialsPersisted: boolean;
   /** Fires when persistent credential storage stops being available. */
   onStorage(listener: StorageListener): Unsubscribe;
+}
+
+/** A resource sample. Absent means unavailable, never zero; see `observeResources`. */
+export interface SessionResources {
+  /** Which worker this describes: changes with every restart. */
+  workerGeneration: string;
+  sampledAt: number;
+  /** WebAssembly linear-memory capacity after growth. NOT RSS, NOT live usage. */
+  wasmCapacityBytes?: number;
+  /** The interpreter's own startup, as the worker measured it. */
+  startupMs?: number;
+  /** From `start()`/`restart()` to `ready`, including `startupSource`. */
+  timeToUsableMs?: number;
+  /** Decoded bytes the worker fetched (runtime, wheels, data). */
+  fetchedDecodedBytes?: number;
+  /** Bytes on the wire, where the browser reports it; cache hits and opaque responses are 0. */
+  transferBytesEstimate?: number;
+  /** Bytes held in `/workspace`. */
+  workspaceBytes?: number;
+  /** Output a UI retains; the engine does not know it, so a UI adds it. */
+  outputRetainedBytes?: number;
+  pendingExecutions: number;
+  activeTransfers: number;
+  /** True when the worker did not answer in time (a synchronous loop): this is the last sample. */
+  sampleStale: boolean;
+}
+
+/** What `writeWorkspaceFile` wrote. */
+export interface WorkspaceWriteResult {
+  name: string;
+  size: number;
 }
 
 /**
@@ -502,7 +646,11 @@ export class BrowserPythonError extends Error {
     /** `startupSource` raised. The interpreter is up; what the host asked for did not happen. */
     | "startup-source"
     /** A limit the engine enforces on itself, such as the transfer-memory budget. */
-    | "resource";
+    | "resource"
+    /** `quiesce()` found work in progress. */
+    | "busy"
+    /** The engine is quiesced for a checkpoint. */
+    | "quiesced";
   readonly reason?: UnsupportedReason;
   /**
    * Faults that happened while CLEANING UP after this error, never instead of it: the destination's

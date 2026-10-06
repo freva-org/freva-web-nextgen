@@ -11,8 +11,9 @@ import { PROTOCOL_VERSION, type WorkerMessage, type WorkerRequest } from "../pro
 import { defaultAddonBase, describeAddons, prepareAddons } from "./addons.js";
 import { ArtifactWatcher } from "./artifacts.js";
 import { Workspace } from "./opfs-workspace.js";
-import { OutputBridge } from "./output.js";
+import { CellOutput, OutputBridge } from "./output.js";
 import { Repl } from "./repl.js";
+import { fetchedBytes, wasmCapacityBytes } from "./resources.js";
 import { useSyncInstantiationWhileLoading } from "./wasm-instantiation.js";
 import {
   PROFILE_PACKAGES,
@@ -41,6 +42,7 @@ const postRaw: (message: WorkerMessage, transfer?: Transferable[]) => void = (
   else self.postMessage(message);
 };
 const output = new OutputBridge(postRaw);
+const cells = new CellOutput(output, postRaw);
 
 /**
  * Every message this file sends, with the pending output batch emitted first: `OutputBridge`
@@ -284,6 +286,7 @@ async function handleInit(request: Extract<WorkerRequest, { kind: "init" }>): Pr
     // to enter Python. The engine prints nothing about its absence at startup (the console shows a
     // collapsed hint from `ready.jspi`) - see `_freva_bridge.set_jspi`.
     const console_ = new Repl(pyodide, output, { jspi: supportsJspi() });
+    console_.useCells(cells);
     repl = console_;
     await console_.start();
 
@@ -440,6 +443,91 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
           });
         } catch (error) {
           output.endExecution();
+          post({ kind: "request-error", id: request.id, message: describe(error) });
+        }
+      });
+      return;
+
+    case "execute-cell":
+      enqueue(async () => {
+        const active = requireRepl(request.id);
+        if (!active) return;
+        output.beginExecution(request.executionId);
+        try {
+          const result = await active.executeCell({
+            executionId: request.executionId,
+            source: request.source,
+            silent: request.silent,
+            storeHistory: request.storeHistory,
+            ...(request.filename !== undefined ? { filename: request.filename } : {}),
+            ...(request.token !== undefined ? { token: request.token } : {}),
+          });
+          settleArtifacts(request.executionId);
+          output.endExecution();
+          post({ kind: "cell-reply", id: request.id, result });
+        } catch (error) {
+          output.endExecution();
+          post({ kind: "request-error", id: request.id, message: describe(error) });
+        }
+      });
+      return;
+
+    // NOT ENQUEUED, like `interrupt`: a sample taken while a cell awaits must not wait for it. A
+    // synchronous loop blocks this too, and the engine reports the sample as stale.
+    case "resources": {
+      const capacity = wasmCapacityBytes(pyodide);
+      let workspaceBytes: number | undefined;
+      try {
+        workspaceBytes = workspace?.bytesUsed();
+      } catch {
+        workspaceBytes = undefined;
+      }
+      post({
+        kind: "resources-reply",
+        id: request.id,
+        sample: {
+          ...(capacity !== undefined ? { wasmCapacityBytes: capacity } : {}),
+          ...(workspaceBytes !== undefined ? { workspaceBytes } : {}),
+          ...fetchedBytes(),
+        },
+      });
+      return;
+    }
+
+    case "import-open":
+      enqueue(async () => {
+        const active = requireWorkspace(request.id);
+        if (!active) return;
+        try {
+          const handle = active.beginImport(request.name, request.size, request.overwrite);
+          post({ kind: "import-handle", id: request.id, handle });
+        } catch (error) {
+          post({ kind: "request-error", id: request.id, message: describe(error) });
+        }
+      });
+      return;
+
+    case "import-chunk":
+      enqueue(async () => {
+        const active = requireWorkspace(request.id);
+        if (!active) return;
+        try {
+          active.writeImport(request.handle, request.offset, new Uint8Array(request.bytes));
+          post({ kind: "ack", id: request.id });
+        } catch (error) {
+          post({ kind: "request-error", id: request.id, message: describe(error) });
+        }
+      });
+      return;
+
+    case "import-close":
+      enqueue(async () => {
+        try {
+          workspace?.endImport(request.handle, request.commit);
+          // Announced like any other change, so every console sharing the engine sees the file.
+          if (request.commit) settleArtifacts();
+          post({ kind: "ack", id: request.id });
+        } catch (error) {
           post({ kind: "request-error", id: request.id, message: describe(error) });
         }
       });

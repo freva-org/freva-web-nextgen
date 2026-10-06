@@ -89,6 +89,8 @@ export interface ConsoleDisplayOutput {
   mime: string;
   encoding: "base64" | "utf8";
   data: string;
+  /** The bundle's `text/plain`: shown until richer output renders, or instead of it. */
+  fallback?: string;
   executionId?: string;
   metadata?: { figure?: number; width?: number; height?: number };
 }
@@ -118,9 +120,19 @@ export interface ConsoleSurfaceAdapter {
   insert(value: string): void;
   appendText(output: ConsoleTextOutput): void;
   appendDisplay(output: ConsoleDisplayOutput): void;
+  /**
+   * Draw HTML or SVG from a `display()` bundle, sanitised. Optional: a surface without it gets
+   * the bundle's plain text through `appendDisplay` instead. Returns false when it drew nothing.
+   */
+  appendMarkup?(output: ConsoleDisplayOutput): boolean;
   /** Draw a notice as a card. Optional: a surface without it gets the plain text instead. */
   appendNotice?(output: ConsoleNoticeOutput): boolean;
   clear(): void;
+  /**
+   * Remove one execution's output (`clear_output()`), keeping everything else, and say how many
+   * entries went. Optional: a surface without it keeps that output.
+   */
+  clearExecution?(executionId: string): number;
   /** Drop entries from the OLDEST end until the transcript is within both limits, and say how
    * many. Separate from `clear()`: clearing on an overrun of one entry throws away the newest
    * output - the output the visitor was reading - with the oldest. */
