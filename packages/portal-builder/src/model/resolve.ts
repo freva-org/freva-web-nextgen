@@ -8,7 +8,7 @@
  */
 
 import { readFileSync, realpathSync } from "node:fs";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, extname, join, posix, resolve } from "node:path";
 import { BuildFailure, DiagnosticBag, type Diagnostic } from "../diagnostics.js";
 import { loadYaml } from "../config/yaml.js";
 import { validateAgainst, SCHEMA_FILES } from "../config/schema.js";
@@ -28,7 +28,9 @@ import type {
   RawComponent,
   RawDatasetTreePython,
   RawLandingBlock,
+  RawHeaderLink,
   RawLink,
+  RawProseFigure,
   SubsitePolicyDocument,
 } from "../config/types.js";
 import { effectiveLimits, loadProfile } from "../rendering/profile.js";
@@ -68,9 +70,19 @@ import { resolvePlaygroundAssets, type PlaygroundAssetSources } from "./playgrou
 import { resolvePackagePolicy } from "./package-policy.js";
 import {
   checkPlaygroundAgreement,
+  policyProfile,
   resolvePlaygroundSettings,
+  secondOrigin,
   type PlaygroundClaim,
 } from "./python-playground.js";
+import {
+  checkNotebookSite,
+  notebookPolicy,
+  planNotebook,
+  playgroundRoot,
+  type NotebookIdentity,
+  type NotebookLabInputs,
+} from "./notebook.js";
 import { EMBED_PROTOCOL_VERSION } from "@freva-org/browser-python/embed";
 import { candidatesFrom, deriveSectionNavigation } from "./section-navigation.js";
 import { registrationFor } from "../components/registry.js";
@@ -85,7 +97,12 @@ import { collectMountedFiles, mimeForAsset, type MountedRoot } from "./assets.js
 import { collectSubsite } from "./subsites.js";
 import { resolveLink, type LinkContext } from "./links.js";
 import { resolveRedirects } from "./redirects.js";
-import { buildSearchIndex, publishSearchIndex, SITE_SEARCH_EVIDENCE } from "./search-index.js";
+import {
+  buildSearchIndex,
+  publishSearchIndex,
+  searchFacets,
+  SITE_SEARCH_EVIDENCE,
+} from "./search-index.js";
 import { ANNOUNCEMENT_FEED_EVIDENCE } from "./announcement-feed.js";
 import {
   normalizeAuthBase,
@@ -106,6 +123,7 @@ import {
   type DatasetTreeS3Source,
   type InputRecord,
   type PlaygroundArtifactExample,
+  type ProseFigureData,
   type PythonPlaygroundData,
   type RegisteredContentExample,
   type RenderedFragment,
@@ -114,6 +132,7 @@ import {
   type ResolvedComponent,
   type ResolvedIdentityAsset,
   type ResolvedLanding,
+  type ResolvedLandingSection,
   type ResolvedLink,
   type ResolvedPortalModel,
   type ResolvedRoute,
@@ -127,7 +146,17 @@ import {
 import { packageInfo, packagePurl, schemaDigest, sha256 } from "../util/package.js";
 import { serializeSearchIntentV1 } from "@freva-org/databrowser/intent";
 import { compareCodePoints } from "../util/order.js";
-import { deriveNavOutline, nestHeadings } from "./nav-outline.js";
+import { deriveNavOutline, nestHeadings, pagerSequence, sectionFor } from "./nav-outline.js";
+import { CREDENTIAL_PATTERN } from "./credentials.js";
+import {
+  CustomisationBuilder,
+  configUsesCustomisation,
+  extendedTokenCss,
+  finishCustomisation,
+  landingUsesLayout,
+  stripExtendedTokens,
+  type FinishResult,
+} from "../customisation/resolve.js";
 
 export interface ResolveOptions {
   /** Canonical trusted source root. */
@@ -162,6 +191,13 @@ export interface ResolveOptions {
    * rather than a silent fallback to a URL on somebody else's CDN.
    */
   pythonMaterialsDir?: string;
+  /**
+   * `--notebook <dir>`: the notebook site `prepare-notebook` produced, for a portal with
+   * `notebook.enabled`. Checked against this configuration and copied under the playground.
+   */
+  notebookDir?: string;
+  /** Resolve without the notebook site: `prepare-notebook` runs before one exists. */
+  skipNotebook?: boolean;
   /**
    * Answer questions about the configuration without needing prepared STAC materials. Used by
    * `stac-plan` and by nothing that emits: the plan's job is to say whether the preparation stage
@@ -227,10 +263,25 @@ export interface ResolveResult {
    * routed back through a symlink the check just ruled out.
    */
   pythonMaterials?: { realRoot: string; plan: PythonMaterialsPlan };
+  /** `notebook.seeds`, read and contained: what `prepare-notebook` seeds the site with. */
+  notebookSeeds?: { name: string; text: string }[];
+  /** The notebook's assistant and data panel, with their files read: what the Lab app needs. */
+  notebookLab?: NotebookLabInputs;
+  /** The portal's name and favicon, for the notebook's tab. */
+  notebookIdentity?: NotebookIdentity;
+  /** The verified notebook site to deploy beside the playground, and its policy. */
+  notebook?: { realRoot: string; files: string[]; csp: string };
 }
 
-const CREDENTIAL_PATTERN =
-  /(client[_-]?secret|password|passwd|api[_-]?key|secret[_-]?key|private[_-]?key|bearer\s+[A-Za-z0-9._-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/i;
+/**
+ * The one sign-in callback path every consumer uses: the auth component's `callbackPath` when the
+ * portal configures one (enabled or not), else `/auth/callback/`. The portal's route, the
+ * notebook origin's page and the notebook's own setting are all made from it.
+ */
+function sharedAuthCallbackPath(components: readonly ResolvedComponent[]): string {
+  const auth = components.find((component) => component.kind === "auth");
+  return (auth?.options as AuthOptions | undefined)?.callbackPath ?? "/auth/callback/";
+}
 
 export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult> {
   const bag = new DiagnosticBag();
@@ -431,7 +482,10 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     );
     return { diagnostics: bag, warningsAsErrors, contents, rst: { used: false } };
   }
-  const theme = resolveThemeCss(presetName, config.theme?.tokens);
+  const theme = resolveThemeCss(
+    presetName,
+    stripExtendedTokens(config.theme?.tokens) as Parameters<typeof resolveThemeCss>[1],
+  );
   // The story's ending. Only the cosmos preset tells one; anywhere else the key does nothing, and
   // a build that accepted it silently would leave a deployment wondering why.
   const requestedTail = config.theme?.backdrop?.tail;
@@ -1046,6 +1100,24 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     }
   };
 
+  // The customisation surface, only when something uses it: absent, nothing below changes.
+  const customisationDeps = {
+    config,
+    configRel,
+    configPath,
+    sourceRoot,
+    basePath: canonical.basePath,
+    profile,
+    bag,
+    contents,
+    inputs,
+  };
+  const customisationBuilder =
+    configUsesCustomisation(config) ||
+    [...landingDocs.values()].some((landing) => landingUsesLayout(landing.doc))
+      ? new CustomisationBuilder(customisationDeps)
+      : undefined;
+
   for (const [id, landing] of landingDocs) register(landing.path, `landing ${id}`);
   for (const component of enabledComponents) {
     if (component.route) register(component.route, `component ${component.id}`);
@@ -1373,6 +1445,8 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         ...resolvedPlayground,
         ...(playgroundAssets.wheelhouse ? { wheelhouseUrl: playgroundAssets.wheelhouse.url } : {}),
         ...(playgroundAssets.addons ? { addonBaseUrl: playgroundAssets.addons.url } : {}),
+        // The second origin serves this deployment under the portal's base path.
+        ...(secondOrigin(resolvedPlayground) ? { playgroundBase: canonical.basePath } : {}),
         packagePolicy: resolvePackagePolicy(
           {
             ...(resolvedPlayground.runtimeIndexUrl
@@ -1392,7 +1466,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
           // re-decide either: the profile is what adds a package index, so taking the default
           // here would build a page whose `connect-src` and whose interpreter disagree.
           resolvedPlayground.network,
-          resolvedPlayground.profile,
+          policyProfile(resolvedPlayground.profile, resolvedPlayground.sessionChoices?.policy),
         ),
       }
     : undefined;
@@ -1581,11 +1655,37 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     })),
   );
 
+  // Prose blocks' illustrations: published assets, named relative to the landing file.
+  const landingFigures = new Map<string, ProseFigureData>();
+  const figureAssets = new Set<string>();
+  for (const [id, landing] of landingDocs) {
+    landing.doc.blocks.forEach((block, index) => {
+      if (block.type !== "prose" || !block.figure) return;
+      const figure = resolveProseFigure(block.figure, landing.source, assetsBySource, (message) =>
+        bag.error("FP1201", message, {
+          file: landing.source,
+          pointer: `/blocks/${index}/figure`,
+          hint: "Name a file inside a `rendering.assets` root, relative to the landing file.",
+        }),
+      );
+      if (!figure) return;
+      landingFigures.set(`${id}:${index}`, figure);
+      const urls = [
+        figure.image,
+        figure.imageDark,
+        ...(figure.video ?? []),
+        ...(figure.videoDark ?? []),
+      ];
+      for (const url of urls) if (url) figureAssets.add(url);
+    });
+  }
+
   for (const asset of assetResult.files) {
     // An asset that is also the site identity or a component's chrome image is referenced, even
     // though the reference is in configuration rather than prose.
     if (
       !contentResult.referencedAssets.has(asset.url) &&
+      !figureAssets.has(asset.url) &&
       !identityFiles.some((f) => f.source === asset.source)
     ) {
       bag.warn("FP1408", `Asset '${asset.source}' is never referenced by any page or landing.`, {
@@ -1596,6 +1696,15 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
 
   // Landing blocks.
   const landings: ResolvedLanding[] = [];
+  // Where each registered example is offered, for `run-example` actions.
+  const examplePages = new Map<string, string>();
+  for (const page of contentResult.pages) {
+    for (const example of page.fragment.runnable ?? []) examplePages.set(example.id, page.route);
+  }
+  for (const [id, found] of landingRunnable) {
+    const landing = landingDocs.get(id);
+    if (landing) for (const example of found) examplePages.set(example.id, landing.path);
+  }
   const linkCtxBase = {
     basePath: canonical.basePath,
     landings: new Map<string, ResolvedLanding>(),
@@ -1603,6 +1712,16 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     knownPaths: new Set(routes.paths),
     subsiteMounts: subsites.map((s) => s.mount),
     staticFiles: new Set(staticFileUrls.keys()),
+    examples: examplePages,
+    ...(portalPlayground?.notebook && portalPlayground.notebookOrigin
+      ? {
+          notebook: {
+            origin: portalPlayground.notebookOrigin.replace(/\/+$/, ""),
+            root: playgroundRoot(portalPlayground.notebookOrigin, canonical.basePath),
+            lab: Boolean(portalPlayground.notebookAssistant || portalPlayground.notebookDataPanel),
+          },
+        }
+      : {}),
   };
 
   // Landings must be resolvable by name from links, so the map is populated with shells first and
@@ -1617,8 +1736,22 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     });
   }
 
+  const landingSections = new Map<string, ResolvedLandingSection[]>();
   for (const [id, landing] of landingDocs) {
     const blocks: ResolvedBlock[] = [];
+    const laidOut = customisationBuilder && landingUsesLayout(landing.doc);
+    const sections = laidOut ? customisationBuilder.sections(landing.doc, landing.source) : [];
+    const sectionIds = new Set<string>();
+    sections.forEach((section, index) => {
+      if (sectionIds.has(section.id)) {
+        bag.error("FP1208", `Layout section '${section.id}' is declared twice.`, {
+          file: landing.source,
+          pointer: `/layout/sections/${index}/id`,
+        });
+      }
+      sectionIds.add(section.id);
+    });
+    if (laidOut) landingSections.set(id, sections);
     landing.doc.blocks.forEach((raw, index) => {
       const ctx: LinkContext = {
         ...linkCtxBase,
@@ -1630,9 +1763,19 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         fragments: contentResult.fragments,
         landingProse,
         landingCatalogs,
+        landingFigures,
         bag,
         basePath: canonical.basePath,
+        siteTitle: config.site.title,
       });
+      if (resolved && laidOut) {
+        resolved.placement = customisationBuilder.placement(
+          raw,
+          landing.source,
+          `/blocks/${index}`,
+          sectionIds,
+        );
+      }
       if (resolved) blocks.push(resolved);
     });
     const resolvedLanding: ResolvedLanding = {
@@ -1642,6 +1785,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
       ...(landing.doc.description ? { description: landing.doc.description } : {}),
       blocks,
       source: landing.source,
+      ...(laidOut ? { layout: { sections } } : {}),
     };
     landings.push(resolvedLanding);
     linkCtxBase.landings.set(id, resolvedLanding);
@@ -1658,6 +1802,25 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
       });
       bag.merge(result.diagnostics);
       if (result.link) out.push(result.link);
+    });
+    return out;
+  };
+  const resolveHeaderLinks = (
+    raws: RawHeaderLink[] | undefined,
+    pointerBase: string,
+  ): ResolvedLink[] => {
+    const out: ResolvedLink[] = [];
+    (raws ?? []).forEach((raw, index) => {
+      const { links, ...own } = raw;
+      const result = resolveLink(own, {
+        ...linkCtxBase,
+        pointer: `${pointerBase}/${index}`,
+        file: configRel,
+      });
+      bag.merge(result.diagnostics);
+      if (!result.link) return;
+      const children = links ? resolveLinks(links, `${pointerBase}/${index}/links`) : [];
+      out.push(children.length > 0 ? { ...result.link, links: children } : result.link);
     });
     return out;
   };
@@ -1723,7 +1886,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
   };
 
   const navigation = {
-    header: resolveLinks(config.navigation?.header, "/navigation/header"),
+    header: resolveHeaderLinks(config.navigation?.header, "/navigation/header"),
     footer: resolveLinks(config.navigation?.footer, "/navigation/footer"),
   };
 
@@ -1955,17 +2118,46 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     emittedServiceIds: [],
   });
 
+  const navOutline = deriveNavOutline(
+    [...navigation.header, ...chrome.header.links].filter(
+      (link) => link.href !== canonical.basePath,
+    ),
+    allRoutes,
+    canonical.basePath,
+  );
+  const hrefOf = (route: ResolvedRoute): string =>
+    `${canonical.basePath.replace(/\/$/, "")}${route.path}`;
+  if (config.navigation?.pager) {
+    const pages = new Map(
+      allRoutes.filter((route) => route.kind === "content").map((route) => [hrefOf(route), route]),
+    );
+    const order = pagerSequence(navOutline, (href) => pages.has(href));
+    order.forEach((href, index) => {
+      const route = pages.get(href)!;
+      const previous = index > 0 ? pages.get(order[index - 1]!) : undefined;
+      const next = index < order.length - 1 ? pages.get(order[index + 1]!) : undefined;
+      if (!previous && !next) return;
+      route.pager = {
+        ...(previous ? { previous: { title: previous.title, href: order[index - 1]! } } : {}),
+        ...(next ? { next: { title: next.title, href: order[index + 1]! } } : {}),
+      };
+    });
+  }
+
   // The header search: one static index of every content page, published with the artifact.
   const searchEnabled = Boolean(config.chrome?.header?.search?.enabled);
   let search: ResolvedPortalModel["search"];
   if (searchEnabled) {
-    const index = buildSearchIndex(allRoutes, canonical.basePath);
+    const index = buildSearchIndex(allRoutes, canonical.basePath, (route) =>
+      sectionFor(navOutline, hrefOf(route)),
+    );
     const published = publishSearchIndex(index, canonical.basePath);
     contents.set(published.file, published.bytes);
     search = {
       indexUrl: published.url,
       placeholder: config.chrome?.header?.search?.placeholder ?? "Search the documentation",
       entries: index.entries.length,
+      facets: searchFacets(index),
     };
     if (config.chrome?.header?.enabled === false) {
       bag.warn("FP1225", "chrome.header.search is enabled, but the header is not.", {
@@ -2024,7 +2216,9 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
   // The separate-origin playground, resolved once for the whole portal. Collected across every
   // landing rather than per page, because what is generated is one deployable document with one
   // merged manifest: a press on any page names an id, and the child has to know all of them.
-  // Blocks that did not ask for a second origin contribute nothing.
+  // Blocks that did not ask for a second origin contribute nothing. With `consoleInPage` the
+  // second origin serves the notebook only; it is still built from the same examples (its seed
+  // notebooks), while the pages run them themselves.
   const playgroundBlocks: {
     pointer: string;
     file: string;
@@ -2035,7 +2229,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
   for (const landing of landings) {
     landing.blocks.forEach((block, index) => {
       const data = block.datasetTree;
-      if (!data?.python?.playgroundOrigin) return;
+      if (!data?.python || !secondOrigin(data.python)) return;
       playgroundBlocks.push({
         pointer: `/blocks/${index}`,
         file: landing.source,
@@ -2050,7 +2244,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
   // the same message to the same origin, and the child cannot hold two registries without one of
   // them being wrong for whoever pressed.
   for (const route of allRoutes) {
-    if (!route.python?.playgroundOrigin || !route.runnable) continue;
+    if (!route.python || !secondOrigin(route.python) || !route.runnable) continue;
     playgroundBlocks.push({
       pointer: route.path,
       file: route.source ?? route.path,
@@ -2071,9 +2265,291 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     bag,
   });
 
+  // Slots, the stylesheet and the header rules, now that every route and link is known.
+  let customisationResult: FinishResult | undefined;
+  if (customisationBuilder) {
+    customisationResult = finishCustomisation(
+      {
+        builder: customisationBuilder,
+        routes: allRoutes,
+        links: {
+          header: [...navigation.header, ...chrome.header.links],
+          legal: chrome.footer.legalLinks,
+          groups: chrome.footer.groups,
+        },
+        linkContext: { ...linkCtxBase, pointer: "", file: configRel },
+        site: {
+          title: config.site.title,
+          ...(config.site.subtitle ? { subtitle: config.site.subtitle } : {}),
+          language: config.site.language,
+          ...(config.site.institution ? { institution: config.site.institution } : {}),
+        },
+        siteLogo: { url: logo?.url ?? "" },
+        enabled: {
+          search: Boolean(search) && chrome.header.enabled,
+          auth: enabledComponents.some((c) => c.kind === "auth"),
+          badge: Boolean(chrome.footer.badge),
+          datasetTree: datasetTreeEnabled,
+          databrowser: enabledComponents.some((c) => c.kind === "databrowser"),
+          announcementFeed: Boolean(announcementFeed),
+        },
+        ...(opts.sourceDateEpoch !== undefined ? { sourceDateEpoch: opts.sourceDateEpoch } : {}),
+        landings: landings.map((landing) => ({
+          id: landing.id,
+          path: landing.path,
+          source: landing.source,
+          sections: landingSections.get(landing.id) ?? [],
+        })),
+      },
+      customisationDeps,
+    );
+    // AR-001 for what the customisation reached through its own files: assets a stylesheet or a
+    // template references are only known now, and nothing has been written yet.
+    const reached = inputs
+      .filter((input) => CUSTOMISATION_ROLES.has(input.role))
+      .map((input) => ({
+        absolute: join(sourceRoot, ...input.path.split("/")),
+        label: `customisation input ${input.path}`,
+      }));
+    try {
+      assertDisjointTrees(outputTrees, reached);
+    } catch (err) {
+      if (err instanceof PathViolation) bag.error(err.code, err.message, { file: configRel });
+      else throw err;
+    }
+  }
+
+  // The notebook, prepared beforehand like the Python materials and checked here against THIS
+  // configuration: its kernels, its seed notebooks and its files.
+  let notebook: ResolveResult["notebook"];
+  const notebookSeeds: { name: string; text: string }[] = [];
+  if (portalPlayground?.notebook) {
+    for (const [index, declared] of (config.pythonPlayground?.notebook?.seeds ?? []).entries()) {
+      const file = contained(declared, `/pythonPlayground/notebook/seeds/${index}`);
+      if (!file) continue;
+      const bytes = readFileSync(file.absolute);
+      const name = basename(file.relative);
+      if (notebookSeeds.some((seed) => seed.name === name)) {
+        bag.error("FP1219", `Two seed notebooks are both called ${name}.`, {
+          file: configRel,
+          pointer: `/pythonPlayground/notebook/seeds/${index}`,
+        });
+        continue;
+      }
+      inputs.push({
+        path: file.relative,
+        role: "config",
+        digest: sha256(bytes),
+        bytes: bytes.length,
+      });
+      notebookSeeds.push({ name, text: bytes.toString("utf8") });
+    }
+  }
+  // The notebook's tab: the portal's name and favicon (its published, sanitised bytes). Then its
+  // assistant and data panel: the tree the panel names, its icon and its seed notebooks.
+  const faviconBytes = favicon ? contents.get(favicon.file) : undefined;
+  const notebookIdentity: NotebookIdentity = {
+    title: config.site.title,
+    ...(favicon && faviconBytes
+      ? {
+          favicon: {
+            bytes: Buffer.from(faviconBytes),
+            type: favicon.mimeType,
+            extension: extname(favicon.file),
+          },
+        }
+      : {}),
+  };
+  let notebookLab: NotebookLabInputs | undefined;
+  if (
+    portalPlayground?.notebook &&
+    (portalPlayground.notebookAssistant || portalPlayground.notebookDataPanel)
+  ) {
+    const panel = portalPlayground.notebookDataPanel;
+    let dataPanel: NotebookLabInputs["dataPanel"];
+    if (panel) {
+      const base = "/pythonPlayground/notebook/dataPanel";
+      const block = [...landingCatalogs.values()].find((b) => b.instanceId === panel.tree);
+      if (!block) {
+        const known = [...landingCatalogs.values()].map((b) => b.instanceId).sort();
+        bag.error(
+          "FP1237",
+          `The data panel names '${panel.tree}', which is not a dataset-tree block.`,
+          {
+            file: configRel,
+            pointer: `${base}/tree`,
+            hint: known.length
+              ? `Dataset-tree blocks in this portal: ${known.join(", ")} (\`<landing id>-<block index>\`).`
+              : "This portal has no dataset-tree block; add one to a landing page first.",
+          },
+        );
+      } else {
+        let iconSvg: string | undefined;
+        if (panel.icon) {
+          const file = contained(panel.icon, `${base}/icon`);
+          if (file) {
+            const bytes = readFileSync(file.absolute);
+            const clean = sanitizeSvgFile(bytes, file.relative, profile);
+            for (const d of clean.diagnostics)
+              bag.add({ ...d, pointer: d.pointer ?? `${base}/icon` });
+            if (clean.ok) iconSvg = clean.svg;
+            else {
+              bag.error("FP1402", "The data panel's icon is not an SVG this build can use.", {
+                file: configRel,
+                pointer: `${base}/icon`,
+              });
+            }
+            inputs.push({
+              path: file.relative,
+              role: "config",
+              digest: sha256(bytes),
+              bytes: bytes.length,
+            });
+          }
+        }
+        const seeds: { name: string; text: string }[] = [];
+        for (const [index, declared] of panel.seedNotebooks.entries()) {
+          const file = contained(declared, `${base}/seedNotebooks/${index}`);
+          if (!file) continue;
+          const bytes = readFileSync(file.absolute);
+          const name = `examples/${basename(file.relative)}`;
+          if (seeds.some((seed) => seed.name === name)) {
+            bag.error(
+              "FP1237",
+              `Two example notebooks are both called ${basename(file.relative)}.`,
+              {
+                file: configRel,
+                pointer: `${base}/seedNotebooks/${index}`,
+              },
+            );
+            continue;
+          }
+          inputs.push({
+            path: file.relative,
+            role: "config",
+            digest: sha256(bytes),
+            bytes: bytes.length,
+          });
+          seeds.push({ name, text: bytes.toString("utf8") });
+        }
+        // The notebook the Lab opens at start: published like a seed (the same one when it is
+        // listed there too).
+        let startSeed: string | undefined;
+        if (panel.startNotebook) {
+          const file = contained(panel.startNotebook, `${base}/startNotebook`);
+          if (file) {
+            const bytes = readFileSync(file.absolute);
+            const name = `examples/${basename(file.relative)}`;
+            const same = seeds.find((seed) => seed.name === name);
+            if (same && same.text !== bytes.toString("utf8")) {
+              bag.error(
+                "FP1237",
+                `The start notebook and an example notebook are both called ${basename(file.relative)}.`,
+                { file: configRel, pointer: `${base}/startNotebook` },
+              );
+            } else {
+              if (!same) {
+                inputs.push({
+                  path: file.relative,
+                  role: "config",
+                  digest: sha256(bytes),
+                  bytes: bytes.length,
+                });
+                seeds.push({ name, text: bytes.toString("utf8") });
+              }
+              startSeed = name;
+            }
+          }
+        }
+        const searchIndex = block.searchIndex ? contents.get(block.searchIndex.file) : undefined;
+        // One switch for GridLook: the notebook's panel and the portal's own tree both offer it.
+        if (panel.gridlook) block.gridlook = true;
+        dataPanel = {
+          settings: panel,
+          block,
+          ...(startSeed ? { startSeed } : {}),
+          ...(searchIndex ? { searchIndex } : {}),
+          ...(iconSvg ? { iconSvg } : {}),
+          seeds,
+        };
+      }
+    }
+    notebookLab = {
+      siteTitle: config.site.title,
+      playgroundOrigin: portalPlayground.notebookOrigin ?? "",
+      authCallbackPath: sharedAuthCallbackPath(componentList),
+      basePath: canonical.basePath,
+      ...(portalPlayground.notebookAssistant
+        ? { assistant: portalPlayground.notebookAssistant }
+        : {}),
+      ...(dataPanel ? { dataPanel } : {}),
+    };
+  }
+  if (portalPlayground?.notebook && playground && !opts.skipNotebook) {
+    const where = { file: configRel, pointer: "/pythonPlayground/notebook" };
+    const given = opts.notebookDir ?? process.env.FREVA_PORTAL_NOTEBOOK;
+    const plan = planNotebook(
+      portalPlayground,
+      playground,
+      notebookSeeds,
+      notebookLab,
+      notebookIdentity,
+    );
+    if (!given) {
+      bag.error(
+        "FP1604",
+        "The notebook is enabled, but this build was not given the notebook site.",
+        {
+          ...where,
+          hint:
+            "Prepare it for this configuration, then build with it:\n" +
+            "  freva-portal-builder prepare-notebook --source-root <dir> --config <portal.yaml> --out .notebook\n" +
+            "  freva-portal-builder build ... --notebook .notebook",
+        },
+      );
+    } else {
+      try {
+        const realRoot = realpathSync(resolve(given));
+        const { problems, files } = await checkNotebookSite(realRoot, plan);
+        if (problems.length > 0) {
+          bag.error("FP1605", `The notebook site at ${given} is not the one this portal needs.`, {
+            ...where,
+            hint:
+              `${problems.slice(0, 4).join("\n")}` +
+              (problems.length > 4 ? `\n… and ${problems.length - 4} more` : "") +
+              "\nPrepare it again: freva-portal-builder prepare-notebook --source-root <dir> " +
+              `--config <portal.yaml> --out ${given}`,
+          });
+        } else {
+          const embedded = landings.some((landing) =>
+            landing.blocks.some((block) => block.type === "notebook"),
+          );
+          notebook = {
+            realRoot,
+            files,
+            csp: await notebookPolicy(playground, notebookLab, embedded),
+          };
+        }
+      } catch (error) {
+        bag.error("FP1604", `The notebook site at ${given} could not be read.`, {
+          ...where,
+          hint: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   const pkg = packageInfo();
   const model: ResolvedPortalModel = {
-    ...(playground ? { playground } : {}),
+    ...(playground
+      ? {
+          playground: {
+            ...playground,
+            basePath: canonical.basePath,
+            ...(notebookLab?.assistant ? { authCallbackPath: notebookLab.authCallbackPath } : {}),
+          },
+        }
+      : {}),
     site: {
       id: config.site.id,
       title: config.site.title,
@@ -2091,7 +2567,9 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     theme: {
       preset: presetName,
       tokens: theme.tokens,
-      css: theme.css,
+      css: customisationBuilder
+        ? `${theme.css}${extendedTokenCss(config.theme?.tokens ?? {})}`
+        : theme.css,
       ...(theme.backdrop ? { backdrop: theme.backdrop } : {}),
       ...(backdropTail ? { backdropTail } : {}),
       ...(cosmosPublication ? { sceneAssetBase: cosmosPublication.assetBase } : {}),
@@ -2107,13 +2585,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     // the published package ships `dist/`, so the template reads a field instead. The header's
     // own tabs, not `navigation.header`: the home link is drawn separately and the panel's own
     // "Home" row is its equivalent, so including it here would put it in twice.
-    navOutline: deriveNavOutline(
-      [...navigation.header, ...chrome.header.links].filter(
-        (link) => link.href !== canonical.basePath,
-      ),
-      allRoutes,
-      canonical.basePath,
-    ),
+    navOutline,
     landings,
     routes: allRoutes,
     embeddableAssets: assetResult.files,
@@ -2148,6 +2620,15 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     },
     inputs: dedupeInputs(inputs),
     referencedFiles: [...contentResult.referencedAssets].sort(),
+    ...(customisationResult
+      ? {
+          customisation: customisationResult.customisation,
+          customisationFiles: customisationBuilder!.files,
+          ...(customisationResult.evidence
+            ? { customisationEvidence: customisationResult.evidence }
+            : {}),
+        }
+      : {}),
   };
 
   if (!logo || !favicon) {
@@ -2172,6 +2653,10 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     // its wheels cannot pass a build that needs them, so preparation must not depend on one.
     ...(portalPlayground ? { portalPlayground } : {}),
     ...(pythonMaterials && pythonEnabled ? { pythonMaterials } : {}),
+    ...(notebook ? { notebook } : {}),
+    ...(notebookSeeds.length > 0 ? { notebookSeeds } : {}),
+    ...(portalPlayground?.notebook ? { notebookIdentity } : {}),
+    ...(notebookLab ? { notebookLab } : {}),
   };
   if (!bag.failed(warningsAsErrors)) {
     result.model = deepFreeze(model);
@@ -2193,6 +2678,13 @@ interface DeclaredInput {
   absolute: string;
   label: string;
 }
+
+const CUSTOMISATION_ROLES = new Set<InputRecord["role"]>([
+  "font",
+  "stylesheet",
+  "template",
+  "customisation-asset",
+]);
 
 /**
  * Every individual file and tree the configuration reaches, resolved for containment only.
@@ -2255,7 +2747,30 @@ function collectDeclaredInputs(
     }
     for (const block of document?.blocks ?? []) {
       if (block.type === "prose") add(file.absolute, block.source, "landing prose");
+      const background = (block as { background?: unknown }).background;
+      if (background && typeof background === "object" && "image" in background) {
+        add(file.absolute, String(background.image), "landing background");
+      }
     }
+    for (const section of document?.layout?.sections ?? []) {
+      const background = section.background;
+      if (background && typeof background === "object") {
+        add(file.absolute, background.image, "landing background");
+      }
+    }
+  }
+
+  // The customisation's own files. What a stylesheet or a template references in turn is
+  // checked once those are parsed, still before anything is written.
+  const header = config.chrome?.header;
+  for (const image of [header?.logo?.src, header?.logo?.light, header?.logo?.dark]) {
+    add(configPath, image, "header logo");
+  }
+  for (const logo of config.chrome?.footer?.logos ?? []) add(configPath, logo.src, "footer logo");
+  for (const font of config.theme?.fonts ?? []) add(configPath, font.src, "font");
+  add(configPath, config.theme?.stylesheet?.path, "stylesheet");
+  for (const template of Object.values(config.chrome?.slots ?? {})) {
+    add(configPath, template, "slot template");
   }
 
   return found;
@@ -2372,8 +2887,63 @@ interface BlockResolveDeps {
   landingProse: Map<string, string>;
   /** Catalogues already read and validated, keyed `<landing>:<block index>`. */
   landingCatalogs: Map<string, DatasetTreeBlockData>;
+  /** Prose blocks' illustrations, keyed `<landing>:<block index>`. */
+  landingFigures: Map<string, ProseFigureData>;
   bag: DiagnosticBag;
   basePath: string;
+  siteTitle: string;
+}
+
+const FIGURE_IMAGES = [".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif", ".svg"];
+const FIGURE_VIDEOS = [".mp4", ".webm"];
+
+/** A prose block's illustration as published URLs, or undefined after reporting what is wrong. */
+function resolveProseFigure(
+  raw: RawProseFigure,
+  landingSource: string,
+  assetsBySource: Map<string, string>,
+  report: (message: string) => void,
+): ProseFigureData | undefined {
+  let ok = true;
+  const url = (path: string | undefined, kinds: string[], what: string): string | undefined => {
+    if (!path) return undefined;
+    const source = posix.normalize(posix.join(posix.dirname(landingSource), path));
+    const found = assetsBySource.get(source);
+    if (!found || !kinds.includes(extname(source).toLowerCase())) {
+      ok = false;
+      report(
+        !found
+          ? `The figure's ${what} '${path}' is not a published asset (it resolves to '${source}').`
+          : `The figure's ${what} '${path}' must be one of ${kinds.join(", ")}.`,
+      );
+      return undefined;
+    }
+    return found;
+  };
+  const image = url(raw.image, FIGURE_IMAGES, "image");
+  const imageDark = url(raw.imageDark, FIGURE_IMAGES, "imageDark");
+  const clips = (value: string | string[] | undefined, what: string): string[] | undefined => {
+    if (value === undefined) return undefined;
+    const list = (Array.isArray(value) ? value : [value]).map((path) =>
+      url(path, FIGURE_VIDEOS, what),
+    );
+    return list.every((entry): entry is string => Boolean(entry)) ? list : undefined;
+  };
+  const video = clips(raw.video, "video");
+  const videoDark = clips(raw.videoDark, "videoDark");
+  if (raw.videoDark && !raw.video) {
+    ok = false;
+    report("The figure has `videoDark` without `video`.");
+  }
+  if (!ok || !image) return undefined;
+  return {
+    image,
+    ...(imageDark ? { imageDark } : {}),
+    ...(video ? { video } : {}),
+    ...(videoDark ? { videoDark } : {}),
+    alt: raw.alt,
+    ...(raw.caption ? { caption: raw.caption } : {}),
+  };
 }
 
 function resolveBlock(
@@ -2414,11 +2984,17 @@ function resolveBlock(
       const rel = deps.landingProse.get(`${landingId}:${index}`);
       const fragment = rel ? deps.fragments.get(rel) : undefined;
       if (!fragment) return undefined;
-      return { type: "prose", ...(raw.heading ? { heading: raw.heading } : {}), prose: fragment };
+      const figure = deps.landingFigures.get(`${landingId}:${index}`);
+      return {
+        type: "prose",
+        ...(raw.heading ? { heading: raw.heading } : {}),
+        prose: fragment,
+        ...(figure ? { figure } : {}),
+      };
     }
     case "cards": {
       const cards = (raw.items ?? []).map((item, i) => {
-        const hasTarget = item.landing || item.component || item.href;
+        const hasTarget = item.landing || item.component || item.notebook || item.href;
         if (!hasTarget)
           return { title: item.title!, ...(item.summary ? { summary: item.summary } : {}) };
         const result = resolveLink(
@@ -2533,6 +3109,34 @@ function resolveBlock(
         ...(raw.heading ? { heading: raw.heading } : {}),
         ...(raw.summary ? { summary: raw.summary } : {}),
         datasetTree: data,
+      };
+    }
+    case "notebook": {
+      const view = raw.view === "files" ? "files" : "lab";
+      const notebook = ctx.notebook;
+      const missing = !notebook
+        ? "the notebook is not enabled (`pythonPlayground.notebook.enabled`, with `playgroundOrigin`)"
+        : view === "lab" && !notebook.lab
+          ? "the notebook has no Lab interface (it needs `notebook.assistant` or `notebook.dataPanel`); `view: files` shows the file list"
+          : undefined;
+      if (missing || !notebook) {
+        deps.bag.error("FP1201", `The notebook block cannot be shown: ${missing}.`, {
+          file: ctx.file,
+          pointer: ctx.pointer,
+        });
+        return undefined;
+      }
+      return {
+        type: "notebook",
+        ...(raw.heading ? { heading: raw.heading } : {}),
+        ...(raw.summary ? { summary: raw.summary } : {}),
+        notebook: {
+          origin: notebook.origin,
+          src: `${notebook.root}/notebook/${view === "lab" ? "lab" : "tree"}/index.html`,
+          view,
+          // The notebook's own tab title, unless the block names the window.
+          title: raw.title ?? `${deps.siteTitle} Playground`,
+        },
       };
     }
     default:

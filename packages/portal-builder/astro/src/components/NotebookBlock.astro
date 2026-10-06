@@ -1,0 +1,88 @@
+---
+/**
+ * The `notebook` landing block: the portal's notebook (JupyterLite, on the playground origin) in a
+ * frame, under a bar with Maximize and Open in a new tab.
+ *
+ * MAXIMIZED IN PLACE. The dataset browser's sheet moves the block into the overlay root; a moved
+ * iframe loads its page again, and the visitor's open notebook, kernel and chat go with it. So the
+ * window is pinned over the page where it is, with its own backdrop, and the frame never moves.
+ *
+ * The frame is sandboxed to what JupyterLite needs: scripts and its own origin's storage,
+ * downloads, and popups that leave the sandbox (Freva's sign-in, and Lab's own "open in a new
+ * tab"). Never `allow-top-navigation`: nothing in the frame may navigate the portal's page. The
+ * microphone is delegated to the notebook's own origin only (ClimateClaw's "speak your message";
+ * the browser asks the visitor first).
+ */
+import type { ResolvedBlock } from "../../../src/model/types.js";
+
+interface Props {
+  block: ResolvedBlock;
+}
+
+const { block } = Astro.props;
+const data = block.notebook!;
+const what = data.view === "lab" ? "JupyterLab" : "Notebook";
+---
+
+<section class="portal-notebook-block" data-block="notebook" data-portal-notebook>
+  {
+    (block.heading || block.summary) && (
+      <div class="portal-notebook-head">
+        {block.heading && <h2 class="portal-block-heading">{block.heading}</h2>}
+        {block.summary && <p class="portal-notebook-summary">{block.summary}</p>}
+      </div>
+    )
+  }
+  <div class="portal-notebook-stage">
+    <div class="portal-notebook-backdrop" data-portal-notebook-backdrop hidden></div>
+    <div class="portal-notebook-window" data-portal-notebook-window>
+      <div class="portal-notebook-bar">
+        <span class="portal-notebook-title">
+          <span class="portal-notebook-name">{data.title}</span>
+          <span class="portal-notebook-note">{what}, in your browser</span>
+        </span>
+        <span class="portal-notebook-actions">
+          {/* Shown by the island: without it the button would do nothing. */}
+          <button
+            type="button"
+            class="portal-notebook-action"
+            data-portal-notebook-expand
+            aria-expanded="false"
+            aria-label="Maximize the notebook"
+            hidden
+          >
+            <svg class="portal-notebook-icon" data-icon="grow" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 4h6v6M20 4l-6.5 6.5M10 4H4v6M4 4l6.5 6.5M14 20h6v-6M20 20l-6.5-6.5M10 20H4v-6M4 20l6.5-6.5" />
+            </svg>
+            <svg class="portal-notebook-icon" data-icon="shrink" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 4l-6.5 6.5M13.5 4.5v6h6M4 4l6.5 6.5M10.5 4.5v6h-6M20 20l-6.5-6.5M13.5 19.5v-6h6M4 20l6.5-6.5M10.5 19.5v-6h-6" />
+            </svg>
+            <span class="portal-notebook-action-text" data-portal-notebook-expand-text>Maximize</span>
+          </button>
+          <a
+            class="portal-notebook-action"
+            data-portal-notebook-open
+            href={data.src}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open the ${what === "JupyterLab" ? "notebook" : "file list"} in a new tab`}
+          >
+            <svg class="portal-notebook-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+            </svg>
+            <span class="portal-notebook-action-text">Open in a new tab</span>
+          </a>
+        </span>
+      </div>
+      <iframe
+        class="portal-notebook-frame"
+        src={data.src}
+        title={`${data.title}: ${what} in your browser`}
+        loading="lazy"
+        referrerpolicy="no-referrer"
+        sandbox="allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox"
+        allow="clipboard-read; clipboard-write; microphone"
+      ></iframe>
+    </div>
+  </div>
+</section>

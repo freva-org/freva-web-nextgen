@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 44" role="img" aria-label="Centre A">
+  <title>Centre A</title>
+  <rect x="1" y="1" width="166" height="42" rx="21" fill="#10161d" stroke="#9fd3e6" stroke-width="2" />
+  <circle cx="22" cy="22" r="14" fill="#9fd3e6" />
+  <path d="M14 29 L22 14 L30 29 Z" fill="#10161d" />
+  <text x="44" y="28" font-family="sans-serif" font-size="17" font-weight="700" fill="#e9eef3">Centre A</text>
+</svg>

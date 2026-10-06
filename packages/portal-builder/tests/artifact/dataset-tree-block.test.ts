@@ -190,6 +190,9 @@ describe("the dataset-tree block's schema", () => {
       properties: { s3: true, catalog: false },
     });
     expect(Object.keys(block.properties!).sort()).toEqual([
+      // Placement on a laid-out landing (`layout`), shared by every block.
+      "align",
+      "background",
       "catalog",
       "expand",
       "heading",
@@ -201,9 +204,12 @@ describe("the dataset-tree block's schema", () => {
       // the resolver, which can say why; see `tests/model/dataset-tree-search-index.test.ts`.
       "searchIndex",
       "searchResultLimit",
+      "section",
+      "span",
       "statusLabel",
       "summary",
       "type",
+      "width",
     ]);
     // The union is a closed enum, not an open string.
     const union = schema.$defs.block as { properties: { type: { enum: string[] } } };

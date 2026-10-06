@@ -194,7 +194,8 @@ minimal
 
 A chain, so a list would only ever be a longer way of naming the last one — and a composed
 environment would be one nobody had tested as a whole. `freva-client` **already includes** xarray,
-Zarr, fsspec and numcodecs; there is no "xarray plus Freva" to ask for. One session can do all of:
+Zarr, fsspec, numcodecs and cftime (for model calendars); there is no "xarray plus Freva" to ask
+for. One session can do all of:
 
 ```python
 from freva_client import authenticate, databrowser
@@ -272,6 +273,299 @@ required. An id in `optionalAddons` that is not also in `addons`, or a duplicate
 **What "unavailable" means for the Cartopy add-on.** It is a DATA capability, not the Cartopy
 package. `import cartopy` still works; what is missing is the offline coastline and border files, so
 `ax.coastlines()` would try to download them and fail. The report says exactly that.
+
+## Sessions: a setup per session, measured, and put to sleep
+
+Without `sessionChoices` every session gets the configured setup and nothing below applies. With it:
+
+```yaml
+pythonPlayground:
+  enabled: true
+  profile: xarray-zarr # the default setup: this profile ...
+  addons: [dask] # ... with these add-ons
+  initialSource: |
+    import xarray as xr
+  maxSessions: 2
+  sessionChoices:
+    profiles:
+      minimal: {}
+      xarray-zarr:
+        allowedAddons: [dask, cartopy-natural-earth-110m]
+    starterProfiles: [xarray-zarr] # where `initialSource` runs (default: the configured profile)
+    allowSkipStarter: true # a visitor may switch it off where it would run
+  resources:
+    maxLiveSessions: 1 # sessions holding an interpreter at once (default: maxSessions)
+```
+
+- **Choosing.** `+ New session` offers _Same as current_ or _Custom setup_ (profile, the add-ons
+  allowed on it, the starter), then a review step, then **Start**. Start reserves a live slot
+  first - atomically, so two presses cannot start two. When every slot is taken, the least recently
+  used idle session is put to sleep for it (as below; its tab says so), also in another frame of the
+  page; only sessions running code make Start wait, and it says so. The setup is locked for the
+  session: a restart keeps it, a different setup is a new session.
+- **The configured setup must be a choice.** `profile` must be one of `profiles` and `addons` must
+  be allowed on it; an add-on must work with the profile it is allowed on; `starterProfiles` needs
+  `initialSource`. Each is `FP1219` at the key that is wrong.
+- **Every allowed setup is prepared and permitted.** `prepare-playground` prepares the union of the
+  allowed add-ons (and the Freva wheelhouse when `freva-client` is allowed), and the page's
+  `connect-src` covers the union - a package index when any allowed profile needs one.
+- **Telemetry.** The window's status row shows the active session's setup and what was measured:
+  WASM linear-memory _capacity_ (not memory use), the bytes in `/workspace`, the output the window
+  retains, what the worker fetched, the time to a usable interpreter, and the live slots in use. A
+  busy interpreter cannot answer, so the row shows its last sample, marked as such.
+- **Sleep.** _Sleep session…_ in the ⋮ menu stops the interpreter and frees its slot. The transcript
+  and the committed files in `/workspace` are kept - streamed into a separate checkpoint in the
+  origin private file system, each with its SHA-256, under a manifest written last - and Python's
+  variables and imports are lost. _Wake session_ starts a fresh interpreter with the same setup,
+  restores the files (verifying each digest) before any code runs, then runs the starter; cells are
+  never replayed. A checkpoint that does not verify is quarantined and the session says it could not
+  wake. Sleep is refused while Python runs or holds a file open, and where the browser cannot write
+  to its private file system (download the files instead). Sleep is automatic only to make room for
+  a session being started or woken.
+- **With `playgroundOrigin`** the chooser, the telemetry and the Sleep/Wake control live in the
+  playground's own document, and the portal learns the chosen setup through one message carrying
+  only `{profile, addons, runStarter, frontend}` and the policy's fingerprint (see the embed
+  protocol in `@freva-org/browser-python`). A setup the playground's policy does not allow is never
+  offered.
+
+## The notebook
+
+```yaml
+pythonPlayground:
+  playgroundOrigin: https://python.example.org
+  notebook:
+    enabled: true
+    seeds: # optional: notebooks of your own, beside one per registered example
+      - ./notebooks/start-here.ipynb
+```
+
+A JupyterLite notebook (the Notebook interface only) on the playground's origin, whose _Freva
+Python_ kernels are the allowed setups - one kernel each, the default first. Cells are plain CPython
+on `@freva-org/browser-python`: rich output (pandas and xarray HTML, SVG, PNG) is sanitised before
+it reaches the page, and magics, `!shell`, `input()`, inspection, the debugger, comms and widgets
+are not supported - each is answered, never left hanging. Stopping a cell that never yields
+restarts Python after a grace period, and says that its state was lost. The window menu gains
+_Open as notebook_, which opens the example last run (each registered example is a seed notebook)
+or the notebook's file list, where `seeds` and the examples are.
+
+It requires `playgroundOrigin` (`FP1235`): the notebook runs only there, under its own policy, and
+the portal's pages keep theirs. `consoleInPage: true` keeps that origin for the notebook alone and
+runs everything else in the portal's own pages (see [configuration.md](./configuration.md)). Prepare
+the notebook like the other materials, and give it to the build:
+
+```bash
+freva-portal-builder prepare-notebook --source-root . --config portal/portal.yaml --out .notebook
+freva-portal-builder build --source-root . --config portal/portal.yaml --out build/portal \
+  --notebook .notebook
+```
+
+`prepare-notebook` installs a pinned, hash-checked JupyterLite toolchain into a cache outside the
+artifact (`--python` picks the interpreter that runs it; a portal that needs `--stac-materials` or
+`--python-materials` to build needs them here too), builds the site in isolation - no stock
+kernels, no service worker, nothing from a CDN, no inline script - and writes
+`NOTEBOOK-INVENTORY.json` with every file's digest. `build` refuses a site prepared for another
+configuration (`FP1605`) or a missing one (`FP1604`), copies it under `playground-origin/notebook/`,
+and `deploy.json` lists its files and the headers for `/notebook/`. `verify` checks the copy against
+the inventory. The notebook's policy is the playground's network plus `style-src 'unsafe-inline'`
+(JupyterLab injects its stylesheets at run time; Python-authored markup never keeps a style) and
+`frame-ancestors 'none'`; it has no `'unsafe-eval'`. Notebooks live in the visitor's browser
+storage; `.ipynb` files (nbformat 4) can be uploaded, are validated and never run on import, and are
+downloaded as nbformat 4.5. Saving one into `/workspace` is an explicit command.
+
+### The assistant and the data panel
+
+```yaml
+pythonPlayground:
+  playgroundOrigin: https://python.example.org
+  notebook:
+    enabled: true
+    assistant:
+      climateclaw:
+        host: https://freva.example.org
+        # The identity provider's issuer, when it sends `iss` (Keycloak does).
+        expectedIssuer: https://keycloak.example.org/realms/Freva
+        defaultModel: gpt-5
+        runAndFixModel: gpt-5-mini # optional; defaults to defaultModel
+        scopeNote: Answer about the ERA5 and NextGEMS data of this portal.
+        examples:
+          - title: Plot mean 2m temperature
+            prompt: Plot the global mean 2m temperature of ERA5 for 2020.
+        hideCodeByDefault: false
+        # Where ClimateClaw serves files its code saved (its CLIMATECLAW_PROJECT_WEBSITE), when
+        # not the host: figures saved with savefig are read from there. Default: the host.
+        previewOrigin: https://freva-web.example.org
+    dataPanel:
+      tree: home-2 # a dataset-tree block, `<landing id>-<block index>`
+      title: Example data # optional; default "<site title> data"
+      icon: ./icons/data.svg # optional, checked like the portal's other SVGs
+      defaultAction: open-in-notebook # the primary action: its button, and Ctrl/Cmd+Enter
+      seedNotebooks: [./notebooks/era5.ipynb]
+      startNotebook: ./notebooks/start.ipynb # optional; opened when the Lab starts
+      gridlook: true # optional; GridLook's 3D globe for public stores (default false)
+```
+
+`startNotebook` opens when the Lab starts, in place of the Launcher, as the visitor's own copy
+(made once from the published seed, so later visits open their version). Its saved outputs show
+as they are: a map can be there before anything runs, and running the cell computes it again. It
+stays behind a document of theirs restored from their last visit.
+
+The notebook's browser tab carries the portal's name ("<site title> Playground") and its favicon
+(`site.identity.favicon`, as an SVG, PNG or ICO), not JupyterLite's; both are part of what
+`prepare-notebook` records, so a site prepared for another name or icon is refused (`FP1605`).
+
+Either block (`FP1236`, `FP1237`) adds a trimmed JupyterLab interface to the notebook site, at
+`/notebook/lab/`, beside the Notebook interface. Trimmed: no new text, Markdown or Python files, no
+contextual help, no JupyterLite logo. The console stays: a Freva Python console from the Launcher (a
+kernel of its own), and _New Console for Notebook_, which shares the notebook's kernel - its
+interpreter and variables, nothing loaded twice. `prepare-notebook` checks each disabled plugin
+against the built bundle. The portal's _Open as notebook_ still opens the Notebook interface; link a
+landing, a card or the navigation to the Lab with the `notebook` target:
+
+```yaml
+- type: links
+  items:
+    - label: Ask ClimateClaw in a notebook
+      notebook: lab # {playgroundOrigin}/notebook/lab/; `files` opens the file list
+```
+
+It opens in a new tab, and is an error (`FP1201`) without the notebook or, for `lab`, without
+`assistant` or `dataPanel`.
+
+#### The notebook in a landing
+
+A `notebook` landing block puts the notebook itself in the page, in a frame:
+
+```yaml
+- type: notebook
+  heading: Ask ClimateClaw, in a notebook
+  summary: JupyterLab with this portal's kernel, data panel and assistant. # optional
+  view: lab # default; `files` shows the Notebook interface's file list
+  title: Waterpark Playground # optional: the window's name; default "<site title> Playground"
+```
+
+Above the frame are two controls. _Maximize_ works like the dataset browser's: the window takes the
+screen between the header and the footer over a dim, and the button, a click outside, the browser's
+Back and Escape (with the focus outside the frame, which keeps its own keys) restore it. The frame
+is never moved, because a moved frame loads again and the open notebook, its kernel and the chat
+would be lost. _Open in a new tab_ opens the same page. The frame loads when the block scrolls near.
+It is sandboxed: scripts, its own origin's storage, downloads and popups (Freva's sign-in), but
+never navigation of the portal's page.
+
+The block adds the playground origin to the portal's `frame-src`, and the notebook's policy then
+has `frame-ancestors` with the portal's own origin (`site.canonicalUrl`) instead of `'none'`.
+Without the block, the notebook stays a top-level page that nothing can frame.
+
+**Keep the playground origin on the same site as the portal** (for example `portal.example.org`
+and `play.example.org`). A framed page on another site gets partitioned storage. Its notebooks
+are then not the ones a new tab shows. The sign-in callback, a top-level page, also cannot reach
+the framed notebook, so signing in to ClimateClaw works only in a new tab. The block is an error
+(`FP1201`) under the same conditions as the `notebook` link target.
+
+**The assistant** is [jupyterlite-ai](https://github.com/jupyterlite/ai) 0.20.1, used as it is, with
+`@freva-org/jupyterlite-climateclaw` as its provider. `prepare-notebook` downloads jupyterlite-ai
+and the eight prebuilt extensions it needs from PyPI, pinned with hashes; none of it is committed or
+hosted by this project. The provider and model are preselected through settings overrides, and
+jupyterlite-ai's AI settings panel (`@jupyternaut/persona:settings-panel`), its MCP manager (it
+needs a Jupyter server), its file-editor diff (the file editor is disabled) and its chat panel
+(`@jupyterlite/ai:chat`) are disabled. ClimateClaw shows chats in a panel of its own instead, on
+jupyterlite-ai's chat models: the chat's name (click to rename), delete, _New chat_, _History_, open
+in a tab and the account; a first page with _Sign in with Freva_; the model picker beside Send; a
+rating and versions of edited messages under the replies. Each example is also a slash command; the
+notebook toolbar gains _Run at DKRZ_. Nothing in jupyterlite-ai's settings, browser storage or a URL
+is a credential.
+
+- **Register the sign-in callback.** Visitors sign in with Freva in a popup that returns to the
+  shared callback on the notebook's origin, under the deployment's base path:
+  `{playgroundOrigin}{basePath}auth/callback/` (the portal's own callback path,
+  `auth.options.callbackPath`). The playground origin serves the whole deployment under the
+  portal's base path, because the compiler writes that path into every URL of the pages deployed
+  there: with `site.canonicalUrl: https://portal.example.org/showroom/`, the console is at
+  `{playgroundOrigin}/showroom/`, the notebook at `{playgroundOrigin}/showroom/notebook/` and the
+  callback at `{playgroundOrigin}/showroom/auth/callback/`. The build emits the callback beside
+  the playground document, and `deploy.json` records `basePath` and lists the callback with its
+  headers (`no-store`, no referrer, never framed, its own script only). Sign-out returns there
+  too. `build` and `prepare-notebook` print the exact URLs:
+
+  ```text
+  sign-in callbacks: register each in the identity provider (Keycloak: Valid redirect URIs,
+                     Valid post logout redirect URIs) and in freva-rest's redirect allow-list
+    portal    login   https://portal.example.org/auth/callback/
+              logout  https://portal.example.org/auth/callback/
+    notebook  login   https://play.example.org/auth/callback/
+              logout  https://play.example.org/auth/callback/
+              legacy  https://play.example.org/notebook/freva-login-callback.html (keep during the migration)
+  ```
+
+  A notebook reached at another origin (a development port, staging) calls back to that origin:
+  register it as well. The notebook page never navigates; a blocked popup offers the login in a new
+  tab.
+
+- **How the response reaches the notebook.** The popup carries a record naming its attempt; the
+  callback hands the response to that tab on a channel named after the attempt and, same origin
+  only, by `postMessage` to the window that opened the popup. The tab holds the login transaction
+  (state, PKCE, issuer), acknowledges, and exchanges the code; the popup closes on the
+  acknowledgement. The second transport matters when a `notebook` block frames the notebook from
+  a portal on another _site_: the frame's storage and channels are then partitioned under the
+  portal, and only the opener's `postMessage` reaches it - unless the identity provider's page
+  sends `Cross-Origin-Opener-Policy`, which cuts the popup from its opener. Then nothing can
+  reach the frame, and the popup says to open the notebook in its own tab (the block's _Open in a
+  new tab_) and sign in there. Same-site framing (`portal.example.org` and `play.example.org`)
+  needs neither.
+- **Expiry.** An attempt is good for 10 minutes. A popup left open longer is let go: the next
+  _Sign in_ closes it and opens a new one, and a callback that finds its record expired tells the
+  notebook, which lets it go too.
+
+- **Migrating from `/notebook/freva-login-callback.html`.** The old page stays in the notebook and
+  answers sign-ins from tabs loaded before the upgrade (it relays the response it receives,
+  unchanged). Keep it registered until those tabs are gone, then remove it from the identity
+  provider and freva-rest.
+- **Name the issuer** when the identity provider sends `iss` with its authorization response (RFC
+  9207; Keycloak does, and says so as `authorization_response_iss_parameter_supported` in its
+  discovery document). Copy `issuer` from
+  `{host}/api/freva-nextgen/auth/v2/.well-known/openid-configuration` into `expectedIssuer`; without
+  it the sign-in is refused (`issuer-unexpected`).
+- **Locally**, `host` may be a loopback origin over http (e.g. `http://127.0.0.1:4330`, the mock in
+  `@freva-org/jupyterlite-climateclaw`:
+  `MOCK_FREVA_PORT=4330 node browser-tests/mock-freva.mjs <callback URL>`), but only with a loopback
+  `playgroundOrigin`.
+- **The browser never sends `x-freva-rest-url`.** ClimateClaw requires it, so the deployment's
+  reverse proxy in front of `{host}/api/chatbot` must set it to its own freva-rest - and should
+  overwrite any value a client sends (see below).
+- **The scope note steers; it does not restrict.** It is prepended to a new thread's first message
+  and shown in the chat. A visitor can ask about anything the ClimateClaw deployment can reach. To
+  confine the assistant to this portal's data, scope the deployment itself: its instance
+  (`CLIMATECLAW_INSTANCE_NAME`) and prompt, the data it mounts, the network it may reach, the Freva
+  configuration of its kernel and its retrieval corpus.
+- **Run & fix at DKRZ is not this notebook's kernel.** It sends the cell to ClimateClaw with a fixed
+  instruction - run it as it is; only if it fails, fix the minimal cause and run the fix - and
+  writes the result into the cell's outputs, labelled _ran at DKRZ (ClimateClaw)_. A model is in the
+  loop: it is slower, costs tokens, is not deterministic, and nothing it defines exists in the
+  browser kernel. A changed cell is shown as a diff and replaced only by _Apply fix to cell_.
+
+**The data panel** (`@freva-org/jupyterlite-freva-data`) shows the named dataset-tree block in the
+left side bar - its build-time catalogue, or its live S3 roots with the published search index -
+under a card naming the selected dataset, with _Open in notebook_ (the primary action), _Insert_ (or
+drag onto a notebook), _Inspect_ (the store's metadata in a tab), _View on globe_ (with `gridlook`),
+_Ask ClimateClaw_ (with the assistant), _Copy URL_ and _Copy code_. Only Python examples the build
+registered, runnable and without placeholders, whose bytes match their recorded digest, go into a
+notebook; a live archive's recipe is filled only with a store identifier validated against its
+roots. The launcher shows the site's kernel and its own cards, each with its own logo in the colour
+of the panel's icon: _New &lt;site&gt; notebook_, _Browse data_ (the panel's icon), _Example
+notebooks_ (copied into the visitor's files when opened) and _Ask ClimateClaw_ (ClimateClaw's logo).
+
+**GridLook** (`gridlook: true`) adds the 3D viewer: Inspect's _3D Viewer_ tab and _View on globe_
+show the store on [GridLook](https://gridlook.pages.dev)'s globe, in a sandboxed frame that never
+receives the page's referrer. GridLook fetches the store itself, so only stores readable without a
+token are shown; for a protected one the tab stays disabled and says why. The same switch gives the
+panel's tree on the portal's own pages the globe in its Inspect (the portal's `frame-src` names
+GridLook); without it that tab is disabled and says the viewer is not enabled. Off by default: it
+loads a third-party application that this project neither builds nor hosts.
+
+**The notebook's policy** adds the Freva host and the data panel's store origins (the live gateway,
+or the catalogue's `inspect` URLs) to `connect-src`, and with `gridlook` exactly
+`frame-src https://gridlook.pages.dev`. jupyterlite-ai's bundled zod probes `Function("")` once at
+start-up; without `'unsafe-eval'` it is refused (zod works without it) and the browser reports that
+one violation.
 
 ## Hosting the artefacts
 
@@ -670,5 +964,8 @@ origin to `connectOrigins` — a URL in a snippet grants nothing by itself.
   behaviour for Freva and tests that `pyodide_http` is never loaded.
 - Best-effort add-ons in general. `optionalAddons` is a closed subset decided by whether preparation
   can fail without mutating the interpreter; it is not a switch that makes every add-on advisory.
-- A build that fetches. `prepare-playground` is the only command that opens a socket; `validate` and
-  `build` consume what it produced and nothing else.
+- A build that fetches. `prepare-playground` and `prepare-notebook` are the only commands that open
+  a socket; `validate` and `build` consume what they produced and nothing else.
+- Sleep on a timer, more than two live interpreters, or parallel workers.
+- `sessionChoices` on a snapshot dataset tree's own `python` stanza: choices are a portal-wide
+  policy, used by runnable content and by trees that inherit the portal's playground.

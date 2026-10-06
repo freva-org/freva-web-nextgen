@@ -25,6 +25,8 @@
     "./schema/landing.schema.json": "./schema/landing.schema.json",
     "./schema/subsite-policy.schema.json": "./schema/subsite-policy.schema.json",
     "./schema/portal-content-v1.profile.json": "./schema/portal-content-v1.profile.json",
+    "./schema/style-parts-v1.json": "./schema/style-parts-v1.json",
+    "./schema/slots-v1.json": "./schema/slots-v1.json",
     "./schema/": "./schema/",
     "./package.json": "./package.json"
   },
@@ -54,6 +56,7 @@
     "test:browser": "node browser-tests/run.mjs",
     "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
     "test:browser:python": "BROWSER_STRICT=1 node browser-tests/python-playground.mjs",
+    "test:browser:sessions": "BROWSER_STRICT=1 node browser-tests/python-sessions.mjs",
     "test:browser:runnable": "BROWSER_STRICT=1 node browser-tests/runnable-content.mjs",
     "test:browser:snippets": "BROWSER_STRICT=1 node browser-tests/code-snippets.mjs",
     "test:browser:cosmos-tail": "BROWSER_STRICT=1 node browser-tests/cosmos-tail.mjs",
@@ -66,6 +69,7 @@
     "test:browser:nav": "BROWSER_STRICT=1 node browser-tests/nav-responsive.mjs",
     "test:browser:announcements": "BROWSER_STRICT=1 node browser-tests/announcement-feed.mjs",
     "test:browser:paper": "BROWSER_STRICT=1 node browser-tests/paper-theme.mjs",
+    "test:browser:customisation": "BROWSER_STRICT=1 node browser-tests/customisation.mjs",
     "cosmos:acceptance": "node scripts/cosmos-static-acceptance.mjs",
     "test:security": "vitest run tests/security",
     "test:packaging": "node tests/packaging/pack-and-install.mjs"
@@ -87,6 +91,8 @@
     "mermaid": "^11.16.1",
     "parse5": "^8.0.1",
     "postcss": "^8.5.26",
+    "postcss-selector-parser": "^7.1.6",
+    "postcss-value-parser": "^4.2.0",
     "prismjs": "1.30.0",
     "remark-directive": "^4.0.0",
     "remark-frontmatter": "^5.0.0",
@@ -99,15 +105,30 @@
     "yaml": "^2.8.1"
   },
   "peerDependencies": {
+    "@freva-org/jupyterlite-climateclaw": "2609.0.0",
+    "@freva-org/jupyterlite-freva-data": "2609.0.0",
+    "@freva-org/jupyterlite-freva-kernel": "2609.0.0",
     "playwright": "^1.56.0"
   },
   "peerDependenciesMeta": {
+    "@freva-org/jupyterlite-climateclaw": {
+      "optional": true
+    },
+    "@freva-org/jupyterlite-freva-data": {
+      "optional": true
+    },
+    "@freva-org/jupyterlite-freva-kernel": {
+      "optional": true
+    },
     "playwright": {
       "optional": true
     }
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@freva-org/jupyterlite-climateclaw": "2609.0.0",
+    "@freva-org/jupyterlite-freva-data": "2609.0.0",
+    "@freva-org/jupyterlite-freva-kernel": "2609.0.0",
     "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.8",
     "axe-core": "^4.12.0",

@@ -1,0 +1,81 @@
+---
+import type { ResolvedLink } from "../../../src/model/types.js";
+
+interface Props {
+  link: ResolvedLink;
+  currentPath: string;
+  isActive: (href: string) => boolean;
+  parts?: boolean;
+}
+
+const { link, currentPath, isActive, parts } = Astro.props;
+const children = link.links ?? [];
+const active = isActive(link.href) || children.some((child) => isActive(child.href));
+const state = active ? "current" : link.external ? "external" : undefined;
+---
+
+{
+  children.length > 0 ? (
+    <li class="portal-nav-li">
+      <div class="portal-menu portal-nav-group">
+        <a
+          class="portal-nav-item portal-nav-group-link"
+          data-part={parts ? "header-link" : undefined}
+          data-state={parts ? state : undefined}
+          href={link.href}
+          data-active={active ? "true" : undefined}
+          aria-current={link.href === currentPath ? "page" : undefined}
+          target={link.external ? "_blank" : undefined}
+          rel={link.external ? "noopener noreferrer" : undefined}
+          data-portal-external={link.external ? "true" : undefined}
+        >
+          {link.label}
+          {link.external && <span class="portal-visually-hidden"> (opens in a new tab)</span>}
+        </a>
+        <button
+          type="button"
+          class="portal-nav-item portal-nav-caret"
+          data-active={active ? "true" : undefined}
+          aria-expanded="false"
+          aria-haspopup="true"
+          aria-label={`${link.label} pages`}
+        >
+          <Fragment set:html={`<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`} />
+        </button>
+        <div class="portal-panel portal-nav-dropdown" role="menu" aria-label={link.label} hidden>
+          {children.map((child) => (
+            <a
+              class="portal-panel-item"
+              role="menuitem"
+              href={child.href}
+              data-active={child.href === currentPath ? "true" : undefined}
+              aria-current={child.href === currentPath ? "page" : undefined}
+              target={child.external ? "_blank" : undefined}
+              rel={child.external ? "noopener noreferrer" : undefined}
+            >
+              {child.label}
+              {child.external && <span class="portal-visually-hidden"> (opens in a new tab)</span>}
+            </a>
+          ))}
+        </div>
+      </div>
+    </li>
+  ) : (
+    <li class="portal-nav-li">
+      <a
+        class="portal-nav-item"
+        data-part={parts ? "header-link" : undefined}
+        data-state={parts ? state : undefined}
+        href={link.href}
+        data-active={isActive(link.href) ? "true" : undefined}
+        aria-current={link.href === currentPath ? "page" : undefined}
+        target={link.external ? "_blank" : undefined}
+        rel={link.external ? "noopener noreferrer" : undefined}
+        data-portal-external={link.external ? "true" : undefined}
+      >
+        {link.label}
+        {link.external && <span class="portal-visually-hidden"> (opens in a new tab)</span>}
+      </a>
+    </li>
+  )
+}

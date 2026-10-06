@@ -11,17 +11,24 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { cleanupFixtures, codes, resolveFixture, tempRoot, writeSite } from "../helpers/fixture.js";
 import { buildFixture } from "../helpers/site.js";
-import { buildSearchIndex, sectionsOf } from "../../src/model/search-index.js";
+import { buildSearchIndex, searchFacets, sectionsOf } from "../../src/model/search-index.js";
 import { generateEntryModule } from "../../src/artifact/runtime-projection.js";
 import { verifyArtifact } from "../../src/verify/verify.js";
-import { normalize, search, snippet, terms } from "../../client/components/site-search-core.js";
+import {
+  browse,
+  inSections,
+  normalize,
+  search,
+  snippet,
+  terms,
+} from "../../client/components/site-search-core.js";
 
 afterAll(cleanupFixtures);
 
 const PAGE = (title: string, body: string): string =>
   `---\ntitle: ${title}\ndescription: About ${title.toLowerCase()}.\n---\n\n${body}\n`;
 
-function site(search: string, canonicalUrl?: string, header = "true"): string {
+function site(search: string, canonicalUrl?: string, header = "true", navigation = ""): string {
   const root = tempRoot("site-search-");
   writeSite(root, {
     ...(canonicalUrl ? { canonicalUrl } : {}),
@@ -43,7 +50,7 @@ ${search}rendering:
   sources:
     - root: ./content
       mount: /docs/
-`,
+${navigation}`,
   });
   return root;
 }
@@ -78,6 +85,61 @@ describe("the index", () => {
   });
 });
 
+describe("the filters", () => {
+  const NAVIGATION = `navigation:
+  header:
+    - label: Concepts
+      href: /docs/storage-concepts/
+`;
+
+  it("label every entry with its header section and count the pages in each", async () => {
+    const { model } = await resolveFixture(site(ON, undefined, "true", NAVIGATION));
+    expect(model!.search!.facets).toEqual([{ label: "Concepts", count: 2 }]);
+    const index = buildSearchIndex(model!.routes, model!.site.basePath, () => "Concepts");
+    expect(index.entries.every((entry) => entry.s === "Concepts")).toBe(true);
+  });
+
+  it("keep a nested section's pages out of the broader section listed before it", async () => {
+    const nested = `navigation:
+  header:
+    - label: Concepts
+      href: /docs/storage-concepts/
+    - label: HEALPix
+      href: /docs/storage-concepts/why-healpix/
+`;
+    const { model, diagnostics } = await resolveFixture(site(ON, undefined, "true", nested));
+    expect(diagnostics.errors).toEqual([]);
+    expect(model!.search!.facets).toEqual([
+      { label: "Concepts", count: 1 },
+      { label: "HEALPix", count: 1 },
+    ]);
+  });
+
+  it("order the sections by page count, then by name", () => {
+    const facets = searchFacets({
+      v: 1,
+      entries: [
+        { u: "/a/", t: "A", x: "", s: "Small" },
+        { u: "/b/", t: "B", x: "", s: "Big" },
+        { u: "/b/", t: "B", h: "More", x: "", s: "Big" },
+        { u: "/c/", t: "C", x: "", s: "Big" },
+        { u: "/d/", t: "D", x: "", s: "Also" },
+        { u: "/e/", t: "E", x: "" },
+      ],
+    });
+    expect(facets).toEqual([
+      { label: "Big", count: 2 },
+      { label: "Also", count: 1 },
+      { label: "Small", count: 1 },
+    ]);
+  });
+
+  it("are empty without header navigation, so the dialog has no panel", async () => {
+    const { model } = await resolveFixture(site(ON));
+    expect(model!.search!.facets).toEqual([]);
+  });
+});
+
 describe("the island's search", () => {
   const entries = [
     { u: "/docs/a/", t: "Remapping benchmark", x: "Compares nearest and conservative." },
@@ -98,6 +160,17 @@ describe("the island's search", () => {
   it("ignores case and accents", () => {
     expect(terms("ZÜRICH, Remap")).toEqual(["zurich", "remap"]);
     expect(search(entries, "zurich").map((h) => h.entry.u)).toEqual(["/docs/c/"]);
+  });
+
+  it("limits to the chosen sections, and lists their pages once each without a query", () => {
+    const scoped = entries.map((e, i) => ({ ...e, s: i === 2 ? "Other" : "Docs" }));
+    expect(inSections(scoped, new Set()).length).toBe(3);
+    expect(inSections(scoped, new Set(["Other"])).map((e) => e.u)).toEqual(["/docs/c/"]);
+    const twice = [...scoped, { ...scoped[0]!, h: "Again", nh: "again" }];
+    expect(browse(inSections(twice, new Set(["Docs"]))).map((h) => h.entry.u)).toEqual([
+      "/docs/a/",
+      "/docs/b/",
+    ]);
   });
 
   it("takes a snippet around the first match", () => {
@@ -130,6 +203,9 @@ describe("the artifact", () => {
     expect(html).toContain('class="portal-sitesearch-open"');
     expect(html).toContain('placeholder="Search Waterpark"');
     expect(html).toMatch(/<input[^>]*role="combobox"/);
+    // freva-web-nextgen#17: no keyboard shortcut, announced or shown.
+    expect(html).not.toContain("aria-keyshortcuts");
+    expect(html).not.toContain("portal-sitesearch-key");
 
     const evidence = result.evidence?.find((c) => c.id === "site-search");
     expect(evidence?.enabled).toBe(true);

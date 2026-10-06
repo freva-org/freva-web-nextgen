@@ -26,12 +26,14 @@ export interface BadgeRequest {
   enabled?: boolean;
   kind?: "freva";
   quality?: "auto" | "standard";
+  email?: false | string;
 }
 
 /** The decision, with nothing left to default. */
 export interface BadgeChoice {
   kind: "freva";
   quality: "auto" | "standard";
+  email?: false | string;
 }
 
 /**
@@ -51,7 +53,11 @@ export function decideFooterBadge(
 ): BadgeChoice | undefined {
   if (!footerEnabled) return undefined;
   if (request?.enabled === false) return undefined;
-  return { kind: request?.kind ?? "freva", quality: request?.quality ?? "standard" };
+  return {
+    kind: request?.kind ?? "freva",
+    quality: request?.quality ?? "standard",
+    ...(request?.email !== undefined ? { email: request.email } : {}),
+  };
 }
 
 export interface BadgePublication {
@@ -171,6 +177,7 @@ export function publishFooterBadge(
       styleUrl: `${basePath}${ROOT}/freva-badge.css`,
       // The runtime joins this with its own relative names; the trailing slash is load-bearing.
       assetBase: `${basePath}${ROOT}/assets/`,
+      ...(choice.email !== undefined ? { email: choice.email } : {}),
     },
     contents,
     inputs,

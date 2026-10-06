@@ -14,6 +14,8 @@ import Shell from "../layouts/Shell.astro";
 import OutlineBar from "../components/OutlineBar.astro";
 import Blocks from "../components/Blocks.astro";
 import SectionNavList from "../components/SectionNavList.astro";
+import GridLanding from "../components/GridLanding.astro";
+import SlotContent from "../components/parts/SlotContent.astro";
 import type { ResolvedRoute } from "../../../src/model/types.js";
 
 export function getStaticPaths() {
@@ -91,6 +93,12 @@ const outlinePages = showSection
       current: item.source === route.source,
     }))
   : [];
+
+/** The style API's hooks, written only on a customised portal. */
+const custom = Boolean(model.customisation);
+const part = (name: string): string | undefined => (custom ? name : undefined);
+const proseAside = route.slots?.proseAside;
+const currentPath = `${model.site.basePath.replace(/\/$/, "")}${route.path}`;
 ---
 
 <Shell model={model} route={route}>
@@ -148,8 +156,8 @@ const outlinePages = showSection
   }
 
   {
-    landing && (
-      <div class="portal-landing" data-backdrop-tail={model.theme.backdropTail}>
+    landing && !landing.layout && (
+      <div class="portal-landing" data-backdrop-tail={model.theme.backdropTail} data-part={part("landing")}>
         {model.theme.backdrop === "contour" && (
           <canvas class="portal-contour-stripes" aria-hidden="true" />
         )}
@@ -158,10 +166,11 @@ const outlinePages = showSection
           eyebrow={model.site.subtitle}
           components={model.enabledComponents}
           services={model.services}
+          parts={custom}
         />
       </div>
     )
-  }
+  }{landing && landing.layout && <GridLanding model={model} landing={landing} route={route} />}
 
   {
     route.kind === "content" && route.content && showRail && (
@@ -241,12 +250,35 @@ const outlinePages = showSection
             )}
           </div>
         )}
-        <article class="portal-document">
+        <article class="portal-document" data-part={part("document")}>
           {!ownHeading && <h1 class="portal-document-title">{route.title}</h1>}
           <div
             class={ownHeading ? "portal-prose portal-prose-leads" : "portal-prose"}
             set:html={route.content.html}
-          />
+            data-part={part("prose")}
+          />{proseAside && <aside class="portal-prose-aside" data-part="prose-aside"><SlotContent segments={proseAside} model={model} currentPath={currentPath} /></aside>}
+          {route.pager && (
+            <nav class="portal-pager" aria-label="Previous and next page">
+              {route.pager.previous && (
+                <a class="portal-pager-link" data-direction="previous" href={route.pager.previous.href} rel="prev">
+                  <Fragment set:html={`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>`} />
+                  <span class="portal-pager-text">
+                    <span class="portal-pager-label">Previous</span>
+                    <span class="portal-pager-title">{route.pager.previous.title}</span>
+                  </span>
+                </a>
+              )}
+              {route.pager.next && (
+                <a class="portal-pager-link" data-direction="next" href={route.pager.next.href} rel="next">
+                  <span class="portal-pager-text">
+                    <span class="portal-pager-label">Next</span>
+                    <span class="portal-pager-title">{route.pager.next.title}</span>
+                  </span>
+                  <Fragment set:html={`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`} />
+                </a>
+              )}
+            </nav>
+          )}
         </article>
       </div>
     )
@@ -306,13 +338,13 @@ const outlinePages = showSection
 
   {
     route.kind === "auth-callback" && (
-      <section class="portal-sandbox" data-portal-callback data-portal-callback-state="working">
-        <h1 class="portal-document-title">Signing in</h1>
-        <p class="portal-note" data-portal-callback-message>
-          Completing sign-in and returning you to the portal.
+      <section class="portal-sandbox" data-auth-callback data-auth-callback-state="working">
+        <h1 class="portal-document-title">Freva sign-in</h1>
+        <p class="portal-note" data-auth-callback-message role="status">
+          Completing the sign-in.
         </p>
         <p>
-          <a class="portal-button" href={model.site.basePath}>
+          <a class="portal-button" href={model.site.basePath} data-auth-callback-link>
             Back to {model.site.title}
           </a>
         </p>

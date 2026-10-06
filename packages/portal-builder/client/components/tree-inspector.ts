@@ -34,7 +34,12 @@ import { mountLayer, type Layer } from "../layers.js";
 export interface InspectTarget {
   /** Absolute HTTPS URL of the store, derived from the configured endpoint. */
   url: string;
+  /** GridLook's globe may show: the portal frames it. Otherwise the 3D tab says why it cannot. */
+  gridlook?: boolean;
 }
+
+/** The 3D tab's reason when the portal does not frame GridLook (its policy would block it). */
+export const VIEWER_OFF = "The 3D viewer is not enabled on this site.";
 
 /**
  * The portal's theme, applied to a component that ships its own.
@@ -242,6 +247,9 @@ export async function openInspector(target: InspectTarget): Promise<void> {
   // throws away the load that was just started. It is also the value a reader needs, because the
   // field is editable and its content is what `Load` re-reads.
   element.file = target.url;
+  // The host's policy, which no read, Retry or new file changes (unlike `viewer-disabled`).
+  if (target.gridlook) element.removeAttribute("viewer-off");
+  else element.setAttribute("viewer-off", VIEWER_OFF);
   void reader?.load(target.url);
   element.setAttribute("open", "");
 }

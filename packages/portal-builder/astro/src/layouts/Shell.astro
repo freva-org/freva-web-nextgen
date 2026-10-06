@@ -16,9 +16,11 @@ import "virtual:portal-code.css";
 import "virtual:portal-math.css";
 import "virtual:portal-stac.css";
 import "virtual:portal-databrowser.css";
+import "virtual:portal-custom.css";
 import Chrome from "../components/Chrome.astro";
 import Footer from "../components/Footer.astro";
 import Announcements from "../components/Announcements.astro";
+import SideNav from "../components/SideNav.astro";
 import type { ResolvedPortalModel, ResolvedRoute } from "../../../src/model/types.js";
 
 interface Props {
@@ -50,10 +52,24 @@ const view = route.kind === "component" ? "application" : "document";
  * selectors are scoped through `.portal-landing` as well, so neither alone is load-bearing.
  */
 const backdrop = route.kind === "landing" ? model.theme.backdrop : undefined;
+
+/** Customisation hooks; every one is undefined, and so absent, on a portal that uses none. */
+const custom = model.customisation;
+const currentPath = `${site.basePath.replace(/\/$/, "")}${route.path}`;
+const htmlHooks = custom
+  ? {
+      "data-portal-header": custom.header.variant ?? "standard",
+      "data-portal-sticky": custom.header.sticky ? undefined : "false",
+      "data-portal-overlay":
+        custom.header.transparentOverHero && route.kind === "landing" ? "hero" : undefined,
+      "data-portal-nav": custom.navPlacement,
+    }
+  : {};
+const part = (name: string): string | undefined => (custom ? name : undefined);
 ---
 
 <!doctype html>
-<html lang={site.language}>
+<html lang={site.language} {...htmlHooks}>
   <head>
     <meta charset="utf-8" />
     {isCallback && <meta name="referrer" content="no-referrer" />}
@@ -106,7 +122,7 @@ const backdrop = route.kind === "landing" ? model.theme.backdrop : undefined;
     </script>
   </head>
   <body data-portal-route={route.kind} data-portal-site={site.id}>
-    <a class="portal-skip-link" href="#portal-main">Skip to main content</a>
+    <a class="portal-skip-link" href="#portal-main" data-part={part("skip-link")}>Skip to main content</a>
 
     <div
       class="portal-shell"
@@ -115,15 +131,15 @@ const backdrop = route.kind === "landing" ? model.theme.backdrop : undefined;
       data-state="ready"
       data-backdrop={backdrop}
     >
-      <Chrome model={model} currentPath={`${site.basePath.replace(/\/$/, "")}${route.path}`} />
+      <Chrome model={model} currentPath={currentPath} slots={route.slots} />{custom && custom.navPlacement !== "header" && <SideNav model={model} currentPath={currentPath} />}
 
       <div id="portal-announcements" class="portal-announcements"><Announcements announcements={model.announcements} /></div>
 
-      <main id="portal-main" class="portal-main" tabindex="-1">
+      <main id="portal-main" class="portal-main" tabindex="-1" data-part={part("main")}>
         <slot />
       </main>
 
-      <Footer model={model} />
+      <Footer model={model} currentPath={currentPath} slots={route.slots} />
 
       {/*
         The portal's overlay layer. A hosted application's *global* surfaces - the Data Browser's

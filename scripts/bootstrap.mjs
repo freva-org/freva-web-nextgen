@@ -208,10 +208,23 @@ const BUILD_ORDER = [
   // block opens for a `.zarr` store.
   "@freva-org/data-inspector",
   "@freva-org/browser-python",
+  // The notebook kernel: built on browser-python, and loaded by portal-builder's
+  // `prepare-notebook` and `build --notebook`.
+  "@freva-org/jupyterlite-freva-kernel",
   "@freva-org/databrowser",
   "@freva-org/ts-oidc-auth-client",
   "@freva-org/dataset-tree",
+  // The notebook's assistant and data panel: built on the auth client and the dataset tree, and
+  // installed by portal-builder's `prepare-notebook` from their prebuilt extensions.
+  "@freva-org/jupyterlite-climateclaw",
+  "@freva-org/jupyterlite-freva-data",
   "@freva-org/portal-builder",
+];
+
+const LABEXTENSIONS = [
+  "@freva-org/jupyterlite-freva-kernel",
+  "@freva-org/jupyterlite-climateclaw",
+  "@freva-org/jupyterlite-freva-data",
 ];
 
 function bootstrapBuild() {
@@ -224,6 +237,14 @@ function bootstrapBuild() {
     const built = run("npm", ["run", "build", "-w", pkg], { inherit: true });
     if (built.status !== 0) {
       fail(`npm run build -w ${pkg} failed.`);
+      return;
+    }
+  }
+  // portal-builder's notebook tests plan a site from these prebuilt extensions.
+  for (const pkg of LABEXTENSIONS) {
+    const built = run("npm", ["run", "build:labextension", "-w", pkg], { inherit: true });
+    if (built.status !== 0) {
+      fail(`npm run build:labextension -w ${pkg} failed.`);
       return;
     }
   }

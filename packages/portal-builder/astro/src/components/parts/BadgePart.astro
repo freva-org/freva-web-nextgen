@@ -1,0 +1,27 @@
+---
+/** The Freva badge's anchor in the footer bar, when the footer has a badge. */
+import frevaMark from "../../assets/freva-mark.webp?url";
+import type { ResolvedPortalModel } from "../../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+}
+
+const { model } = Astro.props;
+const badge = model.chrome.footer.badge;
+---
+
+{
+  badge && (
+    <span
+      class="portal-footer-badge"
+      id="portal-footer-badge"
+      data-part="footer-badge"
+      data-portal-badge={badge.kind}
+      data-portal-badge-quality={badge.quality}
+      data-portal-badge-assets={badge.assetBase}
+      data-portal-badge-live={frevaMark}
+      data-portal-badge-email={badge.email === undefined ? undefined : badge.email || "none"}
+    />
+  )
+}

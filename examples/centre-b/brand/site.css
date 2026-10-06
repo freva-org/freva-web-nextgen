@@ -1,0 +1,38 @@
+/* Centre B: a portal-style-v1 stylesheet. */
+
+:root {
+  --portal-color-accent: #5b2a86;
+  --site-rule: 3px solid var(--portal-color-accent);
+}
+
+[data-theme="dark"] {
+  --portal-color-accent: #b48ce0;
+  --portal-color-accent-contrast: #12091c;
+}
+
+[data-part="header"][data-variant="split"] {
+  border-bottom-width: 2px;
+}
+
+[data-part="side-nav-link"][data-state="current"] {
+  border-left-width: 4px;
+}
+
+.site-section-title {
+  border-bottom: var(--site-rule);
+  padding-bottom: 6px;
+}
+
+.site-funding,
+.site-address {
+  max-width: 60ch;
+}
+
+.site-aside-list li {
+  margin-block: 4px;
+}
+
+/* The dataset tree is not enabled on this portal: the builder prunes this rule. */
+[data-part="block-dataset-tree"] {
+  outline: 2px dashed var(--portal-color-accent);
+}

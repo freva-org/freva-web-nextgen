@@ -37,8 +37,9 @@ export interface TreeRecipe {
   /**
    * The source, with `{{STORE}}` where the validated store value goes. The placeholder sits
    * inside a Python string literal in every recipe, and the value reaching it is restricted to a
-   * character set with no quote, backslash or control character, so the substitution cannot end
-   * the literal it lands in. See `bindStore`.
+   * character set with no double quote, backslash or control character, and is inserted literally
+   * and escaped as the literal's body, so the substitution cannot end the literal it lands in.
+   * See `bindStore` and `renderRecipe`.
    */
   template: string;
   /** Which form of the store's address the hole takes. */

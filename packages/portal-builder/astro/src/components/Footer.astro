@@ -9,13 +9,16 @@
  * expansion behaviour and the height reservation, because both depend on the viewport, not data.
  */
 import frevaMark from "../assets/freva-mark.webp?url";
-import type { ResolvedPortalModel } from "../../../src/model/types.js";
+import type { ResolvedPortalModel, Segment } from "../../../src/model/types.js";
+import FooterCustom from "./FooterCustom.astro";
 
 interface Props {
   model: ResolvedPortalModel;
+  currentPath?: string;
+  slots?: Partial<Record<string, Segment[]>>;
 }
 
-const { model } = Astro.props;
+const { model, currentPath, slots } = Astro.props;
 const { chrome, site } = model;
 const footer = chrome.footer;
 const badge = footer.badge;
@@ -42,7 +45,7 @@ const bar = footer.bar;
 ---
 
 {
-  footer.enabled && (
+  footer.enabled && !model.customisation && (
     <footer class="portal-footer" data-mode="landing" data-expanded="false" data-has-index={hasIndex ? "true" : "false"}>
       <div class="portal-footer-expanded" hidden>
         <div class="portal-footer-inner-wrap">
@@ -127,6 +130,7 @@ const bar = footer.bar;
             data-portal-badge-quality={badge.quality}
             data-portal-badge-assets={badge.assetBase}
             data-portal-badge-live={frevaMark}
+            data-portal-badge-email={badge.email === undefined ? undefined : badge.email || "none"}
           />
         ) : (
         <span class="portal-freva-lockup">
@@ -182,4 +186,4 @@ const bar = footer.bar;
       </div>
     </footer>
   )
-}
+}{footer.enabled && model.customisation && <FooterCustom model={model} currentPath={currentPath ?? ""} slots={slots ?? {}} />}

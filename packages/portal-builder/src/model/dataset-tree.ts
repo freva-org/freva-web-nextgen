@@ -23,7 +23,11 @@ import { parseDatasetTreeCatalogV1 } from "@freva-org/dataset-tree/snapshot";
 import { parseDatasetTreeSearchIndexV1 } from "@freva-org/dataset-tree/search-index";
 import type { DatasetTreeCatalog, DatasetTreeCatalogNode } from "@freva-org/dataset-tree/snapshot";
 import { DiagnosticBag } from "../diagnostics.js";
-import { resolvePlaygroundSettings, type PlaygroundWhere } from "./python-playground.js";
+import {
+  resolvePlaygroundSettings,
+  secondOrigin,
+  type PlaygroundWhere,
+} from "./python-playground.js";
 import type {
   DatasetTreeBlockData,
   DatasetTreeS3Root,
@@ -127,6 +131,10 @@ export const PYTHON_PLAYGROUND_EVIDENCE = {
     "builder:client/playground-origin.ts",
     "builder:client/components/python-playground-styles.ts",
     "builder:client/components/python-ready.ts",
+    // The per-session setup chooser and the notebook's seed paths, used by the window and the
+    // playground document only.
+    "builder:client/components/session-chooser.ts",
+    "builder:client/notebook-paths.ts",
     // The runnable-code provider: emitted only for a portal that has a marked snippet, and owned
     // here rather than by the renderer because what it is FOR is the playground.
     "builder:client/components/code-run.ts",
@@ -401,7 +409,7 @@ export function loadDatasetTreeCatalog(options: {
   // The sources travel only when there is a second origin to deploy them to. A same-origin
   // playground reads them out of the catalogue the page already carries, so collecting them here
   // would put a second copy in the model for nobody.
-  const playgroundExamples = python?.playgroundOrigin
+  const playgroundExamples = secondOrigin(python)
     ? collectPlaygroundExamples(catalog, options.instanceId)
     : undefined;
 
@@ -731,10 +739,10 @@ export function resolvePlaygroundArtifact(options: {
   runtimeIndexUrl: string;
   bag: DiagnosticBag;
 }): PlaygroundArtifactData | undefined {
-  const framed = options.blocks.filter((entry) => entry.python.playgroundOrigin);
+  const framed = options.blocks.filter((entry) => secondOrigin(entry.python));
   const first = framed[0];
   if (!first) return undefined;
-  const origin = first.python.playgroundOrigin as string;
+  const origin = secondOrigin(first.python) as string;
   // Add-ons and the credential setting travel with the manifest, not with the parent. The child
   // owns the interpreter, so it is the child that has to know what to prepare; the parent in a
   // framed deployment never builds one, so a page that disagreed with its own child about which
@@ -744,11 +752,11 @@ export function resolvePlaygroundArtifact(options: {
   const persistCredentials = first.python.persistCredentials;
 
   for (const entry of framed.slice(1)) {
-    if (entry.python.playgroundOrigin === origin) continue;
+    if (secondOrigin(entry.python) === origin) continue;
     options.bag.error(
       "FP1216",
       `This portal generates one playground artifact, and the blocks name two origins: ` +
-        `'${origin}' and '${entry.python.playgroundOrigin as string}'.`,
+        `'${origin}' and '${secondOrigin(entry.python) as string}'.`,
       {
         file: entry.file,
         pointer: `${entry.pointer}/python/playgroundOrigin`,
@@ -799,6 +807,11 @@ export function resolvePlaygroundArtifact(options: {
     // the same value the parent's is - including whether it is the open one.
     packageOrigins: [...first.python.packagePolicy.origins],
     ...(first.python.packagePolicy.anyHttpsOrigin ? { anyHttpsOrigin: true } : {}),
+    // The chooser lives in the child, so the child carries the policy it validates against.
+    ...(first.python.sessionChoices ? { sessionChoices: first.python.sessionChoices } : {}),
+    ...(first.python.maxLiveSessions !== first.python.maxSessions
+      ? { maxLiveSessions: first.python.maxLiveSessions }
+      : {}),
     examples: [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
   };
 }

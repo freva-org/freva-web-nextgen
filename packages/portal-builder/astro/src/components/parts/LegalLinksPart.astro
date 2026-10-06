@@ -1,0 +1,34 @@
+---
+/** The `legal-links` part: the footer's legal links. */
+import type { ResolvedPortalModel } from "../../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+}
+
+const { model } = Astro.props;
+const seen = new Set<string>();
+const legal = model.chrome.footer.legalLinks.filter((link) =>
+  seen.has(link.href) ? false : (seen.add(link.href), true),
+);
+---
+
+{
+  legal.length > 0 && (
+    <ul class="portal-footer-legal" data-part="footer-legal">
+      {legal.map((link) => (
+        <li>
+          <a
+            class="portal-footer-link"
+            data-part="footer-link"
+            href={link.href}
+            target={link.external ? "_blank" : undefined}
+            rel={link.external ? "noopener noreferrer" : undefined}
+          >
+            {link.label}
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}

@@ -85,10 +85,18 @@ A current mixed tree is evidence to classify, not an artifact to copy wholesale.
 ## Remove local vendoring
 
 Consumer-local Data Browser or STAC copies, patch stacks and portal JavaScript
-are replaced by the central component packages, selected through YAML. If a
-consumer needs something the closed schemas cannot express, that is a framework
-capability proposal — not permission for a local escape hatch, which is how a
-framework acquires as many execution paths as it has consumers.
+are replaced by the central component packages, selected through YAML. Local
+look and layout move into the two closed customisation capabilities instead of
+local overrides: typed layout options in `portal.yaml`, a `portal-style-v1`
+stylesheet for the public parts and tokens, and `portal-template-v1` slot
+templates for the named slots ([customisation.md](customisation.md)). Both are
+parsed and enforced by the builder; neither can enable a feature, change an
+endpoint or own a route. A local theme stylesheet that overrode framework
+classes is rewritten against `schema/style-parts-v1.json`; a patched header or
+footer becomes header and footer options plus slot templates. If a consumer
+needs something these cannot express, that is a framework capability proposal —
+not permission for a local escape hatch, which is how a framework acquires as
+many execution paths as it has consumers.
 
 ## Verify the outcome
 

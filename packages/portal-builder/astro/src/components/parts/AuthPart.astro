@@ -1,0 +1,49 @@
+---
+/** The `auth` part: the account control. Present whenever auth is enabled; protected. */
+import type { ResolvedPortalModel } from "../../../../src/model/types.js";
+
+interface Props {
+  model: ResolvedPortalModel;
+}
+
+const { model } = Astro.props;
+const authEnabled = model.enabledComponents.some((c) => c.kind === "auth");
+---
+
+{
+  authEnabled && (
+    <div
+      class="portal-menu portal-account"
+      data-part="header-auth"
+      data-portal-account
+      data-portal-signed-in="false"
+      hidden
+    >
+      <button
+        type="button"
+        class="portal-account-button"
+        aria-expanded="false"
+        aria-haspopup="true"
+        aria-label="Account"
+      >
+        <span class="portal-avatar" aria-hidden="true">?</span>
+        <span class="portal-account-label" data-portal-signed-out>Sign in</span>
+        <span class="portal-account-label" data-portal-signed-in-label>Account</span>
+        <span class="portal-caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="portal-panel" role="menu" hidden>
+        <button type="button" class="portal-panel-item" role="menuitem" data-portal-auth-action="login">
+          Sign in
+        </button>
+        <button
+          type="button"
+          class="portal-panel-item portal-panel-item-danger"
+          role="menuitem"
+          data-portal-auth-action="logout"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  )
+}

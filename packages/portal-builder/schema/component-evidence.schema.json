@@ -145,6 +145,95 @@
           }
         }
       }
+    },
+    "customisation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "portal-style-v1 and portal-template-v1 inputs, and what the builder removed from them because the feature they style is disabled. Present only when a portal uses a stylesheet or slot templates.",
+      "required": ["stylesheet", "templates"],
+      "properties": {
+        "stylesheet": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "file", "prunedRules"],
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "prunedRules": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["selector", "features", "line"],
+                    "properties": {
+                      "selector": {
+                        "type": "string"
+                      },
+                      "features": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "line": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["slot", "source", "parts", "emptyParts"],
+            "properties": {
+              "slot": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "parts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "emptyParts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["part", "feature"],
+                  "properties": {
+                    "part": {
+                      "type": "string"
+                    },
+                    "feature": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

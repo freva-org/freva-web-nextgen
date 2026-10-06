@@ -1,0 +1,43 @@
+---
+/**
+ * A portal-template-v1 slot's rendered output: sanitized markup from the template, with the
+ * sealed framework parts it placed rendered here by the framework itself.
+ */
+import type { ResolvedPortalModel, Segment } from "../../../../src/model/types.js";
+import AuthPart from "./AuthPart.astro";
+import LegalLinksPart from "./LegalLinksPart.astro";
+import LogoPart from "./LogoPart.astro";
+import NavLinksPart from "./NavLinksPart.astro";
+import SearchPart from "./SearchPart.astro";
+import ThemeTogglePart from "./ThemeTogglePart.astro";
+
+interface Props {
+  segments: Segment[];
+  model: ResolvedPortalModel;
+  currentPath: string;
+  /** headerBrand renders inside the home link, so its logo is decorative there. */
+  decorativeLogo?: boolean;
+}
+
+const { segments, model, currentPath, decorativeLogo = false } = Astro.props;
+---
+
+{
+  segments.map((segment) =>
+    "html" in segment ? (
+      <Fragment set:html={segment.html} />
+    ) : segment.part === "logo" ? (
+      <LogoPart model={model} decorative={decorativeLogo} />
+    ) : segment.part === "nav-links" ? (
+      <NavLinksPart model={model} currentPath={currentPath} />
+    ) : segment.part === "search" ? (
+      <SearchPart model={model} />
+    ) : segment.part === "theme-toggle" ? (
+      <ThemeTogglePart />
+    ) : segment.part === "auth" ? (
+      <AuthPart model={model} />
+    ) : segment.part === "legal-links" ? (
+      <LegalLinksPart model={model} />
+    ) : null,
+  )
+}

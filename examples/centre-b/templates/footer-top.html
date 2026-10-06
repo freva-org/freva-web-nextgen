@@ -1,0 +1,9 @@
+<p class="site-funding">
+  <strong>Funding.</strong> The observatory is funded by the Example Research Council (grant
+  ERC-0000-0000).
+</p>
+{% if site.institution.url %}
+<p class="site-funding">
+  <a href="{{ site.institution.url }}">About {{ site.institution.name }}</a>
+</p>
+{% endif %}

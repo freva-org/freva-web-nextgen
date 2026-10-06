@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import type { EvidenceResult } from "./evidence.js";
 import type {
   CacheClass,
+  CustomisationEvidence,
   ResolvedPortalModel,
   ResolvedStaticFile,
   StacOptions,
@@ -18,6 +19,7 @@ import { registrationFor } from "../components/registry.js";
 import { packagePurl, sha256 } from "../util/package.js";
 import type { RstHandshake } from "../rendering/rst/client.js";
 import { compareCodePoints } from "../util/order.js";
+import { GRIDLOOK_ORIGIN } from "../model/notebook.js";
 import { DEFAULT_PYODIDE_INDEX_URL } from "@freva-org/browser-python";
 
 /**
@@ -251,7 +253,10 @@ export function portalManifest(inputs: ManifestInputs): object {
   };
 }
 
-export function componentEvidenceManifest(evidence: EvidenceResult): object {
+export function componentEvidenceManifest(
+  evidence: EvidenceResult,
+  customisation?: CustomisationEvidence,
+): object {
   return {
     schemaVersion: 1,
     components: evidence.components.map((component) => ({
@@ -288,6 +293,9 @@ export function componentEvidenceManifest(evidence: EvidenceResult): object {
       copiedFiles: evidence.graph.copiedFiles,
       moduleBytes: evidence.graph.moduleBytes,
     },
+    // What the customisation capabilities removed or left empty: pruned stylesheet rules and
+    // template parts of disabled features. Absent when the portal uses neither.
+    ...(customisation ? { customisation } : {}),
   };
 }
 
@@ -339,6 +347,27 @@ export function hostPolicy(inputs: ManifestInputs): object {
   // A live announcement feed on another origin, in `connect-src` and nowhere else: the page
   // fetches one JSON document from it and renders its strings as text.
   if (model.announcementFeed?.origin) connectOrigins.add(model.announcementFeed.origin);
+
+  // The notebook framed by a landing block: its origin may be framed. So may GridLook, for a
+  // tree whose Inspect offers its globe (the data panel's `gridlook`); nothing else.
+  for (const block of model.landings.flatMap((landing) => landing.blocks)) {
+    const framed = block.notebook
+      ? block.notebook.origin
+      : block.datasetTree?.gridlook
+        ? GRIDLOOK_ORIGIN
+        : undefined;
+    if (!framed) continue;
+    const set = componentDirectives.get("frame-src") ?? new Set<string>();
+    set.add(framed);
+    componentDirectives.set("frame-src", set);
+  }
+
+  // A prose figure's video is a published asset on this origin: `media-src 'self'`, nothing more.
+  if (model.landings.some((landing) => landing.blocks.some((block) => block.figure?.video))) {
+    const set = componentDirectives.get("media-src") ?? new Set<string>();
+    set.add("'self'");
+    componentDirectives.set("media-src", set);
+  }
 
   // Every playground on the portal, from BOTH the things that can ask for one: a dataset-tree
   // block's stanza, and a page that registered a runnable snippet. Reading only the blocks is

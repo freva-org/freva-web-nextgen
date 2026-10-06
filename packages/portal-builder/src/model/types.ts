@@ -9,6 +9,7 @@
 
 import type { OutlineHeading, OutlineSection } from "./nav-outline.js";
 import type { PackagePolicy } from "./package-policy.js";
+import type { SessionPolicy } from "@freva-org/browser-python/session";
 
 export type ComponentKind = "databrowser" | "stac-browser" | "auth";
 export type ServiceKind = "databrowser" | "stac" | "auth";
@@ -75,6 +76,12 @@ export interface ResolvedLink {
   /** Set when the link resolved to a component instance, for evidence. */
   componentId?: string;
   landingId?: string;
+  links?: ResolvedLink[];
+}
+
+export interface PagerLink {
+  title: string;
+  href: string;
 }
 
 export interface ResolvedChrome {
@@ -113,6 +120,7 @@ export interface ResolvedFooterBadge {
   styleUrl: string;
   /** Public URL of the directory holding `assets/`, with its trailing slash. */
   assetBase: string;
+  email?: string | false;
 }
 
 export interface ResolvedService {
@@ -313,7 +321,8 @@ export type BlockKind =
   | "callout"
   | "component-link"
   | "component-search"
-  | "dataset-tree";
+  | "dataset-tree"
+  | "notebook";
 
 /**
  * One bucket or prefix a live tree may browse, exactly as the deployment declared it and carried
@@ -392,6 +401,11 @@ export interface DatasetTreeBlockData {
    * after the tree mounts and hands it over; a failed load leaves the tree searching what is
    * loaded.
    */
+  /**
+   * GridLook's globe in this tree's Inspect: set by the resolver when the notebook's data panel
+   * on this tree opts in (`dataPanel.gridlook`), which also lets the portal frame GridLook.
+   */
+  gridlook?: boolean;
   searchIndex?: {
     url: string;
     /** Artifact-relative path of the published file. */
@@ -469,6 +483,39 @@ export interface RegisteredExampleDigest extends PlaygroundExampleDigest {
  * {@link PythonPlaygroundData} because it is the part that has to match: a page has one
  * interpreter, and the examples are the only thing two providers may legitimately differ in.
  */
+export interface NotebookAssistantSettings {
+  /** The Freva host's origin. */
+  host: string;
+  authBaseUrl: string;
+  /** The identity provider's issuer, when it sends `iss` with the authorization response. */
+  expectedIssuer?: string;
+  defaultModel: string;
+  runAndFixModel?: string;
+  scopeNote?: string;
+  examples: { title: string; prompt: string }[];
+  /** Where ClimateClaw serves the files code saves, when not the host (figures are read there). */
+  previewOrigin?: string;
+  hideCodeByDefault: boolean;
+  /** Part of the playground identity (FP1215). */
+  fingerprint: string;
+}
+
+export interface NotebookDataPanelSettings {
+  title?: string;
+  /** Source-root-relative path as written; read and sanitised by the resolver. */
+  icon?: string;
+  /** The dataset-tree block's instance id. */
+  tree: string;
+  defaultAction: string;
+  seedNotebooks: string[];
+  /** Source-root-relative path as written: opened when the Lab starts (see the raw type). */
+  startNotebook?: string;
+  /** GridLook's globe in Inspect and "View on globe"; frames https://gridlook.pages.dev. */
+  gridlook: boolean;
+  launcher: { newNotebook: boolean; browse: boolean; examples: boolean; ask: boolean };
+  fingerprint: string;
+}
+
 export interface PlaygroundSettings {
   /** browser-python profile name, passed through verbatim. Singular - see the raw type. */
   profile: string;
@@ -525,6 +572,14 @@ export interface PlaygroundSettings {
    * arrangement in which visitor Python holds the portal's origin authority.
    */
   playgroundOrigin?: string;
+  /** The base path the second origin serves this deployment under (the portal's). */
+  playgroundBase?: string;
+  /**
+   * The origin the notebook is deployed on: `playgroundOrigin` as configured, also when
+   * `consoleInPage` keeps the console in the portal's pages (and `playgroundOrigin` above is then
+   * undefined). Set only when the notebook is on.
+   */
+  notebookOrigin?: string;
   /**
    * Where the interpreter's runtime is fetched from, when the deployment hosts its own. Undefined
    * means the pinned CDN `@freva-org/browser-python` uses by default. A deployment whose network
@@ -537,6 +592,19 @@ export interface PlaygroundSettings {
     alwaysOnTop: boolean;
     rememberAppearance: boolean;
   };
+  /**
+   * The session policy, when the deployment configured `sessionChoices`. Absent means one fixed
+   * setup and no chooser, telemetry or sleep.
+   */
+  sessionChoices?: { policy: SessionPolicy; fingerprint: string };
+  /** Whether the JupyterLite notebook is deployed (on `notebookOrigin`). */
+  notebook: boolean;
+  /** ClimateClaw in the notebook (`notebook.assistant.climateclaw`), resolved. */
+  notebookAssistant?: NotebookAssistantSettings;
+  /** The notebook's data panel (`notebook.dataPanel`), resolved apart from its tree and files. */
+  notebookDataPanel?: NotebookDataPanelSettings;
+  /** Sessions that may hold a live interpreter at once: 1 or 2, never above `maxSessions`. */
+  maxLiveSessions: number;
 }
 
 /** A page's playground: the settings everything agreed on, plus what this provider registered. */
@@ -603,6 +671,16 @@ export interface PlaygroundArtifactExample {
 export interface PlaygroundArtifactData {
   /** The origin the child is deployed at, exactly as configured. */
   origin: string;
+  /**
+   * The base path this origin serves the deployment under: the portal's, which the compiler
+   * writes into every URL of the pages emitted for it (`/`, `/showroom/`).
+   */
+  basePath?: string;
+  /**
+   * The shared sign-in callback's path (`/auth/callback/`), under `basePath`, when the notebook
+   * here signs in (its assistant): the build emits the callback page there.
+   */
+  authCallbackPath?: string;
   /** The portal's own origin, from `site.canonicalUrl`. The only peer the bridge will answer. */
   hostOrigin: string;
   /** browser-python profile name, passed through verbatim. */
@@ -650,12 +728,38 @@ export interface PlaygroundArtifactData {
    * three being written from the one resolved policy.
    */
   anyHttpsOrigin?: boolean;
+  /** The session policy, when configured: the child shows the chooser and validates against it. */
+  sessionChoices?: { policy: SessionPolicy; fingerprint: string };
+  /** Live interpreters the page may hold, when below the session count. */
+  maxLiveSessions?: number;
   /** Every runnable example on the portal, merged across blocks and sorted by id. */
   examples: PlaygroundArtifactExample[];
 }
 
+/** Where a block sits on a laid-out landing (`landing.layout`). */
+export interface ResolvedPlacement {
+  section?: string;
+  span: { base: number; md: number; lg: number };
+  width?: "narrow" | "content" | "wide" | "full";
+  align?: "start" | "center" | "end";
+  background?: ResolvedBackground;
+}
+
+/** A fill, or a published image addressed by a generated rule in the site stylesheet. */
+export type ResolvedBackground = { fill: "none" | "surface" | "accent" } | { image: string };
+
+export interface ResolvedLandingSection {
+  id: string;
+  heading?: string;
+  width?: "narrow" | "content" | "wide" | "full";
+  align?: "start" | "center" | "end";
+  background?: ResolvedBackground;
+}
+
 export interface ResolvedBlock {
   type: BlockKind;
+  /** Present on a landing with `layout`; absent keeps the design's composition. */
+  placement?: ResolvedPlacement;
   heading?: string;
   summary?: string;
   body?: string;
@@ -663,6 +767,8 @@ export interface ResolvedBlock {
   actions?: ResolvedLink[];
   cards?: { title: string; summary?: string; link?: ResolvedLink }[];
   prose?: RenderedFragment;
+  /** prose only: the illustration beside the text. */
+  figure?: ProseFigureData;
   /** component-search only. */
   search?: {
     componentId: string;
@@ -674,6 +780,30 @@ export interface ResolvedBlock {
   link?: ResolvedLink;
   /** dataset-tree only. The catalogue is carried, not referenced: the page embeds it. */
   datasetTree?: DatasetTreeBlockData;
+  /** notebook only: the notebook's page on the playground origin, framed in place. */
+  notebook?: NotebookEmbedData;
+}
+
+/** The portal's notebook in a landing block: what is framed, and from where. */
+export interface NotebookEmbedData {
+  /** The playground origin, which the portal's `frame-src` names. */
+  origin: string;
+  /** The page framed, and the one "Open in a new tab" opens. */
+  src: string;
+  view: "lab" | "files";
+  /** The name on the window's bar. */
+  title: string;
+}
+
+/** A prose block's illustration, as published URLs. */
+export interface ProseFigureData {
+  image: string;
+  imageDark?: string;
+  /** The clip's formats, in the author's order: the browser plays the first it can. */
+  video?: string[];
+  videoDark?: string[];
+  alt: string;
+  caption?: string;
 }
 
 /**
@@ -695,6 +825,8 @@ export interface ResolvedLanding {
   description?: string;
   blocks: ResolvedBlock[];
   source: string;
+  /** The 12-column layout, when the landing declared one. */
+  layout?: { sections: ResolvedLandingSection[] };
 }
 
 export type RouteKind = "landing" | "content" | "component" | "auth-callback" | "error";
@@ -749,6 +881,52 @@ export interface ResolvedRoute {
    * section of one is a list whose single entry is the page you are already reading.
    */
   sectionNavigation?: ResolvedSectionNavigation;
+  /** portal-template-v1 slots rendered for this route, by slot name. */
+  slots?: Partial<Record<string, Segment[]>>;
+  pager?: { previous?: PagerLink; next?: PagerLink };
+  /** landingSectionShell, rendered once per layout section of this landing. */
+  sectionShells?: Record<string, Segment[]>;
+}
+
+/** Rendered slot markup, interleaved with the sealed framework parts it places. */
+export type Segment = { html: string } | { part: string };
+
+export type HeaderItemName = "brand" | "links" | "navToggle" | "search" | "themeToggle" | "auth";
+export type FooterSectionName = "about" | "groups" | "logos" | "legal" | "prose";
+
+export interface ResolvedImageVariants {
+  src: string;
+  light?: string;
+  dark?: string;
+  alt?: string;
+}
+
+/**
+ * The customisation surface, present only when a portal uses one of its options. Absent, nothing
+ * in the markup, the stylesheets or the artifact depends on it.
+ */
+export interface ResolvedCustomisation {
+  header: {
+    variant?: string;
+    sticky: boolean;
+    transparentOverHero: boolean;
+    logo?: ResolvedImageVariants;
+    /** The header's parts, in order. Absent: the design's own arrangement. */
+    items?: HeaderItemName[];
+  };
+  footer: {
+    variant?: string;
+    columns?: number;
+    logos: { src: string; alt: string; href?: string; external: boolean }[];
+    order?: FooterSectionName[];
+  };
+  navPlacement: "header" | "side" | "both";
+  /** The published site stylesheet: font faces, layout backgrounds and the consumer layer. */
+  stylesheet?: { url: string; file: string };
+  /** Whether the framework's own stylesheets sit in the framework cascade layer. */
+  layered: boolean;
+  /** Sealed header and footer parts a slot template placed, so their default spot stays empty. */
+  movedParts: string[];
 }
 
 export interface ResolvedStaticFile {
@@ -854,7 +1032,11 @@ export interface InputRecord {
     | "identity"
     | "subsite-policy"
     | "subsite-file"
-    | "component-asset";
+    | "component-asset"
+    | "font"
+    | "stylesheet"
+    | "template"
+    | "customisation-asset";
   digest: string;
   bytes: number;
 }
@@ -894,7 +1076,12 @@ export interface ResolvedPortalModel {
    * The header search, when `chrome.header.search.enabled`. Absent is the load-bearing case: no
    * control in the header, no module in the entry, no stylesheet and no index file.
    */
-  search?: { indexUrl: string; placeholder: string; entries: number };
+  search?: {
+    indexUrl: string;
+    placeholder: string;
+    entries: number;
+    facets: { label: string; count: number }[];
+  };
   /**
    * Live announcements, when `announcementFeed` is configured: where the page reads them, and the
    * origin that adds to `connect-src` (empty for same-origin). Absent: no island, no request.
@@ -905,6 +1092,26 @@ export interface ResolvedPortalModel {
   inputs: InputRecord[];
   /** Every rendered fragment's dependency edges, for the unreferenced-file check. */
   referencedFiles: string[];
+  /** Present only when a customisation option is used; see `ResolvedCustomisation`. */
+  customisation?: ResolvedCustomisation;
+  /** Files published for the customisation: fonts, logos, images, the site stylesheet. */
+  customisationFiles?: ResolvedStaticFile[];
+  /** What the customisation evidence records; see component-evidence.json `customisation`. */
+  customisationEvidence?: CustomisationEvidence;
+}
+
+export interface CustomisationEvidence {
+  stylesheet: {
+    source: string;
+    file: string;
+    prunedRules: { selector: string; features: string[]; line: number }[];
+  } | null;
+  templates: {
+    slot: string;
+    source: string;
+    parts: string[];
+    emptyParts: { part: string; feature: string }[];
+  }[];
 }
 
 /** Immutable after validation. Frozen deeply, not by convention. */

@@ -8,8 +8,20 @@ export interface RawLink {
   label: string;
   landing?: string;
   component?: string;
+  /** The notebook on `playgroundOrigin`: its JupyterLab interface, or its file list. */
+  notebook?: "lab" | "files";
   href?: string;
   description?: string;
+  /** A typed action on an existing component (landing actions only). */
+  intent?: "select-facet" | "open-dataset" | "run-example";
+  facets?: Record<string, string | string[]>;
+  flavour?: string;
+  dataset?: string;
+  example?: string;
+}
+
+export interface RawHeaderLink extends RawLink {
+  links?: RawLink[];
 }
 
 export interface RawContentSource {
@@ -111,6 +123,11 @@ export interface PortalConfig {
       links?: RawLink[];
       prose?: string;
       search?: { enabled: boolean; placeholder?: string };
+      variant?: "standard" | "centered" | "split" | "compact" | "minimal";
+      sticky?: boolean;
+      transparentOverHero?: boolean;
+      logo?: RawImageWithVariants;
+      items?: HeaderItem[];
     };
     footer?: {
       enabled: boolean;
@@ -119,14 +136,27 @@ export interface PortalConfig {
       /** Short links in the collapsed bar, on screen on every page. See the schema. */
       bar?: { lead?: string; links: RawLink[] };
       prose?: string;
-      badge?: { enabled?: boolean; kind?: "freva"; quality?: "auto" | "standard" };
+      badge?: {
+        enabled?: boolean;
+        kind?: "freva";
+        quality?: "auto" | "standard";
+        email?: false | string;
+      };
+      variant?: "columns" | "stacked" | "minimal" | "bar-only";
+      columns?: number;
+      logos?: { src: string; alt: string; href?: string }[];
+      order?: FooterSection[];
     };
+    /** portal-template-v1 slot templates, by slot name (schema/slots-v1.json). */
+    slots?: Partial<Record<SlotName, string>>;
   };
   theme?: {
     preset: string;
     tokens?: RawThemeTokens;
     /** How a drawn backdrop meets the end of the landing; see the schema. */
     backdrop?: { tail?: "full" | "short" | "none" };
+    fonts?: RawFont[];
+    stylesheet?: { profile: "portal-style-v1"; path: string };
   };
   rendering?: {
     profile: "portal-content-v1";
@@ -139,7 +169,12 @@ export interface PortalConfig {
   landings?: Record<string, { path: string; source: string }>;
   services?: Record<string, RawService>;
   components?: Record<string, RawComponent>;
-  navigation?: { header?: RawLink[]; footer?: RawLink[] };
+  navigation?: {
+    header?: RawHeaderLink[];
+    footer?: RawLink[];
+    placement?: NavPlacement;
+    pager?: boolean;
+  };
   announcements?: RawAnnouncement[];
   trustedSubsites?: RawTrustedSubsite[];
   pythonPlayground?: RawPythonPlayground;
@@ -151,13 +186,61 @@ export interface PortalConfig {
  * `theme.tokens`: the flat tokens (one value for both colour modes) and, optionally, one page
  * palette per colour mode.
  */
-export type RawThemeTokens = { [token: string]: string | RawThemeModeTokens | undefined } & {
+export type RawThemeTokens = {
+  [token: string]: string | number | RawThemeModeTokens | undefined;
+} & {
   light?: RawThemeModeTokens;
   dark?: RawThemeModeTokens;
 };
 
 /** One colour mode's page palette: see `themes/palette.ts`. */
+export type HeaderItem = "brand" | "links" | "navToggle" | "search" | "themeToggle" | "auth";
+export type FooterSection = "about" | "groups" | "logos" | "legal" | "prose";
+export type NavPlacement = "header" | "side" | "both";
+export type SlotName =
+  | "headerBrand"
+  | "headerExtra"
+  | "footerTop"
+  | "footerColumns"
+  | "footerBottom"
+  | "landingSectionShell"
+  | "proseAside";
+
+export interface RawImageWithVariants {
+  src: string;
+  light?: string;
+  dark?: string;
+  alt?: string;
+}
+
+export interface RawFont {
+  family: string;
+  weight?: number;
+  style?: "normal" | "italic";
+  src: string;
+}
+
+/** A landing block's background: a fill, or a local image. */
+export type RawBackground = "none" | "surface" | "accent" | { image: string };
+
+export interface RawBlockPlacement {
+  section?: string;
+  span?: { base?: number; md?: number; lg?: number };
+  width?: "narrow" | "content" | "wide" | "full";
+  align?: "start" | "center" | "end";
+  background?: RawBackground;
+}
+
+export interface RawLandingSection {
+  id: string;
+  heading?: string;
+  width?: "narrow" | "content" | "wide" | "full";
+  align?: "start" | "center" | "end";
+  background?: RawBackground;
+}
+
 export interface RawThemeModeTokens {
+  shadow?: "none" | "soft" | "regular" | "strong";
   colorBackground?: string;
   colorSurface?: string;
   colorText?: string;
@@ -174,7 +257,7 @@ export interface RawRedirect {
   status?: 301 | 302 | 307 | 308;
 }
 
-export interface RawLandingBlock {
+export interface RawLandingBlock extends RawBlockPlacement {
   type: string;
   heading?: string;
   summary?: string;
@@ -203,6 +286,23 @@ export interface RawLandingBlock {
   statusLabel?: string;
   /** dataset-tree only: the optional in-page Python playground. */
   python?: RawDatasetTreePython;
+  /** notebook only: which interface the block shows. */
+  view?: "lab" | "files";
+  /** notebook only: the name on the window's bar. */
+  title?: string;
+  /** prose only: an illustration beside the text. */
+  figure?: RawProseFigure;
+}
+
+/** A prose block's illustration: a still picture, and optionally a looping video. */
+export interface RawProseFigure {
+  image: string;
+  imageDark?: string;
+  /** One file, or the same clip in several formats. */
+  video?: string | string[];
+  videoDark?: string | string[];
+  alt: string;
+  caption?: string;
 }
 
 /** One bucket, or one prefix inside one, that a live tree may browse. */
@@ -243,6 +343,43 @@ export interface RawDatasetTreeS3 {
   datasetSuffixes?: string[];
 }
 
+/** `pythonPlayground.notebook.assistant.climateclaw`, as written. */
+export interface RawClimateClaw {
+  host: string;
+  authBaseUrl?: string;
+  expectedIssuer?: string;
+  defaultModel: string;
+  runAndFixModel?: string;
+  scopeNote?: string;
+  examples?: { title: string; prompt: string }[];
+  previewOrigin?: string;
+  hideCodeByDefault?: boolean;
+}
+
+/** `pythonPlayground.notebook.dataPanel`, as written. */
+export interface RawNotebookDataPanel {
+  title?: string;
+  icon?: string;
+  /** A dataset-tree block's instance id, `<landing id>-<block index>`. */
+  tree: string;
+  defaultAction?:
+    | "open-in-notebook"
+    | "insert"
+    | "inspect"
+    | "ask-climateclaw"
+    | "copy-url"
+    | "copy-code";
+  seedNotebooks?: string[];
+  /**
+   * A notebook opened when the Lab starts (the visitor's own copy, made once), in place of the
+   * Launcher: published like a seed notebook, its saved outputs shown as they are.
+   */
+  startNotebook?: string;
+  /** GridLook's 3D globe for stores readable without a token. Default false. */
+  gridlook?: boolean;
+  launcher?: { newNotebook?: boolean; browse?: boolean; examples?: boolean; ask?: boolean };
+}
+
 /**
  * The `dataset-tree.python` block, as written. Absent, or `enabled: false`, compiles the whole
  * feature out: no run control, no interpreter chunk, no Worker, no frame, no widening of the
@@ -261,6 +398,8 @@ export interface RawPythonPlaygroundBase {
   maxSessions?: number;
   initialSource?: string;
   playgroundOrigin?: string;
+  /** With `playgroundOrigin`: the console stays in the portal's pages, the notebook goes there. */
+  consoleInPage?: boolean;
   /** A self-hosted Pyodide directory, instead of the pinned CDN. Ends with a slash. */
   runtimeIndexUrl?: string;
   /** Where the derived Freva wheel is served from, for `freva-client`. Ends with a slash. */
@@ -312,6 +451,22 @@ export interface RawPythonPlaygroundBase {
   controls?: "always" | "hover";
   /** Every runnable snippet editable in place. Off by default; see `editable` on a fence. */
   editableSnippets?: boolean;
+  /** Per-session setup choices. Absent, every session gets the configured setup; see the schema. */
+  sessionChoices?: {
+    profiles: Record<string, { allowedAddons?: string[] }>;
+    allowSkipStarter?: boolean;
+    starterProfiles?: string[];
+  };
+  /** The JupyterLite notebook on `playgroundOrigin`. */
+  notebook?: {
+    enabled: boolean;
+    seeds?: string[];
+    /** ClimateClaw in the notebook, through jupyterlite-ai. */
+    assistant?: { climateclaw: RawClimateClaw };
+    /** A dataset-tree block as a side panel in the notebook. */
+    dataPanel?: RawNotebookDataPanel;
+  };
+  resources?: { maxLiveSessions?: number };
   terminal?: {
     style?: "freva-client-terminal";
     osControls?: "auto" | "mac" | "windows" | "linux";
@@ -333,6 +488,9 @@ export type RawDatasetTreePython = Omit<
   | "persistCredentials"
   | "wheelhouseUrl"
   | "addonBaseUrl"
+  | "sessionChoices"
+  | "notebook"
+  | "resources"
 >;
 
 /**
@@ -347,6 +505,7 @@ export interface LandingDocument {
   schemaVersion: 1;
   title: string;
   description?: string;
+  layout?: { sections?: RawLandingSection[] };
   blocks: RawLandingBlock[];
 }
 

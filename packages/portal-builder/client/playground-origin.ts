@@ -17,8 +17,16 @@
  * The portal's exact origin is compiled in, and a message from any other origin is dropped.
  */
 
-import type { BrowserPythonAddon, BrowserPythonProfile } from "@freva-org/browser-python";
+import type {
+  BrowserPython,
+  BrowserPythonAddon,
+  BrowserPythonProfile,
+  createBrowserPython as CreateBrowserPython,
+} from "@freva-org/browser-python";
+import type { ExampleRegistry } from "@freva-org/browser-python/embed";
+import type { SessionController, SessionSetup } from "@freva-org/browser-python/session";
 import type { PlaygroundArtifactData } from "../src/model/types.js";
+import { renderChooser } from "./components/session-chooser.js";
 
 /**
  * The child document's own layout, adopted at run time rather than linked: fill the frame, let the
@@ -34,6 +42,10 @@ html, body { margin: 0; height: 100%; background: transparent; font: 14px/1.5 sy
 #playground-root > * { flex: 1 1 auto; min-height: 0; }
 #playground-status { margin: 0; padding: 0.4rem 0.6rem; font-size: 0.78rem; }
 #playground-status[data-tone="error"] { background: rgba(255, 154, 139, 0.18); }
+#playground-session { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.3rem 0.6rem; font-size: 0.78rem; }
+#playground-session > span { flex: 1 1 12rem; }
+#playground-session button { font: inherit; padding: 0.15rem 0.6rem; cursor: pointer; }
+#playground-chooser { padding: 0.6rem; overflow: auto; }
 `;
 
 function adoptStyles(): void {
@@ -62,6 +74,7 @@ interface ConsoleElement extends HTMLElement {
   clearHistory(): void;
   restart(): Promise<void>;
   engine?: unknown;
+  inert: boolean;
   /** The portal page, for the no-JSPI card. See the console's own `pageUrl`. */
   pageUrl: string | null;
   /** Opens a link the sandboxed frame cannot. See the console's own `openExternal`. */
@@ -132,6 +145,11 @@ export async function startPlaygroundOrigin(): Promise<void> {
     import("@freva-org/browser-python"),
   ]);
   defineBrowserPythonConsole();
+
+  if (config.sessionChoices) {
+    await startWithChoices(config, registry, createBrowserPython);
+    return;
+  }
 
   // The engine is created HERE and injected rather than left to the element. The bridge holds one
   // engine reference for the life of the document - which is what makes an artifact list and a
@@ -227,4 +245,237 @@ export async function startPlaygroundOrigin(): Promise<void> {
     bridge.openLink(url);
   };
   status("Ready");
+}
+
+/** The hash the parent put on this frame's address: `scope` and `choose`. Untrusted. */
+function frameHash(): { scope: string | null; choose: boolean } {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const scope = params.get("scope");
+  return {
+    scope: scope && /^[A-Za-z0-9-]{6,64}$/.test(scope) ? scope : null,
+    choose: params.get("choose") === "1",
+  };
+}
+
+/**
+ * The playground with session choices: this document shows the chooser, owns the session
+ * controller (live slot, telemetry, sleep), and reports the locked setup to the portal with the
+ * `setup` capability message. The parent can only PROPOSE a setup; it is validated here against
+ * this document's own policy before it is offered.
+ */
+async function startWithChoices(
+  config: PlaygroundArtifactData & { maxLiveSessions?: number },
+  registry: ExampleRegistry,
+  createBrowserPython: (options: Parameters<typeof CreateBrowserPython>[0]) => BrowserPython,
+): Promise<void> {
+  const { policy, fingerprint } = config.sessionChoices!;
+  const [{ attachPlaygroundBridge }, session] = await Promise.all([
+    import("@freva-org/browser-python/embed"),
+    import("@freva-org/browser-python/session"),
+  ]);
+  const hash = frameHash();
+  // Frames of one portal page share their slots through Web Locks under the page's scope; a
+  // frame without one has slots of its own.
+  const slots = session.createSlotBroker({
+    capacity: config.maxLiveSessions ?? session.MAX_LIVE_INTERPRETERS,
+    scope: `${location.origin}:${hash.scope ?? crypto.randomUUID()}`,
+  });
+  let store: ReturnType<typeof session.openCheckpointStore> | null = null;
+
+  const engineFor = (setup: SessionSetup): BrowserPython =>
+    createBrowserPython({
+      profile: setup.profile as BrowserPythonProfile,
+      addons: setup.addons as BrowserPythonAddon[],
+      ...(config.runtimeIndexUrl ? { pyodide: { indexURL: config.runtimeIndexUrl } } : {}),
+      ...(config.wheelhouseUrl ? { wheelhouseURL: config.wheelhouseUrl } : {}),
+      ...(config.addonBaseUrl ? { addonBaseURL: config.addonBaseUrl } : {}),
+      ...(config.persistCredentials ? { persistCredentials: true } : {}),
+    });
+
+  const rootNode = document.getElementById("playground-root");
+  const bar = document.createElement("div");
+  bar.id = "playground-session";
+  bar.hidden = true;
+  const barText = document.createElement("span");
+  barText.setAttribute("role", "status");
+  const sleepButton = document.createElement("button");
+  sleepButton.type = "button";
+  sleepButton.textContent = "Sleep";
+  sleepButton.title =
+    "Stop this interpreter to free its memory. The transcript and /workspace files are kept; " +
+    "Python variables are lost.";
+  const wakeButton = document.createElement("button");
+  wakeButton.type = "button";
+  wakeButton.textContent = "Wake";
+  bar.append(barText, sleepButton, wakeButton);
+  const chooserHost = document.createElement("div");
+  chooserHost.id = "playground-chooser";
+  chooserHost.hidden = true;
+
+  const element = document.createElement("freva-python-console") as ConsoleElement;
+  element.setAttribute("profile", policy.defaults.profile);
+  element.setAttribute("toolbar", "status");
+  // No engine and no input until the session controller attaches one, and no `autostart` (a
+  // boolean attribute: even "false" starts it): a console left to itself builds its own engine,
+  // outside the page's slots.
+  element.inert = true;
+  // The bridge needs an engine from the first message; this one is never started, and is
+  // replaced by the session's own once a setup is chosen.
+  const placeholder = engineFor(policy.defaults);
+  rootNode?.append(bar, chooserHost, element);
+
+  let controller: SessionController | null = null;
+  let chosen: (setup: SessionSetup) => void = () => undefined;
+  const setupChosen = new Promise<SessionSetup>((resolve) => {
+    chosen = resolve;
+  });
+  let proposal: SessionSetup | null = null;
+
+  const bridge = attachPlaygroundBridge({
+    engine: placeholder,
+    hostOrigin: config.hostOrigin,
+    onPage: (url) => {
+      element.pageUrl = url;
+    },
+    examples: registry,
+    onRunExample: async (example) => {
+      await start();
+      await element.runExample({ title: example.title, source: example.source });
+    },
+    transcript: () => element.transcript(),
+    onClearTranscript: () => element.clear(),
+    onClearHistory: () => element.clearHistory(),
+    onRestart: async () => {
+      const c = controller;
+      if (!c) return;
+      if (c.state === "asleep" || c.state === "wake-error") await c.wake();
+      else await c.restart();
+    },
+    onSetupProposal: ({ setup, policy: theirs }) => {
+      if (theirs !== fingerprint || controller) return;
+      const check = session.validateSetup(policy, setup);
+      if (!check.ok) return;
+      proposal = check.setup;
+      if (!chooserHost.hidden) showChooser();
+    },
+  });
+  element.openExternal = (url) => {
+    bridge.openLink(url);
+  };
+
+  const renderBar = (): void => {
+    const snapshot = controller?.snapshot();
+    if (!snapshot) return;
+    bar.hidden = false;
+    const env = [snapshot.setup.profile, ...snapshot.setup.addons].join(" + ");
+    const kept = snapshot.checkpoint
+      ? ` · ${snapshot.checkpoint.files} file(s) kept (${session.formatBytes(snapshot.checkpoint.bytes)})`
+      : "";
+    const live = snapshot.state === "ready" || snapshot.state === "busy";
+    if (!live)
+      barText.textContent = `${env} · ${snapshot.state}${kept}${snapshot.message ? ` · ${snapshot.message}` : ""}`;
+    sleepButton.hidden = !live;
+    sleepButton.disabled = snapshot.state !== "ready";
+    wakeButton.hidden = snapshot.state !== "asleep" && snapshot.state !== "wake-error";
+  };
+  setInterval(() => {
+    const c = controller;
+    if (!c || (c.state !== "ready" && c.state !== "busy")) return;
+    void c.resources().then((sample) => {
+      if (!sample || controller !== c) return;
+      const env = [c.setup.profile, ...c.setup.addons].join(" + ");
+      barText.textContent = `${env} · ${session.describeResources(sample)}`;
+    });
+  }, 2_000);
+
+  const begin = async (setup: SessionSetup): Promise<string | null> => {
+    const c = new session.SessionController({
+      id: `frame-${crypto.randomUUID()}`,
+      setup,
+      policy: fingerprint,
+      slots,
+      createEngine: engineFor,
+      store: () => (store ??= session.openCheckpointStore()),
+      ...(config.initialSource
+        ? { starter: () => element.execute(config.initialSource as string) }
+        : {}),
+      attach: (engine) => {
+        element.engine = engine;
+        element.inert = false;
+        bridge.useEngine(engine);
+      },
+      detach: (engine) => {
+        if (element.engine === engine) element.engine = undefined;
+        element.inert = true;
+      },
+      retainedBytes: () => new TextEncoder().encode(element.transcript()).length,
+    });
+    c.onChange(() => renderBar());
+    status("Starting Python…");
+    try {
+      await c.start();
+    } catch (error) {
+      if ((error as { code?: string }).code === "no-slot") return (error as Error).message;
+      throw error;
+    }
+    controller = c;
+    placeholder.dispose();
+    chooserHost.hidden = true;
+    bridge.announceSetup({ ...setup, addons: [...setup.addons] }, fingerprint);
+    status("Python is ready");
+    chosen(setup);
+    renderBar();
+    return null;
+  };
+
+  const showChooser = (): void => {
+    chooserHost.hidden = false;
+    renderChooser(chooserHost, {
+      session,
+      policy,
+      current: proposal,
+      liveSummary: async () => {
+        const held = await slots.held();
+        return `${held} of ${slots.capacity} in use on this page`;
+      },
+      start: begin,
+    });
+  };
+
+  let starting: Promise<void> | null = null;
+  /** The interpreter, once a setup is chosen: the default one, or the chooser's. */
+  const start = (): Promise<void> => {
+    if (controller) {
+      const c = controller;
+      return c.state === "asleep" || c.state === "wake-error" ? c.wake() : c.start();
+    }
+    if (hash.choose) return setupChosen.then(() => undefined);
+    starting ??= begin(policy.defaults).then((reason) => {
+      if (reason !== null) {
+        starting = null;
+        status(reason, "error");
+        throw new Error(reason);
+      }
+    });
+    return starting;
+  };
+
+  sleepButton.addEventListener("click", () => {
+    void controller
+      ?.sleep()
+      .catch((error: unknown) => status(String((error as Error).message ?? error), "error"));
+  });
+  wakeButton.addEventListener("click", () => {
+    void controller
+      ?.wake()
+      .catch((error: unknown) => status(String((error as Error).message ?? error), "error"));
+  });
+
+  if (hash.choose) {
+    showChooser();
+    status("Choose a setup for this session.");
+  } else {
+    // The portal loads this frame when its window opens, which is asking for an interpreter.
+    void start().catch(() => undefined);
+  }
 }

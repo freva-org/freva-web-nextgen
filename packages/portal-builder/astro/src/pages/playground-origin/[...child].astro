@@ -23,15 +23,29 @@
  * nothing from `script-src`; the one real script is a module the bundler emitted. So the document
  * runs under a policy with no `unsafe-inline` anywhere - see `playground-origin/HEADERS.md`,
  * which the build writes beside it.
+ *
+ * AND THE SIGN-IN CALLBACK. With a notebook that signs in, the same template also emits that
+ * origin's shared callback (`auth/callback/`, the portal's path): a plain document whose one
+ * script relays a popup's response to the notebook tab that opened it.
  */
 import model from "virtual:portal-model";
+import PlaygroundEntry from "../../components/PlaygroundEntry.astro";
+import PlaygroundCallbackEntry from "../../components/PlaygroundCallbackEntry.astro";
 
 export function getStaticPaths() {
   // Emitted only when a landing asked for a second origin. A portal without one contains no
   // playground document at all, which is a checkable fact rather than a claim.
-  return model.playground ? [{ params: { child: undefined } }] : [];
+  if (!model.playground) return [];
+  // The shared sign-in callback, at the same path as the portal's, when the notebook signs in:
+  // the popup a notebook opens returns here, on the notebook's own origin.
+  const callback = model.playground.authCallbackPath?.replace(/^\/+|\/+$/g, "");
+  return [
+    { params: { child: undefined }, props: { callback: false } },
+    ...(callback ? [{ params: { child: callback }, props: { callback: true } }] : []),
+  ];
 }
 
+const isCallback = Astro.props.callback === true;
 const playground = model.playground!;
 // The configuration the child needs, and not one field more. The portal's title, its navigation,
 // its component list and its theme are absent on purpose: this document is not the portal, and an
@@ -49,34 +63,66 @@ const config = {
   ...(playground.addonBaseUrl ? { addonBaseUrl: playground.addonBaseUrl } : {}),
   ...(playground.addons && playground.addons.length > 0 ? { addons: playground.addons } : {}),
   ...(playground.persistCredentials ? { persistCredentials: true } : {}),
+  // The chooser lives in this document, so the policy it validates against does too.
+  ...(playground.sessionChoices ? { sessionChoices: playground.sessionChoices } : {}),
+  ...(playground.maxLiveSessions ? { maxLiveSessions: playground.maxLiveSessions } : {}),
 };
 ---
 
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex, nofollow" />
-    <title>Python playground</title>
-  </head>
-  <body>
-    <p id="playground-status" role="status" hidden></p>
-    <div id="playground-root"></div>
-    <script
-      type="application/json"
-      id="playground-config"
-      is:inline
-      set:html={JSON.stringify(config).replaceAll("<", "\\u003c")}
-    />
-    <script
-      type="application/json"
-      id="playground-examples"
-      is:inline
-      set:html={JSON.stringify(playground.examples).replaceAll("<", "\\u003c")}
-    />
-    <noscript>
-      <p>This playground needs JavaScript. The portal's pages still work without it.</p>
-    </noscript>
-    <script>import "virtual:portal-playground-entry";</script>
-  </body>
-</html>
+{
+  isCallback ? (
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="referrer" content="no-referrer" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex, nofollow" />
+        <title>Freva sign-in</title>
+      </head>
+      <body>
+        <section data-auth-callback data-auth-callback-state="working">
+          <h1>Freva sign-in</h1>
+          <p data-auth-callback-message role="status">Completing the sign-in.</p>
+          <p>
+            <a href={`${model.site.basePath}notebook/lab/`} data-auth-callback-link hidden>
+              Back to the notebook
+            </a>
+          </p>
+        </section>
+        <noscript>
+          <p>Signing in needs JavaScript.</p>
+        </noscript>
+        <PlaygroundCallbackEntry />
+      </body>
+    </html>
+  ) : (
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex, nofollow" />
+        <title>Python playground</title>
+      </head>
+      <body>
+        <p id="playground-status" role="status" hidden></p>
+        <div id="playground-root"></div>
+        <script
+          type="application/json"
+          id="playground-config"
+          is:inline
+          set:html={JSON.stringify(config).replaceAll("<", "\\u003c")}
+        />
+        <script
+          type="application/json"
+          id="playground-examples"
+          is:inline
+          set:html={JSON.stringify(playground.examples).replaceAll("<", "\\u003c")}
+        />
+        <noscript>
+          <p>This playground needs JavaScript. The portal's pages still work without it.</p>
+        </noscript>
+        <PlaygroundEntry />
+      </body>
+    </html>
+  )
+}

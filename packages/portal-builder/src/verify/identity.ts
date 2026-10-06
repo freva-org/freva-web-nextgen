@@ -147,6 +147,16 @@ const RULES: Rule[] = [
   { pointer: /^\/graph\/chunks\/\*\/modules\/\*$/, role: "moduleRef" },
   { pointer: /^\/graph\/modules\/\*$/, role: "moduleRef" },
   { pointer: /^\/graph\/copiedFiles\/\*$/, role: "artifactPath" },
+  { pointer: /^\/customisation\/stylesheet\/source$/, role: "sourcePath" },
+  { pointer: /^\/customisation\/stylesheet\/file$/, role: "artifactPath" },
+  { pointer: /^\/customisation\/stylesheet\/prunedRules\/\*\/selector$/, role: "text" },
+  { pointer: /^\/customisation\/stylesheet\/prunedRules\/\*\/features\/\*$/, role: "identifier" },
+  { pointer: /^\/customisation\/templates\/\*\/source$/, role: "sourcePath" },
+  { pointer: /^\/customisation\/templates\/\*\/(slot|parts\/\*)$/, role: "identifier" },
+  {
+    pointer: /^\/customisation\/templates\/\*\/emptyParts\/\*\/(part|feature)$/,
+    role: "identifier",
+  },
 
   // host-policy.json
   { pointer: /^\/mount\/canonicalUrl$/, role: "absoluteUrl" },

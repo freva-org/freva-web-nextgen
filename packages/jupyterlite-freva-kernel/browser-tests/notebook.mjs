@@ -267,10 +267,18 @@ try {
   await scenario("interrupt", async () => {
     await openNotebook(page, servers.notebook.url, "interrupt.ipynb");
     await menu(page, "Run", "Run All Cells");
-    await page.waitForFunction(() =>
-      document.querySelector(".jp-InputPrompt")?.textContent.includes("*"),
+    // The cell's own output, not its `[*]`: the interpreter starts with the first cell, and an
+    // interrupt sent while it is still starting cancels a cell that never ran. Firefox takes
+    // longer than a fixed wait to start it.
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector(".jp-Notebook .jp-CodeCell .jp-OutputArea")
+          ?.textContent.includes("waiting"),
+      null,
+      { timeout: 300_000 },
     );
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(500);
     await page.click('[data-command="notebook:interrupt-kernel"]');
     await kernelIdle(page, 30_000);
     const all = await cells(page);
@@ -288,7 +296,13 @@ try {
 
   await scenario("hard restart", async () => {
     await openNotebook(page, servers.notebook.url, "scratch.ipynb");
-    await setCell(page, 0, "kept = 1\nwhile True:\n    pass");
+    // Start the interpreter first, with a cell that finishes: the loop can print nothing to wait
+    // for (its output is flushed by a timer the loop never lets run), and an interrupt sent while
+    // the interpreter is still starting cancels a cell that never ran.
+    await setCell(page, 0, "kept = 1");
+    await page.keyboard.press("Control+Enter");
+    await kernelIdle(page, 300_000);
+    await setCell(page, 0, "while True:\n    pass");
     await page.keyboard.press("Control+Enter");
     await page.waitForTimeout(2000);
     await page.click('[data-command="notebook:interrupt-kernel"]');

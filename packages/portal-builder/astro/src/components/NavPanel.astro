@@ -223,8 +223,12 @@ const isCurrentSection = (href: string): boolean =>
                     href={page.href}
                     data-active={isCurrentPage(page.href) ? "true" : undefined}
                     aria-current={isCurrentPage(page.href) ? "page" : undefined}
+                    target={page.external ? "_blank" : undefined}
+                    rel={page.external ? "noopener noreferrer" : undefined}
                   >
                     {page.title}
+                    {page.external && <span class="portal-navpanel-ext" aria-hidden="true">↗</span>}
+                    {page.external && <span class="portal-visually-hidden"> (opens in a new tab)</span>}
                   </a>
                 </li>
               ),

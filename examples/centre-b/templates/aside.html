@@ -1,0 +1,6 @@
+<p class="site-aside-title"><strong>On this page</strong></p>
+<ul class="site-aside-list">
+  {% for heading in page.headings %}
+  <li><a href="{{ heading.href }}">{{ heading.text }}</a></li>
+  {% endfor %}
+</ul>

@@ -240,7 +240,7 @@ export const PYTHON_MATERIALS = preparedPythonMaterials();
 export async function buildFixture(
   root: string,
   outDir: string,
-  options: { pythonMaterials?: string } = {},
+  options: { pythonMaterials?: string; notebookDir?: string; skipNotebook?: boolean } = {},
 ): Promise<BuildResult> {
   return buildSite({
     sourceRoot: canonicalizeRoot(root),
@@ -251,5 +251,7 @@ export async function buildFixture(
     sourceDateEpoch: 1_760_000_000,
     ...(STAC_MATERIALS ? { stacMaterialsDir: STAC_MATERIALS } : {}),
     ...(options.pythonMaterials ? { pythonMaterialsDir: options.pythonMaterials } : {}),
+    ...(options.notebookDir ? { notebookDir: options.notebookDir } : {}),
+    ...(options.skipNotebook ? { skipNotebook: true } : {}),
   });
 }

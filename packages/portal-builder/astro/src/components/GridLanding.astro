@@ -1,0 +1,97 @@
+---
+/**
+ * A landing with `layout`: sections of a 12-column grid, one cell per block, each with its span at
+ * the base, md (768px) and lg (1100px) widths, its width, alignment and background. Blocks render
+ * through `Blocks.astro` one at a time, so their markup is the design's; only the first hero is the
+ * page's `h1`. A landingSectionShell template wraps each section, its `blocks` part being the grid.
+ */
+import type {
+  ResolvedBackground,
+  ResolvedBlock,
+  ResolvedLanding,
+  ResolvedPortalModel,
+  ResolvedRoute,
+} from "../../../src/model/types.js";
+import Blocks from "./Blocks.astro";
+
+interface Props {
+  model: ResolvedPortalModel;
+  landing: ResolvedLanding;
+  route: ResolvedRoute;
+}
+
+const { model, landing, route } = Astro.props;
+const DEFAULT = "_default";
+const declared = landing.layout?.sections ?? [];
+const sections = [{ id: DEFAULT } as (typeof declared)[number], ...declared]
+  .map((section) => ({
+    section,
+    blocks: landing.blocks.filter((block) => (block.placement?.section ?? DEFAULT) === section.id),
+  }))
+  .filter(({ blocks }) => blocks.length > 0);
+const firstHero = landing.blocks.find((block) => block.type === "hero");
+const background = (value?: ResolvedBackground) =>
+  value === undefined
+    ? {}
+    : "fill" in value
+      ? { "data-background": value.fill }
+      : { "data-portal-background": value.image };
+const cell = (block: ResolvedBlock) => ({
+  "data-span": block.placement?.span.base ?? 12,
+  "data-span-md": block.placement?.span.md ?? 12,
+  "data-span-lg": block.placement?.span.lg ?? 12,
+  "data-width": block.placement?.width,
+  "data-align": block.placement?.align,
+  ...background(block.placement?.background),
+});
+const shells = route.sectionShells ?? {};
+---
+
+<div class="portal-landing portal-grid-landing" data-part="landing" data-layout="grid" data-backdrop-tail={model.theme.backdropTail}>
+  {model.theme.backdrop === "contour" && <canvas class="portal-contour-stripes" aria-hidden="true" />}
+  {
+    sections.map(({ section, blocks }) => {
+      const grid = (
+        <div class="portal-grid">
+          {blocks.map((block) => (
+            <div class="portal-grid-cell" data-part="block" {...cell(block)}>
+              <Blocks
+                blocks={[block]}
+                eyebrow={block === firstHero ? model.site.subtitle : undefined}
+                components={model.enabledComponents}
+                services={model.services}
+                parts
+                firstHeroIsTitle={block === firstHero}
+              />
+            </div>
+          ))}
+        </div>
+      );
+      const shell = shells[section.id];
+      return (
+        <section
+          class="portal-grid-section"
+          data-part="landing-section"
+          data-section={section.id}
+          data-width={section.width}
+          data-align={section.align}
+          aria-label={section.heading}
+          {...background(section.background)}
+        >
+          {shell ? (
+            <div class="portal-section-shell" data-part="section-shell">
+              {shell.map((segment) =>
+                "html" in segment ? <Fragment set:html={segment.html} /> : segment.part === "blocks" ? grid : null,
+              )}
+            </div>
+          ) : (
+            <Fragment>
+              {section.heading && <h2 class="portal-block-heading portal-grid-heading">{section.heading}</h2>}
+              {grid}
+            </Fragment>
+          )}
+        </section>
+      );
+    })
+  }
+</div>

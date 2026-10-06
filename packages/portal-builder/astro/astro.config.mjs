@@ -22,6 +22,7 @@ export default defineConfig({
         "virtual:portal-theme.css": stub("empty.css"),
         "virtual:portal-code.css": stub("empty.css"),
         "virtual:portal-math.css": stub("empty.css"),
+        "virtual:portal-custom.css": stub("empty.css"),
         "virtual:portal-entry": stub("portal-model.ts"),
       },
     },

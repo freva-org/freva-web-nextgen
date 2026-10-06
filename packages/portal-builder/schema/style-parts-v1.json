@@ -1,0 +1,228 @@
+{
+  "$comment": "The public styling API of portal-style-v1, version 1. Everything a portal-style-v1 stylesheet may name is listed here; anything else is rejected. Adding an entry is a minor change; renaming or removing one needs a new version (docs/customisation.md, 'Versioning').",
+  "version": 1,
+  "profile": "portal-style-v1",
+  "parts": {
+    "skip-link": {
+      "description": "The 'Skip to main content' link.",
+      "protected": true
+    },
+    "header": {
+      "description": "The header landmark.",
+      "protected": true,
+      "containsProtected": true
+    },
+    "header-brand": {
+      "description": "The brand lockup: the home link."
+    },
+    "header-logo": {
+      "description": "The logo image inside the brand lockup."
+    },
+    "header-title": {
+      "description": "The site or institution name inside the brand lockup."
+    },
+    "header-nav": {
+      "description": "The header's navigation landmark: the tabs, the overflow menu and the small-screen menu button.",
+      "protected": true,
+      "containsProtected": true
+    },
+    "header-links": {
+      "description": "The list of header tabs."
+    },
+    "header-link": {
+      "description": "One header tab."
+    },
+    "nav-toggle": {
+      "description": "The small-screen menu button.",
+      "protected": true
+    },
+    "header-extra": {
+      "description": "The headerExtra slot's container."
+    },
+    "header-controls": {
+      "description": "The group holding search, the theme toggle and the account control.",
+      "containsProtected": true
+    },
+    "header-search": {
+      "description": "The documentation search button.",
+      "feature": "site-search"
+    },
+    "header-theme-toggle": {
+      "description": "The light/dark switch."
+    },
+    "header-auth": {
+      "description": "The account control.",
+      "feature": "auth",
+      "protected": true
+    },
+    "side-nav": {
+      "description": "The side navigation landmark (navigation.placement side or both).",
+      "protected": true
+    },
+    "side-nav-link": {
+      "description": "One entry of the side navigation."
+    },
+    "main": {
+      "description": "The main landmark.",
+      "protected": true
+    },
+    "landing": {
+      "description": "A landing page's content."
+    },
+    "landing-section": {
+      "description": "One section of a laid-out landing."
+    },
+    "section-shell": {
+      "description": "The landingSectionShell slot's container."
+    },
+    "block": {
+      "description": "One grid cell of a laid-out landing."
+    },
+    "block-hero": {
+      "description": "A hero block."
+    },
+    "block-prose": {
+      "description": "A prose block."
+    },
+    "block-cards": {
+      "description": "A cards block."
+    },
+    "block-links": {
+      "description": "A links block."
+    },
+    "block-callout": {
+      "description": "A callout block."
+    },
+    "block-component-link": {
+      "description": "A component-link block."
+    },
+    "block-component-search": {
+      "description": "A component-search block.",
+      "feature": "databrowser"
+    },
+    "block-dataset-tree": {
+      "description": "A dataset-tree block (its contents are the component's).",
+      "feature": "dataset-tree"
+    },
+    "card": {
+      "description": "One card or link entry in a cards or links block."
+    },
+    "button": {
+      "description": "An action button of a hero block."
+    },
+    "document": {
+      "description": "A content page's article."
+    },
+    "prose": {
+      "description": "Rendered Markdown or RST."
+    },
+    "prose-aside": {
+      "description": "The proseAside slot's container."
+    },
+    "footer": {
+      "description": "The footer landmark.",
+      "protected": true
+    },
+    "footer-index": {
+      "description": "The footer's site index, which unrolls at the end of a page."
+    },
+    "footer-top": {
+      "description": "The footerTop slot's container."
+    },
+    "footer-about": {
+      "description": "The institution's name and address."
+    },
+    "footer-groups": {
+      "description": "The container of the link groups."
+    },
+    "footer-group": {
+      "description": "One link group."
+    },
+    "footer-group-title": {
+      "description": "A link group's heading."
+    },
+    "footer-link": {
+      "description": "One link in the footer index."
+    },
+    "footer-columns": {
+      "description": "The footerColumns slot's container."
+    },
+    "footer-logos": {
+      "description": "The logo wall."
+    },
+    "footer-logo": {
+      "description": "One logo of the logo wall."
+    },
+    "footer-legal": {
+      "description": "The legal links."
+    },
+    "footer-prose": {
+      "description": "The footer prose."
+    },
+    "footer-bottom": {
+      "description": "The footerBottom slot's container."
+    },
+    "footer-bar": {
+      "description": "The collapsed footer bar, on screen on every page."
+    },
+    "footer-badge": {
+      "description": "The Freva badge in the footer bar.",
+      "feature": "footer-badge"
+    },
+    "footer-shortcuts": {
+      "description": "The bar's shortcut links."
+    },
+    "footer-institution": {
+      "description": "The institution's name in the bar."
+    }
+  },
+  "variants": {
+    "header": ["standard", "centered", "split", "compact", "minimal"],
+    "footer": ["columns", "stacked", "minimal", "bar-only"]
+  },
+  "states": {
+    "current": "A link to the page being shown.",
+    "external": "A link to another origin."
+  },
+  "themes": ["light", "dark"],
+  "tokens": {
+    "--portal-color-background": "--bg",
+    "--portal-color-surface": "--surface",
+    "--portal-color-surface-alt": "--surface-2",
+    "--portal-color-border": "--line",
+    "--portal-color-border-strong": "--line-2",
+    "--portal-color-text": "--ink",
+    "--portal-color-text-secondary": "--ink-2",
+    "--portal-color-text-muted": "--muted",
+    "--portal-color-accent": "--accent",
+    "--portal-color-accent-hover": "--accent-hi",
+    "--portal-color-accent-contrast": "--accent-ink",
+    "--portal-color-chrome": "--chrome-bg",
+    "--portal-color-chrome-text": "--chrome-ink",
+    "--portal-color-chrome-text-secondary": "--chrome-ink-2",
+    "--portal-color-chrome-border": "--chrome-line",
+    "--portal-color-footer": "--footer-bg",
+    "--portal-color-danger": "--danger",
+    "--portal-color-warning": "--warning",
+    "--portal-font-body": "--font-ui",
+    "--portal-font-heading": "--font-display",
+    "--portal-font-mono": "--font-mono",
+    "--portal-radius-small": "--r-6",
+    "--portal-radius-medium": "--r-10",
+    "--portal-radius-large": "--r-16",
+    "--portal-radius-pill": "--r-pill",
+    "--portal-shadow-card": "--shadow-card",
+    "--portal-shadow-panel": "--shadow-panel",
+    "--portal-content-width": "--content-max",
+    "--portal-shell-padding": "--shell-pad",
+    "--portal-header-height": "--header-h",
+    "--portal-footer-height": "--footer-h",
+    "--portal-type-scale": "--portal-type-scale",
+    "--portal-space-scale": "--portal-space-scale",
+    "--portal-border-width": "--portal-border-width"
+  },
+  "consumerClassPrefix": "site-",
+  "consumerPropertyPrefix": "--site-",
+  "layer": "portal-site",
+  "frameworkLayer": "portal-framework"
+}

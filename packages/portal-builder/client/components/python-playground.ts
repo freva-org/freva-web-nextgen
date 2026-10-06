@@ -20,7 +20,10 @@
 
 import { mountLayer, type Layer } from "../layers.js";
 import { adoptPlaygroundStyles } from "./python-playground-styles.js";
-import type { ChunkLoader } from "./python-chunks.js";
+import type { ChunkLoader, SessionChunk } from "./python-chunks.js";
+import { renderChooser } from "./session-chooser.js";
+import { NotebookTarget } from "../notebook-paths.js";
+import { lazyController } from "../lazy-controller.js";
 // TYPE-ONLY, both of them. An `import type` is erased entirely, so naming the window's and the
 // bridge's shapes here costs the bundle nothing: every VALUE from these packages arrives through
 // the dynamic `import()`s below.
@@ -30,6 +33,14 @@ import type { TerminalMenuSection, TerminalWindowHandle } from "@freva-org/freva
 // in any chunk; in the console's chunk it drags the whole interpreter back into the framed
 // parent's graph. The parent only needs to know a transcript was cut, which the message says.
 import type { BridgeOp, EmbeddedArtifact, PlaygroundHost } from "@freva-org/browser-python/embed";
+import type {
+  CheckpointStore,
+  SessionController,
+  SessionSetup,
+  SessionSnapshot,
+  Slot,
+  SlotBroker,
+} from "@freva-org/browser-python/session";
 // The shapes both halves agree on. The bridge holds them because both halves import the bridge.
 import type {
   EditedRunRequest,
@@ -160,6 +171,22 @@ interface Session {
   download(name: string): Promise<void>;
   focus(): void;
   dispose(): void;
+  /** Present with `sessionChoices`: the locked setup, telemetry, sleep and wake. */
+  lifecycle?: SessionLifecycle;
+}
+
+interface SessionLifecycle {
+  /** The setup this session locked, or `null` while it is still being chosen. */
+  setup(): SessionSetup | null;
+  /** A status sentence for the session's own state, or `""` when the console speaks for it. */
+  status(): string;
+  /** A telemetry line, or `null` when there is nothing live to measure here. */
+  resources?(): Promise<string | null>;
+  /** Whether sleep and wake are offered by the window (a framed session offers its own). */
+  canSleep?(): boolean;
+  canWake?(): boolean;
+  sleep?(): Promise<void>;
+  wake?(): Promise<void>;
 }
 
 /** Remember the window's appearance in this browser, when the portal asked us to. */
@@ -197,6 +224,36 @@ function appearanceStorage(remember: boolean) {
   };
 }
 
+/** The console element, as much of it as this module uses. */
+type ConsoleElement = HTMLElement & {
+  profile: string;
+  readyInfo: ReadyReport | null;
+  wheelhouseURL?: string;
+  addonBaseURL?: string;
+  addons?: readonly string[];
+  optionalAddons?: readonly string[];
+  persistCredentials?: boolean;
+  autoStart: boolean;
+  toolbarMode: "full" | "status" | "none";
+  hideFiles: boolean;
+  /** Injected by a session controller; unset while the session sleeps. */
+  engine?: unknown;
+  start(): Promise<void>;
+  execute(source: string): Promise<void>;
+  // `{ raised }` from a console that reports it; nothing from an older or stubbed one.
+  runExample(example: ExampleSource & { comment?: string }): Promise<Ran | void>;
+  transcript(): string;
+  focus(): void;
+  clear(): void;
+  clearHistory(): void;
+  restart(): Promise<void>;
+  dispose(): void;
+};
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function createPythonPlayground(
   config: PythonPlaygroundConfig,
   sources: ReadonlyMap<string, ExampleSource>,
@@ -217,6 +274,33 @@ export function createPythonPlayground(
   /** Digests by composed example id, so a press can be checked against what the build hashed. */
   const digests = new Map(config.examples.map((e) => [e.id, e.sha256] as const));
   const maxSessions = Math.max(1, Math.min(2, config.maxSessions));
+  // Session choices, telemetry and sleep exist only when configured.
+  const choices = config.sessionChoices ?? null;
+  const maxLive = Math.max(1, Math.min(maxSessions, config.maxLiveSessions ?? maxSessions));
+  let sessionChunk: Promise<SessionChunk> | null = null;
+  const loadSessionChunk = (): Promise<SessionChunk> =>
+    (sessionChunk ??= loadChunks()
+      .then((chunks) => chunks.loadSessions())
+      .catch((error: unknown) => {
+        sessionChunk = null;
+        throw error;
+      }));
+  /** The page's live slots, shared by its local sessions. */
+  let slots: Promise<SlotBroker> | null = null;
+  const pageSlots = (): Promise<SlotBroker> =>
+    (slots ??= loadSessionChunk().then(({ session }) =>
+      session.createSlotBroker({ capacity: maxLive }),
+    ));
+  let checkpoints: Promise<CheckpointStore | null> | null = null;
+  /** The active session's measured resources, for the status row. */
+  let telemetry = "";
+  let telemetryTimer: ReturnType<typeof setInterval> | null = null;
+  /** What "Open as notebook" opens: the example the visitor last ran, if that was one. */
+  const notebookTarget = new NotebookTarget();
+  /** Where the notebook is; a config that names only `playgroundOrigin` has it there. */
+  const notebookOrigin = config.notebookOrigin ?? config.playgroundOrigin;
+  /** The second origin's deployment, under the portal's base path. */
+  const playgroundBase = config.playgroundBase ?? "/";
 
   let layer: Layer | null = null;
   let win: TerminalWindowHandle | null = null;
@@ -257,8 +341,11 @@ export function createPythonPlayground(
   function renderStatusRow(): void {
     if (!statusRow || !statusLabelEl) return;
     const parts: string[] = [];
-    if (statusLine) parts.push(statusLine);
+    const own = sessions[active]?.lifecycle?.status() ?? "";
+    if (own) parts.push(own);
+    else if (statusLine) parts.push(statusLine);
     if (sessions.length > 1) parts.push(`${sessions.length} sessions`);
+    if (telemetry && !own) parts.push(telemetry);
     const text = parts.join(" · ");
     statusLabelEl.textContent = text;
     statusRow.hidden = text === "";
@@ -489,11 +576,15 @@ export function createPythonPlayground(
             // something will be asked; one line on hover says what.
             title: stowed
               ? stowedReason
-              : "Open a second, independent interpreter. It does not share variables, imports or " +
-                "files with the one you are in, and costs its own CPU and memory.",
+              : choices
+                ? "Choose a setup for a new, independent interpreter: the same as this one, or a " +
+                  "custom one. It costs its own CPU and memory."
+                : "Open a second, independent interpreter. It does not share variables, imports or " +
+                  "files with the one you are in, and costs its own CPU and memory.",
             disabled: stowed || sessions.length >= maxSessions,
-            onSelect: () => void addSession({ confirm: true }),
+            onSelect: () => newSession(),
           },
+          ...lifecycleRows(session, stowed, stowedReason),
           {
             label: "Restart session…",
             title: stowed
@@ -647,6 +738,143 @@ export function createPythonPlayground(
         ],
       },
     ];
+  }
+
+  /** Measure the active session every two seconds while the window is open. */
+  function startTelemetry(): void {
+    if (telemetryTimer || destroyed) return;
+    const tick = async (): Promise<void> => {
+      if (!win?.isShown() || win.isMinimized()) return;
+      const line = (await sessions[active]?.lifecycle?.resources?.().catch(() => null)) ?? null;
+      if (destroyed) return;
+      if ((line ?? "") !== telemetry) {
+        telemetry = line ?? "";
+        renderStatusRow();
+      }
+    };
+    telemetryTimer = setInterval(() => void tick(), 2_000);
+    void tick();
+  }
+
+  /** "+ New session": the chooser with session choices, the confirmation without. */
+  function newSession(): void {
+    if (!choices || sessions.length >= maxSessions) {
+      void addSession({ confirm: true });
+      return;
+    }
+    // A framed session's chooser lives in its own document, so the window opens the frame and
+    // the frame asks; a local one is asked here.
+    if (config.playgroundOrigin) {
+      void addSession({ confirm: false, choose: true }).then((session) =>
+        session?.start().catch((error: unknown) => announce(messageOf(error), "warn")),
+      );
+    } else void showChooser();
+  }
+
+  /** Sleep, wake and the notebook, for a session that offers them. */
+  function lifecycleRows(
+    session: Session | undefined,
+    stowed: boolean,
+    stowedReason: string,
+  ): TerminalMenuSection["items"] {
+    const rows: TerminalMenuSection["items"] = [];
+    const life = session?.lifecycle;
+    if (life?.sleep && life.canSleep) {
+      rows.push({
+        label: "Sleep session…",
+        title: stowed
+          ? stowedReason
+          : "Stop this interpreter to free its memory. The transcript and the files in " +
+            "/workspace are kept; Python variables and imports are lost.",
+        disabled: stowed || !life.canSleep(),
+        onSelect: () => {
+          if (!session) return;
+          void confirmDestructive({
+            title: `Put ${session.label} to sleep?`,
+            body:
+              "Its Python variables and imports will be lost. The transcript and the files in " +
+              "/workspace are kept, and waking it starts a fresh interpreter with the same setup.",
+            confirmLabel: "Sleep",
+          }).then((ok) => {
+            if (ok)
+              void life.sleep?.().catch((error: unknown) => announce(messageOf(error), "warn"));
+          });
+        },
+      });
+    }
+    if (life?.wake && life.canWake) {
+      rows.push({
+        label: "Wake session",
+        title: "Start a fresh interpreter with this session's setup and restore its files.",
+        disabled: !life.canWake(),
+        onSelect: () => {
+          void life.wake?.().catch((error: unknown) => announce(messageOf(error), "warn"));
+        },
+      });
+    }
+    if (config.notebook && notebookOrigin) {
+      rows.push({
+        label: "Open as notebook",
+        title: notebookTarget.hasExample
+          ? "Open the example you last ran as a notebook, in a new tab."
+          : "Open the notebook, in a new tab.",
+        onSelect: () => openNotebook(),
+      });
+    }
+    return rows;
+  }
+
+  /** The notebook on its origin, in a new tab, from the visitor's own click. */
+  function openNotebook(): void {
+    const origin = notebookOrigin as string;
+    const url = notebookTarget.url(`${origin}${playgroundBase.replace(/\/$/, "")}`);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  /** The local chooser, in the window's panel. */
+  async function showChooser(): Promise<void> {
+    if (!choices || !win) return;
+    let chunk: SessionChunk;
+    try {
+      chunk = await loadSessionChunk();
+    } catch (error) {
+      announce(`The session chooser could not be loaded: ${messageOf(error)}`, "warn");
+      return;
+    }
+    const body = openPanel("New session");
+    if (!body) return;
+    renderChooser(body, {
+      session: chunk.session,
+      policy: choices.policy,
+      current: sessions[active]?.lifecycle?.setup() ?? null,
+      liveSummary: async () => {
+        const broker = await pageSlots();
+        const held = await broker.held();
+        return `${held} of ${broker.capacity} in use${held >= broker.capacity ? " - put a session to sleep first" : ""}`;
+      },
+      start: async (setup) => {
+        if (sessions.length >= maxSessions) return `This page allows ${maxSessions} sessions.`;
+        // Reserved here, atomically, before the session exists: Start either gets a live slot
+        // or says why, and never leaves a session waiting for one.
+        const broker = await pageSlots();
+        const slot = await broker.reserve(`${idBase}-choose`);
+        if (!slot) {
+          // An idle session would have been put to sleep for it: every one is running code.
+          return (
+            `${chunk.session.slotsInUse(broker.capacity)} Wait for it to finish or stop it, ` +
+            "then start this one."
+          );
+        }
+        hideSheet();
+        const session = await addSession({ confirm: false, setup, slot });
+        if (!session) {
+          slot.release();
+          return "The session could not be opened.";
+        }
+        void session.start().catch((error: unknown) => announce(messageOf(error), "warn"));
+        return null;
+      },
+    });
   }
 
   /**
@@ -874,27 +1102,9 @@ export function createPythonPlayground(
   function showSheet(topic: keyof typeof SHEETS | string): void {
     // Built fresh for `packages`, because what it says depends on the interpreter that is running.
     const spec = topic === "packages" ? packageSheet() : SHEETS[topic];
-    if (!spec || !win) return;
-    hideSheet();
-
-    const panel = document.createElement("div");
-    panel.className = "portal-python-sheet";
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-modal", "false");
-    panel.setAttribute("aria-label", spec.title);
-
-    const head = document.createElement("div");
-    head.className = "portal-python-sheet-head";
-    const heading = document.createElement("h2");
-    heading.className = "portal-python-sheet-title";
-    heading.textContent = spec.title;
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "portal-python-sheet-close";
-    close.setAttribute("aria-label", "Close");
-    close.textContent = "\u00d7";
-    close.addEventListener("click", () => hideSheet());
-    head.append(heading, close);
+    if (!spec) return;
+    const body = openPanel(spec.title);
+    if (!body) return;
 
     const list = document.createElement("dl");
     list.className = "portal-python-sheet-keys";
@@ -907,11 +1117,6 @@ export function createPythonPlayground(
       description.textContent = meaning;
       list.append(term, description);
     }
-
-    // The head stays put and the BODY scrolls, so the title and its close button cannot scroll
-    // away with the rows. See `python-playground-styles.ts` for the rest of that layout.
-    const body = document.createElement("div");
-    body.className = "portal-python-sheet-body";
     body.append(list);
     if (spec.note) {
       const note = document.createElement("p");
@@ -928,6 +1133,39 @@ export function createPythonPlayground(
       link.textContent = spec.link.label;
       body.append(link);
     }
+  }
+
+  /**
+   * Open the window's panel with a title and a close button, and return its scrolling body - or
+   * `null` with no window. The help sheets and the session chooser share it.
+   */
+  function openPanel(title: string): HTMLElement | null {
+    if (!win) return null;
+    hideSheet();
+
+    const panel = document.createElement("div");
+    panel.className = "portal-python-sheet";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "false");
+    panel.setAttribute("aria-label", title);
+
+    const head = document.createElement("div");
+    head.className = "portal-python-sheet-head";
+    const heading = document.createElement("h2");
+    heading.className = "portal-python-sheet-title";
+    heading.textContent = title;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "portal-python-sheet-close";
+    close.setAttribute("aria-label", "Close");
+    close.textContent = "\u00d7";
+    close.addEventListener("click", () => hideSheet());
+    head.append(heading, close);
+
+    // The head stays put and the BODY scrolls, so the title and its close button cannot scroll
+    // away with the rows. See `python-playground-styles.ts` for the rest of that layout.
+    const body = document.createElement("div");
+    body.className = "portal-python-sheet-body";
     panel.append(head, body);
 
     sheet = panel;
@@ -955,6 +1193,7 @@ export function createPythonPlayground(
       cancelAnimationFrame(frame);
       document.removeEventListener("pointerdown", dismiss, true);
     };
+    return body;
   }
 
   function hideSheet(): boolean {
@@ -970,7 +1209,14 @@ export function createPythonPlayground(
 
   let sessionCount = 0;
 
-  async function addSession(options: { confirm: boolean }): Promise<Session | null> {
+  async function addSession(options: {
+    confirm: boolean;
+    /** With session choices: the chosen setup, and the slot reserved for it. */
+    setup?: SessionSetup;
+    slot?: Slot;
+    /** A framed session that opens on its own chooser. */
+    choose?: boolean;
+  }): Promise<Session | null> {
     if (destroyed) return null;
     if (sessions.length >= maxSessions) {
       announce(
@@ -1004,9 +1250,16 @@ export function createPythonPlayground(
     defineBrowserPythonConsole?.();
     sessionCount += 1;
     const session = config.playgroundOrigin
-      ? framedSession(sessionCount, config)
-      : localSession(sessionCount, config);
+      ? framedSession(sessionCount, config, options.choose === true)
+      : localSession(
+          sessionCount,
+          config,
+          choices
+            ? { setup: options.setup ?? choices.policy.defaults, slot: options.slot }
+            : undefined,
+        );
     sessions.push(session);
+    if (choices) startTelemetry();
 
     const index = sessions.length - 1;
     const tabId = `${idBase}-tab-${index}`;
@@ -1185,7 +1438,7 @@ export function createPythonPlayground(
       addTab.textContent = "+";
       addTab.addEventListener("click", () => {
         if (win?.isMinimized()) return;
-        void addSession({ confirm: true });
+        newSession();
       });
 
       // THE `+` IS OUTSIDE THE TABLIST, and that is not a detail. A `role="tablist"` may contain
@@ -1435,6 +1688,7 @@ export function createPythonPlayground(
     // Refused, and said out loud. A run control that silently does nothing is the hardest thing
     // to diagnose, and every reason this can produce means the page and its build disagree.
     if ("reason" in resolved) return refuse(resolved.reason);
+    notebookTarget.ranExample(digests.get(request.exampleId) ?? null);
     return inWindow((session) => session.runExample(request, resolved.example));
   }
 
@@ -1447,6 +1701,8 @@ export function createPythonPlayground(
     if (typeof request.source !== "string" || request.source.trim() === "") {
       return refuse("the edited snippet is empty");
     }
+    // Its source is the visitor's: no seed notebook holds it.
+    notebookTarget.ranOther();
     return inWindow((session) => {
       if (!session.runVisitorSource) {
         // Defence in depth: the build does not make a snippet editable when the interpreter is on
@@ -1507,6 +1763,8 @@ export function createPythonPlayground(
     },
     destroy(): void {
       destroyed = true;
+      if (telemetryTimer) clearInterval(telemetryTimer);
+      telemetryTimer = null;
       viewportListeners?.();
       viewportListeners = null;
       themeObserver?.disconnect();
@@ -1523,31 +1781,14 @@ export function createPythonPlayground(
 
   // session shapes
 
-  function localSession(index: number, cfg: PythonPlaygroundConfig): Session {
+  function localSession(
+    index: number,
+    cfg: PythonPlaygroundConfig,
+    controlled?: { setup: SessionSetup; slot?: Slot | undefined },
+  ): Session {
     const root = document.createElement("div");
     root.className = "portal-python-session";
-    const element = document.createElement("freva-python-console") as HTMLElement & {
-      profile: string;
-      readyInfo: ReadyReport | null;
-      wheelhouseURL?: string;
-      addonBaseURL?: string;
-      addons?: readonly string[];
-      optionalAddons?: readonly string[];
-      persistCredentials?: boolean;
-      autoStart: boolean;
-      toolbarMode: "full" | "status" | "none";
-      hideFiles: boolean;
-      start(): Promise<void>;
-      execute(source: string): Promise<void>;
-      // `{ raised }` from a console that reports it; nothing from an older or stubbed one.
-      runExample(example: ExampleSource & { comment?: string }): Promise<Ran | void>;
-      transcript(): string;
-      focus(): void;
-      clear(): void;
-      clearHistory(): void;
-      restart(): Promise<void>;
-      dispose(): void;
-    };
+    const element = document.createElement("freva-python-console") as ConsoleElement;
     element.setAttribute("profile", cfg.profile);
     // A deployment that mirrors the runtime says so here; without it the console uses the pinned
     // CDN, which is the package's own default and the one the policy names.
@@ -1624,6 +1865,10 @@ export function createPythonPlayground(
     });
     root.append(element);
 
+    if (choices && controlled) {
+      return controlledSession(index, root, element, cfg, controlled.setup, controlled.slot);
+    }
+
     let starting: Promise<void> | null = null;
     let ready = false;
 
@@ -1698,6 +1943,187 @@ export function createPythonPlayground(
   }
 
   /**
+   * A local session with a locked setup: its engines come from a session controller, which holds
+   * a live slot while the session has an interpreter and can put it to sleep. The console keeps
+   * its transcript throughout; while asleep it has no engine and takes no input.
+   */
+  function controlledSession(
+    index: number,
+    root: HTMLElement,
+    element: ConsoleElement,
+    cfg: PythonPlaygroundConfig,
+    setup: SessionSetup,
+    slot: Slot | undefined,
+  ): Session {
+    const policy = choices as NonNullable<typeof choices>;
+    // No input and no start until the controller attaches an engine: a console left to itself
+    // builds its own, outside the page's live slots. (`autostart` is a boolean attribute: its
+    // presence, whatever its value, starts the console when it is connected.)
+    element.removeAttribute("autostart");
+    element.inert = true;
+    let snapshot: SessionSnapshot | null = null;
+    let reserved = slot;
+    let label = `Session ${index}`;
+
+    const describe = (): string => {
+      const env = [setup.profile, ...setup.addons].join(" + ");
+      return setup.runStarter ? env : `${env}, no starter`;
+    };
+
+    // Built on first use; closing the console before that finishes constructs nothing (the slot
+    // reserved for it is given back once) - see lazy-controller.ts.
+    const lazy = lazyController<SessionController>({
+      load: () => Promise.all([loadSessionChunk(), pageSlots()]),
+      release: () => {
+        reserved?.release();
+        reserved = undefined;
+      },
+      close: (c) => void c.close(),
+      construct: (loaded) => {
+        const [chunk, broker] = loaded as [SessionChunk, SlotBroker];
+        const created = new chunk.session.SessionController({
+          id: `${idBase}-s${index}`,
+          setup,
+          policy: policy.fingerprint,
+          slots: broker,
+          ...(reserved ? { slot: reserved } : {}),
+          createEngine: (chosen) =>
+            chunk.createBrowserPython!({
+              profile: chosen.profile as never,
+              addons: chosen.addons as never,
+              optionalAddons: cfg.optionalAddons.filter((id) =>
+                chosen.addons.includes(id),
+              ) as never,
+              ...(cfg.runtimeIndexUrl ? { pyodide: { indexURL: cfg.runtimeIndexUrl } } : {}),
+              ...(cfg.wheelhouseUrl ? { wheelhouseURL: cfg.wheelhouseUrl } : {}),
+              ...(cfg.addonBaseUrl ? { addonBaseURL: cfg.addonBaseUrl } : {}),
+              ...(cfg.persistCredentials ? { persistCredentials: true } : {}),
+            }),
+          store: () => (checkpoints ??= chunk.session.openCheckpointStore()),
+          ...(cfg.initialSource
+            ? { starter: () => element.execute(cfg.initialSource as string) }
+            : {}),
+          attach: (engine) => {
+            element.engine = engine;
+            element.inert = false;
+          },
+          detach: (engine) => {
+            if (element.engine === engine) element.engine = undefined;
+            element.inert = true;
+          },
+          retainedBytes: () => new TextEncoder().encode(element.transcript()).length,
+        });
+        reserved = undefined;
+        created.onChange((next) => {
+          snapshot = next;
+          if (next.state === "busy" || next.state === "ready") statusState = next.state;
+          else if (next.state === "wake-error" || next.state === "crashed") statusState = "error";
+          else statusState = "loading";
+          win?.setMenuSections(menuSections());
+          publish();
+        });
+        return created;
+      },
+    });
+    const build = (): Promise<SessionController> => lazy.get();
+
+    const start = async (): Promise<void> => {
+      const c = await build();
+      if (c.state === "asleep" || c.state === "wake-error") {
+        await c.wake();
+        return;
+      }
+      publish("Starting Python…");
+      await c.start();
+    };
+
+    const status = (): string => {
+      if (!snapshot) return "";
+      const kept = snapshot.checkpoint
+        ? `${snapshot.checkpoint.files} file${snapshot.checkpoint.files === 1 ? "" : "s"} kept (${formatBytes(snapshot.checkpoint.bytes)})`
+        : "";
+      switch (snapshot.state) {
+        case "sleeping":
+          return `Saving files and stopping ${label}…`;
+        case "asleep":
+          return `${label} is asleep${kept ? ` · ${kept}` : ""} · Wake it from the ⋮ menu`;
+        case "waking":
+          return `Waking ${label}…`;
+        case "restoring":
+          return `Restoring ${label}'s files…`;
+        case "wake-error":
+          return snapshot.message ?? `${label} could not wake`;
+        default:
+          return snapshot.message && snapshot.state !== "ready" && snapshot.state !== "busy"
+            ? snapshot.message
+            : "";
+      }
+    };
+
+    return {
+      id: `local-${index}`,
+      get label() {
+        return label;
+      },
+      set label(value: string) {
+        label = value;
+      },
+      root,
+      start,
+      started: () => snapshot?.state === "ready" || snapshot?.state === "busy",
+      async runExample(_request, example) {
+        await start();
+        return element.runExample(example);
+      },
+      async runVisitorSource(title, source) {
+        await start();
+        return element.runExample({ title, source, comment: title });
+      },
+      transcript: () => element.transcript(),
+      artifacts: () => [],
+      ready: () => (element.readyInfo as ReadyReport | null) ?? null,
+      download: () => Promise.resolve(),
+      clearTranscript: () => element.clear(),
+      clearHistory: () => element.clearHistory(),
+      async restart() {
+        const c = await build();
+        publish("Restarting Python…");
+        if (c.state === "configured") await c.start();
+        else if (c.state === "asleep" || c.state === "wake-error") await c.wake();
+        else await c.restart();
+        publish("Python is ready");
+      },
+      focus: () => element.focus(),
+      dispose: () => {
+        lazy.dispose();
+        element.dispose();
+      },
+      lifecycle: {
+        setup: () => setup,
+        status,
+        resources: async () => {
+          const c = lazy.current();
+          if (!c) return null;
+          const sample = await c.resources();
+          if (!sample) return null;
+          const chunk = await loadSessionChunk();
+          return `${describe()} · ${chunk.session.describeResources(sample)}`;
+        },
+        canSleep: () => snapshot?.state === "ready",
+        canWake: () => snapshot?.state === "asleep" || snapshot?.state === "wake-error",
+        sleep: async () => {
+          const c = await build();
+          await c.sleep();
+        },
+        wake: async () => {
+          const c = await build();
+          await c.wake();
+        },
+      },
+    };
+  }
+
+  /**
    * A session that lives on the playground origin, driven through the two-origin bridge. The
    * frame's document is the DEPLOYMENT's, not this build's: it serves the interpreter, calls
    * `attachPlaygroundBridge` with its own registered-example registry, and answers a `run-example`
@@ -1705,7 +2131,7 @@ export function createPythonPlayground(
    * the name resolved. Transcript operations report `null` rather than pretending, because a Copy
    * button that silently copied nothing is a lie the visitor discovers when they paste.
    */
-  function framedSession(index: number, cfg: PythonPlaygroundConfig): Session {
+  function framedSession(index: number, cfg: PythonPlaygroundConfig, choose = false): Session {
     const root = document.createElement("div");
     root.className = "portal-python-session";
     const frame = document.createElement("iframe");
@@ -1725,6 +2151,24 @@ export function createPythonPlayground(
     // transcript on every change instead.
     let transcript: { text: string; truncated: boolean } | null = null;
     let files: EmbeddedArtifact[] = [];
+    // With session choices: what "Same as current" proposes to this frame's chooser, and the setup
+    // the frame reports it locked - each checked against this page's own policy.
+    const proposal = choose && choices ? (sessions[active]?.lifecycle?.setup() ?? null) : null;
+    let reported: SessionSetup | null = null;
+    /**
+     * The frame's address. The fragment never reaches a server: `scope` lets this page's frames
+     * share their live slots, `choose` opens the frame on its chooser.
+     */
+    const frameUrl = (search?: URLSearchParams): string => {
+      const url = new URL(`${cfg.playgroundOrigin as string}${playgroundBase}`);
+      if (search) url.search = search.toString();
+      if (choices) {
+        const hash = new URLSearchParams({ scope: idBase });
+        if (choose) hash.set("choose", "1");
+        url.hash = hash.toString();
+      }
+      return url.toString();
+    };
 
     // A readiness promise bound to ONE child session. `PlaygroundHost.runExample()` throws before
     // its handshake completes, by design - it has no session to address - so the wait is for
@@ -1769,6 +2213,27 @@ export function createPythonPlayground(
           sessionId = id;
           publish("Python is ready");
           armed.resolve();
+          if (proposal && choices) {
+            try {
+              bridge?.proposeSetup(
+                { ...proposal, addons: [...proposal.addons] },
+                choices.fingerprint,
+                id,
+              );
+            } catch {
+              // a frame that cannot take the proposal still offers the default setup
+            }
+          }
+        },
+        onSetup: (report) => {
+          if (!choices || report.policy !== choices.fingerprint) return;
+          void loadSessionChunk().then(({ session }) => {
+            const check = session.validateSetup(choices.policy, report.setup);
+            if (!check.ok) return;
+            reported = check.setup;
+            win?.setMenuSections(menuSections());
+            publish();
+          });
         },
         onInvalidated: (reason) => {
           sessionId = null;
@@ -1845,7 +2310,9 @@ export function createPythonPlayground(
       // them itself. See `emitPlaygroundArtifact` on the build side.
       async start() {
         publish("Connecting to the playground\u2026");
-        if (!frame.src) frame.src = `${cfg.playgroundOrigin as string}/`;
+        if (!frame.src) {
+          frame.src = choices ? frameUrl() : `${cfg.playgroundOrigin as string}${playgroundBase}`;
+        }
         await waitForChild();
       },
       started: () => sessionId !== null,
@@ -1900,12 +2367,12 @@ export function createPythonPlayground(
         } catch {
           // fall through to replacing the document
         }
-        const url = new URL(`${cfg.playgroundOrigin as string}/`);
+        const url = new URL(`${cfg.playgroundOrigin as string}${playgroundBase}`);
         url.searchParams.set("session", String(Date.now()));
         sessionId = null;
         transcript = null;
         files = [];
-        frame.src = url.toString();
+        frame.src = choices ? frameUrl(url.searchParams) : url.toString();
         await waitForChild();
       },
       focus: () => frame.focus(),
@@ -1913,6 +2380,22 @@ export function createPythonPlayground(
         if (!armed.settled) armed.reject(new Error("the session was closed"));
         void bridge?.stop();
       },
+      // The frame shows its own chooser, telemetry and sleep control; the window names the setup.
+      ...(choices
+        ? {
+            lifecycle: {
+              setup: () => reported,
+              status: () => "",
+              resources: () =>
+                Promise.resolve(
+                  reported
+                    ? [reported.profile, ...reported.addons].join(" + ") +
+                        (reported.runStarter ? "" : ", no starter")
+                    : null,
+                ),
+            },
+          }
+        : {}),
     };
   }
 }

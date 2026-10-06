@@ -26,8 +26,8 @@ import { sha256 } from "../util/package.js";
  */
 export const PROFILE_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   minimal: [],
-  "xarray-zarr": ["xarray", "zarr", "fsspec", "numcodecs", "micropip"],
-  "freva-client": ["xarray", "zarr", "fsspec", "numcodecs", "micropip", "pygments"],
+  "xarray-zarr": ["xarray", "zarr", "fsspec", "numcodecs", "cftime", "micropip"],
+  "freva-client": ["xarray", "zarr", "fsspec", "numcodecs", "cftime", "micropip", "pygments"],
 };
 
 /**

@@ -76,9 +76,30 @@ function initMenus(): void {
     if (!button || !panel) return;
     button.setAttribute("aria-expanded", "false");
     panel.hidden = true;
+    delete menu.dataset.portalHover;
   };
   const closeAll = (except?: HTMLElement): void => {
     for (const menu of menus) if (menu !== except) close(menu);
+  };
+  const place = (menu: HTMLElement, panel: HTMLElement): void => {
+    if (!menu.classList.contains("portal-nav-group")) return;
+    const box = menu.getBoundingClientRect();
+    const left = Math.min(box.left, window.innerWidth - panel.offsetWidth - 8);
+    panel.style.top = `${Math.round(box.bottom + 6)}px`;
+    panel.style.left = `${Math.round(Math.max(8, left))}px`;
+  };
+  const openMenu = (
+    menu: HTMLElement,
+    button: HTMLButtonElement,
+    panel: HTMLElement,
+    hover = false,
+  ): void => {
+    closeAll(menu);
+    if (hover) menu.dataset.portalHover = "true";
+    else delete menu.dataset.portalHover;
+    button.setAttribute("aria-expanded", "true");
+    panel.hidden = false;
+    place(menu, panel);
   };
 
   for (const menu of menus) {
@@ -87,12 +108,30 @@ function initMenus(): void {
     if (!button || !panel) continue;
     button.addEventListener("click", (event) => {
       event.stopPropagation();
-      const open = button.getAttribute("aria-expanded") === "true";
-      closeAll(menu);
-      button.setAttribute("aria-expanded", open ? "false" : "true");
-      panel.hidden = open;
+      if (button.getAttribute("aria-expanded") !== "true") openMenu(menu, button, panel);
+      else if (menu.dataset.portalHover === "true") delete menu.dataset.portalHover;
+      else close(menu);
+    });
+    if (!menu.classList.contains("portal-nav-group")) continue;
+    let leaving = 0;
+    menu.addEventListener("pointerenter", (event) => {
+      if (event.pointerType !== "mouse") return;
+      window.clearTimeout(leaving);
+      if (button.getAttribute("aria-expanded") !== "true") openMenu(menu, button, panel, true);
+    });
+    menu.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "mouse") return;
+      window.clearTimeout(leaving);
+      leaving = window.setTimeout(() => close(menu), 180);
     });
   }
+  window.addEventListener(
+    "resize",
+    () => {
+      for (const menu of menus) if (menu.classList.contains("portal-nav-group")) close(menu);
+    },
+    { passive: true },
+  );
 
   // Capture, so an inner handler that stops propagation cannot leave a menu open.
   document.addEventListener(
@@ -196,6 +235,11 @@ function initNavigation(): void {
         clone.className = "portal-panel-item";
         clone.setAttribute("role", "menuitem");
         morePanel.appendChild(clone);
+        for (const child of item.querySelectorAll<HTMLAnchorElement>(".portal-nav-dropdown a")) {
+          const sub = child.cloneNode(true) as HTMLAnchorElement;
+          sub.className = "portal-panel-item portal-panel-subitem";
+          morePanel.appendChild(sub);
+        }
       }
     },
   });

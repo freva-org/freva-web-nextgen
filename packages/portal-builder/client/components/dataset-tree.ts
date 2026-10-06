@@ -281,7 +281,10 @@ async function openInspector(
     );
     return;
   }
-  await loader({ url: node.inspect });
+  await loader({
+    url: node.inspect,
+    gridlook: host.dataset.portalDatasetTreeGridlook !== undefined,
+  });
 }
 
 /**

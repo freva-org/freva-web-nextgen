@@ -1,0 +1,46 @@
+/* Centre A: a portal-style-v1 stylesheet. Public tokens, parts and site-* classes only. */
+
+:root {
+  --portal-color-accent: #0b6e8a;
+  --portal-radius-large: 22px;
+}
+
+[data-theme="dark"] {
+  --portal-color-accent: #4fb3d1;
+  --portal-color-accent-contrast: #0b1117;
+}
+
+[data-part="header-title"] {
+  letter-spacing: 0.02em;
+}
+
+[data-part="block-hero"] {
+  padding-block: 24px;
+}
+
+[data-part="landing-section"]:nth-child(2) [data-part="card"] {
+  border-top: 4px solid var(--portal-color-accent);
+}
+
+[data-part="footer-logo"] {
+  filter: grayscale(1);
+}
+
+[data-part="footer-logo"]:hover {
+  filter: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-part="card"] {
+    transition: transform 0.2s ease;
+  }
+  [data-part="card"]:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media print {
+  [data-part="footer-logos"] {
+    display: none;
+  }
+}

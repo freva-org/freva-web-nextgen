@@ -30,6 +30,7 @@ export interface SearchEntry {
   x: string;
   /** Where the page sits: its section-navigation title, when it has one. */
   p?: string;
+  s?: string;
 }
 
 export interface SearchIndexDocument {
@@ -142,6 +143,7 @@ function containsHeading(node: Node): boolean {
 export function buildSearchIndex(
   routes: readonly ResolvedRoute[],
   basePath: string,
+  sectionOf?: (route: ResolvedRoute) => string | undefined,
 ): SearchIndexDocument {
   const base = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
   const entries: SearchEntry[] = [];
@@ -149,6 +151,7 @@ export function buildSearchIndex(
     if (route.kind !== "content" || !route.content) continue;
     const url = `${base}${route.path}`;
     const place = route.sectionNavigation?.title;
+    const group = sectionOf?.(route);
     const description = route.description ? `${route.description} ` : "";
     sectionsOf(route.content.html).forEach((section, index) => {
       entries.push({
@@ -159,10 +162,24 @@ export function buildSearchIndex(
         // The description leads the page's first entry: it is what the author said the page is.
         x: index === 0 ? collapse(`${description}${section.text}`) : section.text,
         ...(place && place !== route.title ? { p: place } : {}),
+        ...(group ? { s: group } : {}),
       });
     });
   }
   return { v: 1, entries };
+}
+
+export function searchFacets(document: SearchIndexDocument): { label: string; count: number }[] {
+  const pages = new Map<string, Set<string>>();
+  for (const entry of document.entries) {
+    if (!entry.s) continue;
+    const set = pages.get(entry.s) ?? new Set<string>();
+    set.add(entry.u);
+    pages.set(entry.s, set);
+  }
+  return [...pages]
+    .map(([label, set]) => ({ label, count: set.size }))
+    .sort((a, b) => b.count - a.count || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
 }
 
 /**

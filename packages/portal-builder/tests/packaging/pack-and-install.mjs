@@ -104,6 +104,9 @@ try {
       "client/components/stac.ts",
       "client/components/auth.ts",
       "client/components/auth-callback.ts",
+      // The shared sign-in callback, and the notebook origin's copy of it.
+      "client/auth-relay.ts",
+      "client/playground-auth-callback.ts",
       // Both imported literally by the generated entry module, so a tarball without them builds
       // a portal that cannot mount its own footer badge or draw its own backdrop.
       "client/components/footer-badge.ts",
@@ -233,11 +236,16 @@ try {
         .filter((d) => existsSync(join(REPO, "packages", d, "package.json")))
         .map((d) => [readPkg(join(REPO, "packages", d)).name, d]),
     );
-    // The builder's own workspace dependencies, and theirs in turn: npm installs all of them.
+    // The builder's own workspace dependencies, and theirs in turn: npm installs all of them. An
+    // optional peer (the JupyterLite packages, for the notebook) is not installed, so it is not
+    // taken from the registry either.
     const needed = new Set();
     const visit = (dir) => {
       const pkg = readPkg(dir);
-      for (const name of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) {
+      const peers = Object.keys(pkg.peerDependencies ?? {}).filter(
+        (name) => !pkg.peerDependenciesMeta?.[name]?.optional,
+      );
+      for (const name of [...Object.keys(pkg.dependencies ?? {}), ...peers]) {
         const d = workspaceDir.get(name);
         if (d && !needed.has(d)) {
           needed.add(d);
@@ -530,6 +538,8 @@ try {
       "test:browser",
       "test:browser:strict",
       "test:browser:python",
+      // Session choices, telemetry, sleep and the notebook, with a real interpreter.
+      "test:browser:sessions",
       // The two dataset-tree browser suites. A new browser suite has to be admitted by name, and
       // fails the packaging gate until it is: a pattern would also admit a published command
       // pointing at a file nobody ships.
@@ -554,6 +564,8 @@ try {
       "test:browser:announcements",
       // The per-mode page palette suite: the example portal on a white light page.
       "test:browser:paper",
+      // The customisation fixtures, examples/centre-a and examples/centre-b.
+      "test:browser:customisation",
       "test:security",
       "test:packaging",
       "cosmos:acceptance",

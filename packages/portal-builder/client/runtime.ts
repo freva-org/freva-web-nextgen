@@ -26,9 +26,9 @@ export interface StacRuntime {
 export interface AuthRuntime {
   id: string;
   authBaseUrl: string;
-  redirectUri: string;
   expectedIssuer?: string;
   allowedResourceOrigins: string[];
+  /** Site-relative (`/auth/callback/`); the redirect URI is this origin + `basePath` + it. */
   callbackPath: string;
   basePath: string;
 }

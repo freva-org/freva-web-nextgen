@@ -141,6 +141,10 @@
           "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)$",
           "description": "Serve the interpreter from THIS origin, in a frame, instead of the portal's own. Recommended for a public deployment: visitor Python and anything it installs otherwise run with the portal's origin authority. An exact origin, never a wildcard and never a path. HTTPS, with one exception: a loopback host over http, because that is what a development server and an acceptance run are - and a browser already treats loopback as a secure context, so the interpreter's own WebAssembly and crypto requirements are met there. Any other http origin is refused."
         },
+        "consoleInPage": {
+          "type": "boolean",
+          "description": "With `playgroundOrigin`: keep the console, the runnable snippets and the dataset trees' recipes in the portal's own pages, and use `playgroundOrigin` for the notebook only. Snippets can then be editable and recipes keep their run control (neither works across the separate-origin bridge, FP1227 and FP1217), and the in-page interpreter runs with the portal's origin authority again, under the portal's Content-Security-Policy. False by default. Without `playgroundOrigin` it changes nothing."
+        },
         "runtimeIndexUrl": {
           "type": "string",
           "pattern": "^(?:https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)(?:/[A-Za-z0-9._~-]+)*/$",
@@ -181,6 +185,269 @@
         "editableSnippets": {
           "type": "boolean",
           "description": "Make every runnable snippet editable in place: the block becomes an editor, Ctrl/Cmd+Enter runs it, Reset restores the author's code. False by default; one snippet can opt in with the fence word `editable` (```python try-in-python editable). Edited code is visitor input and runs like a cell typed at the prompt. Not available with `playgroundOrigin`, whose bridge carries no source: the build says so (FP1227) and leaves the snippets read-only."
+        },
+        "sessionChoices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profiles"],
+          "description": "Let a visitor choose each NEW session's setup - which profile, which of the allowed add-ons, and whether the starter code (`initialSource`) runs - from a closed list this deployment writes here. Absent, every session gets the one configured setup and nothing about sessions changes. Present, `+ New session` offers 'Same as current' or 'Custom setup' with a review step, the window shows each session's measured resources, and a session can be put to sleep: its transcript and committed /workspace files are kept, its Python variables are not. The configured `profile` and `addons` are the default setup and must be one of the choices. The prepared materials and the Content-Security-Policy cover every allowed setup.",
+          "properties": {
+            "profiles": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 3,
+              "propertyNames": {
+                "enum": ["minimal", "xarray-zarr", "freva-client"]
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "allowedAddons": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "enum": ["dask", "cartopy-natural-earth-110m"]
+                    },
+                    "description": "The curated add-ons a visitor may add to a session on this profile. Each must work with the profile."
+                  }
+                }
+              },
+              "description": "The profiles a visitor may choose, each with the add-ons allowed on it. Must include the configured `profile`."
+            },
+            "allowSkipStarter": {
+              "type": "boolean",
+              "description": "Whether a visitor may switch the starter code off for a session where it would run. False by default."
+            },
+            "starterProfiles": {
+              "type": "array",
+              "maxItems": 3,
+              "uniqueItems": true,
+              "items": {
+                "enum": ["minimal", "xarray-zarr", "freva-client"]
+              },
+              "description": "The profiles the starter code (`initialSource`) runs on - starter code written for xarray would fail on `minimal`. Defaults to the configured `profile`. Requires `initialSource`."
+            }
+          }
+        },
+        "notebook": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "description": "A JupyterLite notebook, on `playgroundOrigin` only, whose 'Freva Python' kernels are the allowed setups. Prepared with `freva-portal-builder prepare-notebook` and deployed beside the playground with its own Content-Security-Policy; the portal's pages are unchanged. The window menu gains 'Open as notebook'.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "The switch. Requires `playgroundOrigin`."
+            },
+            "seeds": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/localPath"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "\\.ipynb$"
+                  }
+                ]
+              },
+              "description": "Notebooks (nbformat 4) offered in the notebook's file list beside one per registered example, relative to this file and inside the source root. Validated when prepared and never run on import; a visitor's edits stay in their browser."
+            },
+            "assistant": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["climateclaw"],
+              "description": "An AI assistant in the notebook (requires `enabled`). The notebook then opens in a trimmed JupyterLab interface beside the Notebook interface, with jupyterlite-ai (installed pinned, with hashes, by `prepare-notebook`) and ClimateClaw as its provider.",
+              "properties": {
+                "climateclaw": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["host", "defaultModel"],
+                  "description": "ClimateClaw at a Freva instance. Visitors sign in with Freva in a popup; the notebook never navigates and the token stays in the page's memory.",
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "pattern": "^(?:https://[^/?#]+|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?)$",
+                      "description": "The Freva host's origin, e.g. https://freva.example.org. ClimateClaw is reached at {host}/api/chatbot, and the browser never sends `x-freva-rest-url` (the deployment's proxy sets it). HTTPS, except a loopback host over http (e.g. a local mock), which needs a loopback `playgroundOrigin` too."
+                    },
+                    "authBaseUrl": {
+                      "type": "string",
+                      "pattern": "^(?:https://|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])[:/])",
+                      "description": "The Freva auth API. Defaults to {host}/api/freva-nextgen/auth/v2; must be on the host's origin."
+                    },
+                    "expectedIssuer": {
+                      "type": "string",
+                      "pattern": "^https://[^\\s?#]+$",
+                      "maxLength": 2048,
+                      "description": "The identity provider's issuer (RFC 9207), exactly as its discovery document's `issuer`, e.g. https://keycloak.example.org/realms/Freva. Required when the provider sends `iss` with the authorization response (Keycloak does): without it such a sign-in is refused (`issuer-unexpected`); with it, a different `iss` is refused."
+                    },
+                    "defaultModel": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "The model preselected in the chat (one of ClimateClaw's `/availablechatbots`); the others are added to the model picker after sign-in."
+                    },
+                    "runAndFixModel": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "A fast model for 'Run & fix at DKRZ'. Defaults to `defaultModel`."
+                    },
+                    "scopeNote": {
+                      "type": "string",
+                      "maxLength": 2000,
+                      "description": "Prepended to the first message of every new thread and shown in the chat. It steers the assistant towards this portal's data; it does not restrict it - only the ClimateClaw deployment can (see the docs)."
+                    },
+                    "examples": {
+                      "type": "array",
+                      "maxItems": 24,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["title", "prompt"],
+                        "properties": {
+                          "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000
+                          }
+                        }
+                      },
+                      "description": "Example questions: the Examples menu and one slash command each."
+                    },
+                    "previewOrigin": {
+                      "type": "string",
+                      "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]+)?$",
+                      "description": "Where ClimateClaw shows the files code saves (its `CLIMATECLAW_PROJECT_WEBSITE`), when not on the Freva host, e.g. https://gems.dkrz.de. A figure saved with savefig is fetched from there (and may be shown from there) in the notebook. Default: the host."
+                    },
+                    "hideCodeByDefault": {
+                      "type": "boolean",
+                      "description": "Start with 'Hide code' on (outputs and figures are still shown)."
+                    }
+                  }
+                }
+              }
+            },
+            "dataPanel": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tree"],
+              "description": "A '<site> data' panel in the notebook (requires `enabled`): one of this portal's dataset-tree blocks, with actions to open a dataset's registered Python access examples in a new notebook, insert them, inspect the store, ask ClimateClaw (with `assistant`) and copy its URL or code.",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60,
+                  "description": "The panel's name. Defaults to \"<site title> data\"."
+                },
+                "icon": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/localPath"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "\\.svg$"
+                    }
+                  ],
+                  "description": "An SVG icon for the panel and the launcher cards, relative to this file. Checked when prepared: no script, event handler, foreign object or external reference."
+                },
+                "tree": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]+-[0-9]+$",
+                  "description": "The dataset-tree landing block to show, by its instance id `<landing id>-<block index>` (e.g. `home-2`). The panel uses the block's own source: its catalogue, or its S3 roots and search index."
+                },
+                "defaultAction": {
+                  "type": "string",
+                  "enum": [
+                    "open-in-notebook",
+                    "insert",
+                    "inspect",
+                    "ask-climateclaw",
+                    "copy-url",
+                    "copy-code"
+                  ],
+                  "description": "The panel's primary action: its labelled button, and Ctrl/Cmd+Enter on a row. Default `open-in-notebook`."
+                },
+                "seedNotebooks": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "uniqueItems": true,
+                  "items": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/localPath"
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\.ipynb$"
+                      }
+                    ]
+                  },
+                  "description": "Example notebooks for the 'Example notebooks' card: published read-only under `examples/`; opening one copies it into the visitor's files."
+                },
+                "startNotebook": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/localPath"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "\\.ipynb$"
+                    }
+                  ],
+                  "description": "A notebook the Lab opens when it starts, in place of the Launcher: published like a seed notebook, copied once into the visitor's files (their copy is what opens afterwards), with its saved outputs shown as they are."
+                },
+                "gridlook": {
+                  "type": "boolean",
+                  "description": "Show a store on GridLook's 3D globe (Inspect's '3D Viewer' tab, and 'View on globe'), in a sandboxed frame from https://gridlook.pages.dev, which the notebook's policy then allows in `frame-src`. Only stores readable without a token are shown: GridLook fetches the store itself and never gets a credential. Default false."
+                },
+                "launcher": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Which launcher cards to show (all on by default; 'Ask ClimateClaw' needs `assistant`, 'Example notebooks' needs `seedNotebooks`).",
+                  "properties": {
+                    "newNotebook": {
+                      "type": "boolean"
+                    },
+                    "browse": {
+                      "type": "boolean"
+                    },
+                    "examples": {
+                      "type": "boolean"
+                    },
+                    "ask": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Page-wide resource limits.",
+          "properties": {
+            "maxLiveSessions": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2,
+              "description": "How many sessions may hold a live interpreter at once; a sleeping session holds none. Defaults to `maxSessions`. Two is the ceiling."
+            }
+          }
         },
         "terminal": {
           "type": "object",
@@ -313,6 +580,11 @@
         },
         "description": {
           "$ref": "#/$defs/text"
+        },
+        "notebook": {
+          "type": "string",
+          "enum": ["lab", "files"],
+          "description": "The portal's notebook on `playgroundOrigin`: `lab` opens its JupyterLab interface (with the assistant and the data panel), `files` its file list. Requires `pythonPlayground.notebook.enabled`; `lab` also needs `notebook.assistant` or `notebook.dataPanel`."
         }
       },
       "oneOf": [
@@ -329,6 +601,15 @@
           "properties": {
             "component": {
               "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["notebook"],
+          "properties": {
+            "notebook": {
+              "type": "string",
+              "enum": ["lab", "files"]
             }
           }
         },
@@ -380,6 +661,34 @@
                   "description": "The search field's placeholder. Default `Search the documentation`."
                 }
               }
+            },
+            "variant": {
+              "enum": ["standard", "centered", "split", "compact", "minimal"],
+              "description": "The header's registered layout."
+            },
+            "sticky": {
+              "type": "boolean",
+              "default": true,
+              "description": "false: the header scrolls away with the page."
+            },
+            "transparentOverHero": {
+              "type": "boolean",
+              "default": false,
+              "description": "On a landing, the header has no fill until the page scrolls, and the hero runs under it."
+            },
+            "logo": {
+              "$ref": "#/$defs/imageWithVariants",
+              "description": "The header's own logo, replacing site.identity.logo in the brand lockup."
+            },
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 6,
+              "uniqueItems": true,
+              "items": {
+                "enum": ["brand", "links", "navToggle", "search", "themeToggle", "auth"]
+              },
+              "description": "The order of the header's parts, and which are shown. navToggle must be listed; auth must be listed whenever auth is enabled; links may be left out only when navigation.placement shows the side panel; links and navToggle, when both are listed, are next to each other."
             }
           }
         },
@@ -465,8 +774,93 @@
                   "enum": ["auto", "standard"],
                   "default": "standard",
                   "description": "'standard', the default, pins the badge's motion assets to the 1x set, which is what a small footer bird needs and keeps the on-demand animation near 1.65 MB. 'auto' lets the badge pick 1x or 2x from the display's density and the visitor's data preference."
+                },
+                "email": {
+                  "description": "The contact address in the badge's panel. false removes the contact button; an address replaces freva@dkrz.de, for example with the site's own support address.",
+                  "oneOf": [
+                    {
+                      "const": false
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^[^@\\s<>\"'&]+@[^@\\s<>\"'&]+\\.[^@\\s<>\"'&]+$",
+                      "maxLength": 254
+                    }
+                  ]
                 }
               }
+            },
+            "variant": {
+              "enum": ["columns", "stacked", "minimal", "bar-only"],
+              "description": "columns (the default) and stacked lay the index out; minimal keeps only the about, legal and prose sections; bar-only has no index."
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "description": "Columns of the footer index at wide widths (columns variant)."
+            },
+            "logos": {
+              "type": "array",
+              "maxItems": 12,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["src", "alt"],
+                "properties": {
+                  "src": {
+                    "$ref": "#/$defs/localImage"
+                  },
+                  "alt": {
+                    "$ref": "#/$defs/text"
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "An internal path or https:// URL, checked like every link."
+                  }
+                }
+              },
+              "description": "A logo wall in the footer index: funders, partners, members."
+            },
+            "order": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "enum": ["about", "groups", "logos", "legal", "prose"]
+              },
+              "description": "The order of the footer index's sections. A section left out is not shown."
+            }
+          }
+        },
+        "slots": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "portal-template-v1 templates for named slots (schema/slots-v1.json). Restricted markup, rendered at build time and sanitized; see docs/customisation.md.",
+          "properties": {
+            "headerBrand": {
+              "$ref": "#/$defs/localPath"
+            },
+            "headerExtra": {
+              "$ref": "#/$defs/localPath"
+            },
+            "footerTop": {
+              "$ref": "#/$defs/localPath"
+            },
+            "footerColumns": {
+              "$ref": "#/$defs/localPath"
+            },
+            "footerBottom": {
+              "$ref": "#/$defs/localPath"
+            },
+            "landingSectionShell": {
+              "$ref": "#/$defs/localPath"
+            },
+            "proseAside": {
+              "$ref": "#/$defs/localPath"
             }
           }
         }
@@ -492,6 +886,49 @@
             "tail": {
               "enum": ["full", "short", "none"],
               "description": "The empty scene after the last landing block, before the footer. `full` (the default): about a third of the ocean band, and at least two screens of page, so the story ends on the ocean. `short`: 96px. `none`: the page ends at the last block. With `short` and `none` the page is only as long as its content and the scene compresses to fit it."
+            }
+          }
+        },
+        "fonts": {
+          "type": "array",
+          "maxItems": 16,
+          "description": "Local WOFF2 font files, published as content-hashed same-origin files and declared with @font-face. Nothing is fetched from a third party.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["family", "src"],
+            "properties": {
+              "family": {
+                "$ref": "#/$defs/fontFamilyName"
+              },
+              "weight": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+                "default": 400
+              },
+              "style": {
+                "enum": ["normal", "italic"],
+                "default": "normal"
+              },
+              "src": {
+                "$ref": "#/$defs/localPath",
+                "description": "A .woff2 file under the source root."
+              }
+            }
+          }
+        },
+        "stylesheet": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "path"],
+          "description": "A restricted local stylesheet, parsed and enforced by the builder (docs/customisation.md). It styles the public parts only and can never enable a feature.",
+          "properties": {
+            "profile": {
+              "const": "portal-style-v1"
+            },
+            "path": {
+              "$ref": "#/$defs/localPath"
             }
           }
         }
@@ -537,6 +974,44 @@
         },
         "dark": {
           "$ref": "#/$defs/themeModeTokens"
+        },
+        "fontBody": {
+          "$ref": "#/$defs/fontFamilyName",
+          "description": "Body and interface text."
+        },
+        "fontHeading": {
+          "$ref": "#/$defs/fontFamilyName",
+          "description": "Headings and display text."
+        },
+        "fontMono": {
+          "$ref": "#/$defs/fontFamilyName",
+          "description": "Code."
+        },
+        "typeScale": {
+          "enum": ["small", "regular", "large", "x-large"],
+          "description": "Multiplies body, prose and heading sizes: 0.93, 1, 1.07, 1.15."
+        },
+        "spaceScale": {
+          "enum": ["tight", "regular", "loose"],
+          "description": "Spacing of landing sections, grid gaps and cards: 0.75, 1, 1.35."
+        },
+        "contentWidth": {
+          "type": "integer",
+          "minimum": 640,
+          "maximum": 2400,
+          "description": "The page column, in CSS pixels. Default 1440."
+        },
+        "radius": {
+          "enum": ["none", "small", "regular", "large"],
+          "description": "Corner radii across the shell: 0, half, the design's, 1.5 times."
+        },
+        "borderWidth": {
+          "enum": ["none", "regular", "thick"],
+          "description": "Rule width of cards, sections and the chrome bars: 0, 1px, 2px."
+        },
+        "shadow": {
+          "enum": ["none", "soft", "regular", "strong"],
+          "description": "Elevation of cards and panels, both colour modes unless a mode block sets its own."
         }
       }
     },
@@ -559,6 +1034,10 @@
         },
         "colorBorder": {
           "$ref": "#/$defs/color"
+        },
+        "shadow": {
+          "enum": ["none", "soft", "regular", "strong"],
+          "description": "This colour mode's elevation."
         }
       }
     },
@@ -1184,7 +1663,7 @@
         "header": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/link"
+            "$ref": "#/$defs/headerLink"
           },
           "maxItems": 24
         },
@@ -1194,8 +1673,79 @@
             "$ref": "#/$defs/link"
           },
           "maxItems": 24
+        },
+        "placement": {
+          "enum": ["header", "side", "both"],
+          "default": "header",
+          "description": "Where the site navigation renders at wide widths: the header tabs, a side panel built from the same outline, or both. Narrow widths always keep the header's menu."
+        },
+        "pager": {
+          "type": "boolean",
+          "default": false,
+          "description": "Previous and next links at the end of every content page, in the order of navigation.header: an entry, then its `links` or its section's pages."
         }
       }
+    },
+    "headerLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "description": "A header tab. With `links` it is also a dropdown: the tab goes to its own target, the caret beside it opens the list.",
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/text"
+        },
+        "landing": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "component": {
+          "$ref": "#/$defs/instanceId"
+        },
+        "href": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "links": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["landing"],
+          "properties": {
+            "landing": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["component"],
+          "properties": {
+            "component": {
+              "$ref": "#/$defs/instanceId"
+            }
+          }
+        },
+        {
+          "required": ["href"],
+          "properties": {
+            "href": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        }
+      ]
     },
     "announcement": {
       "type": "object",
@@ -1259,6 +1809,37 @@
       "$comment": "An overview block key: a facet key, or `__time` / `__bbox` for the two blocks that are not facets. Both are ordered in the same flow as the facets, so a deployment that wants the map first can say so without a second option.",
       "type": "string",
       "pattern": "^(__time|__bbox|[a-z][a-z0-9_]{0,63})$"
+    },
+    "fontFamilyName": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9 -]{0,62}[A-Za-z0-9]$",
+      "description": "A font family name: letters, digits, spaces and hyphens. Rendered quoted, ahead of the design's own fallback stack."
+    },
+    "localImage": {
+      "$ref": "#/$defs/localPath",
+      "description": "A local image (svg, png, jpg, webp, avif or gif) under the source root. Published as a content-hashed same-origin file; SVG through the sanitizer."
+    },
+    "imageWithVariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["src"],
+      "properties": {
+        "src": {
+          "$ref": "#/$defs/localImage"
+        },
+        "light": {
+          "$ref": "#/$defs/localImage",
+          "description": "Shown in the light colour mode instead of src."
+        },
+        "dark": {
+          "$ref": "#/$defs/localImage",
+          "description": "Shown in the dark colour mode instead of src."
+        },
+        "alt": {
+          "$ref": "#/$defs/text",
+          "description": "Alternative text. Without it the image is decorative and the surrounding control carries the name."
+        }
+      }
     }
   }
 }

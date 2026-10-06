@@ -13,6 +13,8 @@
  */
 
 import type { TerminalWindowHandle, TerminalWindowOptions } from "@freva-org/freva-client-terminal";
+import type { createBrowserPython } from "@freva-org/browser-python";
+import type * as SessionModule from "@freva-org/browser-python/session";
 
 export interface Chunks {
   createTerminalWindow: (
@@ -21,6 +23,16 @@ export interface Chunks {
   ) => TerminalWindowHandle;
   /** Absent in framed mode: there is no local console in that document to define. */
   defineBrowserPythonConsole?: () => void;
+  /**
+   * The session module, fetched only by a portal with `sessionChoices`. Local mode also gets the
+   * engine factory, because a session controller creates the engines its console is given.
+   */
+  loadSessions: () => Promise<SessionChunk>;
+}
+
+export interface SessionChunk {
+  session: typeof SessionModule;
+  createBrowserPython?: typeof createBrowserPython;
 }
 
 /**

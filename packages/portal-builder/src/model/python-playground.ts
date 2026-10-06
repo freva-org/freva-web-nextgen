@@ -18,12 +18,23 @@ import {
   ADDONS,
   DEFAULT_PYODIDE_INDEX_URL,
   PROFILES,
+  profileNeedsPackageIndex,
   supportsOptional,
 } from "@freva-org/browser-python";
+import {
+  canonicalJson,
+  policyFingerprint,
+  type SessionPolicy,
+} from "@freva-org/browser-python/session";
+import { createHash } from "node:crypto";
 import { isRefusedPackageOrigin, resolvePackagePolicy } from "./package-policy.js";
 import type { DiagnosticBag, Diagnostic } from "../diagnostics.js";
 import type { RawPythonPlaygroundBase } from "../config/types.js";
-import type { PlaygroundSettings } from "./types.js";
+import type {
+  NotebookAssistantSettings,
+  NotebookDataPanelSettings,
+  PlaygroundSettings,
+} from "./types.js";
 
 /** Where a diagnostic about a playground stanza points. */
 export interface PlaygroundWhere {
@@ -249,8 +260,13 @@ export function resolvePlaygroundSettings(
   }
   connectOrigins.sort();
 
+  // The console's origin: `playgroundOrigin`, unless `consoleInPage` keeps it in the portal's
+  // pages and leaves that origin to the notebook - only when there is a notebook to leave it to.
+  const notebookWanted = raw.notebook?.enabled === true && Boolean(raw.playgroundOrigin);
+  const consoleOrigin =
+    raw.consoleInPage === true && notebookWanted ? undefined : raw.playgroundOrigin;
   const persistCredentials = raw.persistCredentials === true;
-  if (persistCredentials && !raw.playgroundOrigin) {
+  if (persistCredentials && !consoleOrigin) {
     // A recommendation, not a refusal - but said out loud, every time. What is persisted is a
     // refresh token in browser storage, readable by any same-origin script, including anything a
     // visitor manages to execute at the prompt. The curated environment keeps "anything" small,
@@ -264,13 +280,38 @@ export function resolvePlaygroundSettings(
         hint:
           "What is stored is a refresh token, in browser storage, readable by any same-origin " +
           "script - including anything a visitor runs at the prompt. Give the playground its own " +
-          "origin with playgroundOrigin, or leave persistCredentials off.",
+          "origin with playgroundOrigin (without consoleInPage), or leave persistCredentials off.",
       },
     );
   }
 
+  const sessionChoices = resolveSessionChoices(raw, profile, addons, where, bag);
+  const maxSessions = raw.maxSessions ?? 2;
+  if (raw.notebook?.enabled && !raw.playgroundOrigin) {
+    bag.error("FP1235", "The notebook needs the playground's own origin.", {
+      ...at(where, "/notebook/enabled"),
+      hint:
+        "The notebook runs only on `playgroundOrigin`, under its own Content-Security-Policy, so " +
+        "the portal's pages keep theirs. Set `playgroundOrigin`, or leave the notebook off.",
+    });
+  }
+
+  const notebookOn = raw.notebook?.enabled === true && Boolean(raw.playgroundOrigin);
+  if (raw.consoleInPage === true && !notebookOn) {
+    bag.warn("FP1238", "`consoleInPage` changes nothing here: there is no notebook to move.", {
+      ...at(where, "/consoleInPage"),
+      hint:
+        "It keeps the console in the portal's pages while the notebook uses `playgroundOrigin`. " +
+        "Without the notebook and `playgroundOrigin`, remove it.",
+    });
+  }
+  const notebookAssistant = resolveNotebookAssistant(raw, notebookOn, where, bag);
+  const notebookDataPanel = resolveNotebookDataPanel(raw, notebookOn, where, bag);
+
   return {
     profile,
+    ...(notebookAssistant ? { notebookAssistant } : {}),
+    ...(notebookDataPanel ? { notebookDataPanel } : {}),
     // Derived from the same three fields the policy is written from, so the help panel and the
     // `connect-src` a browser enforces cannot say different things about one deployment.
     packagePolicy: resolvePackagePolicy(
@@ -281,15 +322,19 @@ export function resolvePlaygroundSettings(
       },
       DEFAULT_PYODIDE_INDEX_URL,
       network,
-      profile,
+      policyProfile(profile, sessionChoices?.policy),
     ),
     network,
     autostart: raw.autostart ?? "never",
-    maxSessions: raw.maxSessions ?? 2,
+    maxSessions,
+    maxLiveSessions: Math.min(maxSessions, raw.resources?.maxLiveSessions ?? maxSessions),
+    notebook: notebookOn,
+    ...(sessionChoices ? { sessionChoices } : {}),
     addons,
     optionalAddons,
     ...(raw.initialSource ? { initialSource: raw.initialSource } : {}),
-    ...(raw.playgroundOrigin ? { playgroundOrigin: raw.playgroundOrigin } : {}),
+    ...(consoleOrigin ? { playgroundOrigin: consoleOrigin } : {}),
+    ...(notebookOn && raw.playgroundOrigin ? { notebookOrigin: raw.playgroundOrigin } : {}),
     ...(raw.controls ? { controls: raw.controls } : {}),
     ...(raw.editableSnippets ? { editableSnippets: true } : {}),
     ...(raw.runtimeIndexUrl ? { runtimeIndexUrl: raw.runtimeIndexUrl } : {}),
@@ -303,6 +348,314 @@ export function resolvePlaygroundSettings(
       rememberAppearance: raw.terminal?.rememberAppearance ?? true,
     },
   };
+}
+
+function fingerprintOf(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex").slice(0, 16);
+}
+
+function isLoopback(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+/**
+ * `notebook.assistant.climateclaw`: only with the notebook on, a host that is an HTTPS origin (or,
+ * for a local notebook, a loopback one) and an auth API on that origin (the bearer is sent to the
+ * host only).
+ */
+function resolveNotebookAssistant(
+  raw: RawPythonPlaygroundBase,
+  notebookOn: boolean,
+  where: PlaygroundWhere,
+  bag: DiagnosticBag,
+): NotebookAssistantSettings | undefined {
+  const stanza = raw.notebook?.assistant?.climateclaw;
+  if (!stanza) return undefined;
+  const base = "/notebook/assistant/climateclaw";
+  if (!notebookOn) {
+    bag.error("FP1236", "The notebook assistant needs the notebook.", {
+      ...at(where, "/notebook/assistant"),
+      hint: "Set `notebook.enabled: true` (with `playgroundOrigin`), or remove `assistant`.",
+    });
+    return undefined;
+  }
+  let host: string;
+  try {
+    const url = new URL(stanza.host);
+    const local = url.protocol === "http:" && isLoopback(url.hostname);
+    if ((url.protocol !== "https:" && !local) || url.origin !== stanza.host.replace(/\/+$/, ""))
+      throw new Error();
+    host = url.origin;
+  } catch {
+    bag.error("FP1236", `'${stanza.host}' is not an HTTPS origin.`, {
+      ...at(where, `${base}/host`),
+      hint:
+        "Give the Freva host as an origin only, e.g. https://freva.example.org " +
+        "(or http://localhost:<port> for a local mock).",
+    });
+    return undefined;
+  }
+  // A loopback host is a developer's own machine: only a local notebook may point there.
+  if (new URL(host).protocol === "http:") {
+    let localNotebook = false;
+    try {
+      localNotebook = isLoopback(new URL(raw.playgroundOrigin ?? "").hostname);
+    } catch {
+      // No playground origin: the notebook check above has already said so.
+    }
+    if (!localNotebook) {
+      bag.error("FP1236", `The loopback host '${host}' is for local development only.`, {
+        ...at(where, `${base}/host`),
+        hint: "Use it with a loopback `playgroundOrigin` (http://localhost:<port>), never a public one.",
+      });
+      return undefined;
+    }
+  }
+  const authBaseUrl = (stanza.authBaseUrl ?? `${host}/api/freva-nextgen/auth/v2`).replace(
+    /\/+$/,
+    "",
+  );
+  try {
+    if (new URL(authBaseUrl).origin !== host) throw new Error();
+  } catch {
+    bag.error("FP1236", "`authBaseUrl` must be on the Freva host's origin.", {
+      ...at(where, `${base}/authBaseUrl`),
+      hint: "The sign-in token is sent to the Freva host only; a second origin would receive it too.",
+    });
+    return undefined;
+  }
+  const examples = stanza.examples ?? [];
+  const titles = new Set<string>();
+  for (const [index, example] of examples.entries()) {
+    const key = example.title.trim().toLowerCase();
+    if (titles.has(key)) {
+      bag.error("FP1236", `Two examples are both called '${example.title}'.`, {
+        ...at(where, `${base}/examples/${index}/title`),
+        hint: "Each example becomes a menu item and a slash command named after its title.",
+      });
+    }
+    titles.add(key);
+  }
+  const resolved = {
+    host,
+    authBaseUrl,
+    ...(stanza.expectedIssuer ? { expectedIssuer: stanza.expectedIssuer } : {}),
+    defaultModel: stanza.defaultModel,
+    ...(stanza.runAndFixModel ? { runAndFixModel: stanza.runAndFixModel } : {}),
+    ...(stanza.scopeNote ? { scopeNote: stanza.scopeNote } : {}),
+    examples: examples.map((e) => ({ title: e.title.trim(), prompt: e.prompt.trim() })),
+    ...(stanza.previewOrigin ? { previewOrigin: stanza.previewOrigin } : {}),
+    hideCodeByDefault: stanza.hideCodeByDefault === true,
+  };
+  return { ...resolved, fingerprint: fingerprintOf(resolved) };
+}
+
+/**
+ * `notebook.dataPanel`, apart from the tree it names and its files: the resolver, which knows
+ * the landing blocks and the source root, checks those.
+ */
+function resolveNotebookDataPanel(
+  raw: RawPythonPlaygroundBase,
+  notebookOn: boolean,
+  where: PlaygroundWhere,
+  bag: DiagnosticBag,
+): NotebookDataPanelSettings | undefined {
+  const stanza = raw.notebook?.dataPanel;
+  if (!stanza) return undefined;
+  if (!notebookOn) {
+    bag.error("FP1237", "The notebook's data panel needs the notebook.", {
+      ...at(where, "/notebook/dataPanel"),
+      hint: "Set `notebook.enabled: true` (with `playgroundOrigin`), or remove `dataPanel`.",
+    });
+    return undefined;
+  }
+  const askWanted = stanza.launcher?.ask !== false;
+  const resolved = {
+    ...(stanza.title ? { title: stanza.title } : {}),
+    ...(stanza.icon ? { icon: stanza.icon } : {}),
+    tree: stanza.tree,
+    defaultAction: stanza.defaultAction ?? "open-in-notebook",
+    seedNotebooks: [...(stanza.seedNotebooks ?? [])],
+    ...(stanza.startNotebook ? { startNotebook: stanza.startNotebook } : {}),
+    gridlook: stanza.gridlook === true,
+    launcher: {
+      newNotebook: stanza.launcher?.newNotebook !== false,
+      browse: stanza.launcher?.browse !== false,
+      examples: stanza.launcher?.examples !== false,
+      ask: askWanted && Boolean(raw.notebook?.assistant),
+    },
+  };
+  if (stanza.defaultAction === "ask-climateclaw" && !raw.notebook?.assistant) {
+    bag.error(
+      "FP1237",
+      "The data panel's default action asks ClimateClaw, but there is no assistant.",
+      {
+        ...at(where, "/notebook/dataPanel/defaultAction"),
+        hint: "Configure `notebook.assistant.climateclaw`, or choose another default action.",
+      },
+    );
+  }
+  return { ...resolved, fingerprint: fingerprintOf(resolved) };
+}
+
+/**
+ * `sessionChoices`, validated: every profile a real one, every add-on curated and compatible with
+ * its profile, the configured setup among the choices, and the starter only where it can run.
+ */
+function resolveSessionChoices(
+  raw: RawPythonPlaygroundBase,
+  profile: string,
+  addons: readonly string[],
+  where: PlaygroundWhere,
+  bag: DiagnosticBag,
+): { policy: SessionPolicy; fingerprint: string } | undefined {
+  const choices = raw.sessionChoices;
+  if (!choices) return undefined;
+  const base = "/sessionChoices";
+  const profiles: Record<string, { allowedAddons: string[] }> = {};
+  for (const [name, entry] of Object.entries(choices.profiles ?? {})) {
+    if (!(PROFILES as readonly string[]).includes(name)) {
+      bag.error("FP1219", `'${name}' is not a profile @freva-org/browser-python offers.`, {
+        ...at(where, `${base}/profiles/${name}`),
+        hint: `Available: ${PROFILES.join(", ")}.`,
+      });
+      continue;
+    }
+    const allowed: string[] = [];
+    for (const [index, id] of (entry?.allowedAddons ?? []).entries()) {
+      const description = ADDON_CATALOGUE[id as keyof typeof ADDON_CATALOGUE];
+      if (!description) {
+        bag.error("FP1219", `'${id}' is not a curated add-on.`, {
+          ...at(where, `${base}/profiles/${name}/allowedAddons/${index}`),
+          hint: `Available: ${ADDONS.join(", ")}.`,
+        });
+      } else if (!(description.profiles as readonly string[]).includes(name)) {
+        bag.error("FP1219", `The '${id}' add-on does not work with the '${name}' profile.`, {
+          ...at(where, `${base}/profiles/${name}/allowedAddons/${index}`),
+          hint: `It is available on: ${description.profiles.join(", ")}.`,
+        });
+      } else if (!allowed.includes(id)) allowed.push(id);
+    }
+    profiles[name] = { allowedAddons: allowed.sort() };
+  }
+  if (!profiles[profile]) {
+    bag.error("FP1219", `sessionChoices does not offer the configured profile '${profile}'.`, {
+      ...at(where, `${base}/profiles`),
+      hint: "The configured profile and add-ons are the default setup, so they must be a choice.",
+    });
+  } else {
+    for (const [index, id] of addons.entries()) {
+      if (profiles[profile].allowedAddons.includes(id)) continue;
+      bag.error(
+        "FP1219",
+        `The configured add-on '${id}' is not allowed on '${profile}' in sessionChoices.`,
+        {
+          ...at(where, `/addons/${index}`),
+          hint: `Add it to sessionChoices.profiles.${profile}.allowedAddons, or remove it from addons.`,
+        },
+      );
+    }
+  }
+  const starter = Boolean(raw.initialSource);
+  if (choices.starterProfiles && !starter) {
+    bag.error("FP1219", "sessionChoices.starterProfiles is set, but there is no initialSource.", {
+      ...at(where, `${base}/starterProfiles`),
+      hint: "starterProfiles says where the starter code runs; without initialSource there is none.",
+    });
+  }
+  const starterProfiles: string[] = [];
+  for (const [index, name] of (choices.starterProfiles ?? (starter ? [profile] : [])).entries()) {
+    if (!profiles[name]) {
+      bag.error("FP1219", `starterProfiles names '${name}', which sessionChoices does not offer.`, {
+        ...at(where, `${base}/starterProfiles/${index}`),
+      });
+    } else if (!starterProfiles.includes(name)) starterProfiles.push(name);
+  }
+  starterProfiles.sort();
+  const notebook = raw.notebook?.enabled === true && Boolean(raw.playgroundOrigin);
+  const policy: SessionPolicy = {
+    profiles,
+    starter,
+    starterProfiles: starter ? starterProfiles : [],
+    allowSkipStarter: choices.allowSkipStarter === true,
+    notebook,
+    defaults: {
+      profile,
+      addons: [...addons].sort(),
+      runStarter: starter && starterProfiles.includes(profile),
+      frontend: "console",
+    },
+  };
+  return { policy, fingerprint: policyFingerprint(policy) };
+}
+
+/**
+ * The session policy every front end validates against: the configured one, or the single setup a
+ * portal without `sessionChoices` has.
+ */
+export function sessionPolicyOf(settings: PlaygroundSettings): SessionPolicy {
+  if (settings.sessionChoices) return settings.sessionChoices.policy;
+  const starter = Boolean(settings.initialSource);
+  return {
+    profiles: { [settings.profile]: { allowedAddons: [...settings.addons].sort() } },
+    starter,
+    starterProfiles: starter ? [settings.profile] : [],
+    allowSkipStarter: false,
+    notebook: settings.notebook,
+    defaults: {
+      profile: settings.profile,
+      addons: [...settings.addons].sort(),
+      runStarter: starter,
+      frontend: "console",
+    },
+  };
+}
+
+/** The starter choices a profile offers: on, off, or both when a visitor may skip it. */
+export function starterRuns(policy: SessionPolicy, profile: string): boolean[] {
+  const applies = policy.starter && policy.starterProfiles.includes(profile);
+  if (!applies) return [false];
+  return policy.allowSkipStarter ? [true, false] : [true];
+}
+
+/** Every profile a session may run, the configured one first. */
+export function allowedProfiles(
+  settings: Pick<PlaygroundSettings, "profile" | "sessionChoices">,
+): string[] {
+  const others = Object.keys(settings.sessionChoices?.policy.profiles ?? {}).filter(
+    (name) => name !== settings.profile,
+  );
+  return [settings.profile, ...others.sort()];
+}
+
+/** Every add-on any allowed setup may load: what the materials and the policy must cover. */
+export function allowedAddons(
+  settings: Pick<PlaygroundSettings, "addons" | "sessionChoices">,
+): string[] {
+  const all = new Set(settings.addons);
+  for (const entry of Object.values(settings.sessionChoices?.policy.profiles ?? {})) {
+    for (const id of entry.allowedAddons) all.add(id);
+  }
+  return [...all].sort();
+}
+
+/**
+ * The profile whose network needs the page's policy must cover: one that installs from a package
+ * index if any allowed profile does, else the configured one.
+ */
+export function policyProfile(profile: string, policy: SessionPolicy | undefined): string {
+  const names = [profile, ...Object.keys(policy?.profiles ?? {})];
+  return names.find((name) => profileNeedsPackageIndex(name)) ?? profile;
+}
+
+/**
+ * The separate origin a playground deploys to, if any: the console's, or - with `consoleInPage` -
+ * the notebook's alone. One child artifact serves either.
+ */
+export function secondOrigin(
+  settings: Pick<PlaygroundSettings, "playgroundOrigin" | "notebookOrigin"> | undefined,
+): string | undefined {
+  return settings?.playgroundOrigin ?? settings?.notebookOrigin;
 }
 
 /**
@@ -326,6 +679,7 @@ export function playgroundIdentity(settings: PlaygroundSettings): Record<string,
     addons: [...settings.addons].sort().join(","),
     initialSource: settings.initialSource ?? null,
     playgroundOrigin: settings.playgroundOrigin ?? null,
+    notebookOrigin: settings.notebookOrigin ?? null,
     runtimeIndexUrl: settings.runtimeIndexUrl ?? null,
     wheelhouseUrl: settings.wheelhouseUrl ?? null,
     addonBaseUrl: settings.addonBaseUrl ?? null,
@@ -334,6 +688,13 @@ export function playgroundIdentity(settings: PlaygroundSettings): Record<string,
     "terminal.osControls": settings.terminal.osControls,
     "terminal.alwaysOnTop": settings.terminal.alwaysOnTop,
     "terminal.rememberAppearance": settings.terminal.rememberAppearance,
+    // The choice policy is one page-wide decision too: a page has one chooser and one CSP.
+    sessionChoices: settings.sessionChoices?.fingerprint ?? null,
+    notebook: settings.notebook,
+    maxLiveSessions: settings.maxLiveSessions,
+    // What the notebook carries is the page's too: one notebook site per portal.
+    notebookAssistant: settings.notebookAssistant?.fingerprint ?? null,
+    notebookDataPanel: settings.notebookDataPanel?.fingerprint ?? null,
   };
 }
 

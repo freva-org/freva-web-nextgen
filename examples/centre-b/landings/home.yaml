@@ -1,0 +1,69 @@
+schemaVersion: 1
+title: Centre B Observatory
+description: A landing with the search first, a wide start and a narrow middle.
+layout:
+  sections:
+    - id: about
+      heading: About the observatory
+      width: narrow
+    - id: themes
+      heading: Themes
+      width: wide
+      background: surface
+blocks:
+  - type: component-search
+    heading: Search observations
+    component: data
+    placeholder: Station, variable or campaign
+    submitLabel: Search
+    flavour: freva
+    span: { md: 5 }
+  - type: hero
+    heading: Observations and model output, side by side
+    summary: Centre B runs coastal stations and publishes their records with matching model output.
+    span: { md: 7 }
+    actions:
+      - label: Methods
+        href: /docs/methods/
+      - label: Sea level records
+        intent: select-facet
+        component: data
+        facets:
+          variable: zos
+  - type: prose
+    section: about
+    source: ../content/_fragments/about.md
+  - type: callout
+    section: about
+    level: tip
+    heading: Station records
+    body: Every station page links its raw and quality-controlled records.
+  - type: cards
+    section: themes
+    span: { md: 6, lg: 3 }
+    items:
+      - title: Coast
+        summary: Tide gauges and wave buoys.
+        href: /docs/methods/
+  - type: cards
+    section: themes
+    span: { md: 6, lg: 3 }
+    items:
+      - title: Air
+        summary: Surface meteorology.
+        href: /docs/
+  - type: cards
+    section: themes
+    span: { md: 6, lg: 3 }
+    items:
+      - title: Land
+        summary: Soil moisture and run-off.
+        href: /docs/
+  - type: links
+    section: themes
+    span: { md: 6, lg: 3 }
+    items:
+      - label: Daily station archive
+        intent: open-dataset
+        component: data
+        dataset: centre-b-stations-daily

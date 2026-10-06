@@ -1,0 +1,516 @@
+/*
+ * The customisation layouts: header variants and item order, the side navigation, footer
+ * variants, the logo wall, the slot containers and the 12-column landing grid. Linked only on a
+ * portal that uses a customisation option; every other portal gets an empty stylesheet in its
+ * place. Each `var()` falls back to the value the design uses, so an unset token changes nothing.
+ */
+
+/* Light and dark variants of one image: the one for the other mode is not shown. */
+:root[data-theme="dark"] [data-portal-theme-only="light"],
+:root:not([data-theme="dark"]) [data-portal-theme-only="dark"] {
+  display: none;
+}
+
+/*
+ * The account control and the menu button paint above anything a portal-style-v1 stylesheet can
+ * position: consumer z-index stops at 10 and nothing of the consumer's is fixed to the viewport, so
+ * a neighbour's shadow, outline or positioned box cannot be drawn over either control.
+ */
+[data-part="header-auth"],
+[data-part="nav-toggle"] {
+  position: relative;
+  z-index: 11;
+}
+
+/* Header: logo images and the item-ordered arrangement. */
+
+.portal-brand-mark:has(.portal-logo-img) {
+  display: flex;
+  align-items: center;
+  width: auto;
+  min-width: 30px;
+  background: none;
+}
+.portal-logo-img {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 180px;
+  object-fit: contain;
+}
+/* A logo that carries the name: on a phone the lockup's text gives way to it. */
+@media (max-width: 719px) {
+  .portal-brand-mark:has(.portal-logo-img) + .portal-brand-text {
+    display: none;
+  }
+}
+.portal-header-extra {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* Links left out of `chrome.header.items`: the menu button still carries every destination. */
+.portal-nav-list[data-portal-links="hidden"],
+.portal-nav-list[data-portal-links="hidden"] ~ .portal-more {
+  display: none !important;
+}
+.portal-nav:has(> .portal-nav-list[data-portal-links="hidden"]) {
+  flex: 0 0 auto;
+}
+/*
+ * Without the tabs the menu button is the header's way to the sections at every width, so it
+ * stays shown where the island would hide it above the phone breakpoint. Keyed on `data-theme`,
+ * which only the inline script sets: without JavaScript the button could not open anything, and
+ * the no-script list stands in for it.
+ */
+:root[data-theme]
+  .portal-nav:has(> .portal-nav-list[data-portal-links="hidden"])
+  .portal-compact-button[hidden] {
+  display: inline-flex !important;
+}
+
+/* Header variants. Heights are tokens, so the page's clearance follows the header. */
+
+:root[data-portal-header="compact"] {
+  --header-h: 54px;
+  --header-h-scrolled: 46px;
+}
+.portal-header[data-variant="compact"] .portal-brand-tagline,
+.portal-header[data-variant="minimal"] .portal-brand-tagline {
+  display: none;
+}
+.portal-header[data-variant="minimal"] {
+  border-bottom-color: transparent;
+}
+.portal-header[data-variant="minimal"] .portal-header-divider {
+  display: none;
+}
+.portal-header[data-variant="split"] .portal-nav,
+.portal-header[data-variant="split"] .portal-nav-list {
+  justify-content: center;
+}
+@media (min-width: 720px) {
+  :root[data-portal-header="centered"] {
+    --header-h: 116px;
+    --header-h-scrolled: 100px;
+  }
+  .portal-header[data-variant="centered"] {
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: center;
+    row-gap: 6px;
+  }
+  .portal-header[data-variant="centered"] .portal-brand {
+    flex: 1 0 100%;
+    justify-content: center;
+    max-width: none;
+  }
+  .portal-header[data-variant="centered"] .portal-nav,
+  .portal-header[data-variant="centered"] .portal-nav-list {
+    justify-content: center;
+  }
+}
+
+/* A header that scrolls away with the page instead of staying on screen. */
+:root[data-portal-sticky="false"] .portal-header {
+  position: absolute;
+}
+
+/*
+ * Transparent over the landing hero until the page scrolls. Keyed on `data-theme`, which only the
+ * inline theme script sets: without JavaScript nothing tracks the scroll, so the header keeps its
+ * own background rather than staying transparent over the content.
+ */
+:root[data-theme][data-portal-overlay="hero"] .portal-main {
+  padding-top: 0;
+}
+:root[data-theme][data-portal-overlay="hero"] .portal-landing {
+  padding-top: calc(var(--header-h) + clamp(28px, 4vw, 56px) * var(--portal-space-scale, 1));
+}
+:root[data-theme][data-portal-overlay="hero"] .portal-header[data-scrolled="false"] {
+  --chrome-ink: var(--ink);
+  --chrome-ink-2: var(--ink-2);
+  --chrome-muted: var(--muted);
+  --chrome-chip: color-mix(in srgb, var(--ink) 7%, transparent);
+  --chrome-chip-hi: color-mix(in srgb, var(--ink) 13%, transparent);
+  --chrome-line: transparent;
+  --chrome-line-hi: var(--line-2);
+  background: transparent;
+}
+
+/* Side navigation: a column at wide viewports; narrower, the header menu carries the sections. */
+
+.portal-sidenav {
+  display: none;
+}
+@media (min-width: 1100px) {
+  :root[data-portal-nav="side"] .portal-shell:not([data-view="application"]),
+  :root[data-portal-nav="both"] .portal-shell:not([data-view="application"]) {
+    --portal-sidenav-w: 15rem;
+  }
+  .portal-shell:not([data-view="application"]) .portal-sidenav {
+    display: block;
+    position: fixed;
+    top: var(--header-h);
+    bottom: var(--footer-h);
+    left: 0;
+    z-index: 30;
+    width: var(--portal-sidenav-w);
+    padding: 24px 14px;
+    overflow-y: auto;
+    background: var(--bg);
+    border-right: 1px solid var(--line);
+  }
+  .portal-shell:not([data-view="application"]) .portal-sidenav ~ .portal-announcements,
+  .portal-shell:not([data-view="application"]) .portal-sidenav ~ .portal-main {
+    margin-left: var(--portal-sidenav-w);
+  }
+  /* `side`: the column is the navigation, so the header drops its tabs. */
+  :root[data-portal-nav="side"] .portal-shell:not([data-view="application"]) .portal-nav-list,
+  :root[data-portal-nav="side"] .portal-shell:not([data-view="application"]) .portal-more {
+    display: none;
+  }
+}
+.portal-sidenav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.portal-sidenav-link {
+  display: block;
+  padding: 8px 12px;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--r-8) var(--r-8) 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  text-decoration: none;
+}
+.portal-sidenav-link:hover {
+  background: var(--chip);
+  color: var(--ink);
+}
+.portal-sidenav-link[data-state="current"] {
+  border-left-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Footer variants, the logo wall and the footer slots. */
+
+.portal-footer-groups {
+  display: contents;
+}
+@media (min-width: 768px) {
+  .portal-footer[data-columns="1"] .portal-footer-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .portal-footer[data-columns="2"] .portal-footer-inner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .portal-footer[data-columns="3"] .portal-footer-inner {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .portal-footer[data-columns="4"] .portal-footer-inner {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .portal-footer[data-columns="5"] .portal-footer-inner {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .portal-footer[data-columns="6"] .portal-footer-inner {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+.portal-footer[data-variant="stacked"] .portal-footer-inner {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  text-align: center;
+}
+.portal-footer[data-variant="stacked"] :is(.portal-footer-legal, .portal-footer-logos) {
+  justify-content: center;
+}
+.portal-footer[data-variant="minimal"] .portal-footer-inner-wrap {
+  padding-top: 18px;
+  padding-bottom: 16px;
+}
+.portal-footer-logos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px 32px;
+  max-width: var(--content-max);
+  margin: 22px auto 0;
+  padding: 0;
+  list-style: none;
+}
+.portal-footer-logo img {
+  display: block;
+  height: 40px;
+  width: auto;
+  max-width: 168px;
+  object-fit: contain;
+}
+.portal-footer-logo a {
+  display: block;
+  border-radius: var(--r-6);
+}
+.portal-footer-slot {
+  max-width: var(--content-max);
+  margin: 0 auto 18px;
+  color: var(--footer-text);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.portal-footer-slot:last-child {
+  margin: 18px auto 0;
+}
+.portal-footer-slot a {
+  color: var(--footer-strong);
+}
+.portal-footer-slot :is(p, ul, ol, address) {
+  margin: 0 0 6px;
+}
+.portal-footer-slot address {
+  font-style: normal;
+}
+.portal-footer-slot :is(ul, ol) {
+  padding: 0;
+  list-style: none;
+}
+
+/* Slot containers in the page. */
+
+.portal-prose-aside {
+  margin-top: 32px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-12);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.portal-slot-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The landing grid. */
+
+.portal-grid-landing {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.portal-grid-section {
+  max-width: var(--content-max);
+  margin: 0 auto calc(clamp(28px, 3.4vw, 56px) * var(--portal-space-scale, 1));
+  padding: 0 var(--shell-pad);
+}
+.portal-grid-section[data-width="narrow"] {
+  max-width: 52rem;
+}
+.portal-grid-section[data-width="wide"] {
+  max-width: calc(var(--content-max) + 240px);
+}
+.portal-grid-section[data-width="full"] {
+  max-width: none;
+}
+.portal-grid-section[data-background] {
+  padding-top: calc(clamp(24px, 3vw, 48px) * var(--portal-space-scale, 1));
+  padding-bottom: calc(clamp(24px, 3vw, 48px) * var(--portal-space-scale, 1));
+}
+.portal-grid-section[data-align="center"],
+.portal-grid-cell[data-align="center"] {
+  text-align: center;
+}
+.portal-grid-section[data-align="end"],
+.portal-grid-cell[data-align="end"] {
+  text-align: end;
+}
+:is(.portal-grid-section, .portal-grid-cell)[data-align="center"]
+  :is(.portal-hero-heading, .portal-hero-text, .portal-grid-heading) {
+  margin-left: auto;
+  margin-right: auto;
+}
+:is(.portal-grid-section, .portal-grid-cell)[data-align="center"]
+  :is(.portal-hero-actions, .portal-chips) {
+  justify-content: center;
+}
+:is(.portal-grid-section, .portal-grid-cell)[data-align="end"]
+  :is(.portal-hero-heading, .portal-hero-text, .portal-grid-heading) {
+  margin-left: auto;
+}
+:is(.portal-grid-section, .portal-grid-cell)[data-align="end"]
+  :is(.portal-hero-actions, .portal-chips) {
+  justify-content: flex-end;
+}
+[data-background="surface"] {
+  background: var(--surface);
+}
+[data-background="accent"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+}
+.portal-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: calc(clamp(16px, 2vw, 32px) * var(--portal-space-scale, 1));
+  align-items: start;
+}
+.portal-grid-cell {
+  grid-column: span 12;
+  min-width: 0;
+}
+.portal-grid-cell[data-background] {
+  padding: clamp(16px, 2vw, 28px);
+  border-radius: var(--r-16);
+}
+.portal-grid-cell[data-width="narrow"] > * {
+  max-width: 40rem;
+}
+.portal-grid-cell[data-width="content"] > * {
+  max-width: 64rem;
+}
+.portal-grid-cell[data-align="center"] > * {
+  margin-left: auto;
+  margin-right: auto;
+}
+.portal-grid-cell[data-align="end"] > * {
+  margin-left: auto;
+}
+.portal-grid-cell .portal-hero-row {
+  padding: 0;
+}
+.portal-grid-cell
+  :is(
+    .portal-hero,
+    .portal-search-block,
+    .portal-content-block,
+    .portal-cards,
+    .portal-links,
+    .portal-feature-link
+  ) {
+  margin-bottom: 0;
+}
+.portal-grid-cell[data-span="1"] {
+  grid-column: span 1;
+}
+.portal-grid-cell[data-span="2"] {
+  grid-column: span 2;
+}
+.portal-grid-cell[data-span="3"] {
+  grid-column: span 3;
+}
+.portal-grid-cell[data-span="4"] {
+  grid-column: span 4;
+}
+.portal-grid-cell[data-span="5"] {
+  grid-column: span 5;
+}
+.portal-grid-cell[data-span="6"] {
+  grid-column: span 6;
+}
+.portal-grid-cell[data-span="7"] {
+  grid-column: span 7;
+}
+.portal-grid-cell[data-span="8"] {
+  grid-column: span 8;
+}
+.portal-grid-cell[data-span="9"] {
+  grid-column: span 9;
+}
+.portal-grid-cell[data-span="10"] {
+  grid-column: span 10;
+}
+.portal-grid-cell[data-span="11"] {
+  grid-column: span 11;
+}
+@media (min-width: 768px) {
+  .portal-grid-cell[data-span-md="1"] {
+    grid-column: span 1;
+  }
+  .portal-grid-cell[data-span-md="2"] {
+    grid-column: span 2;
+  }
+  .portal-grid-cell[data-span-md="3"] {
+    grid-column: span 3;
+  }
+  .portal-grid-cell[data-span-md="4"] {
+    grid-column: span 4;
+  }
+  .portal-grid-cell[data-span-md="5"] {
+    grid-column: span 5;
+  }
+  .portal-grid-cell[data-span-md="6"] {
+    grid-column: span 6;
+  }
+  .portal-grid-cell[data-span-md="7"] {
+    grid-column: span 7;
+  }
+  .portal-grid-cell[data-span-md="8"] {
+    grid-column: span 8;
+  }
+  .portal-grid-cell[data-span-md="9"] {
+    grid-column: span 9;
+  }
+  .portal-grid-cell[data-span-md="10"] {
+    grid-column: span 10;
+  }
+  .portal-grid-cell[data-span-md="11"] {
+    grid-column: span 11;
+  }
+  .portal-grid-cell[data-span-md="12"] {
+    grid-column: span 12;
+  }
+}
+@media (min-width: 1100px) {
+  .portal-grid-cell[data-span-lg="1"] {
+    grid-column: span 1;
+  }
+  .portal-grid-cell[data-span-lg="2"] {
+    grid-column: span 2;
+  }
+  .portal-grid-cell[data-span-lg="3"] {
+    grid-column: span 3;
+  }
+  .portal-grid-cell[data-span-lg="4"] {
+    grid-column: span 4;
+  }
+  .portal-grid-cell[data-span-lg="5"] {
+    grid-column: span 5;
+  }
+  .portal-grid-cell[data-span-lg="6"] {
+    grid-column: span 6;
+  }
+  .portal-grid-cell[data-span-lg="7"] {
+    grid-column: span 7;
+  }
+  .portal-grid-cell[data-span-lg="8"] {
+    grid-column: span 8;
+  }
+  .portal-grid-cell[data-span-lg="9"] {
+    grid-column: span 9;
+  }
+  .portal-grid-cell[data-span-lg="10"] {
+    grid-column: span 10;
+  }
+  .portal-grid-cell[data-span-lg="11"] {
+    grid-column: span 11;
+  }
+  .portal-grid-cell[data-span-lg="12"] {
+    grid-column: span 12;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-sidenav-link {
+    transition: none;
+  }
+}
