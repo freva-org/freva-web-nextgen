@@ -1,20 +1,20 @@
 {
-  "name": "@freva-org/jupyterlite-climateclaw",
+  "name": "@freva-org/jupyterlite-freva-data",
   "version": "2609.0.0",
-  "description": "ClimateClaw (Freva) for JupyterLite and JupyterLab: a provider for jupyterlite-ai, Freva login in a popup, chat toolbar items, slash commands and \"Run & fix at DKRZ\".",
+  "description": "A site data panel for JupyterLite and JupyterLab: browse a Freva portal's dataset tree, open registered Python access examples in a notebook, insert them, inspect stores, and ask ClimateClaw.",
   "keywords": [
     "jupyter",
     "jupyterlab-extension",
     "jupyterlite",
     "freva",
-    "climateclaw"
+    "dataset-tree"
   ],
   "license": "BSD-3-Clause",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
-    "directory": "packages/jupyterlite-climateclaw"
+    "directory": "packages/jupyterlite-freva-data"
   },
   "publishConfig": {
     "access": "public"
@@ -26,26 +26,19 @@
       "types": "./lib/index.d.ts",
       "import": "./lib/index.js"
     },
-    "./auth-relay": {
-      "types": "./lib/auth-relay.d.ts",
-      "import": "./lib/auth-relay.js"
+    "./panel-data": {
+      "types": "./lib/panel-data.d.ts",
+      "import": "./lib/panel-data.js"
     },
-    "./stream": {
-      "types": "./lib/stream.d.ts",
-      "import": "./lib/stream.js"
-    },
-    "./package.json": "./package.json",
-    "./lite/jupyterlite-ai-requirements.txt": "./lite/jupyterlite-ai-requirements.txt"
+    "./package.json": "./package.json"
   },
   "files": [
-    "LICENSE",
-    "README.md",
-    "callback",
-    "labextension",
     "lib",
-    "lite",
+    "labextension",
     "schema",
-    "style"
+    "style",
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": [
     "style/*.css",
@@ -58,38 +51,28 @@
     "build:labextension": "node scripts/build-labextension.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "test:browser": "BROWSER_STRICT=1 node browser-tests/climateclaw.mjs",
-    "test:jupyterlab": "node browser-tests/jupyterlab-smoke.mjs",
-    "mock": "node browser-tests/mock-freva.mjs",
     "prepack": "npm run build && npm run build:labextension"
   },
   "dependencies": {
-    "@freva-org/ts-oidc-auth-client": "2608.0.1",
-    "@jupyter/chat": "^0.25.0",
+    "@freva-org/data-inspector": "2609.1.0",
+    "@freva-org/dataset-tree": "2610.0.1",
     "@jupyterlab/application": "^4.4.0",
     "@jupyterlab/apputils": "^4.5.0",
-    "@jupyterlab/cells": "^4.4.0",
     "@jupyterlab/coreutils": "^6.4.0",
     "@jupyterlab/filebrowser": "^4.4.0",
+    "@jupyterlab/launcher": "^4.4.0",
     "@jupyterlab/notebook": "^4.4.0",
-    "@jupyterlab/rendermime": "^4.4.0",
     "@jupyterlab/services": "^7.4.0",
     "@jupyterlab/settingregistry": "^4.4.0",
     "@jupyterlab/ui-components": "^4.4.0",
-    "@jupyterlite/ai": "0.20.1",
-    "@jupyternaut/agent": "^0.20.1",
-    "@lumino/commands": "^2.3.0",
     "@lumino/coreutils": "^2.2.0",
+    "@lumino/dragdrop": "^2.1.0",
     "@lumino/signaling": "^2.1.0",
-    "@lumino/widgets": "^2.6.0",
-    "jupyter-chat-components": "0.6.0",
-    "react": "^18.2.0"
+    "@lumino/widgets": "^2.6.0"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "4.0.21",
     "@jupyter/builder": "1.2.3",
     "@jupyterlab/core-meta": "4.6.4",
-    "@types/react": "^18.3.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.8"
@@ -98,25 +81,12 @@
     "extension": "lib/index.js",
     "outputDir": "labextension",
     "schemaDir": "schema",
-    "webpackConfig": "./webpack.config.cjs",
     "sharedPackages": {
-      "@jupyter/chat": {
-        "bundled": false,
-        "singleton": true
+      "@freva-org/dataset-tree": {
+        "bundled": true,
+        "singleton": false
       },
-      "@jupyternaut/agent": {
-        "bundled": false,
-        "singleton": true
-      },
-      "@jupyterlite/ai": {
-        "bundled": false,
-        "singleton": true
-      },
-      "jupyter-chat-components": {
-        "bundled": false,
-        "singleton": true
-      },
-      "@freva-org/ts-oidc-auth-client": {
+      "@freva-org/data-inspector": {
         "bundled": true,
         "singleton": false
       },
@@ -129,6 +99,12 @@
       "@jupyterlab/coreutils": {
         "requiredVersion": "^6.4.0"
       },
+      "@jupyterlab/filebrowser": {
+        "requiredVersion": "^4.4.0"
+      },
+      "@jupyterlab/launcher": {
+        "requiredVersion": "^4.4.0"
+      },
       "@jupyterlab/notebook": {
         "requiredVersion": "^4.4.0"
       },
@@ -139,12 +115,6 @@
         "requiredVersion": "^4.4.0"
       },
       "@jupyterlab/ui-components": {
-        "requiredVersion": "^4.4.0"
-      },
-      "@jupyterlab/cells": {
-        "requiredVersion": "^4.4.0"
-      },
-      "@jupyterlab/rendermime": {
         "requiredVersion": "^4.4.0"
       }
     }

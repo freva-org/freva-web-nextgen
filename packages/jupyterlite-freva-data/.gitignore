@@ -1,0 +1,9 @@
+# Built: `npm run build` and `npm run build:labextension`.
+lib/
+labextension/
+# Sites and environments the browser suites build and cache.
+.test-site-*/
+.jupyterlab-env-*/
+# The pip build.
+*.egg-info/
+__pycache__/

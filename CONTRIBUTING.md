@@ -80,6 +80,7 @@ packages/
   dataset-tree/              # @freva-org/dataset-tree
   freva-badge/               # @freva-org/freva-badge
   jupyterlite-climateclaw/   # @freva-org/jupyterlite-climateclaw
+  jupyterlite-freva-data/    # @freva-org/jupyterlite-freva-data
   jupyterlite-freva-kernel/  # @freva-org/jupyterlite-freva-kernel
   portal-builder/            # @freva-org/portal-builder
   stac-browser/              # @freva-org/stac-browser (private)

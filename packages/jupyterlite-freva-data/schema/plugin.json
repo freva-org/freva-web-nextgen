@@ -1,0 +1,112 @@
+{
+  "title": "Site data panel",
+  "description": "The site's dataset tree in a side panel. Operators set these through settings overrides.",
+  "jupyter.lab.menus": {
+    "context": [
+      {
+        "command": "freva-data:open-in-notebook",
+        "selector": ".jp-FrevaData [data-dt-row]",
+        "rank": 1
+      },
+      { "command": "freva-data:insert", "selector": ".jp-FrevaData [data-dt-row]", "rank": 2 },
+      { "command": "freva-data:inspect", "selector": ".jp-FrevaData [data-dt-row]", "rank": 3 },
+      {
+        "command": "freva-data:ask-climateclaw",
+        "selector": ".jp-FrevaData [data-dt-row]",
+        "rank": 4
+      },
+      { "command": "freva-data:copy-url", "selector": ".jp-FrevaData [data-dt-row]", "rank": 5 },
+      { "command": "freva-data:copy-code", "selector": ".jp-FrevaData [data-dt-row]", "rank": 6 },
+      {
+        "command": "freva-data:view-on-globe",
+        "selector": ".jp-FrevaData [data-dt-row]",
+        "rank": 7
+      }
+    ]
+  },
+  "type": "object",
+  "properties": {
+    "siteName": {
+      "title": "Site name",
+      "description": "Used in \"<site> data\" and \"New <site> notebook\".",
+      "type": "string",
+      "default": "Freva"
+    },
+    "title": {
+      "title": "Panel title",
+      "description": "Defaults to \"<site name> data\".",
+      "type": "string",
+      "default": ""
+    },
+    "iconSvg": {
+      "title": "Panel icon",
+      "description": "An SVG document (checked when the site is prepared).",
+      "type": "string",
+      "default": ""
+    },
+    "dataUrl": {
+      "title": "Panel data",
+      "description": "The panel's data file (tree source, registered examples and recipes), relative to the site root.",
+      "type": "string",
+      "default": ""
+    },
+    "dataSha256": {
+      "title": "Panel data digest",
+      "description": "SHA-256 of the panel data file; a file that does not match is refused.",
+      "type": "string",
+      "default": ""
+    },
+    "kernelName": {
+      "title": "Kernel",
+      "type": "string",
+      "default": "freva-python"
+    },
+    "defaultAction": {
+      "title": "Primary action",
+      "description": "The data panel's labelled button and Ctrl/Cmd+Enter on a row.",
+      "type": "string",
+      "enum": ["open-in-notebook", "insert", "inspect", "ask-climateclaw", "copy-url", "copy-code"],
+      "default": "open-in-notebook"
+    },
+    "startNotebook": {
+      "title": "Start notebook",
+      "description": "One of the example notebooks (its path), opened when the Lab starts in place of the Launcher: the visitor's own copy, made once.",
+      "type": "string",
+      "default": ""
+    },
+    "seedNotebooks": {
+      "title": "Example notebooks",
+      "description": "Read-only notebooks on the site; opening one copies it into your files.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "title": { "type": "string" }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "gridlook": {
+      "title": "3D viewer (GridLook)",
+      "description": "Show a store on GridLook's globe (https://gridlook.pages.dev, in a sandboxed frame): Inspect's 3D Viewer tab and View on globe. Only stores readable without a token; the site's policy must allow the frame.",
+      "type": "boolean",
+      "default": false
+    },
+    "launcher": {
+      "title": "Launcher cards",
+      "type": "object",
+      "properties": {
+        "newNotebook": { "type": "boolean", "default": true },
+        "browse": { "type": "boolean", "default": true },
+        "examples": { "type": "boolean", "default": true },
+        "ask": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false,
+      "default": {}
+    }
+  },
+  "additionalProperties": false
+}
