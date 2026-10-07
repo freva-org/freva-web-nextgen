@@ -9,6 +9,7 @@ import { IThemeManager } from "@jupyterlab/apputils";
 import {
   DARK_THEME,
   LIGHT_THEME,
+  followTheme,
   themeFromMessage,
   themeFromUrl,
   type PortalTheme,
@@ -20,19 +21,27 @@ export const themePlugin: JupyterFrontEndPlugin<void> = {
   description: "Follows the Freva portal's light or dark theme.",
   autoStart: true,
   optional: [IThemeManager],
-  activate: (_app: JupyterFrontEnd, themes: IThemeManager | null) => {
+  activate: (app: JupyterFrontEnd, themes: IThemeManager | null) => {
     if (!themes) return;
-    const apply = (mode: PortalTheme) => {
-      const theme = mode === "dark" ? DARK_THEME : LIGHT_THEME;
-      if (themes.theme !== theme) void themes.setTheme(theme);
-    };
+    // The page tells its theme on the frame's load AND when the notebook says it is ready.
+    const follow = followTheme(themes);
+    const apply = (mode: PortalTheme) => follow(mode === "dark" ? DARK_THEME : LIGHT_THEME);
+    // A new tab's theme, while the app is still starting (under its own splash).
     const initial = themeFromUrl(window.location.href);
     if (initial) apply(initial);
     if (window.parent === window) return;
+    // A framing page's, once the app has started and its splash is gone: JupyterLab removes the
+    // splash 200 ms after hiding it, and a switch that shows it again inside that window makes the
+    // second removal throw (`removeChild` on a node already removed).
+    const settled = app.restored.then(async () => {
+      for (let i = 0; i < 40 && document.getElementById("jupyterlab-splash"); i += 1) {
+        await new Promise((done) => setTimeout(done, 50));
+      }
+    });
     window.addEventListener("message", (event: MessageEvent) => {
       if (event.source !== window.parent) return;
       const mode = themeFromMessage(event.data);
-      if (mode) apply(mode);
+      if (mode) void settled.then(() => apply(mode));
     });
     // Ready: the page answers with its theme. Nothing private is in it, so any parent may hear it.
     window.parent.postMessage({ type: "freva-lab-ready" }, "*");

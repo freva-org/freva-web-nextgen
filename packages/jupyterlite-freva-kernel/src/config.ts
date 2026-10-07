@@ -25,6 +25,11 @@ export interface KernelSettings {
   setups: readonly KernelSetup[];
   /** The deployment's starter code (`initialSource`), for setups with `runStarter`. */
   starter?: string;
+  /**
+   * The portal's root URL, defined as `PORTAL_BASE_URL` in every interpreter: written relative to
+   * the page for a notebook on the portal's origin, so it follows where the page is served.
+   */
+  portalBaseUrl?: string;
   /** Live interpreters this page may hold. The playground's ceiling, never above 2. */
   maxLiveInterpreters: number;
   /** How long an interrupted cell may take to stop before a restart is offered. */
@@ -105,7 +110,17 @@ export function readSettings(raw: unknown): KernelSettings {
   if (typeof r.starter === "string" && r.starter.length > 0 && r.starter.length <= 4096) {
     settings.starter = r.starter;
   }
+  const portalBase = url(r.portalBaseUrl);
+  if (portalBase) settings.portalBaseUrl = portalBase;
   return settings;
+}
+
+/**
+ * `PORTAL_BASE_URL` as code the interpreter runs unseen at every start, before the starter. A
+ * parsed URL is printable ASCII, so its JSON string is a Python literal of the same text.
+ */
+export function portalBaseSource(href: string): string {
+  return `PORTAL_BASE_URL = ${JSON.stringify(href)}`;
 }
 
 /** The kernel name for a setup: the first is the plain `freva-python`. */

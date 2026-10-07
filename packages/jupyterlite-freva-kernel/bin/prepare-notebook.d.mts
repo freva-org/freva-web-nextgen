@@ -37,6 +37,8 @@ export interface NotebookInventory {
   appName?: string;
   /** The site's own tab icon, at the site root. */
   favicon?: { path: string; sha256: string };
+  /** The Content-Security-Policy every page carries as a `<meta>` tag, when asked for. */
+  metaPolicy?: string;
   /** `PREPARE_DIGEST` of the preparation that made the site. */
   preparedBy?: string;
   seeds: string[];
@@ -109,6 +111,18 @@ export declare function prepareNotebookSite(options: {
   cacheDir?: string;
   labextension?: string;
   lab?: LabOptions;
+  /** A meta-safe policy (`metaPolicyOf`) written into every page as a `<meta>` tag. */
+  metaPolicy?: string;
   log?: (message: string) => void;
 }): Promise<NotebookInventory>;
+/** A policy without what a `<meta>` tag cannot deliver, and the directives left out. */
+export declare function metaPolicyOf(policy: string): { policy: string; dropped: string[] };
+export declare function writeMetaPolicy(siteDir: string, policy: string): void;
+export declare function metaPolicyProblems(siteDir: string, policy: string): string[];
+/** The page with `policy` as its only CSP meta element, first in `<head>`; throws if it can't. */
+export declare function setMetaPolicy(html: string, policy: string): string;
+/** Why the page's meta policy is not exactly `policy`, or null. */
+export declare function pageMetaPolicyProblem(html: string, policy: string): string | null;
+/** Every Content-Security-Policy `<meta>` element's span in a page, as a browser parses it. */
+export declare function cspMetaTags(html: string): { start: number; end: number }[];
 export declare function verifyNotebookSite(siteDir: string): string[];
