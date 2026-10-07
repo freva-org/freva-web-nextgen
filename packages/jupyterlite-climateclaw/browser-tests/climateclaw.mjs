@@ -1675,6 +1675,20 @@ await step("data panel: browse, search, open in a notebook that runs", async () 
     { timeout: 30_000 },
   );
   await kernelIdle(page, 240_000);
+  // The tab is current before the notebook has drawn its cells (the second can lag the first,
+  // most in WebKit): read them once both are there, then check there is nothing else.
+  await page
+    .waitForFunction(
+      (root) => {
+        const cells = document.querySelector(root)?.querySelectorAll(".jp-Cell") ?? [];
+        return (
+          cells.length >= 2 && (cells[1].querySelector(".cm-content")?.textContent ?? "") !== ""
+        );
+      },
+      NOTEBOOK,
+      { timeout: 30_000 },
+    )
+    .catch(() => undefined);
   const opened = await nbCells();
   check(
     "the primary action opens a notebook with a header naming the dataset",
@@ -1684,6 +1698,7 @@ await step("data panel: browse, search, open in a notebook that runs", async () 
   check(
     "it is pre-filled with the registered recipe only",
     opened.length === 2 && opened[1].kind === "code",
+    JSON.stringify(opened.map((c) => [c.kind, c.source.slice(0, 60)])),
   );
   await nbCell(1).click();
   await page.keyboard.press("Shift+Enter");
@@ -1831,8 +1846,29 @@ await step("chat with codeToNotebook off: code, output and image in the chat", a
     await showLeft(`${SITE_TITLE} data`);
     const dataPanel = page.locator(".jp-FrevaData");
     await dataPanel.locator("text=Test archive").first().waitFor({ timeout: 30_000 });
+    // Nothing selected yet. One click on a folder selects it and opens it: the card above keeps
+    // its height, so the tree does not move under the pointer between press and release.
+    const selectionCard = dataPanel.locator(".jp-FrevaData-selection");
+    const cardHeight = async () => (await selectionCard.boundingBox())?.height;
+    const empty = await cardHeight();
+    const archive = dataPanel.locator('[data-dt-row="s3://data/"]').first();
+    const closed = await archive.getAttribute("aria-expanded");
+    await archive.click();
+    await page.waitForTimeout(300);
+    const opened = await archive.getAttribute("aria-expanded");
+    const named = await dataPanel.locator(".jp-FrevaData-selectedName").innerText();
+    const folder = await cardHeight();
+    check(
+      "one click on a folder selects it and opens it; the card keeps its height",
+      closed === "false" &&
+        opened === "true" &&
+        /Test archive|data/.test(named) &&
+        folder === empty,
+      JSON.stringify({ closed, opened, named, empty, folder }),
+    );
     await dataPanel.locator("input[type='search'], .dataset-tree input").first().fill("sfcwind");
     await dataPanel.locator('[data-dt-row="s3://data/sfcwind.zarr/"]').first().click();
+    check("…and the same height with a dataset selected", (await cardHeight()) === empty);
     check(
       "without GridLook, View on globe stays disabled",
       await dataPanel.locator('[data-command="freva-data:view-on-globe"]').isDisabled(),
