@@ -1,7 +1,7 @@
 // The pure pieces: settings, offsets, notebook validation, defaults and the eval-free validator.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { kernelName, readSettings } from "../src/config.js";
+import { kernelName, portalBaseSource, readSettings } from "../src/config.js";
 import { MAX_NOTEBOOK_BYTES, notebookProblems, parseNotebook } from "../src/ipynb.js";
 import { codePointsToUtf16, utf16ToCodePoints } from "../src/offsets.js";
 import { InterpretingSchemaValidator, applyDefaults } from "../src/schema.js";
@@ -48,6 +48,27 @@ describe("readSettings", () => {
     expect(readSettings({ starter: "x".repeat(5000) }).starter).toBeUndefined();
     expect(s.runtimeIndexUrl).toBeUndefined();
     expect(readSettings(null).maxLiveInterpreters).toBe(2);
+  });
+
+  it("reads the portal's base URL against the page, and defines it as a Python string", () => {
+    const page = "https://p.example/showroom/notebook/lab/index.html";
+    vi.stubGlobal("location", new URL(page));
+    try {
+      expect(readSettings({ portalBaseUrl: "/showroom/" }).portalBaseUrl).toBe(
+        "https://p.example/showroom/",
+      );
+      expect(readSettings({ portalBaseUrl: "https://portal.example/a b/" }).portalBaseUrl).toBe(
+        "https://portal.example/a%20b/",
+      );
+      for (const bad of ["javascript:alert(1)", "", 3, "data:text/plain,x"]) {
+        expect(readSettings({ portalBaseUrl: bad }).portalBaseUrl).toBeUndefined();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const href = new URL('https://p.example/x"y\\z/?q=\\é').href;
+    expect(portalBaseSource(href)).toBe(`PORTAL_BASE_URL = ${JSON.stringify(href)}`);
+    expect(href).toMatch(/^[\x21-\x7e]+$/);
   });
 
   it("names the first setup freva-python and the others by id", () => {
@@ -201,5 +222,72 @@ describe("portal theme", () => {
     expect(themeFromMessage({ type: "freva-portal-theme", mode: "blue" })).toBeNull();
     expect(themeFromMessage({ type: "other", mode: "dark" })).toBeNull();
     expect(themeFromMessage(null)).toBeNull();
+  });
+
+  /** A theme manager whose switches the test finishes: loaded, failed, or never. */
+  const fakeThemes = (initial: string) => {
+    const slots: ((sender: unknown, args: { newValue: unknown }) => void)[] = [];
+    const calls: { name: string; resolve: () => void; reject: (e: Error) => void }[] = [];
+    const target = {
+      theme: initial as string | null,
+      setTheme: (name: string) =>
+        new Promise<void>((resolve, reject) => calls.push({ name, resolve, reject })),
+      themeChanged: { connect: (slot: (typeof slots)[number]) => slots.push(slot) },
+      /** The app now has `name` (a switch loaded, or someone changed it in the notebook). */
+      change(name: string) {
+        target.theme = name;
+        for (const slot of slots) slot(target, { newValue: name });
+      },
+    };
+    return { target, calls };
+  };
+  const flush = () => new Promise((done) => setTimeout(done, 0));
+
+  it("switches once for repeated requests, then follows a different one", async () => {
+    const { followTheme } = await import("../src/theme-sync.js");
+    const { target, calls } = fakeThemes("light");
+    const follow = followTheme(target);
+    follow("light");
+    expect(calls).toHaveLength(0);
+    follow("dark");
+    follow("dark"); // the frame's load and the notebook's ready both tell it
+    expect(calls.map((c) => c.name)).toEqual(["dark"]);
+    follow("light"); // asked while switching: applied once the switch is over
+    calls[0]!.resolve();
+    await flush();
+    expect(calls).toHaveLength(1);
+    target.change("dark");
+    expect(calls.map((c) => c.name)).toEqual(["dark", "light"]);
+  });
+
+  it("applies a repeated request after a failed switch or a change made in the notebook", async () => {
+    vi.useFakeTimers();
+    try {
+      const { followTheme, THEME_SWITCH_LIMIT_MS } = await import("../src/theme-sync.js");
+      const { target, calls } = fakeThemes("light");
+      const follow = followTheme(target);
+      // Saving fails.
+      follow("dark");
+      calls[0]!.reject(new Error("settings"));
+      await vi.advanceTimersByTimeAsync(0);
+      follow("dark");
+      expect(calls.map((c) => c.name)).toEqual(["dark", "dark"]);
+      // Saved, but the theme never loads (JupyterLab shows its error and keeps the old one).
+      calls[1]!.resolve();
+      await vi.advanceTimersByTimeAsync(THEME_SWITCH_LIMIT_MS);
+      follow("dark");
+      expect(calls.map((c) => c.name)).toEqual(["dark", "dark", "dark"]);
+      // It loads; then someone picks Light in the notebook, and the portal says dark again.
+      calls[2]!.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      target.change("dark");
+      follow("dark");
+      expect(calls).toHaveLength(3);
+      target.change("light");
+      follow("dark");
+      expect(calls.map((c) => c.name)).toEqual(["dark", "dark", "dark", "dark"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

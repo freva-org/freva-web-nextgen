@@ -74,7 +74,8 @@
     "@lumino/coreutils": "^2.2.2",
     "@lumino/signaling": "^2.1.5",
     "@lumino/widgets": "~2.8.0",
-    "json5": "2.2.3"
+    "json5": "2.2.3",
+    "parse5": "^8.0.1"
   },
   "devDependencies": {
     "@jupyter/builder": "1.2.3",

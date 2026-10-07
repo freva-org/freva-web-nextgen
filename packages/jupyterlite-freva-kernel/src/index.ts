@@ -13,7 +13,13 @@ import { Dialog, showDialog } from "@jupyterlab/apputils";
 import { PageConfig, URLExt } from "@jupyterlab/coreutils";
 import { IKernelClient, IKernelSpecs } from "@jupyterlite/services";
 
-import { SETTINGS_KEY, kernelName, readSettings, type KernelSettings } from "./config.js";
+import {
+  SETTINGS_KEY,
+  kernelName,
+  portalBaseSource,
+  readSettings,
+  type KernelSettings,
+} from "./config.js";
 import { FrevaKernel } from "./kernel.js";
 import { filesPlugin } from "./files.js";
 import { settingsPlugin } from "./settings.js";
@@ -105,6 +111,10 @@ const kernelPlugin: JupyterFrontEndPlugin<void> = {
                 ...(settings.addonBaseUrl ? { addonBaseURL: settings.addonBaseUrl } : {}),
                 ...(settings.workspaceMaxFiles
                   ? { workspaceMaxFiles: settings.workspaceMaxFiles }
+                  : {}),
+                // Defined unseen at every start, so the starter runs exactly as written.
+                ...(settings.portalBaseUrl
+                  ? { startupSource: portalBaseSource(settings.portalBaseUrl) }
                   : {}),
               }),
           }),
