@@ -229,7 +229,6 @@ export class DataPanel extends Panel {
   private readonly status: HTMLElement;
   private readonly actions: ActionBar;
   private readonly card: Panel;
-  private readonly tip: Widget;
   private readonly eligible = new Map<string, Snippet[]>();
   private index: ExampleIndex | null = null;
   private ready: Promise<void> = Promise.resolve();
@@ -254,7 +253,8 @@ export class DataPanel extends Panel {
     tip.addClass("jp-FrevaData-tip");
     tip.node.textContent =
       "Right-click a dataset for these actions, or drag it onto a notebook to insert it.";
-    this.tip = tip;
+    // Shown until a row's context menu is first used in this browser.
+    tip.setHidden(tipSeen());
     card.addWidget(status);
     card.addWidget(this.actions);
     card.addWidget(tip);
@@ -268,38 +268,44 @@ export class DataPanel extends Panel {
     this.wireEvents();
   }
 
-  /** The card's text: the node's name, kind and path, or how to start. */
+  /**
+   * The card's text: the node's name, kind and path, or how to start. The card keeps one height in
+   * every state, so a press that selects a row never moves the tree and loses the opening click.
+   */
   private showSelection(node: DatasetTreeNode | null): void {
     this.card.toggleClass("jp-mod-empty", !node);
-    this.actions.setHidden(!node);
-    // Shown until the visitor has used a row's context menu once (in this browser).
-    this.tip.setHidden(tipSeen());
-    if (!node) {
-      const hint = document.createElement("div");
-      hint.className = "jp-FrevaData-hint";
-      hint.textContent = "Select a dataset to open it in a notebook, inspect it or ask about it.";
-      this.status.replaceChildren(hint);
-      return;
-    }
     const head = document.createElement("div");
     head.className = "jp-FrevaData-selectedHead";
     const name = document.createElement("span");
     name.className = "jp-FrevaData-selectedName";
+    const detail = document.createElement("div");
+    detail.className = "jp-FrevaData-detail";
+    const text = document.createElement("div");
+    detail.append(text);
+    head.append(name);
+    this.status.replaceChildren(head, detail);
+    if (!node) {
+      name.classList.add("jp-mod-placeholder");
+      name.textContent = "No dataset selected";
+      text.className = "jp-FrevaData-hint";
+      text.textContent = "Select a dataset to open it in a notebook, inspect it or ask about it.";
+      text.title = text.textContent;
+      return;
+    }
     name.textContent = displayName(node);
     name.title = displayName(node);
     const kind = document.createElement("span");
     kind.className = `jp-FrevaData-kind jp-mod-${node.kind}`;
     kind.textContent = KIND_LABEL[node.kind] ?? node.kind;
-    head.append(name, kind);
-    const where = document.createElement("div");
+    head.append(kind);
     const data = node.kind === "dataset" || node.kind === "file";
-    where.className = data ? "jp-FrevaData-selectedPath" : "jp-FrevaData-hint";
-    where.textContent = data
+    text.className = data ? "jp-FrevaData-selectedPath" : "jp-FrevaData-hint";
+    text.textContent = data
       ? (node.path ?? node.id)
       : "Pick a dataset inside to open or inspect it.";
-    if (data) where.title = node.path ?? node.id;
-    this.status.replaceChildren(head, where);
+    text.title = text.textContent;
   }
+
   get selected(): DatasetTreeNode | null {
     return this.selectedNode;
   }
@@ -336,7 +342,10 @@ export class DataPanel extends Panel {
         initialExpandedIds: data.expand,
         accessExamples: (node) => index.accessExamples(node),
         labels: { emptyBadge: "no data yet" },
-        status: { tone: data.mode === "s3" ? "live" : "snapshot", label: data.statusLabel },
+        status: {
+          tone: data.mode === "s3" ? "live" : "snapshot",
+          label: data.statusLabel,
+        },
         ...(data.searchResultLimit ? { searchResultLimit: data.searchResultLimit } : {}),
       });
       if (searchIndexUrl) {
@@ -387,15 +396,15 @@ export class DataPanel extends Panel {
     host.addEventListener("click", pick);
     host.addEventListener("focusin", pick);
     host.addEventListener("contextmenu", pick, true);
-    host.addEventListener("contextmenu", () => {
-      markTipSeen();
-      this.tip.hide();
-    });
+    // Remembered for the next time the panel is built: hiding it now would move the tree.
+    host.addEventListener("contextmenu", markTipSeen);
     // The primary action runs on a deliberate request only - its button, or Ctrl/Cmd+Enter - never
     // on clicks: two slow clicks on a row (to open and close it) must not create a notebook.
     const runDefault = (node: DatasetTreeNode) => {
       this.select(node);
-      void this.options.commands.execute(this.options.defaultAction, { nodeId: node.id });
+      void this.options.commands.execute(this.options.defaultAction, {
+        nodeId: node.id,
+      });
     };
     host.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) return;
