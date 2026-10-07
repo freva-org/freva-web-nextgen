@@ -390,10 +390,7 @@ jobs:
       # The notebook tests plan and check sites from the kernel's, the assistant's and the data
       # panel's prebuilt extensions, and the sessions gate below runs `prepare-notebook`.
       - name: Build the notebook extensions
-        run: |
-          npm run build:labextension -w @freva-org/jupyterlite-freva-kernel
-          npm run build:labextension -w @freva-org/jupyterlite-climateclaw
-          npm run build:labextension -w @freva-org/jupyterlite-freva-data
+        run: npm run build:labextensions
 
       # The example portal enables the STAC Browser component, so the suites that build it need
       # the prepared materials. Preparing them compiles a third-party application and its ~800

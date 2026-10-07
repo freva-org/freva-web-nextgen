@@ -115,6 +115,11 @@ jobs:
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: npm run build
 
+      # portal-builder's notebook tests plan sites from these prebuilt extensions.
+      - name: Build the notebook extensions
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: npm run build:labextensions
+
       - name: Test
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: npm test
