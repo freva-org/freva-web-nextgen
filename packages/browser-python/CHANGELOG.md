@@ -1,5 +1,15 @@
 # @freva-org/browser-python
 
+## 2610.0.0
+
+### Major Changes
+
+- 647c735: `executeCell()`, and the `/display` and `/session` entries, for the notebook kernel and session choices
+
+### Patch Changes
+
+- 038abf9: When no live Python slot is free, the message counts the page's slots
+
 ## 2609.1.0
 
 ### Minor Changes

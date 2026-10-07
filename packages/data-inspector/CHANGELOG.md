@@ -1,5 +1,11 @@
 # @freva-org/data-inspector
 
+## 2610.0.0
+
+### Major Changes
+
+- 643fd97: An `embedded` mode, for the notebook's data panel
+
 ## 2609.1.0
 
 ### Minor Changes

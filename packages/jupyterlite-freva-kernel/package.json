@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/jupyterlite-freva-kernel",
-  "version": "2609.0.0",
+  "version": "2610.0.0",
   "description": "The \"Freva Python\" kernel for JupyterLite: a prebuilt extension that runs notebook cells in @freva-org/browser-python, with sanitised rich output.",
   "keywords": [
     "jupyter",
@@ -60,7 +60,7 @@
   },
   "dependencies": {
     "@cfworker/json-schema": "4.1.1",
-    "@freva-org/browser-python": "2609.1.0",
+    "@freva-org/browser-python": "2610.0.0",
     "@jupyterlab/application": "~4.6.4",
     "@jupyterlab/apputils": "~4.7.4",
     "@jupyterlab/coreutils": "~6.6.4",
