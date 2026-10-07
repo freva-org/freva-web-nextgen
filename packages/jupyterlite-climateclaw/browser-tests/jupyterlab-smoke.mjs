@@ -240,10 +240,15 @@ async function smoke(label, { bin, overridesFor, plugins, expectProvider }) {
         `${label}: …in place of jupyterlite-ai's picker`,
         (await page.locator('button[title="Select AI Model"]:visible').count()) === 0,
       );
-      check(
-        `${label}: the account control is in the chat toolbar`,
-        (await page.locator('[data-command="climateclaw:account"]').count()) > 0,
-      );
+      const account = await page
+        .locator('[data-command="climateclaw:account"]')
+        .first()
+        .waitFor({ state: "attached", timeout: 20_000 })
+        .then(
+          () => true,
+          () => false,
+        );
+      check(`${label}: the account control is in the chat toolbar`, account);
     }
     check(
       `${label}: jupyter labextension list shows ours enabled and OK (no compatibility warning)`,
