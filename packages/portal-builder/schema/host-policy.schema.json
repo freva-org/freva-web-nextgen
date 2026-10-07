@@ -105,6 +105,35 @@
               "workers": { "enum": ["none", "self"] }
             }
           }
+        },
+        "paths": {
+          "type": "array",
+          "description": "Policies that replace `portal` on their paths: a same-origin notebook (`<basePath>notebook/`, its kernel Workers included) and its sign-in relay page. `meta`: the documents there also carry the policy as a <meta> tag, without what a meta tag cannot deliver (frame-ancestors).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["match", "directives", "meta"],
+            "properties": {
+              "match": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["prefix"],
+                    "properties": { "prefix": { "type": "string" } }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path"],
+                    "properties": { "path": { "type": "string" } }
+                  }
+                ]
+              },
+              "directives": { "type": "object", "additionalProperties": { "type": "string" } },
+              "meta": { "type": "boolean" }
+            }
+          }
         }
       }
     },

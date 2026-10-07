@@ -17,7 +17,11 @@ import {
   toPosix,
 } from "../config/paths.js";
 import { resolveModel } from "../model/resolve.js";
-import { authCallbackEntries, describeAuthCallbacks } from "../model/auth-callbacks.js";
+import {
+  authCallbackEntries,
+  describeAuthCallbacks,
+  notebookCallbackOf,
+} from "../model/auth-callbacks.js";
 import { buildSite } from "../artifact/index.js";
 import { verifyArtifact } from "../verify/verify.js";
 import { buildCanonicalArchive, recordedEpoch } from "../artifact/archive.js";
@@ -238,14 +242,7 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
         report(result.diagnostics, args, io);
         if (!result.outDir) return 1;
         io.out(`built: ${result.files?.length ?? 0} files in ${result.outDir}\n`);
-        const playground = result.model?.playground;
-        const notebook = playground?.authCallbackPath
-          ? {
-              origin: playground.origin,
-              callbackPath: playground.authCallbackPath,
-              basePath: playground.basePath ?? "/",
-            }
-          : undefined;
+        const notebook = notebookCallbackOf(result.model);
         for (const line of describeAuthCallbacks(authCallbackEntries(result.model, notebook))) {
           io.out(`${line}\n`);
         }

@@ -27,6 +27,7 @@ import type { ExampleRegistry } from "@freva-org/browser-python/embed";
 import type { SessionController, SessionSetup } from "@freva-org/browser-python/session";
 import type { PlaygroundArtifactData } from "../src/model/types.js";
 import { renderChooser } from "./components/session-chooser.js";
+import { portalBaseSource } from "./portal-base.js";
 
 /**
  * The child document's own layout, adopted at run time rather than linked: fill the frame, let the
@@ -62,6 +63,12 @@ function adoptStyles(): void {
   const style = document.createElement("style");
   style.textContent = CSS;
   document.head.append(style);
+}
+
+/** `PORTAL_BASE_URL`, defined unseen at every start when the starter names it. */
+function startupOf(config: PlaygroundArtifactData): { startupSource?: string } {
+  const source = portalBaseSource(config.portalBaseUrl, window.location.href);
+  return source ? { startupSource: source } : {};
 }
 
 /** The element the console module defines, as much of it as this document uses. */
@@ -174,6 +181,7 @@ export async function startPlaygroundOrigin(): Promise<void> {
       ? { addons: config.addons as BrowserPythonAddon[] }
       : {}),
     ...(config.persistCredentials ? { persistCredentials: true } : {}),
+    ...startupOf(config),
   });
 
   const element = document.createElement("freva-python-console") as ConsoleElement;
@@ -290,6 +298,7 @@ async function startWithChoices(
       ...(config.wheelhouseUrl ? { wheelhouseURL: config.wheelhouseUrl } : {}),
       ...(config.addonBaseUrl ? { addonBaseURL: config.addonBaseUrl } : {}),
       ...(config.persistCredentials ? { persistCredentials: true } : {}),
+      ...startupOf(config),
     });
 
   const rootNode = document.getElementById("playground-root");

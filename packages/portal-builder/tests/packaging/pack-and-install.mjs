@@ -540,6 +540,8 @@ try {
       "test:browser:python",
       // Session choices, telemetry, sleep and the notebook, with a real interpreter.
       "test:browser:sessions",
+      // The notebook in the portal's own artifact (deployment: same-origin), on one preview.
+      "test:browser:same-origin",
       // The two dataset-tree browser suites. A new browser suite has to be admitted by name, and
       // fails the packaging gate until it is: a pattern would also admit a published command
       // pointing at a file nobody ships.

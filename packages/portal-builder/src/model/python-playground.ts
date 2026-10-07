@@ -260,9 +260,13 @@ export function resolvePlaygroundSettings(
   }
   connectOrigins.sort();
 
+  // `same-origin`: the notebook is published in the portal's own artifact, so it needs no
+  // `playgroundOrigin`. The console keeps whatever origin is configured for it.
+  const sameOrigin = raw.notebook?.deployment === "same-origin";
   // The console's origin: `playgroundOrigin`, unless `consoleInPage` keeps it in the portal's
   // pages and leaves that origin to the notebook - only when there is a notebook to leave it to.
-  const notebookWanted = raw.notebook?.enabled === true && Boolean(raw.playgroundOrigin);
+  const notebookWanted =
+    raw.notebook?.enabled === true && (sameOrigin || Boolean(raw.playgroundOrigin));
   const consoleOrigin =
     raw.consoleInPage === true && notebookWanted ? undefined : raw.playgroundOrigin;
   const persistCredentials = raw.persistCredentials === true;
@@ -287,16 +291,37 @@ export function resolvePlaygroundSettings(
 
   const sessionChoices = resolveSessionChoices(raw, profile, addons, where, bag);
   const maxSessions = raw.maxSessions ?? 2;
-  if (raw.notebook?.enabled && !raw.playgroundOrigin) {
+  if (raw.notebook?.enabled && !raw.playgroundOrigin && !sameOrigin) {
     bag.error("FP1235", "The notebook needs the playground's own origin.", {
       ...at(where, "/notebook/enabled"),
       hint:
         "The notebook runs only on `playgroundOrigin`, under its own Content-Security-Policy, so " +
-        "the portal's pages keep theirs. Set `playgroundOrigin`, or leave the notebook off.",
+        "the portal's pages keep theirs. Set `playgroundOrigin`, or `notebook.deployment: " +
+        "same-origin` to publish it in the portal's artifact, or leave the notebook off.",
     });
   }
 
-  const notebookOn = raw.notebook?.enabled === true && Boolean(raw.playgroundOrigin);
+  const notebookOn = notebookWanted;
+  if (notebookOn && sameOrigin) {
+    // Allowed, and said out loud on every build: what a separate origin would have kept apart is
+    // shared. An explicit choice, so a notice rather than a warning `warningsAsErrors` would stop.
+    bag.info("FP1239", "The notebook is published on the portal's own origin.", {
+      ...at(where, "/notebook/deployment"),
+      hint:
+        "The notebook, the console and the portal share one origin and its storage, including " +
+        "the stored Freva/ClimateClaw sign-in: any script on that origin - a notebook output, " +
+        "the console - can read it, and the notebook's frame sandbox does not separate it from " +
+        "the page. On <account>.github.io every Pages site of that account shares the origin " +
+        "too, and GitHub Pages sends no Content-Security-Policy (see `notebook.metaPolicy`). " +
+        "For a separate origin, set `playgroundOrigin` and drop `deployment: same-origin`.",
+    });
+  }
+  if (raw.notebook?.metaPolicy === true && !(notebookOn && sameOrigin)) {
+    bag.warn("FP1239", "`notebook.metaPolicy` changes nothing without a same-origin notebook.", {
+      ...at(where, "/notebook/metaPolicy"),
+      hint: "It applies to `deployment: same-origin` only; a separate origin sends its headers.",
+    });
+  }
   if (raw.consoleInPage === true && !notebookOn) {
     bag.warn("FP1238", "`consoleInPage` changes nothing here: there is no notebook to move.", {
       ...at(where, "/consoleInPage"),
@@ -305,7 +330,7 @@ export function resolvePlaygroundSettings(
         "Without the notebook and `playgroundOrigin`, remove it.",
     });
   }
-  const notebookAssistant = resolveNotebookAssistant(raw, notebookOn, where, bag);
+  const notebookAssistant = resolveNotebookAssistant(raw, notebookOn, sameOrigin, where, bag);
   const notebookDataPanel = resolveNotebookDataPanel(raw, notebookOn, where, bag);
 
   return {
@@ -329,12 +354,18 @@ export function resolvePlaygroundSettings(
     maxSessions,
     maxLiveSessions: Math.min(maxSessions, raw.resources?.maxLiveSessions ?? maxSessions),
     notebook: notebookOn,
+    ...(notebookOn && sameOrigin ? { notebookSameOrigin: true } : {}),
+    ...(notebookOn && sameOrigin && raw.notebook?.metaPolicy === true
+      ? { notebookMetaPolicy: true }
+      : {}),
     ...(sessionChoices ? { sessionChoices } : {}),
     addons,
     optionalAddons,
     ...(raw.initialSource ? { initialSource: raw.initialSource } : {}),
     ...(consoleOrigin ? { playgroundOrigin: consoleOrigin } : {}),
-    ...(notebookOn && raw.playgroundOrigin ? { notebookOrigin: raw.playgroundOrigin } : {}),
+    ...(notebookOn && !sameOrigin && raw.playgroundOrigin
+      ? { notebookOrigin: raw.playgroundOrigin }
+      : {}),
     ...(raw.controls ? { controls: raw.controls } : {}),
     ...(raw.editableSnippets ? { editableSnippets: true } : {}),
     ...(raw.runtimeIndexUrl ? { runtimeIndexUrl: raw.runtimeIndexUrl } : {}),
@@ -366,6 +397,7 @@ function isLoopback(hostname: string): boolean {
 function resolveNotebookAssistant(
   raw: RawPythonPlaygroundBase,
   notebookOn: boolean,
+  sameOrigin: boolean,
   where: PlaygroundWhere,
   bag: DiagnosticBag,
 ): NotebookAssistantSettings | undefined {
@@ -375,7 +407,9 @@ function resolveNotebookAssistant(
   if (!notebookOn) {
     bag.error("FP1236", "The notebook assistant needs the notebook.", {
       ...at(where, "/notebook/assistant"),
-      hint: "Set `notebook.enabled: true` (with `playgroundOrigin`), or remove `assistant`.",
+      hint:
+        "Set `notebook.enabled: true` (with `playgroundOrigin` or `deployment: same-origin`), " +
+        "or remove `assistant`.",
     });
     return undefined;
   }
@@ -395,8 +429,14 @@ function resolveNotebookAssistant(
     });
     return undefined;
   }
-  // A loopback host is a developer's own machine: only a local notebook may point there.
-  if (new URL(host).protocol === "http:") {
+  // A loopback host is a developer's own machine: only a local notebook may point there. A
+  // same-origin notebook's origin is the portal's, known only to the host: a warning, not a stop.
+  if (new URL(host).protocol === "http:" && sameOrigin) {
+    bag.warn("FP1236", `The loopback host '${host}' is for local development only.`, {
+      ...at(where, `${base}/host`),
+      hint: "A notebook served from anywhere but this machine cannot reach it.",
+    });
+  } else if (new URL(host).protocol === "http:") {
     let localNotebook = false;
     try {
       localNotebook = isLoopback(new URL(raw.playgroundOrigin ?? "").hostname);
@@ -465,7 +505,9 @@ function resolveNotebookDataPanel(
   if (!notebookOn) {
     bag.error("FP1237", "The notebook's data panel needs the notebook.", {
       ...at(where, "/notebook/dataPanel"),
-      hint: "Set `notebook.enabled: true` (with `playgroundOrigin`), or remove `dataPanel`.",
+      hint:
+        "Set `notebook.enabled: true` (with `playgroundOrigin` or `deployment: same-origin`), " +
+        "or remove `dataPanel`.",
     });
     return undefined;
   }
@@ -572,7 +614,9 @@ function resolveSessionChoices(
     } else if (!starterProfiles.includes(name)) starterProfiles.push(name);
   }
   starterProfiles.sort();
-  const notebook = raw.notebook?.enabled === true && Boolean(raw.playgroundOrigin);
+  const notebook =
+    raw.notebook?.enabled === true &&
+    (raw.notebook.deployment === "same-origin" || Boolean(raw.playgroundOrigin));
   const policy: SessionPolicy = {
     profiles,
     starter,
@@ -680,6 +724,8 @@ export function playgroundIdentity(settings: PlaygroundSettings): Record<string,
     initialSource: settings.initialSource ?? null,
     playgroundOrigin: settings.playgroundOrigin ?? null,
     notebookOrigin: settings.notebookOrigin ?? null,
+    notebookSameOrigin: settings.notebookSameOrigin === true,
+    notebookMetaPolicy: settings.notebookMetaPolicy === true,
     runtimeIndexUrl: settings.runtimeIndexUrl ?? null,
     wheelhouseUrl: settings.wheelhouseUrl ?? null,
     addonBaseUrl: settings.addonBaseUrl ?? null,
@@ -747,4 +793,20 @@ export function checkPlaygroundAgreement(
       );
     }
   }
+}
+
+/** Whether starter code asks for `PORTAL_BASE_URL` (a mention in a comment counts too). */
+export function usesPortalBase(source: string | undefined): boolean {
+  return Boolean(source && /\bPORTAL_BASE_URL\b/.test(source));
+}
+
+/**
+ * `PORTAL_BASE_URL`: the portal's root URL, where its published files are. On the portal's own
+ * origin it is the base path, resolved where the interpreter runs, so one build serves the same
+ * files at `/` and `/showroom/`, locally and on its host; on another origin (`origin`), the
+ * portal's full URL. Defined unseen at every start; the starter runs and shows as written.
+ */
+export function portalBaseUrl(basePath: string, origin?: string): string {
+  const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  return origin ? `${origin.replace(/\/+$/, "")}${base}` : base;
 }

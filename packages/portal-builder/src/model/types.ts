@@ -566,6 +566,8 @@ export interface PlaygroundSettings {
   packagePolicy: PackagePolicy;
   /** Python run once into a new session. Portal-owned configuration, not visitor input. */
   initialSource?: string;
+  /** `PORTAL_BASE_URL` (`portalBaseUrl`) when `initialSource` names it, defined unseen at start. */
+  portalBaseUrl?: string;
   /**
    * The origin the interpreter is served from, when the deployment gives it one. Undefined means
    * the interpreter runs on the portal's own origin, which is convenient and is also the
@@ -597,8 +599,12 @@ export interface PlaygroundSettings {
    * setup and no chooser, telemetry or sleep.
    */
   sessionChoices?: { policy: SessionPolicy; fingerprint: string };
-  /** Whether the JupyterLite notebook is deployed (on `notebookOrigin`). */
+  /** Whether the JupyterLite notebook is deployed (on `notebookOrigin`, or same-origin). */
   notebook: boolean;
+  /** The notebook is published in the portal's own artifact (`deployment: same-origin`). */
+  notebookSameOrigin?: boolean;
+  /** Same-origin only: the notebook's and the callback's policies in `<meta>` tags too. */
+  notebookMetaPolicy?: boolean;
   /** ClimateClaw in the notebook (`notebook.assistant.climateclaw`), resolved. */
   notebookAssistant?: NotebookAssistantSettings;
   /** The notebook's data panel (`notebook.dataPanel`), resolved apart from its tree and files. */
@@ -687,6 +693,8 @@ export interface PlaygroundArtifactData {
   profile: string;
   /** Python run once into every new interpreter here, mirroring the local session's rule. */
   initialSource?: string;
+  /** `PORTAL_BASE_URL` as the portal's full URL, when `initialSource` names it. */
+  portalBaseUrl?: string;
   /** The embed protocol version this build speaks. A mismatch is refused at the handshake. */
   protocolVersion: number;
   /** Where the interpreter's runtime is fetched from, so the child's CSP can name it. */
@@ -793,6 +801,8 @@ export interface NotebookEmbedData {
   view: "lab" | "files";
   /** The name on the window's bar. */
   title: string;
+  /** Served from the portal's own origin: `src` is origin-relative, `frame-src` is `'self'`. */
+  sameOrigin?: boolean;
 }
 
 /** A prose block's illustration, as published URLs. */
@@ -1049,6 +1059,12 @@ export interface ResolvedPortalModel {
    * all, which makes "this artifact contains no playground page" a checkable fact, not a claim.
    */
   playground?: PlaygroundArtifactData;
+  /**
+   * A same-origin notebook (`notebook.deployment: same-origin`): published in this artifact at
+   * `notebook/`. `callbackPath` (site-relative) when it signs in; `emitCallback` when no portal
+   * sign-in route is there to relay its popup, so the build emits a relay page at that path.
+   */
+  sameOriginNotebook?: { callbackPath?: string; emitCallback: boolean; metaPolicy: boolean };
   theme: ResolvedTheme;
   chrome: ResolvedChrome;
   services: ResolvedService[];

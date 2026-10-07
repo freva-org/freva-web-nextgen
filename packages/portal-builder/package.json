@@ -57,6 +57,7 @@
     "test:browser:strict": "BROWSER_STRICT=1 npm run test:browser",
     "test:browser:python": "BROWSER_STRICT=1 node browser-tests/python-playground.mjs",
     "test:browser:sessions": "BROWSER_STRICT=1 node browser-tests/python-sessions.mjs",
+    "test:browser:same-origin": "BROWSER_STRICT=1 node browser-tests/notebook-same-origin.mjs",
     "test:browser:runnable": "BROWSER_STRICT=1 node browser-tests/runnable-content.mjs",
     "test:browser:snippets": "BROWSER_STRICT=1 node browser-tests/code-snippets.mjs",
     "test:browser:cosmos-tail": "BROWSER_STRICT=1 node browser-tests/cosmos-tail.mjs",

@@ -51,6 +51,7 @@ import type {
   TryPythonRequest,
 } from "../python-bridge.js";
 import { pythonBlocks } from "../python-bridge.js";
+import { portalBaseSource } from "../portal-base.js";
 import { osControlsFor } from "./os-controls-core.js";
 
 export type { ExampleSource, PlaygroundState, PythonPlaygroundConfig, TryPythonRequest };
@@ -233,6 +234,8 @@ type ConsoleElement = HTMLElement & {
   addons?: readonly string[];
   optionalAddons?: readonly string[];
   persistCredentials?: boolean;
+  /** Run unseen at every start, before `initialSource`; read when `start()` builds the engine. */
+  startupSource?: string;
   autoStart: boolean;
   toolbarMode: "full" | "status" | "none";
   hideFiles: boolean;
@@ -298,7 +301,9 @@ export function createPythonPlayground(
   /** What "Open as notebook" opens: the example the visitor last ran, if that was one. */
   const notebookTarget = new NotebookTarget();
   /** Where the notebook is; a config that names only `playgroundOrigin` has it there. */
-  const notebookOrigin = config.notebookOrigin ?? config.playgroundOrigin;
+  const notebookOrigin = config.notebookSameOrigin
+    ? window.location.origin
+    : (config.notebookOrigin ?? config.playgroundOrigin);
   /** The second origin's deployment, under the portal's base path. */
   const playgroundBase = config.playgroundBase ?? "/";
 
@@ -1803,6 +1808,8 @@ export function createPythonPlayground(
     if (cfg.addons.length > 0) element.addons = cfg.addons;
     if (cfg.optionalAddons.length > 0) element.optionalAddons = cfg.optionalAddons;
     if (cfg.persistCredentials) element.persistCredentials = true;
+    const startup = portalBaseSource(cfg.portalBaseUrl, window.location.href);
+    if (startup) element.startupSource = startup;
     // NO CONSOLE TOOLBAR AT ALL, because the window has somewhere to put what it says. Even
     // `toolbar: "status"` draws a light strip with its own border across the top of the console
     // inside a dark window - a second chrome, in a different palette, above the real one. The
@@ -1956,6 +1963,7 @@ export function createPythonPlayground(
     slot: Slot | undefined,
   ): Session {
     const policy = choices as NonNullable<typeof choices>;
+    const startup = portalBaseSource(cfg.portalBaseUrl, window.location.href);
     // No input and no start until the controller attaches an engine: a console left to itself
     // builds its own, outside the page's live slots. (`autostart` is a boolean attribute: its
     // presence, whatever its value, starts the console when it is connected.)
@@ -1998,6 +2006,7 @@ export function createPythonPlayground(
               ...(cfg.wheelhouseUrl ? { wheelhouseURL: cfg.wheelhouseUrl } : {}),
               ...(cfg.addonBaseUrl ? { addonBaseURL: cfg.addonBaseUrl } : {}),
               ...(cfg.persistCredentials ? { persistCredentials: true } : {}),
+              ...(startup ? { startupSource: startup } : {}),
             }),
           store: () => (checkpoints ??= chunk.session.openCheckpointStore()),
           ...(cfg.initialSource

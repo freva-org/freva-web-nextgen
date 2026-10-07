@@ -15,6 +15,7 @@ import {
   labSiteOptions,
   loadKernelTools,
   planNotebook,
+  withMetaPolicy,
 } from "../model/notebook.js";
 import type { CliIo } from "./index.js";
 
@@ -46,7 +47,7 @@ export async function prepareNotebook(options: PrepareNotebookOptions, io: CliIo
     io.out("This portal has no notebook enabled; there is nothing to prepare.\n");
     return 0;
   }
-  const playground = resolved.model?.playground;
+  const playground = resolved.notebookPlayground;
   if (!resolved.model) {
     const errors = resolved.diagnostics.errors.slice(0, 5);
     io.err(
@@ -59,17 +60,22 @@ export async function prepareNotebook(options: PrepareNotebookOptions, io: CliIo
   }
   if (!playground) {
     io.err(
-      "The notebook is enabled, but no page uses the playground, so there is no playground origin " +
-        "to deploy it beside. Mark a runnable snippet or enable a dataset tree's Python first.\n",
+      "The notebook is enabled, but no page uses the playground, so there is no playground to " +
+        "plan it from. Mark a runnable snippet or enable a dataset tree's Python first.\n",
     );
     return 1;
   }
-  const plan = planNotebook(
+  const plan = await withMetaPolicy(
+    planNotebook(
+      settings,
+      playground,
+      resolved.notebookSeeds ?? [],
+      resolved.notebookLab,
+      resolved.notebookIdentity,
+    ),
     settings,
     playground,
-    resolved.notebookSeeds ?? [],
     resolved.notebookLab,
-    resolved.notebookIdentity,
   );
   const out = resolve(options.outDir);
   const setups = (plan.settings.setups as { id: string; label: string }[]) ?? [];
@@ -83,6 +89,8 @@ export async function prepareNotebook(options: PrepareNotebookOptions, io: CliIo
       `extensions     ${plan.lab.packages.join(", ")}${plan.lab.jupyterliteAi ? ", jupyterlite-ai (pinned)" : ""}\n`,
     );
     io.out(`disabled       ${plan.lab.disabledExtensions.length} plugins\n`);
+    if (settings.notebookSameOrigin)
+      io.out(`deployment     same-origin (in the portal's artifact)\n`);
     const lab = resolved.notebookLab;
     const notebook = lab?.assistant
       ? { origin: lab.playgroundOrigin, callbackPath: lab.authCallbackPath, basePath: lab.basePath }
@@ -116,6 +124,7 @@ export async function prepareNotebook(options: PrepareNotebookOptions, io: CliIo
     ...(plan.favicon
       ? { favicon: { path: plan.favicon.path, bytes: plan.favicon.bytes, type: plan.favicon.type } }
       : {}),
+    ...(plan.metaPolicy ? { metaPolicy: plan.metaPolicy } : {}),
     ...(options.python ? { pythonExecutable: options.python } : {}),
     log: (message) => io.out(`${message}\n`),
   });

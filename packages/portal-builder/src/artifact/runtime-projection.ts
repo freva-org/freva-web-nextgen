@@ -502,10 +502,12 @@ export function generatePlaygroundEntryModule(model: ResolvedPortalModel): strin
  * no playground, no console, no interpreter.
  */
 export function generatePlaygroundCallbackEntryModule(model: ResolvedPortalModel): string {
-  if (!model.playground?.authCallbackPath) {
+  // A same-origin notebook's relay page, when no portal sign-in route is there to relay for it.
+  const same = model.sameOriginNotebook?.emitCallback ? model.sameOriginNotebook : undefined;
+  if (!model.playground?.authCallbackPath && !same) {
     return "// No sign-in callback on the playground origin.\nexport {};\n";
   }
-  const basePath = model.playground.basePath ?? "/";
+  const basePath = same ? model.site.basePath : (model.playground?.basePath ?? "/");
   const config = {
     basePath,
     home: { href: underBase(basePath, `${NOTEBOOK_PATH}/lab/`), label: "Back to the notebook" },

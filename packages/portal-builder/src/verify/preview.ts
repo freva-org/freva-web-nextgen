@@ -17,12 +17,24 @@ interface ManifestFile {
   contentDisposition?: string;
 }
 
+type PathMatch = { prefix: string } | { path: string };
+
 interface HostPolicyDocument {
   redirects?: { from: string; to: string; status: number; preserveQuery: boolean }[];
+  headers?: { match: PathMatch | { class: string }; set: Record<string, string> }[];
   csp?: {
     portal?: Record<string, string>;
     subsites?: { mount: string; directives: Record<string, string> }[];
+    /** Policies that replace the portal's on their paths (a same-origin notebook). */
+    paths?: { match: PathMatch; directives: Record<string, string> }[];
   };
+}
+
+/** Whether a request path (base path included) is one a host-policy match names. */
+function matches(match: PathMatch | { class: string }, path: string): boolean {
+  if ("prefix" in match) return path.startsWith(match.prefix);
+  if ("path" in match) return path === match.path;
+  return false;
 }
 
 function cspHeader(directives: Record<string, string>): string {
@@ -59,6 +71,12 @@ export function createPreviewServer(options: PreviewOptions): Server {
     mount: entry.mount,
     header: cspHeader(entry.directives),
   }));
+  const pathCsp = (policy.csp?.paths ?? []).map((entry) => ({
+    match: entry.match,
+    header: cspHeader(entry.directives),
+  }));
+  // Headers the policy sets by path or prefix (downloads, the sign-in callback, a notebook).
+  const pathHeaders = (policy.headers ?? []).filter((entry) => !("class" in entry.match));
 
   // The declared redirects, answered as a conforming host must: by exact path, with or without
   // the trailing slash, with the request's query merged into the target's (`redirectLocation`).
@@ -130,11 +148,17 @@ export function createPreviewServer(options: PreviewOptions): Server {
       "x-content-type-options": "nosniff",
     };
     if (entry?.contentDisposition) headers["content-disposition"] = entry.contentDisposition;
-    const subsite = subsiteCsp.find((s) =>
-      `${basePath.replace(/\/$/, "")}${pathname}`.startsWith(s.mount),
-    );
-    if (subsite) headers["content-security-policy"] = subsite.header;
+    const full = `${basePath.replace(/\/$/, "")}${pathname}`;
+    const subsite = subsiteCsp.find((s) => full.startsWith(s.mount));
+    // One policy per response: a path's own replaces the portal's, never stacked on it.
+    const own = pathCsp.find((p) => matches(p.match, full));
+    if (own) headers["content-security-policy"] = own.header;
+    else if (subsite) headers["content-security-policy"] = subsite.header;
     else if (portalCsp) headers["content-security-policy"] = portalCsp;
+    for (const entry of pathHeaders) {
+      if (!matches(entry.match, full)) continue;
+      for (const [name, value] of Object.entries(entry.set)) headers[name.toLowerCase()] = value;
+    }
     if (entry?.cacheClass === "no-store") {
       headers["referrer-policy"] = "no-referrer";
     }

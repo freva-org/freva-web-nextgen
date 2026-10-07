@@ -457,9 +457,13 @@ export interface RawPythonPlaygroundBase {
     allowSkipStarter?: boolean;
     starterProfiles?: string[];
   };
-  /** The JupyterLite notebook on `playgroundOrigin`. */
+  /** The notebook: on `playgroundOrigin`, or in the portal's artifact (`same-origin`). */
   notebook?: {
     enabled: boolean;
+    /** Where it is served. Default `separate-origin` (on `playgroundOrigin`). */
+    deployment?: "separate-origin" | "same-origin";
+    /** Same-origin only: the documents' policies in `<meta>` too, for a host without headers. */
+    metaPolicy?: boolean;
     seeds?: string[];
     /** ClimateClaw in the notebook, through jupyterlite-ai. */
     assistant?: { climateclaw: RawClimateClaw };

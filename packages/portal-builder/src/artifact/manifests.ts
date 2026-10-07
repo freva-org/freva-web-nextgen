@@ -18,6 +18,7 @@ import type { PreparedStacMaterials } from "../components/stac-browser/materials
 import { registrationFor } from "../components/registry.js";
 import { packagePurl, sha256 } from "../util/package.js";
 import type { RstHandshake } from "../rendering/rst/client.js";
+import type { SameOriginPolicies } from "./same-origin.js";
 import { compareCodePoints } from "../util/order.js";
 import { GRIDLOOK_ORIGIN } from "../model/notebook.js";
 import { DEFAULT_PYODIDE_INDEX_URL } from "@freva-org/browser-python";
@@ -91,6 +92,8 @@ export interface ManifestInputs {
    * fonts for no reason.
    */
   mathUsed?: boolean;
+  /** A same-origin notebook's own path policies and headers (`notebook.deployment`). */
+  sameOriginPolicies?: SameOriginPolicies;
 }
 
 export function inputManifest(inputs: ManifestInputs): object {
@@ -352,7 +355,9 @@ export function hostPolicy(inputs: ManifestInputs): object {
   // tree whose Inspect offers its globe (the data panel's `gridlook`); nothing else.
   for (const block of model.landings.flatMap((landing) => landing.blocks)) {
     const framed = block.notebook
-      ? block.notebook.origin
+      ? block.notebook.sameOrigin
+        ? "'self'"
+        : block.notebook.origin
       : block.datasetTree?.gridlook
         ? GRIDLOOK_ORIGIN
         : undefined;
@@ -508,6 +513,9 @@ export function hostPolicy(inputs: ManifestInputs): object {
     })),
   ];
 
+  // A same-origin notebook's paths: their headers, beside its policies under `csp.paths`.
+  headers.push(...(inputs.sameOriginPolicies?.headers ?? []));
+
   const authCallback = model.hostPolicy.authCallbackPath;
   if (authCallback) {
     headers.push({
@@ -629,6 +637,11 @@ export function hostPolicy(inputs: ManifestInputs): object {
               workers: subsite.policy.runtime.workers,
             })),
           }
+        : {}),
+      // Policies that REPLACE the portal's on their paths (never added to it): a same-origin
+      // notebook, its kernel Workers and its sign-in relay page.
+      ...(inputs.sameOriginPolicies?.paths.length
+        ? { paths: inputs.sameOriginPolicies.paths }
         : {}),
     },
     mimeTypes: Object.fromEntries(

@@ -189,41 +189,43 @@ export function verifyArtifact(dir: string): DiagnosticBag {
 
   // The notebook site, against its own inventory: every file listed, with its digest, and
   // nothing unlisted - the same check `prepare-notebook` made, repeated on the artifact.
-  const notebookDir = "playground-origin/notebook";
-  const inventoryPath = `${notebookDir}/NOTEBOOK-INVENTORY.json`;
-  if (present.has(inventoryPath)) {
-    let listed: { path: string; sha256: string }[] = [];
-    try {
-      listed = (
-        JSON.parse(readFileSync(join(dir, ...inventoryPath.split("/")), "utf8")) as {
-          files: { path: string; sha256: string }[];
+  // On the playground origin's side of the artifact, or (same-origin) in the portal's own tree.
+  for (const notebookDir of ["playground-origin/notebook", "notebook"]) {
+    const inventoryPath = `${notebookDir}/NOTEBOOK-INVENTORY.json`;
+    if (present.has(inventoryPath)) {
+      let listed: { path: string; sha256: string }[] = [];
+      try {
+        listed = (
+          JSON.parse(readFileSync(join(dir, ...inventoryPath.split("/")), "utf8")) as {
+            files: { path: string; sha256: string }[];
+          }
+        ).files;
+      } catch {
+        bag.error("FP1603", `'${inventoryPath}' is not a readable notebook inventory.`, {
+          file: inventoryPath,
+        });
+      }
+      const expected = new Map(listed.map((f) => [`${notebookDir}/${f.path}`, f.sha256]));
+      for (const path of present) {
+        if (!path.startsWith(`${notebookDir}/`) || path === inventoryPath) continue;
+        const digest = expected.get(path);
+        if (digest === undefined) {
+          bag.error("FP1603", `'${path}' is in the notebook but not in its inventory.`, {
+            file: path,
+          });
+          continue;
         }
-      ).files;
-    } catch {
-      bag.error("FP1603", `'${inventoryPath}' is not a readable notebook inventory.`, {
-        file: inventoryPath,
-      });
-    }
-    const expected = new Map(listed.map((f) => [`${notebookDir}/${f.path}`, f.sha256]));
-    for (const path of present) {
-      if (!path.startsWith(`${notebookDir}/`) || path === inventoryPath) continue;
-      const digest = expected.get(path);
-      if (digest === undefined) {
-        bag.error("FP1603", `'${path}' is in the notebook but not in its inventory.`, {
+        const actual = sha256(readFileSync(join(dir, ...path.split("/"))));
+        if (actual !== `sha256:${digest}`) {
+          bag.error("FP1603", `'${path}' does not match the notebook inventory.`, { file: path });
+        }
+        expected.delete(path);
+      }
+      for (const path of expected.keys()) {
+        bag.error("FP1603", `The notebook inventory lists '${path}', which is absent.`, {
           file: path,
         });
-        continue;
       }
-      const actual = sha256(readFileSync(join(dir, ...path.split("/"))));
-      if (actual !== `sha256:${digest}`) {
-        bag.error("FP1603", `'${path}' does not match the notebook inventory.`, { file: path });
-      }
-      expected.delete(path);
-    }
-    for (const path of expected.keys()) {
-      bag.error("FP1603", `The notebook inventory lists '${path}', which is absent.`, {
-        file: path,
-      });
     }
   }
 

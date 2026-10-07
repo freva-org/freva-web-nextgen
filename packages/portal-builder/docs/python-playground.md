@@ -348,8 +348,9 @@ restarts Python after a grace period, and says that its state was lost. The wind
 _Open as notebook_, which opens the example last run (each registered example is a seed notebook)
 or the notebook's file list, where `seeds` and the examples are.
 
-It requires `playgroundOrigin` (`FP1235`): the notebook runs only there, under its own policy, and
-the portal's pages keep theirs. `consoleInPage: true` keeps that origin for the notebook alone and
+It requires `playgroundOrigin` (`FP1235`), unless it is published on the portal's own origin (see
+[below](#the-notebook-on-the-portals-own-origin)): the notebook runs only there, under its own
+policy. `consoleInPage: true` keeps that origin for the notebook alone and
 runs everything else in the portal's own pages (see [configuration.md](./configuration.md)). Prepare
 the notebook like the other materials, and give it to the build:
 
@@ -364,13 +365,90 @@ artifact (`--python` picks the interpreter that runs it; a portal that needs `--
 `--python-materials` to build needs them here too), builds the site in isolation - no stock
 kernels, no service worker, nothing from a CDN, no inline script - and writes
 `NOTEBOOK-INVENTORY.json` with every file's digest. `build` refuses a site prepared for another
-configuration (`FP1605`) or a missing one (`FP1604`), copies it under `playground-origin/notebook/`,
+configuration or by another revision of `prepare-notebook` (`FP1605`), or a missing one (`FP1604`).
+So after upgrading portal-builder or the kernel, prepare the site again, whatever its deployment
+(from a source checkout, after `npm run build:labextensions`). `build` copies it under `playground-origin/notebook/`,
 and `deploy.json` lists its files and the headers for `/notebook/`. `verify` checks the copy against
 the inventory. The notebook's policy is the playground's network plus `style-src 'unsafe-inline'`
 (JupyterLab injects its stylesheets at run time; Python-authored markup never keeps a style) and
 `frame-ancestors 'none'`; it has no `'unsafe-eval'`. Notebooks live in the visitor's browser
 storage; `.ipynb` files (nbformat 4) can be uploaded, are validated and never run on import, and are
 downloaded as nbformat 4.5. Saving one into `/workspace` is an explicit command.
+
+### The notebook on the portal's own origin
+
+```yaml
+pythonPlayground:
+  consoleInPage: true
+  notebook:
+    enabled: true
+    deployment: same-origin # default: separate-origin, on playgroundOrigin
+    metaPolicy: false # true: the policies in <meta> tags too, for a host without headers
+```
+
+For a host with one origin and no headers (GitHub Pages), `deployment: same-origin` publishes the
+notebook inside the portal's artifact, so `playgroundOrigin` is not needed (`FP1235` does not
+apply); a configured one still serves the console unless `consoleInPage` keeps it in the pages. The
+site goes to `notebook/` (`<basePath>notebook/`, the Lab at `<basePath>notebook/lab/`), and with the
+assistant the shared sign-in callback to `<basePath>auth/callback/`. `verify`, the manifests and
+`checksums.sha256` cover both; there is no `playground-origin/` and no `deploy.json`.
+`freva-portal-builder preview --dir build/portal` serves all of it on one port.
+
+Everything the notebook needs is origin-relative (the landing's frame, _Open as notebook_, the
+callback), so one build works on its host and in a local preview. `site.canonicalUrl` fixes the base
+path: a build for `https://<account>.github.io/<repo>/` is previewed at
+`http://localhost:4321/<repo>/`.
+
+**The sign-in callback.** With `components.login`, the portal's callback route serves both: it
+relays a notebook's popup first and otherwise completes the portal's same-tab sign-in. Without it,
+the build emits a relay-only page there. Register `<origin><basePath>auth/callback/` (login and
+logout) with the identity provider and in freva-rest's allow-list, for every origin the build is
+served from (the build prints them). A console on its own origin changes none of this: the notebook
+still signs in on the portal, and nothing of it goes to the console's origin.
+
+**Policies.** `host-policy.json` gives the notebook its own policy under `csp.paths`, matched by
+`<basePath>notebook/` (its Workers included), and the relay page its own by path; each REPLACES the
+portal's on those paths. A production host must be configured the same way: a host that sends the
+portal's policy there as well makes the browser enforce both, and the notebook's Python and files
+are blocked. The notebook's `frame-ancestors` is `'self'` when a landing frames it, else
+`'none'`. The preview applies all of them; a host that sends no headers applies none. With
+`metaPolicy: true` each notebook page (written by `prepare-notebook` and recorded in its inventory,
+replacing any policy it had) and the relay page carry their policy as their first `<meta>` element,
+minus what a meta tag cannot deliver; with `components.login` the callback route carries the
+portal's policy that way. What such a host still does not get is reported as `FP1239` notices:
+`frame-ancestors`, any policy for the kernel Workers (a Worker's policy comes only from its own
+response) and `no-store` on the callback. No service worker, no JavaScript output renderer, the
+eval-free settings validator and sanitised outputs do not depend on headers.
+
+**What it gives up (`FP1239`, on every build).** The notebook, the console and the portal share one
+origin and its storage, including the stored Freva/ClimateClaw sign-in: any script there can read
+it, a notebook output or the console included, and the frame's sandbox does not separate a
+same-origin document. On `<account>.github.io` every Pages site of the account shares that origin,
+and GitHub Pages sends no Content-Security-Policy. A deployment that can give the notebook its own
+origin should: set `playgroundOrigin` and drop `deployment`.
+
+**Switching deployments.** Notebooks, files and settings are kept in the visitor's browser per
+origin. Moving the notebook to another origin (either way between `separate-origin` and
+`same-origin`, or to another `playgroundOrigin`) does not take them along: tell visitors to download
+the notebooks they want to keep first.
+
+**Files under the base path.** Starter code that names `PORTAL_BASE_URL` gets it defined first: the
+portal's root URL. An interpreter on the portal's origin (the console in its pages, a same-origin
+notebook's kernel) takes it from where it runs plus the build's base path. One on its own origin (a
+console on `playgroundOrigin`, a separate-origin notebook) is given `site.canonicalUrl`, which its
+policy lets it reach, and needs the portal's host to answer with CORS (GitHub Pages sends
+`Access-Control-Allow-Origin: *`). It is defined unseen at every start and restart; the starter
+runs, shows and enters the history as written. So a wheel published under the portal installs in
+every interpreter:
+
+```yaml
+initialSource: |
+  import micropip
+  from pyodide.http import pyfetch
+  _wheels = PORTAL_BASE_URL + "python-wheels/"
+  _names = await (await pyfetch(_wheels + "wheels.json")).json()
+  await micropip.install([_wheels + _n for _n in _names], deps=False)
+```
 
 ### The assistant and the data panel
 

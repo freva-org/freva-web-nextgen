@@ -6,28 +6,16 @@
 // and audit rules); the browser suite builds and runs a real one.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  DISABLED_EXTENSIONS,
-  INVENTORY,
-  INVENTORY_SCHEMA,
-  LITE_CORE_VERSION,
-  pinnedRequirements,
-  siteFiles,
-  PREPARE_DIGEST,
-} from "@freva-org/jupyterlite-freva-kernel/prepare";
+import { pinnedRequirements } from "@freva-org/jupyterlite-freva-kernel/prepare";
 import { cleanupFixtures, tempRoot, write } from "../helpers/fixture.js";
+import { fakeSite, kernelManifest } from "../helpers/notebook-site.js";
 import { buildFixture } from "../helpers/site.js";
 import { writeConsumerSite } from "../helpers/consumer.js";
 import { resolveModel } from "../../src/model/resolve.js";
-import {
-  KERNEL_PACKAGE,
-  extensionPackage,
-  planNotebook,
-  type NotebookPlan,
-} from "../../src/model/notebook.js";
+import { planNotebook, type NotebookPlan } from "../../src/model/notebook.js";
 import { verifyArtifact } from "../../src/verify/verify.js";
 import { authCallbackEntries, describeAuthCallbacks } from "../../src/model/auth-callbacks.js";
 
@@ -64,62 +52,6 @@ function site(seeds = false, assistant = false): string {
   });
   if (seeds) write(root, "notebooks/intro.ipynb", SEED);
   return root;
-}
-
-/** The installed kernel extension's manifest, as `prepare-notebook` copies it into a site. */
-const kernelManifest = (): string =>
-  readFileSync(join(extensionPackage(KERNEL_PACKAGE).labextension, "package.json"), "utf8");
-
-/** A stand-in prepared site for `plan`: what `prepare-notebook` would write, minus JupyterLite. */
-function fakeSite(
-  plan: NotebookPlan,
-  seeds = plan.seeds,
-  kernel = kernelManifest(),
-  requirements = pinnedRequirements(),
-  made: { preparedBy?: string; faviconUrl?: boolean } = {},
-): string {
-  const dir = join(tempRoot("portal-notebook-site-"), "notebook");
-  const put = (path: string, text: string): void => {
-    mkdirSync(join(dir, ...path.split("/").slice(0, -1)), { recursive: true });
-    writeFileSync(join(dir, ...path.split("/")), text);
-  };
-  put(
-    "jupyter-lite.json",
-    JSON.stringify({
-      "jupyter-config-data": {
-        federated_extensions: [{ name: "@freva-org/jupyterlite-freva-kernel" }],
-        disabledExtensions: DISABLED_EXTENSIONS,
-        // As `linkFavicon` names it for JupyterLite's boot script.
-        ...(plan.favicon && made.faviconUrl !== false
-          ? { faviconUrl: `./${plan.favicon.path}` }
-          : {}),
-      },
-    }),
-  );
-  put("notebooks/index.html", '<!doctype html><script src="./config-utils.js"></script>');
-  put(`extensions/${KERNEL_PACKAGE}/package.json`, kernel);
-  for (const seed of seeds) put(`files/${seed.name}`, seed.text);
-  if (plan.favicon) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, plan.favicon.path), plan.favicon.bytes);
-  }
-  put(
-    INVENTORY,
-    JSON.stringify({
-      schemaVersion: INVENTORY_SCHEMA,
-      jupyterliteCore: LITE_CORE_VERSION,
-      requirements,
-      seeds: seeds.map((s) => s.name),
-      settingsSha256: plan.settingsSha256,
-      ...(plan.appName ? { appName: plan.appName } : {}),
-      ...(plan.favicon
-        ? { favicon: { path: plan.favicon.path, sha256: plan.favicon.sha256 } }
-        : {}),
-      preparedBy: made.preparedBy ?? PREPARE_DIGEST,
-      files: siteFiles(dir),
-    }),
-  );
-  return dir;
 }
 
 async function planFor(root: string): Promise<NotebookPlan> {

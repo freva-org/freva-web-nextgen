@@ -56,7 +56,13 @@ import {
 import { validateAgainst } from "../config/schema.js";
 import type { ComponentEvidence } from "./evidence.js";
 import { MATERIALS_MANIFEST } from "../model/python-materials.js";
-import { NOTEBOOK_ARTIFACT_DIR } from "../model/notebook.js";
+import {
+  NOTEBOOK_SAME_ORIGIN_DIR,
+  loadKernelTools,
+  notebookArtifactDir,
+  underBase,
+} from "../model/notebook.js";
+import { callbackPolicy, metaSafe, sameOriginPolicies } from "./same-origin.js";
 import { containStylesheet } from "../components/stac-browser/containment.js";
 import { redirectPage } from "../model/redirects.js";
 
@@ -392,13 +398,62 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   // The notebook site, under the playground's own directory and before `collect()`, so it is
   // hashed and checksummed like everything else. Copied from its inventory, not a listing.
   if (resolved.notebook) {
-    const { realRoot, files } = resolved.notebook;
+    const { realRoot, files, sameOrigin } = resolved.notebook;
+    const dir = notebookArtifactDir(sameOrigin);
+    // Same-origin, the notebook shares the portal's tree: a page there is a collision, not a merge.
+    if (sameOrigin && existsSync(join(tempOut, dir))) {
+      bag.error(
+        "FP1208",
+        `The same-origin notebook is published at '${dir}/', where the portal already has a page.`,
+        { pointer: "/pythonPlayground/notebook/deployment" },
+      );
+    }
     for (const path of files) {
-      const rel = `${NOTEBOOK_ARTIFACT_DIR}/${path}`;
+      const rel = `${dir}/${path}`;
       const target = join(tempOut, ...rel.split("/"));
       mkdirSync(dirname(target), { recursive: true });
       cpSync(join(realRoot, ...path.split("/")), target);
       copiedFiles.push(rel);
+    }
+  }
+
+  // A same-origin notebook's relay page, emitted with the playground's templates, moved to its
+  // path in the portal's tree; with `metaPolicy`, its policy goes in as a meta tag too.
+  const sameOrigin = model.sameOriginNotebook;
+  let callbackFile: string | undefined;
+  if (sameOrigin?.emitCallback && sameOrigin.callbackPath) {
+    const rel = sameOrigin.callbackPath.replace(/^\/+/, "");
+    const from = join(tempOut, "playground-origin", ...rel.split("/"), "index.html");
+    callbackFile = `${rel}index.html`;
+    const to = join(tempOut, ...callbackFile.split("/"));
+    if (existsSync(to)) {
+      bag.error(
+        "FP1208",
+        `The notebook's sign-in callback '${sameOrigin.callbackPath}' is already a page of the portal.`,
+        { pointer: "/pythonPlayground/notebook/assistant" },
+      );
+    } else if (existsSync(from)) {
+      mkdirSync(dirname(to), { recursive: true });
+      let html = readFileSync(from, "utf8");
+      if (sameOrigin.metaPolicy) {
+        const { prepare } = await loadKernelTools();
+        html = prepare.setMetaPolicy(html, callbackPolicy(html).meta);
+      }
+      writeFileSync(to, html, "utf8");
+    }
+    // Moved, not copied: nothing of the portal's stays on the playground origin's side.
+    if (!model.playground) {
+      rmSync(join(tempOut, "playground-origin"), { recursive: true, force: true });
+    } else {
+      rmSync(from, { force: true });
+      for (
+        let dir = dirname(from);
+        dir !== join(tempOut, "playground-origin");
+        dir = dirname(dir)
+      ) {
+        if (readdirSync(dir).length > 0) break;
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
   }
 
@@ -461,7 +516,8 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
     tempOut,
     graph,
     listFiles(tempOut),
-    resolved.notebook ? { csp: resolved.notebook.csp } : undefined,
+    // The notebook goes to the playground origin only when it is deployed there.
+    resolved.notebook && !resolved.notebook.sameOrigin ? { csp: resolved.notebook.csp } : undefined,
   );
   if (deployment) {
     const dir = join(tempOut, "playground-origin");
@@ -492,8 +548,56 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
 
   // Astro inlines a small hoisted script rather than emitting a file: fine for delivery and
   // fatal for a CSP that only lists 'self', so the emitted HTML is read back and the literal
-  // blocks are hashed into the policy. The artifact's CSP describes the artifact.
-  const inline = collectInlineHashes(tempOut);
+  // blocks are hashed into the policy. A same-origin notebook and its relay page have policies
+  // of their own: nothing of theirs belongs in the portal's.
+  const ownPolicy = (path: string): boolean =>
+    Boolean(sameOrigin) &&
+    (path.startsWith(`${NOTEBOOK_SAME_ORIGIN_DIR}/`) || path === callbackFile);
+  const inline = collectInlineHashes(tempOut, ownPolicy);
+
+  // The page answering a same-origin notebook's sign-in, whichever wrote it.
+  const callbackPage = sameOrigin?.callbackPath
+    ? join(tempOut, ...`${sameOrigin.callbackPath.replace(/^\/+/, "")}index.html`.split("/"))
+    : undefined;
+  if (callbackPage && !existsSync(callbackPage)) {
+    bag.error(
+      "FP1239",
+      `The notebook's sign-in callback '${sameOrigin!.callbackPath}' has no page.`,
+      {
+        pointer: "/pythonPlayground/notebook/assistant",
+      },
+    );
+  }
+  const callbackFound = callbackPage && existsSync(callbackPage) ? callbackPage : undefined;
+
+  // With `metaPolicy`, the portal's own sign-in route - a notebook's callback too when login is
+  // enabled - carries the portal's policy as a meta tag (its same-tab sign-in needs all of it).
+  // Before `collect()`, so the page is hashed as published.
+  if (sameOrigin?.metaPolicy && callbackFound && !callbackFile) {
+    const portal = (
+      hostPolicy({
+        model,
+        evidence,
+        files: [],
+        inlineScriptHashes: inline.scripts,
+        inlineStyleHashes: inline.styles,
+        mathUsed: resolved.mathUsed ?? false,
+        rstUsed: resolved.rst.used,
+        ...(resolved.stacAdapter ? { stac: resolved.stacAdapter.materials } : {}),
+      }) as { csp: { portal: Record<string, string> } }
+    ).csp.portal;
+    const policy = metaSafe(
+      Object.entries(portal)
+        .map(([name, value]) => `${name} ${value}`)
+        .join("; "),
+    );
+    const { prepare } = await loadKernelTools();
+    writeFileSync(
+      callbackFound,
+      prepare.setMetaPolicy(readFileSync(callbackFound, "utf8"), policy),
+      "utf8",
+    );
+  }
 
   const manifestInputs: ManifestInputs = {
     model,
@@ -510,7 +614,33 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
     ...(options.builderImage ? { builderImage: options.builderImage } : {}),
     ...(options.sourceRevision ? { sourceRevision: options.sourceRevision } : {}),
     ...(options.publicEnvironment ? { publicEnvironment: options.publicEnvironment } : {}),
+    ...(sameOrigin
+      ? {
+          sameOriginPolicies: sameOriginPolicies({
+            basePath: model.site.basePath,
+            ...(resolved.notebook?.sameOrigin ? { notebookPolicy: resolved.notebook.csp } : {}),
+            ...(callbackFound
+              ? {
+                  callback: {
+                    path: underBase(model.site.basePath, sameOrigin.callbackPath!),
+                    // The relay page this build emitted, or the portal's own sign-in route.
+                    policy: callbackPolicy(readFileSync(callbackFound, "utf8")).header,
+                    own: Boolean(callbackFile),
+                  },
+                }
+              : {}),
+            meta: sameOrigin.metaPolicy,
+          }),
+        }
+      : {}),
   };
+
+  // What a host that sends no headers (GitHub Pages) does not get, said rather than dropped.
+  if (manifestInputs.sameOriginPolicies) {
+    for (const line of manifestInputs.sameOriginPolicies.unenforcedWithoutHeaders) {
+      bag.info("FP1239", line, { pointer: "/pythonPlayground/notebook" });
+    }
+  }
 
   const inputJson = `${JSON.stringify(inputManifest(manifestInputs), null, 2)}\n`;
   const write = (name: string, content: string): void =>
@@ -609,14 +739,17 @@ function isExecutableScript(attributes: string): boolean {
 }
 const STYLE_BLOCK = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
 
-function collectInlineHashes(dir: string): { scripts: string[]; styles: string[] } {
+function collectInlineHashes(
+  dir: string,
+  skip: (path: string) => boolean = () => false,
+): { scripts: string[]; styles: string[] } {
   const scripts = new Set<string>();
   const styles = new Set<string>();
   for (const path of listFiles(dir)) {
     if (!path.endsWith(".html")) continue;
     // The playground origin's documents are deployed there, under their own policy
     // (`playground-origin/deploy.json`): nothing of theirs belongs in the portal's.
-    if (path.startsWith("playground-origin/")) continue;
+    if (path.startsWith("playground-origin/") || skip(path)) continue;
     const text = readFileSync(join(dir, ...path.split("/")), "utf8");
     for (const match of text.matchAll(SCRIPT_BLOCK)) {
       const attrs = match[1] ?? "";
