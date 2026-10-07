@@ -6,6 +6,7 @@
   ],
   "scripts": {
     "build": "npm run build -w @freva-org/freva-client-terminal -w @freva-org/ts-oidc-auth-client && npm run build --workspaces",
+    "build:labextensions": "npm run build:labextension -w @freva-org/jupyterlite-freva-kernel -w @freva-org/jupyterlite-climateclaw -w @freva-org/jupyterlite-freva-data",
     "dev": "npm run dev       --workspaces --if-present",
     "test": "npm run test      --workspaces --if-present",
     "test:browser": "npm run test:browser -w @freva-org/databrowser",
