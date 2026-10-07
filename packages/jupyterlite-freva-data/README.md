@@ -13,13 +13,17 @@ also offers **Ask ClimateClaw** and uses the Freva sign-in for protected stores.
 
 Every action is a command, run on the selected dataset from the card above the tree, a row's
 context menu (a right-click selects its row first) or Ctrl/Cmd+Enter on a row (the primary action).
-Clicks only select: two clicks on a row never open anything.
+A click selects its row (and opens or closes it in the tree); clicks never run an action.
 
-The card names the selected dataset (its kind and path) and holds **Open notebook** (the primary
+The card keeps one height, so selecting a row never moves the tree under the pointer. It names the
+selected dataset (its kind, and its path in up to two lines, whole in the tooltip), or says how to
+start, and holds **Open notebook** (the primary
 action, `defaultAction`) and tiles with short labels: Insert, Inspect, Globe, Ask, Copy URL. A
-disabled tile says why in its tooltip; one that ran says so for a moment ("Copied", "Opened"). In a
+disabled tile (all of them, before anything is selected) says why in its tooltip; one that ran
+says so for a moment ("Copied", "Opened"). In a
 narrow panel the tiles give way to a **More actions** menu beside the primary button. A tip under
-the card (shown until the context menu is first used, per browser) says that a right-click and
+the card (shown until the context menu is first used in this browser, gone from the next load)
+says that a right-click and
 dragging onto a notebook work too. Copy code is in the context menu only.
 
 In a notebook cell, a registered example's closing `print(ds)` becomes `ds`, so Jupyter shows the

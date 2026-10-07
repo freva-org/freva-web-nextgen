@@ -72,13 +72,44 @@ const click = (element: HTMLElement, timeStamp: number) => {
 };
 
 describe("the data panel's card", () => {
-  it("before a selection: how to start, and no actions", () => {
-    const { panel } = setup();
+  it("before a selection: how to start, and the actions there but none runs", () => {
+    const { panel, button, ran } = setup();
     const card = panel.node.querySelector(".jp-FrevaData-selection")!;
     expect(card.classList.contains("jp-mod-empty")).toBe(true);
     expect(card.textContent).toMatch(/Select a dataset/);
     const actions = panel.node.querySelector(".jp-FrevaData-actions")!;
-    expect(actions.classList.contains("lm-mod-hidden")).toBe(true);
+    expect(actions.classList.contains("lm-mod-hidden")).toBe(false);
+    for (const id of [OPEN, INSPECT, COPY]) {
+      expect(button(id).getAttribute("aria-disabled")).toBe("true");
+      button(id).click();
+    }
+    expect(ran).toEqual([]);
+    panel.dispose();
+  });
+
+  it("keeps one shape in every state, so selecting a row never moves the tree", () => {
+    const { panel, row } = setup();
+    const shape = () => {
+      const card = panel.node.querySelector(".jp-FrevaData-selection")!;
+      return [...card.querySelectorAll("*")]
+        .filter((e) => !(e as HTMLElement).hidden && !e.closest(".lm-mod-hidden"))
+        .map((e) => e.className)
+        .filter((c) => /selectedHead|detail|actions$|jp-FrevaData-tip/.test(c));
+    };
+    const empty = shape();
+    expect(empty).toEqual([
+      "jp-FrevaData-selectedHead",
+      "jp-FrevaData-detail",
+      "lm-Widget jp-FrevaData-actions",
+      "lm-Widget jp-FrevaData-tip",
+    ]);
+    click(row("s3://data/", "directory", "data"), 1);
+    expect(shape()).toEqual(empty);
+    click(row("s3://data/wind.zarr/", "dataset", "wind.zarr"), 2);
+    expect(shape()).toEqual(empty);
+    // The whole text stays readable in the tooltip when the two lines cut it.
+    const path = panel.node.querySelector<HTMLElement>(".jp-FrevaData-selectedPath")!;
+    expect(path.title).toBe("s3://data/wind.zarr/");
     panel.dispose();
   });
 
@@ -167,9 +198,10 @@ describe("the data panel's card", () => {
     row("s3://data/wind.zarr/", "dataset", "wind.zarr").dispatchEvent(
       new MouseEvent("contextmenu", { bubbles: true }),
     );
-    expect(tip.classList.contains("lm-mod-hidden")).toBe(true);
+    // Still shown in this panel, so its height does not change...
+    expect(tip.classList.contains("lm-mod-hidden")).toBe(false);
     panel.dispose();
-    // Remembered in this browser.
+    // ...and gone the next time, remembered in this browser.
     const again = setup();
     expect(
       again.panel.node.querySelector(".jp-FrevaData-tip")!.classList.contains("lm-mod-hidden"),

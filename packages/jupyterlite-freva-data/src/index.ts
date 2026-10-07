@@ -383,7 +383,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
       icon: linkIcon,
       caption: (args) => {
         const node = nodeFor(args);
-        return node && urlOf(node) ? "Copy its address" : "This item has no address to copy";
+        if (!node) return "Select an item to copy its address";
+        return urlOf(node) ? "Copy its address" : "This item has no address to copy";
       },
       isEnabled: (args) => {
         const node = nodeFor(args);
