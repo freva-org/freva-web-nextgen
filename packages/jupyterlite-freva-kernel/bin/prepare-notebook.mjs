@@ -27,6 +27,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "parse5";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = join(HERE, "..");
@@ -283,6 +284,171 @@ export function linkFavicon(siteDir, favicon) {
   }
 }
 
+/**
+ * The policy without the directives a `<meta>` tag cannot deliver (`frame-ancestors`,
+ * `report-uri`, `report-to`, `sandbox`), and the ones dropped.
+ */
+export function metaPolicyOf(policy) {
+  const dropped = [];
+  const kept = String(policy)
+    .split(";")
+    .map((d) => d.trim())
+    .filter(Boolean)
+    .filter((d) => {
+      const name = d.split(/\s+/)[0].toLowerCase();
+      if (["frame-ancestors", "report-uri", "report-to", "sandbox"].includes(name)) {
+        dropped.push(name);
+        return false;
+      }
+      return true;
+    });
+  return { policy: kept.join("; "), dropped };
+}
+
+const HTML_NS = "http://www.w3.org/1999/xhtml";
+
+/**
+ * The page as a browser's HTML parser builds it, with each node's source offsets. A browser drops
+ * a byte order mark before parsing; `shift` maps the offsets back onto `html`.
+ */
+const parsePage = (html) => {
+  const shift = html.startsWith("\uFEFF") ? 1 : 0;
+  const document = parse(html.slice(shift), {
+    sourceCodeLocationInfo: true,
+    scriptingEnabled: true,
+  });
+  return { document, shift };
+};
+
+const elements = (node) =>
+  (node.childNodes ?? []).filter((child) => child.namespaceURI === HTML_NS);
+
+const attribute = (element, name) => element.attrs.find((a) => a.name === name)?.value;
+
+// Values are already decoded (`&#45;`), and duplicate attributes dropped, as a browser does.
+const isCspMeta = (element) =>
+  element.nodeName === "meta" &&
+  (attribute(element, "http-equiv") ?? "").trim().toLowerCase() === "content-security-policy";
+
+/** Every CSP meta element in the parsed page (template contents and `<noscript>` are inert). */
+function cspMetaElements(document) {
+  const found = [];
+  const visit = (node) => {
+    for (const child of node.childNodes ?? []) {
+      if (child.namespaceURI === HTML_NS && isCspMeta(child)) found.push(child);
+      visit(child);
+    }
+  };
+  visit(document);
+  return found;
+}
+
+const isCharset = (element) =>
+  element?.nodeName === "meta" && attribute(element, "charset") !== undefined;
+
+/** The first node, in document order, that the source spells out. */
+const firstInSource = (nodes) => {
+  for (const node of nodes) {
+    if (node.sourceCodeLocation) return node;
+    const inner = firstInSource(node.childNodes ?? []);
+    if (inner) return inner;
+  }
+  return undefined;
+};
+
+const headOf = (document) => {
+  const html = elements(document).find((e) => e.nodeName === "html");
+  return html && elements(html).find((e) => e.nodeName === "head");
+};
+
+/**
+ * Every Content-Security-Policy `<meta>` element in a page, as a browser's parser finds it
+ * (character references, quoting, raw text and comments included). Returns each one's span.
+ */
+export function cspMetaTags(html) {
+  const { document, shift } = parsePage(html);
+  return cspMetaElements(document).map(({ sourceCodeLocation: at }) => ({
+    start: at.startOffset + shift,
+    end: at.endOffset + shift,
+  }));
+}
+
+const metaTag = (policy) =>
+  `<meta http-equiv="Content-Security-Policy" content="${policy.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">`;
+
+/**
+ * Why the page's policy is not exactly `policy`, or null: one CSP meta element in all, the first
+ * in `<head>` (after a leading `<meta charset>`, which must stay in the first 1024 bytes and
+ * loads nothing), so it governs everything the page loads.
+ */
+export function pageMetaPolicyProblem(html, policy) {
+  const { document } = parsePage(html);
+  const all = cspMetaElements(document);
+  const head = elements(headOf(document) ?? {});
+  const first = isCharset(head[0]) ? head[1] : head[0];
+  if (!first || !isCspMeta(first) || attribute(first, "content") !== policy) {
+    return "does not start with the site's meta policy";
+  }
+  return all.length === 1 ? null : "carries another meta policy beside the site's";
+}
+
+/**
+ * The page with `policy` as its only CSP meta element, first in `<head>`. Every other policy goes
+ * (a browser enforces them all); nothing else in the page changes.
+ */
+export function setMetaPolicy(html, policy) {
+  if (pageMetaPolicyProblem(html, policy) === null) return html;
+  const { document, shift } = parsePage(html);
+  const edits = cspMetaElements(document).map(({ sourceCodeLocation: at }) => ({
+    start: at.startOffset + shift,
+    end: at.endOffset + shift,
+    text: "",
+  }));
+  const head = headOf(document);
+  const children = elements(head);
+  let at;
+  if (isCharset(children[0]) && !isCspMeta(children[0])) {
+    at = children[0].sourceCodeLocation.endOffset + shift;
+  } else if (head.sourceCodeLocation?.startTag) {
+    at = head.sourceCodeLocation.startTag.endOffset + shift;
+  } else {
+    // No `<head>` tag: before the first thing the parser put in the head, or that ended it.
+    const next = firstInSource(head.parentNode.childNodes);
+    at = next ? next.sourceCodeLocation.startOffset + shift : html.length;
+  }
+  edits.push({ start: at, end: at, text: `\n${metaTag(policy)}\n` });
+  edits.sort((a, b) => b.start - a.start || b.end - a.end);
+  let out = html;
+  for (const { start, end, text } of edits) out = out.slice(0, start) + text + out.slice(end);
+  const problem = pageMetaPolicyProblem(out, policy);
+  if (problem) throw new Error(`The meta policy could not be placed: the page ${problem}`);
+  return out;
+}
+
+/**
+ * The policy as each page's first `<head>` element, before anything it governs loads: for a host
+ * that sends no headers (GitHub Pages). `policy` is already meta-safe (`metaPolicyOf`).
+ */
+export function writeMetaPolicy(siteDir, policy) {
+  for (const page of walk(siteDir).filter((p) => p.endsWith(".html"))) {
+    try {
+      writeFileSync(page, setMetaPolicy(readFileSync(page, "utf8"), policy));
+    } catch (error) {
+      throw new Error(`${relative(siteDir, page)}: ${error.message}`);
+    }
+  }
+}
+
+/** Pages whose policy is not exactly the recorded meta policy (`pageMetaPolicyProblem`). */
+export function metaPolicyProblems(siteDir, policy) {
+  const problems = [];
+  for (const page of walk(siteDir).filter((p) => p.endsWith(".html"))) {
+    const problem = pageMetaPolicyProblem(readFileSync(page, "utf8"), policy);
+    if (problem) problems.push(`${relative(siteDir, page)} ${problem}`);
+  }
+  return problems;
+}
+
 /** Where the site's configs do not name its own tab icon (see `linkFavicon`). */
 export function faviconProblems(siteDir, path) {
   const problems = [];
@@ -500,6 +666,9 @@ export function siteFiles(siteDir) {
  * @param {{path: string, bytes: Uint8Array, type: string}} [options.favicon]  the site's own tab
  *   icon (`path` at the site root, e.g. `favicon.svg`): every page links it, and the Notebook
  *   interface's kernel-status icon swap is disabled so it stays
+ * @param {string} [options.metaPolicy]  a Content-Security-Policy written into every page as its
+ *   first `<head>` element, for a host that sends no headers; without the directives a meta tag
+ *   cannot deliver (`metaPolicyOf`)
  * @param {object} [options.lab]  also build a trimmed JupyterLab interface: `extensions` (prebuilt
  *   extension directories), `requirements` (a pins file of wheels carrying prebuilt extensions,
  *   downloaded hash-checked), `overrides` (settings overrides), `disabledExtensions` (plugin ids,
@@ -515,8 +684,14 @@ export async function prepareNotebookSite({
   cacheDir,
   labextension = join(PKG, "labextension"),
   lab,
+  metaPolicy,
   log = console.log,
 }) {
+  if (metaPolicy !== undefined && metaPolicyOf(metaPolicy).dropped.length > 0) {
+    throw new Error(
+      `The meta policy carries directives a <meta> tag cannot deliver: ${metaPolicyOf(metaPolicy).dropped.join(", ")}`,
+    );
+  }
   if (!existsSync(join(labextension, "package.json"))) {
     throw new Error(
       `The prebuilt extension is missing at ${labextension}. Install the published package, or ` +
@@ -666,6 +841,8 @@ export async function prepareNotebookSite({
       writeFileSync(join(stage, file.path), file.bytes);
     }
     if (favicon) linkFavicon(stage, favicon);
+    // Last, so it is each page's first head element whatever else was added.
+    if (metaPolicy) writeMetaPolicy(stage, metaPolicy);
     const expect = {
       apps,
       extensions: extensions.map((e) => e.name),
@@ -693,6 +870,7 @@ export async function prepareNotebookSite({
       ...(added.length ? { added: added.map((f) => f.path).sort() } : {}),
       appName,
       ...(favicon ? { favicon: { path: favicon.path, sha256: sha256(favicon.bytes) } } : {}),
+      ...(metaPolicy ? { metaPolicy } : {}),
       preparedBy: PREPARE_DIGEST,
       seeds: seeded,
       settingsSha256: sha256(JSON.stringify(settings)),
@@ -741,6 +919,7 @@ export function verifyNotebookSite(siteDir) {
   }
   for (const path of recorded.keys()) problems.push(`${path} is missing`);
   if (inventory.favicon) problems.push(...faviconProblems(siteDir, inventory.favicon.path));
+  if (inventory.metaPolicy) problems.push(...metaPolicyProblems(siteDir, inventory.metaPolicy));
   const expect = {
     apps: inventory.apps ?? APPS,
     extensions: inventory.extensions

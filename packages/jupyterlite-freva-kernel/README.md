@@ -58,6 +58,8 @@ site's `jupyter-lite.json`:
 
 One kernel per setup: `freva-python` for the first, `freva-python-<id>` for the others. A kernel
 starts Python when its first cell runs, so an open notebook holds no interpreter.
+`portalBaseUrl` (optional; a URL, absolute or relative to the page) is defined, unseen, as
+`PORTAL_BASE_URL` in every interpreter at each start, before the starter.
 `maxLiveInterpreters` (at most 2) caps running interpreters: when another notebook needs one, the
 least recently used idle kernel stops its interpreter and its next cell says so. Its files in
 `/workspace` are kept first (in memory, up to 1024 files and 256 MiB) and put back before anything
@@ -91,6 +93,15 @@ every page in place of JupyterLite's and named as every `jupyter-lite.json`'s `f
 icon JupyterLite's boot script adds), and the Notebook interface's kernel-status icon swap
 (`@jupyter-notebook/notebook-extension:tab-icon`) is disabled so it stays. Both are recorded in the
 inventory, and `verifyNotebookSite()` checks the `faviconUrl`s (`faviconProblems`).
+
+`metaPolicy` (a policy string) is written into every page as its first `<head>` element, a
+`<meta http-equiv="Content-Security-Policy">`, for a host that sends no headers (GitHub Pages). It
+must be meta-safe: `metaPolicyOf(policy)` drops `frame-ancestors`, `report-uri`, `report-to` and
+`sandbox` (a browser ignores them there) and says which. The inventory records it, and
+`verifyNotebookSite()` checks every page carries it as its only CSP meta tag (`metaPolicyProblems`).
+Pages are read with an HTML parser, as a browser reads them: a policy a page already had, however
+written, is replaced (a browser would enforce both), and nothing else changes. `setMetaPolicy` and
+`pageMetaPolicyProblem` do the same for one page.
 
 The `lab` option adds a trimmed **JupyterLab** interface beside it, for further prebuilt extensions
 (`@freva-org/jupyterlite-climateclaw`, `@freva-org/jupyterlite-freva-data`):
