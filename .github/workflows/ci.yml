@@ -425,6 +425,10 @@ jobs:
       - name: Python sessions and notebook gate
         run: npm run test:browser:sessions -w @freva-org/portal-builder
 
+      # The same-origin notebook at / and under a base path, on one preview.
+      - name: Same-origin notebook gate
+        run: npm run test:browser:same-origin -w @freva-org/portal-builder
+
       - name: Runnable snippet controls and editing gate
         run: npm run test:browser:snippets -w @freva-org/portal-builder
 

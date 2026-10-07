@@ -236,11 +236,20 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["enabled"],
-          "description": "A JupyterLite notebook, on `playgroundOrigin` only, whose 'Freva Python' kernels are the allowed setups. Prepared with `freva-portal-builder prepare-notebook` and deployed beside the playground with its own Content-Security-Policy; the portal's pages are unchanged. The window menu gains 'Open as notebook'.",
+          "description": "A JupyterLite notebook whose 'Freva Python' kernels are the allowed setups. Prepared with `freva-portal-builder prepare-notebook`. By default it is deployed on `playgroundOrigin`, beside the playground, with its own Content-Security-Policy; with `deployment: same-origin` it is published inside the portal's artifact under `<basePath>notebook/`. The window menu gains 'Open as notebook'.",
           "properties": {
             "enabled": {
               "type": "boolean",
-              "description": "The switch. Requires `playgroundOrigin`."
+              "description": "The switch. Requires `playgroundOrigin`, unless `deployment` is `same-origin`."
+            },
+            "deployment": {
+              "type": "string",
+              "enum": ["separate-origin", "same-origin"],
+              "description": "Where the notebook is served. `separate-origin` (the default): on `playgroundOrigin`, as its own deployment. `same-origin`: in the portal's artifact, at `<basePath>notebook/`, with the shared sign-in callback at `<basePath>auth/callback/`, for a host that offers one origin (GitHub Pages). The notebook, the console and the portal then share one origin and its storage, including a stored Freva sign-in (FP1239)."
+            },
+            "metaPolicy": {
+              "type": "boolean",
+              "description": "With `deployment: same-origin`: also put each notebook document's and the callback's Content-Security-Policy in a `<meta>` tag, for a host that sends no headers. The build reports what a meta tag cannot enforce (`frame-ancestors`, the workers' policy, `no-store` on the callback). False by default: the policies are in `host-policy.json` and the preview only."
             },
             "seeds": {
               "type": "array",

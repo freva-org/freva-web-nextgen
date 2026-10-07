@@ -14,7 +14,12 @@ import { canonicalJson, describeSetup, type SessionSetup } from "@freva-org/brow
 import type * as KernelCspModule from "@freva-org/jupyterlite-freva-kernel/csp";
 import type * as KernelPrepareModule from "@freva-org/jupyterlite-freva-kernel/prepare";
 import type { NotebookInventory } from "@freva-org/jupyterlite-freva-kernel/prepare";
-import { sessionPolicyOf, starterRuns } from "./python-playground.js";
+import {
+  portalBaseUrl,
+  sessionPolicyOf,
+  starterRuns,
+  usesPortalBase,
+} from "./python-playground.js";
 import { PROFILE_PACKAGES } from "./tree-recipes.js";
 import { TREE_RECIPES, runnableRecipes } from "./recipe-templates.js";
 import type {
@@ -28,6 +33,13 @@ import type {
 /** Where the notebook is served on the playground origin, and kept in the artifact. */
 export const NOTEBOOK_PATH = "notebook";
 export const NOTEBOOK_ARTIFACT_DIR = `playground-origin/${NOTEBOOK_PATH}`;
+/** Same-origin: the notebook's place in the portal's artifact, served at `<basePath>notebook/`. */
+export const NOTEBOOK_SAME_ORIGIN_DIR = NOTEBOOK_PATH;
+
+/** The artifact directory the notebook site is copied to, by deployment. */
+export function notebookArtifactDir(sameOrigin: boolean): string {
+  return sameOrigin ? NOTEBOOK_SAME_ORIGIN_DIR : NOTEBOOK_ARTIFACT_DIR;
+}
 
 /**
  * Where an example's seed notebook lives in the site. The portal's window opens the same path
@@ -49,6 +61,8 @@ export interface NotebookPlan {
   appName?: string;
   /** The portal's favicon, as the notebook's tab icon. */
   favicon?: { path: string; bytes: Buffer; type: string; sha256: string };
+  /** Same-origin with `metaPolicy`: the policy every notebook page carries as a `<meta>` tag. */
+  metaPolicy?: string;
 }
 
 /** The portal's own name and tab icon, for its notebook. */
@@ -60,6 +74,7 @@ export interface NotebookIdentity {
 /** What the resolver read for the notebook's assistant and data panel. */
 export interface NotebookLabInputs {
   siteTitle: string;
+  /** The notebook's origin: `playgroundOrigin`, or the portal's own for a same-origin notebook. */
   playgroundOrigin: string;
   /**
    * The shared sign-in callback's path (`/auth/callback/`): on the notebook's origin, whose
@@ -509,6 +524,16 @@ export function planNotebook(
     ...(playground.addonBaseUrl ? { addonBaseUrl: playground.addonBaseUrl } : {}),
     maxLiveInterpreters: settings.maxLiveSessions,
     ...(settings.initialSource ? { starter: settings.initialSource } : {}),
+    // A kernel on the portal's own origin resolves it against where it runs; one on a separate
+    // origin is told where the portal is.
+    ...(usesPortalBase(settings.initialSource)
+      ? {
+          portalBaseUrl: portalBaseUrl(
+            playground.basePath ?? "/",
+            playground.origin === playground.hostOrigin ? undefined : playground.hostOrigin,
+          ),
+        }
+      : {}),
     setups: setups.map((setup, index) => ({
       id: index === 0 ? "default" : kernelId(setup),
       label: describeSetup(setup).replace(/ · notebook$/, ""),
@@ -530,6 +555,21 @@ export function planNotebook(
     ...(lab && (lab.assistant || lab.dataPanel) ? { lab: planLab(settings, lab) } : {}),
     ...(identity ? notebookIdentity(identity) : {}),
   };
+}
+
+/**
+ * A plan with the meta policy its pages carry, when a same-origin deployment asks for one
+ * (`notebook.metaPolicy`): the notebook's own policy, without what a `<meta>` tag cannot deliver.
+ */
+export async function withMetaPolicy(
+  plan: NotebookPlan,
+  settings: PlaygroundSettings,
+  playground: PlaygroundArtifactData,
+  lab?: NotebookLabInputs,
+): Promise<NotebookPlan> {
+  if (!settings.notebookSameOrigin || !settings.notebookMetaPolicy) return plan;
+  const { policy } = await notebookMetaPolicy(await notebookPolicy(playground, lab));
+  return { ...plan, metaPolicy: policy };
 }
 
 /** The notebook's name and tab icon, from the portal's: a favicon JupyterLite can link. */
@@ -594,6 +634,17 @@ type KernelPrepare = typeof KernelPrepareModule;
  * `@freva-org/jupyterlite-freva-kernel` is an optional peer: only a deployment with the notebook
  * needs it, and it brings JupyterLab's packages with it.
  */
+/**
+ * The notebook's policy as its pages' `<meta>` tag (same-origin `metaPolicy`), and what a meta tag
+ * cannot carry, for the build to report.
+ */
+export async function notebookMetaPolicy(
+  policy: string,
+): Promise<{ policy: string; dropped: string[] }> {
+  const { prepare } = await loadKernelTools();
+  return prepare.metaPolicyOf(policy);
+}
+
 export async function loadKernelTools(): Promise<{
   prepare: KernelPrepare;
   csp: typeof KernelCspModule;
@@ -696,6 +747,13 @@ export async function checkNotebookSite(
     if ((inventory.favicon?.sha256 ?? null) !== (plan.favicon?.sha256 ?? null)) {
       problems.push("its tab icon is not this portal's favicon");
     }
+    if ((inventory.metaPolicy ?? null) !== (plan.metaPolicy ?? null)) {
+      problems.push(
+        plan.metaPolicy
+          ? "its pages do not carry this configuration's meta policy (notebook.metaPolicy)"
+          : "its pages carry a meta policy this configuration does not ask for",
+      );
+    }
     const lab = plan.lab;
     const hasLab = (inventory.apps ?? []).includes("lab");
     if (Boolean(lab) !== hasLab) {
@@ -756,13 +814,14 @@ export async function checkNotebookSite(
  * (sign-in and ClimateClaw) and the data panel's store origins. Images keep `data:` and `blob:`
  * (figures from ClimateClaw), and with the assistant the origin it shows saved files from
  * (`previewOrigin`, else the host). GridLook is framed only when the panel opts in. A top-level
- * page, unless a landing has a notebook block: then the portal's origin may frame it.
+ * page, unless a landing has a notebook block: then the portal's origin may frame it (`'self'`
+ * for a same-origin notebook, whatever origin the deployment is served from).
  */
 export async function notebookPolicy(
   playground: PlaygroundArtifactData,
   lab?: NotebookLabInputs,
-  /** A landing frames the notebook: the portal's own origin may, and no other. */
-  embedded = false,
+  /** A landing frames the notebook: the portal's origin may (`"self"`: as `'self'`), no other. */
+  embedded: boolean | "self" = false,
 ): Promise<string> {
   const { csp } = await loadKernelTools();
   return csp.notebookCsp({
@@ -779,6 +838,10 @@ export async function notebookPolicy(
     // Figures ClimateClaw's code saved, shown where they are when they cannot be read (no CORS).
     imageSources: lab?.assistant ? [lab.assistant.previewOrigin ?? lab.assistant.host] : [],
     frameSources: lab?.dataPanel?.settings.gridlook ? [GRIDLOOK_ORIGIN] : [],
-    ...(embedded ? { frameAncestors: [playground.hostOrigin] } : {}),
+    ...(embedded === "self"
+      ? { frameAncestors: ["'self'"] }
+      : embedded
+        ? { frameAncestors: [playground.hostOrigin] }
+        : {}),
   });
 }

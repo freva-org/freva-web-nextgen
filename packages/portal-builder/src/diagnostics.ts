@@ -87,6 +87,7 @@ export const CODES = {
   FP1236: "Invalid notebook assistant configuration",
   FP1237: "Invalid notebook data panel configuration",
   FP1238: "consoleInPage without a notebook on a separate origin",
+  FP1239: "Notebook on the portal's own origin",
   // Announcements
   FP1301: "Missing --effective-at for a dated announcement",
   FP1302: "Invalid announcement interval",

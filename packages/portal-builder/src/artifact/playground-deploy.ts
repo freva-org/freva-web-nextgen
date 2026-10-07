@@ -13,7 +13,6 @@
 // `@freva-org/browser-python` emits it BESIDE the module graph: no chunk imports it and no
 // closure reaches it, and a playground deployed without it has nowhere to run its interpreter.
 
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { GraphRecord } from "./evidence.js";
@@ -21,26 +20,10 @@ import type { PlaygroundArtifactData } from "../model/types.js";
 import { compareCodePoints } from "../util/order.js";
 import { NOTEBOOK_ARTIFACT_DIR, NOTEBOOK_PATH, underBase } from "../model/notebook.js";
 import { ADDONS_DIR, WHEELHOUSE_DIR } from "../model/python-materials.js";
+import { callbackPolicy } from "./same-origin.js";
 
 /** Emitted names that belong to the child and reach it through no import edge. */
 const EMITTED_BESIDE = ["browser-python.worker"];
-
-/**
- * The hashes of a document's inline, executable scripts (a module or classic `<script>` with a
- * body and no `src`), for a policy that allows exactly them: the compiler inlines a small entry.
- */
-function inlineScriptHashes(html: string): string[] {
-  const out = new Set<string>();
-  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
-    const attrs = m[1] ?? "";
-    const body = m[2] ?? "";
-    if (/\bsrc\s*=/i.test(attrs) || body.trim() === "") continue;
-    const type = /\btype\s*=\s*"([^"]*)"/i.exec(attrs)?.[1]?.trim().toLowerCase() ?? "";
-    if (!["", "module", "text/javascript"].includes(type)) continue;
-    out.add(`'sha256-${createHash("sha256").update(body, "utf8").digest("base64")}'`);
-  }
-  return [...out].sort();
-}
 
 /**
  * The artifact files a document LOADS: `src` of scripts, images and media, `href` of `<link>`s.
@@ -181,13 +164,13 @@ export function describePlaygroundDeployment(
   const documents = [html];
   // The shared sign-in callback, with what it loads.
   let callback: { path: string; file: string } | undefined;
-  let callbackScripts: string[] = [];
+  let callbackCsp = "";
   if (playground.authCallbackPath) {
     const file = `playground-origin/${playground.authCallbackPath.replace(/^\/+/, "")}index.html`;
     try {
       const page = readFileSync(join(artifactDir, ...file.split("/")), "utf8");
       documents.push(page);
-      callbackScripts = inlineScriptHashes(page);
+      callbackCsp = callbackPolicy(page).header;
       wanted.add(file);
       callback = { path: underBase(basePath, playground.authCallbackPath), file };
     } catch {
@@ -215,6 +198,11 @@ export function describePlaygroundDeployment(
 
   for (const name of EMITTED_BESIDE) {
     for (const file of emittedFiles) {
+      // The bundler's own, never the notebook's copy of the same Worker (a same-origin notebook
+      // is the portal's, and a separate one is listed whole below).
+      if (file.startsWith(`${NOTEBOOK_PATH}/`) || file.startsWith(`${NOTEBOOK_ARTIFACT_DIR}/`)) {
+        continue;
+      }
       if (file.split("/").pop()?.startsWith(name)) wanted.add(file);
     }
   }
@@ -269,9 +257,7 @@ export function describePlaygroundDeployment(
             ...(callback
               ? {
                   [callback.path]: {
-                    "Content-Security-Policy":
-                      `default-src 'none'; script-src ${["'self'", ...callbackScripts].join(" ")}; ` +
-                      "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+                    "Content-Security-Policy": callbackCsp,
                     "Cache-Control": "no-store",
                     "Cross-Origin-Resource-Policy": "same-origin",
                     "Referrer-Policy": "no-referrer",

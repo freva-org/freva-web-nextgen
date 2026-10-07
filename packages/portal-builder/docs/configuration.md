@@ -909,7 +909,13 @@ site `prepare-notebook` produced (`--notebook <dir>`, checked against this
 configuration), copies it to `playground-origin/notebook/`, and `deploy.json`
 lists it and carries its own headers under `pathHeaders["/notebook/"]`. Deploy it
 at `/notebook/` on the playground origin. See
-[The notebook](./python-playground.md#the-notebook).
+[The notebook](./python-playground.md#the-notebook). With
+`notebook.deployment: same-origin` it is published in the portal's own artifact
+instead, at `<basePath>notebook/` with the callback at `<basePath>auth/callback/`,
+its policies under `csp.paths` in `host-policy.json` (and, with
+`notebook.metaPolicy`, in `<meta>` tags), and no `playgroundOrigin` is needed; the
+trade-off is reported as `FP1239`. See
+[The notebook on the portal's own origin](./python-playground.md#the-notebook-on-the-portals-own-origin).
 `notebook.assistant.climateclaw` (ClimateClaw through jupyterlite-ai, `FP1236`)
 and `notebook.dataPanel` (a dataset-tree block as a side panel, `FP1237`) add a
 trimmed JupyterLab interface at `/notebook/lab/` and are part of the agreement

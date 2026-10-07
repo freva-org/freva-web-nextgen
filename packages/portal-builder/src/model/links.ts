@@ -30,9 +30,10 @@ export interface LinkContext {
   examples?: Map<string, string>;
   /**
    * The notebook, when the portal deploys one: its origin, `root` (the origin plus the
-   * deployment's base path, where the notebook's site sits) and whether it has a Lab interface.
+   * deployment's base path, where the notebook's site sits; for a same-origin notebook the base
+   * path alone, without a trailing slash) and whether it has a Lab interface.
    */
-  notebook?: { origin: string; root: string; lab: boolean };
+  notebook?: { origin: string; root: string; lab: boolean; sameOrigin?: boolean };
 }
 
 export interface LinkResolution {
@@ -118,7 +119,7 @@ export function resolveLink(raw: RawLink, ctx: LinkContext): LinkResolution {
   if (raw.notebook !== undefined) {
     const notebook = ctx.notebook;
     const missing = !notebook
-      ? "the notebook is not enabled (`pythonPlayground.notebook.enabled`, with `playgroundOrigin`)"
+      ? "the notebook is not enabled (`pythonPlayground.notebook.enabled`, with `playgroundOrigin` or `deployment: same-origin`)"
       : raw.notebook === "lab" && !notebook.lab
         ? "the notebook has no Lab interface (it needs `notebook.assistant` or `notebook.dataPanel`)"
         : undefined;

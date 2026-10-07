@@ -33,29 +33,40 @@ import PlaygroundEntry from "../../components/PlaygroundEntry.astro";
 import PlaygroundCallbackEntry from "../../components/PlaygroundCallbackEntry.astro";
 
 export function getStaticPaths() {
-  // Emitted only when a landing asked for a second origin. A portal without one contains no
-  // playground document at all, which is a checkable fact rather than a claim.
-  if (!model.playground) return [];
+  // A same-origin notebook's relay page, when the portal has no sign-in route to relay for it:
+  // emitted here and moved to its path in the portal's artifact by the build.
+  const same = model.sameOriginNotebook;
+  const sameCallback =
+    same?.emitCallback && same.callbackPath
+      ? same.callbackPath.replace(/^\/+|\/+$/g, "")
+      : undefined;
+  const relay = sameCallback
+    ? [{ params: { child: sameCallback }, props: { callback: true } }]
+    : [];
+  // Emitted only when a landing asked for a second origin: without one, no playground document.
+  if (!model.playground) return relay;
   // The shared sign-in callback, at the same path as the portal's, when the notebook signs in:
-  // the popup a notebook opens returns here, on the notebook's own origin.
+  // the popup a notebook opens returns here, on the notebook's own origin. (A same-origin
+  // notebook's is the relay above; the playground origin then has none.)
   const callback = model.playground.authCallbackPath?.replace(/^\/+|\/+$/g, "");
   return [
     { params: { child: undefined }, props: { callback: false } },
     ...(callback ? [{ params: { child: callback }, props: { callback: true } }] : []),
+    ...relay,
   ];
 }
 
 const isCallback = Astro.props.callback === true;
-const playground = model.playground!;
-// The configuration the child needs, and not one field more. The portal's title, its navigation,
-// its component list and its theme are absent on purpose: this document is not the portal, and an
-// artifact that described one would be a description deployed to somebody else's origin.
-const config = {
+const playground = model.playground;
+// The configuration the child needs and nothing more: no title, navigation, component list or
+// theme, since this document is not the portal.
+const config = playground && {
   hostOrigin: playground.hostOrigin,
   profile: playground.profile,
   protocolVersion: playground.protocolVersion,
   runtimeIndexUrl: playground.runtimeIndexUrl,
   ...(playground.initialSource ? { initialSource: playground.initialSource } : {}),
+  ...(playground.portalBaseUrl ? { portalBaseUrl: playground.portalBaseUrl } : {}),
   // The interpreter's own configuration, which is the CHILD's business: in this topology the
   // parent never builds an interpreter, so it cannot know which add-ons to prepare or where the
   // wheels are. Everything the engine needs is here, in the document that creates it.
@@ -116,7 +127,7 @@ const config = {
           type="application/json"
           id="playground-examples"
           is:inline
-          set:html={JSON.stringify(playground.examples).replaceAll("<", "\\u003c")}
+          set:html={JSON.stringify(playground?.examples ?? []).replaceAll("<", "\\u003c")}
         />
         <noscript>
           <p>This playground needs JavaScript. The portal's pages still work without it.</p>

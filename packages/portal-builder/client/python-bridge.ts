@@ -43,6 +43,8 @@ export interface PythonPlaygroundConfig {
   autostart: "never" | "after-interactive" | "immediately";
   maxSessions: number;
   initialSource?: string;
+  /** `PORTAL_BASE_URL`, when `initialSource` names it: defined unseen at every start. */
+  portalBaseUrl?: string;
   playgroundOrigin?: string;
   /**
    * The path the second origin serves this deployment under: the portal's own base path, which the
@@ -92,6 +94,8 @@ export interface PythonPlaygroundConfig {
   notebook?: boolean;
   /** The notebook's origin: `playgroundOrigin`, or its own when the console is in the page. */
   notebookOrigin?: string;
+  /** The notebook is on this page's own origin, at `<playgroundBase>notebook/`. */
+  notebookSameOrigin?: boolean;
   /** Sessions that may hold a live interpreter at once. Defaults to `maxSessions`. */
   maxLiveSessions?: number;
   examples: RegisteredExampleDigest[];

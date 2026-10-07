@@ -30,6 +30,33 @@ export interface NotebookCallback {
   basePath: string;
 }
 
+/**
+ * Where the notebook signs in, from how it is deployed: the portal's own origin for a same-origin
+ * notebook (also beside a console on a second origin), else the playground origin.
+ */
+export function notebookCallbackOf(
+  model: Pick<ResolvedPortalModel, "playground" | "sameOriginNotebook" | "site"> | undefined,
+): NotebookCallback | undefined {
+  const same = model?.sameOriginNotebook;
+  if (model && same) {
+    return same.callbackPath
+      ? {
+          origin: model.site.origin,
+          callbackPath: same.callbackPath,
+          basePath: model.site.basePath,
+        }
+      : undefined;
+  }
+  const playground = model?.playground;
+  return playground?.authCallbackPath
+    ? {
+        origin: playground.origin,
+        callbackPath: playground.authCallbackPath,
+        basePath: playground.basePath ?? "/",
+      }
+    : undefined;
+}
+
 /** Every sign-in callback this configuration uses. */
 export function authCallbackEntries(
   model: Pick<ResolvedPortalModel, "enabledComponents"> | undefined,

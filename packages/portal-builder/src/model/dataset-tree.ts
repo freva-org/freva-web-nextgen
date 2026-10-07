@@ -738,11 +738,18 @@ export function resolvePlaygroundArtifact(options: {
   protocolVersion: number;
   runtimeIndexUrl: string;
   bag: DiagnosticBag;
+  /**
+   * Every block counts, served from this origin: the same-origin notebook's data, planned like a
+   * child's but never deployed as one.
+   */
+  origin?: string;
 }): PlaygroundArtifactData | undefined {
-  const framed = options.blocks.filter((entry) => secondOrigin(entry.python));
+  const framed = options.origin
+    ? [...options.blocks]
+    : options.blocks.filter((entry) => secondOrigin(entry.python));
   const first = framed[0];
   if (!first) return undefined;
-  const origin = secondOrigin(first.python) as string;
+  const origin = options.origin ?? (secondOrigin(first.python) as string);
   // Add-ons and the credential setting travel with the manifest, not with the parent. The child
   // owns the interpreter, so it is the child that has to know what to prepare; the parent in a
   // framed deployment never builds one, so a page that disagreed with its own child about which
@@ -752,7 +759,7 @@ export function resolvePlaygroundArtifact(options: {
   const persistCredentials = first.python.persistCredentials;
 
   for (const entry of framed.slice(1)) {
-    if (secondOrigin(entry.python) === origin) continue;
+    if (options.origin || secondOrigin(entry.python) === origin) continue;
     options.bag.error(
       "FP1216",
       `This portal generates one playground artifact, and the blocks name two origins: ` +

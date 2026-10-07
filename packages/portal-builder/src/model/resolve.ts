@@ -72,13 +72,16 @@ import {
   checkPlaygroundAgreement,
   policyProfile,
   resolvePlaygroundSettings,
+  portalBaseUrl,
   secondOrigin,
+  usesPortalBase,
   type PlaygroundClaim,
 } from "./python-playground.js";
 import {
   checkNotebookSite,
   notebookPolicy,
   planNotebook,
+  withMetaPolicy,
   playgroundRoot,
   type NotebookIdentity,
   type NotebookLabInputs,
@@ -122,6 +125,7 @@ import {
   type DatasetTreeBlockData,
   type DatasetTreeS3Source,
   type InputRecord,
+  type PlaygroundArtifactData,
   type PlaygroundArtifactExample,
   type ProseFigureData,
   type PythonPlaygroundData,
@@ -269,8 +273,16 @@ export interface ResolveResult {
   notebookLab?: NotebookLabInputs;
   /** The portal's name and favicon, for the notebook's tab. */
   notebookIdentity?: NotebookIdentity;
-  /** The verified notebook site to deploy beside the playground, and its policy. */
-  notebook?: { realRoot: string; files: string[]; csp: string };
+  /**
+   * What the notebook is planned from: the child playground (`model.playground`), or for a
+   * same-origin notebook the same data for the portal's own origin, which deploys no child.
+   */
+  notebookPlayground?: PlaygroundArtifactData;
+  /**
+   * The verified notebook site to deploy, and its policy: beside the playground, or - same-origin -
+   * in the portal's artifact at `notebook/`.
+   */
+  notebook?: { realRoot: string; files: string[]; csp: string; sameOrigin: boolean };
 }
 
 /**
@@ -1446,7 +1458,10 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         ...(playgroundAssets.wheelhouse ? { wheelhouseUrl: playgroundAssets.wheelhouse.url } : {}),
         ...(playgroundAssets.addons ? { addonBaseUrl: playgroundAssets.addons.url } : {}),
         // The second origin serves this deployment under the portal's base path.
-        ...(secondOrigin(resolvedPlayground) ? { playgroundBase: canonical.basePath } : {}),
+        // So does the portal's own, for a same-origin notebook.
+        ...(secondOrigin(resolvedPlayground) || resolvedPlayground.notebookSameOrigin
+          ? { playgroundBase: canonical.basePath }
+          : {}),
         packagePolicy: resolvePackagePolicy(
           {
             ...(resolvedPlayground.runtimeIndexUrl
@@ -1721,7 +1736,19 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
             lab: Boolean(portalPlayground.notebookAssistant || portalPlayground.notebookDataPanel),
           },
         }
-      : {}),
+      : portalPlayground?.notebook && portalPlayground.notebookSameOrigin
+        ? {
+            // Origin-relative: the same build serves the notebook from wherever it is hosted.
+            notebook: {
+              origin: canonical.origin,
+              root: canonical.basePath.replace(/\/+$/, ""),
+              lab: Boolean(
+                portalPlayground.notebookAssistant || portalPlayground.notebookDataPanel,
+              ),
+              sameOrigin: true,
+            },
+          }
+        : {}),
   };
 
   // Landings must be resolvable by name from links, so the map is populated with shells first and
@@ -2226,10 +2253,14 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     examples: readonly PlaygroundArtifactExample[];
     dataOrigin?: string;
   }[] = [];
+  // A same-origin notebook is planned from the same examples, served from the portal's origin.
+  const sameOriginNotebook = portalPlayground?.notebookSameOrigin === true;
+  const counts = (python: PythonPlaygroundData): boolean =>
+    Boolean(secondOrigin(python)) || (sameOriginNotebook && python.notebookSameOrigin === true);
   for (const landing of landings) {
     landing.blocks.forEach((block, index) => {
       const data = block.datasetTree;
-      if (!data?.python || !secondOrigin(data.python)) return;
+      if (!data?.python || !counts(data.python)) return;
       playgroundBlocks.push({
         pointer: `/blocks/${index}`,
         file: landing.source,
@@ -2244,7 +2275,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
   // the same message to the same origin, and the child cannot hold two registries without one of
   // them being wrong for whoever pressed.
   for (const route of allRoutes) {
-    if (!route.python || !secondOrigin(route.python) || !route.runnable) continue;
+    if (!route.python || !counts(route.python) || !route.runnable) continue;
     playgroundBlocks.push({
       pointer: route.path,
       file: route.source ?? route.path,
@@ -2258,12 +2289,32 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     });
   }
   const playground = resolvePlaygroundArtifact({
-    blocks: playgroundBlocks,
+    blocks: playgroundBlocks.filter((block) => secondOrigin(block.python)),
     hostOrigin: canonical.origin,
     protocolVersion: EMBED_PROTOCOL_VERSION,
     runtimeIndexUrl: DEFAULT_PYODIDE_INDEX_URL,
     bag,
   });
+  // What the notebook is planned from: the child playground, or - same-origin - the same data
+  // for the portal's own origin, with no child document emitted for it.
+  const notebookPlayground: PlaygroundArtifactData | undefined = sameOriginNotebook
+    ? resolvePlaygroundArtifact({
+        blocks: playgroundBlocks,
+        hostOrigin: canonical.origin,
+        protocolVersion: EMBED_PROTOCOL_VERSION,
+        runtimeIndexUrl: DEFAULT_PYODIDE_INDEX_URL,
+        bag,
+        origin: canonical.origin,
+      })
+    : playground;
+  if (notebookPlayground) notebookPlayground.basePath = canonical.basePath;
+  // Starter code naming PORTAL_BASE_URL reads the portal's files: an interpreter on the second
+  // origin (the console there, a separate-origin notebook's kernel) reaches the portal for them.
+  if (playground && usesPortalBase(playground.initialSource)) {
+    playground.connectOrigins = [
+      ...new Set([...(playground.connectOrigins ?? []), canonical.origin]),
+    ].sort();
+  }
 
   // Slots, the stylesheet and the header rules, now that every route and link is known.
   let customisationResult: FinishResult | undefined;
@@ -2476,7 +2527,9 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     }
     notebookLab = {
       siteTitle: config.site.title,
-      playgroundOrigin: portalPlayground.notebookOrigin ?? "",
+      playgroundOrigin:
+        portalPlayground.notebookOrigin ??
+        (portalPlayground.notebookSameOrigin ? canonical.origin : ""),
       authCallbackPath: sharedAuthCallbackPath(componentList),
       basePath: canonical.basePath,
       ...(portalPlayground.notebookAssistant
@@ -2485,15 +2538,20 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
       ...(dataPanel ? { dataPanel } : {}),
     };
   }
-  if (portalPlayground?.notebook && playground && !opts.skipNotebook) {
+  if (portalPlayground?.notebook && notebookPlayground && !opts.skipNotebook) {
     const where = { file: configRel, pointer: "/pythonPlayground/notebook" };
     const given = opts.notebookDir ?? process.env.FREVA_PORTAL_NOTEBOOK;
-    const plan = planNotebook(
+    const plan = await withMetaPolicy(
+      planNotebook(
+        portalPlayground,
+        notebookPlayground,
+        notebookSeeds,
+        notebookLab,
+        notebookIdentity,
+      ),
       portalPlayground,
-      playground,
-      notebookSeeds,
+      notebookPlayground,
       notebookLab,
-      notebookIdentity,
     );
     if (!given) {
       bag.error(
@@ -2524,10 +2582,16 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
           const embedded = landings.some((landing) =>
             landing.blocks.some((block) => block.type === "notebook"),
           );
+          const sameOrigin = portalPlayground.notebookSameOrigin === true;
           notebook = {
             realRoot,
             files,
-            csp: await notebookPolicy(playground, notebookLab, embedded),
+            csp: await notebookPolicy(
+              notebookPlayground,
+              notebookLab,
+              embedded && sameOrigin ? "self" : embedded,
+            ),
+            sameOrigin,
           };
         }
       } catch (error) {
@@ -2539,6 +2603,23 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     }
   }
 
+  // Starter code that names PORTAL_BASE_URL gets it defined, for every interpreter this build
+  // configures: the pages' consoles, the child playground's, and (in `planNotebook`) the kernel's.
+  const withBase = <T extends { initialSource?: string; portalBaseUrl?: string }>(
+    python: T | undefined,
+  ): void => {
+    if (python && usesPortalBase(python.initialSource)) {
+      python.portalBaseUrl = portalBaseUrl(canonical.basePath);
+    }
+  };
+  for (const landing of landings)
+    for (const block of landing.blocks) withBase(block.datasetTree?.python);
+  for (const route of allRoutes) withBase(route.python);
+  // The child runs on its own origin: the portal is named, not taken from where it runs.
+  if (playground && usesPortalBase(playground.initialSource)) {
+    playground.portalBaseUrl = portalBaseUrl(canonical.basePath, canonical.origin);
+  }
+
   const pkg = packageInfo();
   const model: ResolvedPortalModel = {
     ...(playground
@@ -2546,7 +2627,10 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
           playground: {
             ...playground,
             basePath: canonical.basePath,
-            ...(notebookLab?.assistant ? { authCallbackPath: notebookLab.authCallbackPath } : {}),
+            // The playground origin's callback is the notebook's there: none for a same-origin one.
+            ...(notebookLab?.assistant && !sameOriginNotebook
+              ? { authCallbackPath: notebookLab.authCallbackPath }
+              : {}),
           },
         }
       : {}),
@@ -2596,10 +2680,24 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     redirects: redirectResult.redirects,
     ...(search ? { search } : {}),
     ...(announcementFeed ? { announcementFeed } : {}),
+    ...(sameOriginNotebook
+      ? {
+          sameOriginNotebook: {
+            // The shared callback, when the notebook signs in: the portal's own sign-in route
+            // when `login` is enabled (it relays a notebook's popup too), else a relay page alone.
+            ...(notebookLab?.assistant
+              ? { callbackPath: notebookLab.authCallbackPath, emitCallback: !authComponent }
+              : { emitCallback: false }),
+            metaPolicy: portalPlayground?.notebookMetaPolicy === true,
+          },
+        }
+      : {}),
     hostPolicy: {
       ...(authComponent
         ? { authCallbackPath: (authComponent.options as AuthOptions).callbackPath }
-        : {}),
+        : sameOriginNotebook && notebookLab?.assistant
+          ? { authCallbackPath: notebookLab.authCallbackPath }
+          : {}),
       downloadPrefixes: downloadRoots.map((r) => r.mount),
       subsiteMounts: subsites.map((s) => s.mount),
     },
@@ -2654,6 +2752,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     ...(portalPlayground ? { portalPlayground } : {}),
     ...(pythonMaterials && pythonEnabled ? { pythonMaterials } : {}),
     ...(notebook ? { notebook } : {}),
+    ...(notebookPlayground ? { notebookPlayground } : {}),
     ...(notebookSeeds.length > 0 ? { notebookSeeds } : {}),
     ...(portalPlayground?.notebook ? { notebookIdentity } : {}),
     ...(notebookLab ? { notebookLab } : {}),
@@ -3115,7 +3214,7 @@ function resolveBlock(
       const view = raw.view === "files" ? "files" : "lab";
       const notebook = ctx.notebook;
       const missing = !notebook
-        ? "the notebook is not enabled (`pythonPlayground.notebook.enabled`, with `playgroundOrigin`)"
+        ? "the notebook is not enabled (`pythonPlayground.notebook.enabled`, with `playgroundOrigin` or `deployment: same-origin`)"
         : view === "lab" && !notebook.lab
           ? "the notebook has no Lab interface (it needs `notebook.assistant` or `notebook.dataPanel`); `view: files` shows the file list"
           : undefined;
@@ -3134,6 +3233,7 @@ function resolveBlock(
           origin: notebook.origin,
           src: `${notebook.root}/notebook/${view === "lab" ? "lab" : "tree"}/index.html`,
           view,
+          ...(notebook.sameOrigin ? { sameOrigin: true } : {}),
           // The notebook's own tab title, unless the block names the window.
           title: raw.title ?? `${deps.siteTitle} Playground`,
         },
