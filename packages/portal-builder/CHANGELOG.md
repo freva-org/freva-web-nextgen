@@ -1,5 +1,18 @@
 # @freva-org/portal-builder
 
+## 2611.0.0
+
+### Minor Changes
+
+- 4b2967d: The notebook can be published inside the portal's own artifact, for a host such as GitHub Pages: `notebook.deployment: same-origin`, `notebook.metaPolicy`, `PORTAL_BASE_URL`.
+
+### Patch Changes
+
+- Updated dependencies [68541db]
+- Updated dependencies [0c79f88]
+  - @freva-org/jupyterlite-freva-data@2610.0.1
+  - @freva-org/jupyterlite-freva-kernel@2610.1.0
+
 ## 2610.0.0
 
 ### Major Changes
