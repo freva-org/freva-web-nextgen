@@ -1,5 +1,11 @@
 # @freva-org/jupyterlite-freva-data
 
+## 2610.0.1
+
+### Patch Changes
+
+- 68541db: The selection card keeps one height, so the tree never moves on a click.
+
 ## 2610.0.0
 
 ### Major Changes
