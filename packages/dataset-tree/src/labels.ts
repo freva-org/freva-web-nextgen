@@ -46,6 +46,8 @@ export const DEFAULT_LABELS: DatasetTreeLabels = {
   accessHeading: "How to access",
   tryPython: "Try in Python",
   tryPythonFor: "Run the {name} example in Python",
+  openNotebook: "Open in notebook",
+  openNotebookFor: "Open {name} in a notebook",
 
   fieldPath: "Path",
   fieldSize: "Size",

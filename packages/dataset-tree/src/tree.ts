@@ -176,6 +176,9 @@ export function mountDatasetTree(
 
   const autoExpand = new Set(options.initialExpandedIds ?? []);
   const autoExpanded = new Set<string>();
+  const childLoads = new Map<string, Promise<void>>();
+  let rootsLoading: Promise<void> = Promise.resolve();
+  let walking: Promise<void> = Promise.resolve();
   const debounceMs = Math.max(0, options.filterDebounceMs ?? DEFAULT_FILTER_DEBOUNCE_MS);
 
   // state
@@ -661,7 +664,7 @@ export function mountDatasetTree(
             return;
           }
           render();
-          void materializeAll(controller, mine).then(() => {
+          walking = materializeAll(controller, mine).then(() => {
             if (destroyed || mine !== generation || controller.signal.aborted) return;
             applyAutoExpand([...nodes.keys()]);
             render();
@@ -741,7 +744,8 @@ export function mountDatasetTree(
   function loadChildren(id: string): Promise<void> {
     const state = nodes.get(id);
     if (!state) return Promise.resolve();
-    if (state.load === "loaded" || state.load === "loading") return Promise.resolve();
+    if (state.load === "loading") return childLoads.get(id) ?? Promise.resolve();
+    if (state.load === "loaded") return Promise.resolve();
 
     state.controller?.abort();
     const controller = new AbortController();
@@ -752,7 +756,7 @@ export function mountDatasetTree(
     announce(fill(labels.announceChildrenLoading, { name: displayName(state.node) }));
     render();
 
-    return Promise.resolve()
+    const loading = Promise.resolve()
       .then(() => source.loadChildren(state.node, { signal: controller.signal }))
       .then(
         (list) => {
@@ -806,7 +810,12 @@ export function mountDatasetTree(
           );
           render();
         },
-      );
+      )
+      .finally(() => {
+        if (childLoads.get(id) === loading) childLoads.delete(id);
+      });
+    childLoads.set(id, loading);
+    return loading;
   }
 
   function abortSubtree(id: string): void {
@@ -1691,6 +1700,7 @@ export function mountDatasetTree(
     if (node.availability === "planned") return false;
     return Boolean(
       node.path ||
+      (options.onOpenNotebook && (node.kind === "dataset" || node.kind === "file")) ||
       examples.length > 0 ||
       (node.details && node.details.length > 0) ||
       (node.access && node.access.length > 0) ||
@@ -1764,6 +1774,22 @@ export function mountDatasetTree(
             icon(PLAY, "dataset-tree__run-icon", "fill"),
             el("span", { text: labels.tryPython }),
           ],
+        }),
+      );
+    }
+    if (options.onOpenNotebook && (node.kind === "dataset" || node.kind === "file")) {
+      actions.push(
+        button({
+          class: "dataset-tree__btn dataset-tree__btn--notebook",
+          text: labels.openNotebook ?? "Open in notebook",
+          action: "open-notebook",
+          key: `notebook:${node.id}`,
+          attrs: {
+            "data-dt-id": node.id,
+            "aria-label": fill(labels.openNotebookFor ?? "Open {name} in a notebook", {
+              name: node.name,
+            }),
+          },
         }),
       );
     }
@@ -2126,7 +2152,7 @@ export function mountDatasetTree(
         // The retry control is what was pressed and what the next render replaces, so it is what
         // focus returns to; naming anything outside this row would drop focus on the document.
         pendingFocus = "retry-roots";
-        void loadRoots();
+        rootsLoading = loadRoots();
         return;
       }
       case "toggle": {
@@ -2266,6 +2292,12 @@ export function mountDatasetTree(
         options.python.onTry({ exampleId: current.id, digest, datasetId: state.node.id });
         return;
       }
+      case "open-notebook": {
+        if (!state || !options.onOpenNotebook) return;
+        if (state.node.kind !== "dataset" && state.node.kind !== "file") return;
+        options.onOpenNotebook(state.node);
+        return;
+      }
       case "inspect": {
         if (!state || !options.onInspect || !state.node.inspect) return;
         const controller = new AbortController();
@@ -2324,7 +2356,8 @@ export function mountDatasetTree(
     rootIds = null;
     rootLoad = "idle";
     rootError = null;
-    return loadRoots();
+    rootsLoading = loadRoots();
+    return rootsLoading;
   }
 
   /**
@@ -2387,7 +2420,24 @@ export function mountDatasetTree(
     root.remove();
   }
 
-  void loadRoots();
+  async function reveal(path: readonly string[]): Promise<boolean> {
+    await rootsLoading;
+    await walking;
+    for (const id of path.slice(0, -1)) {
+      const state = nodes.get(id);
+      if (destroyed || !state || !expandable(state.node)) return false;
+      state.expanded = true;
+      if (!complete) await loadChildren(id);
+    }
+    const target = path[path.length - 1];
+    if (destroyed || target === undefined || !nodes.has(target)) return false;
+    select(target);
+    render();
+    revealRow(target);
+    return true;
+  }
 
-  return { reload, destroy, setSearchIndex };
+  rootsLoading = loadRoots();
+
+  return { reload, destroy, setSearchIndex, reveal };
 }
