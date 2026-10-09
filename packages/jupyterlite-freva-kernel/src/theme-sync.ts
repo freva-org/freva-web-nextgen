@@ -67,3 +67,13 @@ export function followTheme(target: ThemeTarget): (theme: string) => void {
     reconcile();
   };
 }
+
+export const FRAME_ESCAPE_MESSAGE = "freva-lab-escape";
+
+export function relayUnhandledEscape(win: Window): void {
+  if (win.parent === win) return;
+  win.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    win.parent.postMessage({ type: FRAME_ESCAPE_MESSAGE }, win.location.origin);
+  });
+}
