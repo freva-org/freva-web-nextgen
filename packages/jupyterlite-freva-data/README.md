@@ -26,6 +26,14 @@ the card (shown until the context menu is first used in this browser, gone from 
 says that a right-click and
 dragging onto a notebook work too. Copy code is in the context menu only.
 
+A request to open a dataset (`lab/index.html?dataset=<id>`, or a `freva-data:open-dataset` message
+from a same-origin framing page, which hears `freva-data-ready` first) selects it and runs **Open
+notebook** once, then drops the parameter from the address so a reload does not repeat it. Only an
+id found in the panel's own tree is opened (by its branches, or anywhere in a complete snapshot);
+any other is refused with a notice. `?panel=data` (or `freva-data:show-panel`) shows the panel.
+Both widen the left side bar to about a third of the window, as ClimateClaw does, never narrowing
+it.
+
 In a notebook cell, a registered example's closing `print(ds)` becomes `ds`, so Jupyter shows the
 dataset's rich view; the example itself keeps its `print`, which a script needs. Inspect and View
 on globe show `<data-inspector>` `embedded` in their tab (no dialog of its own) and open on its

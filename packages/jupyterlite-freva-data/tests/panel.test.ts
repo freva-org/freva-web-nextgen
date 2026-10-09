@@ -256,6 +256,45 @@ describe("the data panel's card", () => {
   });
 });
 
+describe("finding a requested dataset", () => {
+  const catalog = {
+    schemaVersion: 1,
+    roots: [
+      {
+        id: "archive",
+        kind: "collection",
+        name: "Archive",
+        children: [
+          { id: "archive/near", kind: "dataset", name: "near.zarr", path: "archive/near.zarr" },
+        ],
+      },
+    ],
+  };
+  const far = { id: "archive/far", kind: "dataset", name: "far.zarr", path: "archive/far.zarr" };
+  const load = (panel: InstanceType<typeof DataPanel>) =>
+    panel.load(
+      {
+        schemaVersion: 1,
+        instanceId: "home-0",
+        mode: "snapshot",
+        catalog,
+        expand: [],
+        statusLabel: "",
+      } as never,
+      { accessExamples: () => [], eligibleSnippets: async () => [] } as never,
+      "search.json",
+      async () => ({ schemaVersion: 1, entries: [far] }),
+    );
+
+  it("finds one the tree lists, and one only its search index holds", async () => {
+    const { panel } = setup();
+    await load(panel);
+    expect((await panel.find("archive/near"))?.name).toBe("near.zarr");
+    expect((await panel.find("archive/far"))?.name).toBe("far.zarr");
+    expect(await panel.find("archive/none")).toBeNull();
+  });
+});
+
 describe("the launcher's logos", () => {
   it("take the site icon's colour; a grey icon leaves the theme's", () => {
     expect(accentOf('<svg fill="#26a69a"><rect/></svg>')).toBe("#26a69a");
