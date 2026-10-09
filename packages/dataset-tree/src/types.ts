@@ -377,6 +377,8 @@ export interface DatasetTreeLabels {
   tryPython: string;
   /** Its accessible name, so a page full of identical buttons is still navigable. `{name}`. */
   tryPythonFor: string;
+  openNotebook?: string;
+  openNotebookFor?: string;
   fieldPath: string;
   fieldSize: string;
   fieldMediaType: string;
@@ -445,6 +447,8 @@ export interface DatasetTreeOptions {
   // not exist - no button, no event, no code path. See `DatasetTreePython`.
   python?: DatasetTreePython;
 
+  onOpenNotebook?: (node: DatasetTreeNode) => void;
+
   // Elements the consumer wants in the toolbar, before the component's own whole-tree controls. The
   // package knows nothing about them: they are appended as given, in order, into the same row as
   // `Collapse all`, and every event on them belongs to whoever created them. It is the door for a
@@ -503,4 +507,5 @@ export interface DatasetTreeHandle {
    * parsed; ignored over a `complete: true` source). A query already typed is searched again.
    */
   setSearchIndex(index: DatasetTreeSearchIndex | null): void;
+  reveal(path: readonly string[]): Promise<boolean>;
 }
