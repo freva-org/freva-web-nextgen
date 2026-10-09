@@ -80,6 +80,7 @@ interface DatasetTreeOptions {
   onNavigate?: (node: DatasetTreeNode) => void;
   accessExamples?: (node: DatasetTreeNode) => readonly DatasetAccessExample[];
   python?: DatasetTreePython; // the optional "Try in Python" control; omit for none
+  onOpenNotebook?: (node: DatasetTreeNode) => void; // "Open in notebook" on a dataset or a file
   initialExpandedIds?: readonly string[];
   labels?: Partial<DatasetTreeLabels>;
   status?: DatasetTreeStatus; // the footer pill; omit for no footer
@@ -573,7 +574,8 @@ they do not:
 Override the `--dataset-tree-*` variables, never the internals - those are the supported surface.
 The package adds a few of its own (`--dataset-tree-max-height`, `--dataset-tree-indent`,
 `--dataset-tree-code-bg`, `--dataset-tree-danger`, and two derived accents used to keep small accent
-text above 4.5:1).
+text above 4.5:1). **Open in notebook** shows an icon only when given one:
+`--dataset-tree-notebook-icon` (an image, e.g. `url(...)`) and `--dataset-tree-notebook-icon-width`.
 
 **`--dataset-tree-focus` is deliberately not the accent.** The accent says what a node IS - a
 store's icon, its Inspect control, the leading edge of its panel - so outlining the row a reader

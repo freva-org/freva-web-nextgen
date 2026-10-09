@@ -255,6 +255,18 @@
    of thing it is - copy takes a snippet away, this one starts something - so it takes the primary
    treatment and a glyph, the only control here with either. The icon is sized in `em` so it tracks
    the button's own 0.72rem rather than the host's root size. */
+.dataset-tree__btn--notebook {
+  display: inline-flex;
+  align-items: center;
+}
+.dataset-tree__btn--notebook::before {
+  content: "";
+  flex: 0 0 auto;
+  width: var(--dataset-tree-notebook-icon-width, 0px);
+  height: 16px;
+  margin-inline-end: calc(var(--dataset-tree-notebook-icon-width, 0px) * 0.43);
+  background: var(--dataset-tree-notebook-icon, none) center / contain no-repeat;
+}
 .dataset-tree__btn--run {
   display: inline-flex;
   align-items: center;
