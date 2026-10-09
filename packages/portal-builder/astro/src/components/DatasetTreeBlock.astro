@@ -79,6 +79,7 @@ const data = block.datasetTree!;
     data-portal-dataset-tree-expand={JSON.stringify(data.expandedIds)}
     data-portal-dataset-tree-status={data.statusLabel}
     data-portal-dataset-tree-gridlook={data.gridlook ? "" : undefined}
+    data-portal-dataset-tree-notebook={data.notebook ? JSON.stringify(data.notebook) : undefined}
     data-portal-dataset-tree-generated={data.generatedAt}
     data-portal-dataset-tree-source={data.sourceLabel}
     {/*

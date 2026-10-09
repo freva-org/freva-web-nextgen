@@ -2226,6 +2226,56 @@ try {
     );
   }
 
+  await check(
+    "on a phone the search fills the screen, its filters sit in a row, and Cancel closes it",
+    () =>
+      withPage(async (page) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(`${base}docs/guide/`, { waitUntil: "load" });
+        const dialog = page.locator("dialog.portal-sitesearch");
+        await page.locator("[data-portal-sitesearch-open]").click();
+        await dialog.waitFor({ state: "visible" });
+        const seen = await page.evaluate(() => {
+          const rect = (el) => el?.getBoundingClientRect();
+          const box = rect(document.querySelector(".portal-sitesearch"));
+          const field = rect(document.querySelector(".portal-sitesearch-box"));
+          const close = document.querySelector("[data-portal-sitesearch-close]");
+          const shown = (el) => el.getBoundingClientRect().width > 0;
+          const facets = [...document.querySelectorAll(".portal-sitesearch-facet")].map(rect);
+          return {
+            box: [box.x, box.y, box.width, box.height],
+            close: [...close.querySelectorAll("kbd, .portal-sitesearch-close-label")]
+              .filter(shown)
+              .map((el) => el.textContent.trim())
+              .join(" "),
+            closeHeight: rect(close).height,
+            fieldBottom: field.bottom,
+            facetTops: [...new Set(facets.map((f) => Math.round(f.top)))],
+            facetsBelowField: facets.every((f) => f.top >= field.bottom - 1),
+            facetsShown: facets.every((f) => f.width > 0),
+          };
+        });
+        assert(
+          seen.box[0] === 0 && seen.box[1] === 0 && seen.box[2] === 390 && seen.box[3] === 844,
+          `the dialog does not fill the phone screen: ${seen.box.join(", ")}`,
+        );
+        assert(seen.close === "Cancel", `the close control reads ${JSON.stringify(seen.close)}`);
+        assert(seen.closeHeight >= 44, `the close control is ${seen.closeHeight}px tall`);
+        assert(seen.facetsShown, "a section filter is not shown");
+        assert(seen.facetTops.length <= 1, `the filters wrap onto ${seen.facetTops.length} rows`);
+        assert(seen.facetsBelowField, "the filters are not under the search field");
+        assert(
+          (await page.getByRole("button", { name: "Cancel search" }).count()) === 1,
+          "the visible Cancel is not in the button's accessible name",
+        );
+        await page.mouse.click(195, 600);
+        await page.waitForTimeout(300);
+        assert(await dialog.isVisible(), "a tap on the empty search closed it");
+        await page.locator("[data-portal-sitesearch-close]").click();
+        await dialog.waitFor({ state: "hidden" });
+      }),
+  );
+
   await check("every heading carries a permalink that lands on it", () =>
     withPage(async (page) => {
       await page.goto(`${base}docs/showcase/`, { waitUntil: "load" });

@@ -25,6 +25,8 @@ import type {
 import type { DatasetTreeCatalog, DatasetTreeCatalogNode } from "@freva-org/dataset-tree/snapshot";
 import { adoptTreeStyles } from "./dataset-tree-styles.js";
 import { createTreeMaximize } from "./tree-maximize.js";
+import { openNotebook, type NotebookTarget } from "./notebook-sheet.js";
+import { JUPYTER_LOGO, JUPYTER_LOGO_DARK, jupyterLogo } from "./jupyter-logo.js";
 import type { TreeLoaders, TreeS3Config } from "./tree-sources.js";
 import type { InspectorLoader } from "./tree-inspector-loader.js";
 import { STORE_PLACEHOLDER, TREE_RECIPES, bindStore, renderRecipe } from "./tree-recipes.js";
@@ -335,8 +337,38 @@ export function mountDatasetTreeBlocks(loaders: TreeLoaders = {}): Promise<void>
  * One block, from whichever source the build gave it.
  *
  * Asynchronous only because the LIVE source's adapter arrives through a dynamic import - a
- * snapshot block resolves on the first tick and draws in the same frame it always did.
+ * snapshot block resolves on the first tick and draws in the same frame.
  */
+function readNotebookTarget(host: HTMLElement): NotebookTarget | null {
+  const raw = host.dataset.portalDatasetTreeNotebook;
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<NotebookTarget>;
+    if (typeof value.href !== "string" || !value.href) return null;
+    return {
+      href: value.href,
+      frame: value.frame === true,
+      datasets: value.datasets === true,
+      panel: value.panel === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function notebookButton(doc: Document, target: NotebookTarget): HTMLElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "dataset-tree__btn portal-tree-notebook";
+  button.dataset.portalTreeNotebook = "";
+  button.setAttribute("aria-label", "Open the notebook");
+  const text = doc.createElement("span");
+  text.textContent = "Notebook";
+  button.append(...jupyterLogo(doc), text);
+  button.addEventListener("click", () => openNotebook(target));
+  return button;
+}
+
 async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> {
   const data = readHostData(host);
   const mode = host.dataset.portalDatasetTreeMode === "s3" ? "s3" : "snapshot";
@@ -420,9 +452,21 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
   // an index is searchable, so passing it before the index arrives changes nothing.
   const searchLimit = Number.parseInt(host.dataset.portalDatasetTreeSearchLimit ?? "", 10);
 
+  const notebook = readNotebookTarget(host);
+  const notebookControl = notebook ? notebookButton(host.ownerDocument, notebook) : null;
+  const extras = [notebookControl, expandControl].filter((e): e is HTMLElement => Boolean(e));
+
+  if (notebook?.datasets) {
+    host.style.setProperty("--portal-jupyter-logo-light", `url("${JUPYTER_LOGO}")`);
+    host.style.setProperty("--portal-jupyter-logo-dark", `url("${JUPYTER_LOGO_DARK}")`);
+  }
+
   const handle = mountDatasetTree(host, {
     source,
-    ...(expandControl ? { toolbarExtras: [expandControl] } : {}),
+    ...(extras.length > 0 ? { toolbarExtras: extras } : {}),
+    ...(notebook?.datasets
+      ? { onOpenNotebook: (node: DatasetTreeNode) => openNotebook(notebook, node.id) }
+      : {}),
     ...(Number.isFinite(searchLimit) && searchLimit > 0 ? { searchResultLimit: searchLimit } : {}),
     initialExpandedIds: data.expand,
     // ONE label override: the badge on a collection that has been announced but has nothing in it
@@ -464,6 +508,9 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
     },
   });
 
+  if (notebookControl) {
+    host.querySelector('[data-dt-action="collapse-all"]')?.before(notebookControl);
+  }
   if (truncated) reportTruncation(host, truncated);
   if (expandControl) settleBlockBar(panel);
 

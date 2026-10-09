@@ -150,23 +150,64 @@
   color: var(--ink);
 }
 @media (max-width: 760px) {
-  .portal-sitesearch {
-    margin-top: 16px;
-    height: calc(100dvh - 32px);
+  .portal-sitesearch,
+  .portal-sitesearch[data-filters="open"] {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding-top: env(safe-area-inset-top);
+    border: 0;
+    border-radius: 0;
   }
   .portal-sitesearch[open] {
     flex-direction: column;
   }
-  .portal-sitesearch-filters {
-    flex: 0 1 auto;
-    max-height: 40%;
-    padding: 12px 12px 8px;
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
   .portal-sitesearch-main {
+    display: contents;
+  }
+  .portal-sitesearch-filters-toggle {
+    display: none;
+  }
+  .portal-sitesearch[data-filters] .portal-sitesearch-filters {
+    display: block;
+    flex: 0 0 auto;
+    order: 1;
+    padding: 8px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-left: 0;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    scrollbar-width: none;
+  }
+  .portal-sitesearch-filters-title,
+  .portal-sitesearch-filters-group {
+    display: none;
+  }
+  .portal-sitesearch-facets {
+    display: flex;
+    gap: 8px;
+    width: max-content;
+  }
+  .portal-sitesearch-facet {
+    width: auto;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-pill);
+    white-space: nowrap;
+  }
+  .portal-sitesearch-facet[aria-pressed="true"] {
+    border-color: var(--accent-text, var(--accent));
+  }
+  .portal-sitesearch-status {
+    order: 2;
+  }
+  .portal-sitesearch-results {
     flex: 1 1 auto;
-    min-height: 0;
+    order: 3;
   }
 }
 .portal-sitesearch-box {
@@ -205,6 +246,35 @@
   border-radius: 4px;
   font-family: var(--font-mono);
   font-size: 11px;
+}
+.portal-sitesearch-close-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 760px), (hover: none) {
+  .portal-sitesearch-close {
+    min-height: 44px;
+    padding: 0 4px;
+    color: var(--accent-text, var(--accent));
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .portal-sitesearch-close kbd {
+    display: none;
+  }
+  .portal-sitesearch-close-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+  }
 }
 .portal-sitesearch-status {
   margin: 0;

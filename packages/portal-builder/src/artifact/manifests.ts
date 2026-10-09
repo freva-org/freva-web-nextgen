@@ -354,16 +354,14 @@ export function hostPolicy(inputs: ManifestInputs): object {
   // The notebook framed by a landing block: its origin may be framed. So may GridLook, for a
   // tree whose Inspect offers its globe (the data panel's `gridlook`); nothing else.
   for (const block of model.landings.flatMap((landing) => landing.blocks)) {
-    const framed = block.notebook
-      ? block.notebook.sameOrigin
-        ? "'self'"
-        : block.notebook.origin
-      : block.datasetTree?.gridlook
-        ? GRIDLOOK_ORIGIN
-        : undefined;
-    if (!framed) continue;
+    const framed = [
+      ...(block.notebook ? [block.notebook.sameOrigin ? "'self'" : block.notebook.origin] : []),
+      ...(block.datasetTree?.gridlook ? [GRIDLOOK_ORIGIN] : []),
+      ...(block.datasetTree?.notebook?.frame ? ["'self'"] : []),
+    ];
+    if (framed.length === 0) continue;
     const set = componentDirectives.get("frame-src") ?? new Set<string>();
-    set.add(framed);
+    for (const origin of framed) set.add(origin);
     componentDirectives.set("frame-src", set);
   }
 

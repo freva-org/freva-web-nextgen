@@ -892,20 +892,15 @@ function buildSky(root) {
    and its own places in the frame.
      sunR  = min(w, spaceEnd) * 0.125
      sunX  = -sunR * 0.40          sunY = spaceEnd*0.10 - sunR*0.42
-     moonR = sunR * 0.52
-     moonX = w * 0.17              moonY = spaceEnd * 0.115
+     the moon takes the sun's place and size at night
    ==================================================================== */
 function buildLuminaries(band) {
   const { w, spaceEnd } = G;
   const sunR = Math.min(w, spaceEnd) * 0.125;
   const sunX = -sunR * 0.4,
     sunY = spaceEnd * 0.1 - sunR * 0.42;
-  const moonR = sunR * 0.52,
-    moonX = w * 0.17,
-    moonY = spaceEnd * 0.115;
-
   if (NIGHT) {
-    buildMoon(band, moonR, moonX, moonY);
+    buildMoon(band, sunR, sunX, sunY);
     return;
   }
 
@@ -1006,7 +1001,6 @@ function buildMoon(band, moonR, moonX, moonY) {
     im.alt = "";
     im.decoding = "async";
   }
-  el("div", "lbl", mw, `left:${f2(moonX)}px;top:${f2(moonY + moonR + 12)}px`).textContent = "MOON";
 }
 
 /* ====================================================================
