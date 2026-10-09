@@ -1,5 +1,11 @@
 # @freva-org/data-inspector
 
+## 2610.1.0
+
+### Minor Changes
+
+- a4c7c65: A store's time coordinate is shown as dates, decoded from its chunks in the browser.
+
 ## 2610.0.0
 
 ### Major Changes
