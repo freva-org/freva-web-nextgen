@@ -394,6 +394,15 @@ assistant the shared sign-in callback to `<basePath>auth/callback/`. `verify`, t
 `checksums.sha256` cover both; there is no `playground-origin/` and no `deploy.json`.
 `freva-portal-builder preview --dir build/portal` serves all of it on one port.
 
+**From the dataset tree.** With a notebook, every dataset tree has a **Notebook** button after
+_Collapse_. A same-origin notebook opens in a sheet over the page, phones included, with the data
+panel shown when there is one. Close, a click outside or Escape hide it (inside the notebook, Escape
+first does what JupyterLab uses it for, such as leaving a cell's editor), and it keeps its state
+while the page is open. A notebook on its own origin opens in a new tab. On the data panel's tree
+(`dataPanel.tree`), each dataset's **Open in notebook** opens that dataset's notebook (the data
+panel's _Open notebook_) in the same place. The notebook's policy then lets the portal frame it
+(`frame-ancestors 'self'`).
+
 Everything the notebook needs is origin-relative (the landing's frame, _Open as notebook_, the
 callback), so one build works on its host and in a local preview. `site.canonicalUrl` fixes the base
 path: a build for `https://<account>.github.io/<repo>/` is previewed at

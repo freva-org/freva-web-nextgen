@@ -185,10 +185,34 @@ function buildSite(name, { canonical, runtimeIndexUrl, login, meta, consoleOrigi
   );
   mkdirSync(join(src, "wheels"), { recursive: true });
   probeWheel(join(src, "wheels"));
+  put("fragments/run.md", "```python try-in-python\nprint('landing', 6 * 7)\n```\n");
   put(
     "landings/home.yaml",
     "schemaVersion: 1\ntitle: Same origin\nblocks:\n  - type: hero\n    heading: Docs\n" +
-      "  - type: notebook\n    heading: Your notebook\n",
+      "  - type: notebook\n    heading: Your notebook\n" +
+      "  - type: dataset-tree\n    catalog: ../data/archive.json\n    heading: Browse\n" +
+      "  - type: prose\n    source: ../fragments/run.md\n",
+  );
+  put(
+    "data/archive.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      roots: [
+        {
+          id: "archive",
+          kind: "collection",
+          name: "Archive",
+          children: [
+            {
+              id: "archive/probe",
+              kind: "dataset",
+              name: "probe.zarr",
+              path: "archive/probe.zarr",
+            },
+          ],
+        },
+      ],
+    }),
   );
   put(
     "portal.yaml",
@@ -250,6 +274,8 @@ ${meta ? "    metaPolicy: true\n" : ""}    assistant:
       climateclaw:
         host: https://freva.example.org
         defaultModel: gpt-test
+    dataPanel:
+      tree: home-2
   terminal:
     style: freva-client-terminal
     osControls: linux
@@ -732,6 +758,291 @@ try {
             ),
           );
           await notebook.waitForSelector(".jp-Notebook .jp-Cell", { timeout: 120_000 });
+        },
+      );
+
+      await check(
+        `${label}: the tree's Notebook button opens the notebook in a sheet on the page, Escape closes it`,
+        async () => {
+          await page.goto(base, { waitUntil: "domcontentloaded" });
+          const button = page.locator("[data-portal-tree-notebook]");
+          await button.scrollIntoViewIfNeeded();
+          await button.click();
+          const sheet = page.locator("[data-portal-notebook-sheet] .portal-notebook-window");
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          const frameEl = sheet.locator("iframe");
+          const src = new URL(await frameEl.getAttribute("src"));
+          assert.equal(src.origin, new URL(base).origin);
+          assert.equal(src.pathname, `${basePath}notebook/lab/index.html`);
+          assert.equal(src.search, "?panel=data");
+          const frame = await (await frameEl.elementHandle()).contentFrame();
+          await frame.waitForSelector(".jp-LabShell", { timeout: 120_000 });
+          await frame.waitForSelector("#freva-data-panel:not(.lm-mod-hidden)", { timeout: 60_000 });
+          const accept = frame.locator(".jp-Dialog .jp-mod-accept");
+          for (let quiet = 0; quiet < 2; ) {
+            await frame.waitForTimeout(1000);
+            if ((await accept.count()) === 0) quiet += 1;
+            else {
+              quiet = 0;
+              await accept.first().click();
+            }
+          }
+          for (let i = 0; i < 12; i += 1) await page.keyboard.press("Tab");
+          assert.ok(
+            await page.evaluate(
+              () => !!document.activeElement?.closest("[data-portal-notebook-sheet]"),
+            ),
+            "Tab stays in the sheet",
+          );
+          assert.equal(
+            await page
+              .locator("header, main")
+              .first()
+              .evaluate((e) => e.closest("[inert]") !== null),
+            true,
+          );
+          await frame.locator("#freva-data-panel").click();
+          await frame.locator(".lm-MenuBar-item", { hasText: "Help" }).click();
+          await frame.locator(".lm-Menu-item", { hasText: "About" }).first().click();
+          await frame.locator(".jp-Dialog").waitFor({ timeout: 10_000 });
+          await frame.waitForFunction(
+            () => document.querySelector(".jp-Dialog")?.contains(document.activeElement),
+            null,
+            { timeout: 10_000 },
+          );
+          await page.keyboard.press("Escape");
+          await frame.locator(".jp-Dialog").waitFor({ state: "detached", timeout: 5_000 });
+          assert.ok(await sheet.isVisible(), "Escape dismissed only the notebook's dialog");
+          await frame.locator("#freva-data-panel").click();
+          await page.keyboard.press("Escape");
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+          assert.equal(
+            await page
+              .locator("header, main")
+              .first()
+              .evaluate((e) => e.closest("[inert]") !== null),
+            false,
+          );
+          assert.equal(page.url(), base);
+        },
+      );
+
+      await check(
+        `${label}: the sheet keeps its notebook through theme switches made while it was closed`,
+        async () => {
+          const toggle = page.locator(".portal-theme-toggle");
+          await toggle.click();
+          await page.waitForTimeout(1500);
+          await toggle.click();
+          await page.waitForTimeout(1500);
+          await toggle.click();
+          await page.waitForTimeout(1500);
+          await page.locator("[data-portal-tree-notebook]").click();
+          const sheet = page.locator("[data-portal-notebook-sheet] .portal-notebook-window");
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          const frame = await (await sheet.locator("iframe").elementHandle()).contentFrame();
+          await frame.waitForTimeout(2000);
+          const layout = await frame.evaluate(() => {
+            const width = (selector) =>
+              document.querySelector(selector)?.getBoundingClientRect().width ?? 0;
+            return {
+              shell: width("#main"),
+              dock: width("#jp-main-dock-panel"),
+              data: width("#freva-data-panel"),
+            };
+          });
+          assert.ok(
+            layout.dock > layout.shell * 0.3,
+            `the notebook area is visible: ${JSON.stringify(layout)}`,
+          );
+          assert.ok(
+            layout.data > 0 && layout.data < layout.shell * 0.6,
+            `the data panel keeps its width: ${JSON.stringify(layout)}`,
+          );
+          await page.locator("[data-portal-notebook-close]").click();
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+          await page.reload({ waitUntil: "domcontentloaded" });
+          await page.locator("[data-portal-tree-notebook]").click();
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          const again = await (await sheet.locator("iframe").elementHandle()).contentFrame();
+          await again.waitForSelector("#freva-data-panel:not(.lm-mod-hidden)", {
+            timeout: 120_000,
+          });
+          const accept = again.locator(".jp-Dialog .jp-mod-accept");
+          for (let quiet = 0; quiet < 2; ) {
+            await again.waitForTimeout(1000);
+            if ((await accept.count()) === 0) quiet += 1;
+            else {
+              quiet = 0;
+              await accept.first().click();
+            }
+          }
+          const reloaded = await again.evaluate(() => {
+            const width = (selector) =>
+              document.querySelector(selector)?.getBoundingClientRect().width ?? 0;
+            return { shell: width("#main"), data: width("#freva-data-panel") };
+          });
+          assert.ok(
+            reloaded.data < reloaded.shell * 0.6,
+            `after a reload the data panel keeps its width: ${JSON.stringify(reloaded)}`,
+          );
+          await page.locator("[data-portal-notebook-close]").click();
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+        },
+      );
+
+      await check(
+        `${label}: a dataset's Open in notebook opens its notebook in the same sheet`,
+        async () => {
+          await page.locator('[data-dataset-tree-id="archive"] .dataset-tree__row').first().click();
+          await page
+            .locator('[data-dataset-tree-id="archive/probe"] .dataset-tree__row')
+            .first()
+            .click();
+          await page.locator('[data-dt-key="notebook:archive/probe"]').click();
+          const sheet = page.locator("[data-portal-notebook-sheet] .portal-notebook-window");
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          assert.equal(await page.locator("[data-portal-notebook-sheet]").count(), 1);
+          const frame = await (await sheet.locator("iframe").elementHandle()).contentFrame();
+          await frame.waitForFunction(
+            () =>
+              [...document.querySelectorAll(".jp-NotebookPanel:not(.lm-mod-hidden) .jp-Cell")].some(
+                (cell) => cell.textContent?.includes("probe.zarr"),
+              ),
+            null,
+            { timeout: 120_000, polling: 500 },
+          );
+          assert.match(
+            await frame.locator(".jp-FrevaData-selectedName").innerText(),
+            /probe\.zarr/,
+          );
+          const tab = new URL(
+            await page
+              .locator("[data-portal-notebook-sheet] [data-portal-notebook-open]")
+              .getAttribute("href"),
+          );
+          assert.match(tab.searchParams.get("dataset") ?? "", /probe/);
+          assert.equal(tab.searchParams.get("panel"), "data");
+          await frame.locator(".jp-NotebookPanel:not(.lm-mod-hidden) .jp-Cell").first().click();
+          await page.keyboard.press("Enter");
+          await frame
+            .locator(".jp-NotebookPanel:not(.lm-mod-hidden) .jp-Notebook.jp-mod-editMode")
+            .waitFor({ timeout: 5_000 });
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(500);
+          assert.ok(await sheet.isVisible(), "the first Escape only leaves the cell's editor");
+          await page.keyboard.press("Escape");
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+          await page.locator('[data-dt-key="notebook:archive/probe"]').click();
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          await page.locator("[data-portal-notebook-close]").click();
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+        },
+      );
+
+      await check(
+        `${label}: a Python window stays usable over the sheet, and closing it leaves the sheet open`,
+        async () => {
+          for (const other of context.pages()) if (other !== page) await other.close();
+          await page.locator(".portal-code-figure .portal-code-run").first().click();
+          const term = page.locator(".freva-term.show");
+          await term.waitFor({ timeout: 30_000 });
+          let consoleFrame = page.mainFrame();
+          if (cfg.host === "mixed") {
+            await page.waitForSelector(".portal-python-frame", { timeout: 30_000 });
+            consoleFrame = await (await page.$(".portal-python-frame")).contentFrame();
+          }
+          const said = (text) =>
+            consoleFrame.waitForFunction(
+              (wanted) =>
+                document.querySelector("freva-python-console")?.transcript?.().includes(wanted),
+              text,
+              { timeout: STARTUP_MS, polling: 500 },
+            );
+          await said("landing 42");
+          await page.locator("[data-portal-tree-notebook]").evaluate((button) => button.click());
+          const sheet = page.locator("[data-portal-notebook-sheet] .portal-notebook-window");
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          const bar = page.locator(".freva-term.show .term-bar");
+          const before = await bar.boundingBox();
+          const seen = await page.evaluate(
+            ({ x, y }) => {
+              const hit = document.elementFromPoint(x, y);
+              return {
+                owner: hit?.closest(".freva-term, [data-portal-notebook-sheet]")?.className ?? "?",
+                inert: !!hit?.closest("[inert]"),
+              };
+            },
+            {
+              x: Math.round(before.x + before.width / 2),
+              y: Math.round(before.y + before.height / 2),
+            },
+          );
+          assert.match(
+            seen.owner,
+            /freva-term/,
+            `the sheet covers the Python window: ${seen.owner}`,
+          );
+          assert.equal(seen.inert, false, "the Python window is inert while the sheet is open");
+          await page.locator(".freva-term.show .term-body").click();
+          await consoleFrame.waitForFunction(
+            () => document.activeElement?.closest("freva-python-console") !== null,
+            null,
+            { timeout: 5_000 },
+          );
+          await page.waitForTimeout(500);
+          await page.keyboard.type("print('typed', 6 * 7)");
+          await page.keyboard.press("Enter");
+          await said("typed 42");
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(300);
+          assert.ok(await sheet.isVisible(), "Escape in the Python window closed the sheet");
+          await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(
+            before.x + before.width / 2 - 80,
+            before.y + before.height / 2 + 60,
+            {
+              steps: 8,
+            },
+          );
+          await page.mouse.up();
+          const after = await bar.boundingBox();
+          assert.ok(
+            Math.abs(after.x - before.x) > 40 || Math.abs(after.y - before.y) > 30,
+            `the Python window did not move: ${JSON.stringify({ before, after })}`,
+          );
+          await page.locator(".freva-term.show .tl.close").click();
+          await term.waitFor({ state: "hidden", timeout: 5_000 });
+          assert.ok(await sheet.isVisible(), "closing the Python window closed the sheet");
+          await page.locator("[data-portal-notebook-close]").click();
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+        },
+      );
+
+      await check(
+        `${label}: from the maximized tree the notebook opens over it, and Escape returns to the tree`,
+        async () => {
+          await page.locator("[data-portal-tree-expand]").click();
+          const tree = page.locator(".portal-sheet");
+          await tree.waitFor({ state: "visible", timeout: 10_000 });
+          await page.locator(".portal-sheet [data-portal-tree-notebook]").click();
+          const sheet = page.locator("[data-portal-notebook-sheet] .portal-notebook-window");
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          const box = await sheet.boundingBox();
+          const owner = await page.evaluate(
+            ({ x, y }) =>
+              document
+                .elementFromPoint(x, y)
+                ?.closest("[data-portal-notebook-sheet], .portal-sheet")?.className ?? "?",
+            { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + 12) },
+          );
+          assert.match(owner, /portal-notebook-sheet/, `the maximized tree covers the notebook`);
+          await page.keyboard.press("Escape");
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+          assert.ok(await tree.isVisible(), "Escape closed the maximized tree with the notebook");
+          await page.keyboard.press("Escape");
+          await tree.waitFor({ state: "hidden", timeout: 5_000 });
         },
       );
 

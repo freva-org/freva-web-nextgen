@@ -8,7 +8,7 @@
 // pinned in place (`position: fixed` from the stylesheet) and the frame stays where it loaded.
 
 /** The header's bottom edge, measured: its height is a clamp on the viewport. */
-function headerInset(doc: Document): number {
+export function headerInset(doc: Document): number {
   const header = doc.querySelector<HTMLElement>(".portal-header");
   if (!header) return 0;
   return Math.max(0, Math.round(header.getBoundingClientRect().bottom));
@@ -18,7 +18,7 @@ function headerInset(doc: Document): number {
  * How far the footer, and the badge over it, reach up from the bottom edge: both paint above the
  * window, so the window ends where they begin.
  */
-function footerInset(doc: Document, height: number): number {
+export function footerInset(doc: Document, height: number): number {
   let top = height;
   const footer = doc.querySelector<HTMLElement>(".portal-footer");
   if (footer && getComputedStyle(footer).position === "fixed") {
@@ -33,7 +33,7 @@ function footerInset(doc: Document, height: number): number {
 }
 
 /** The page's theme, as the shell set it. */
-function pageTheme(doc: Document): "dark" | "light" {
+export function pageTheme(doc: Document): "dark" | "light" {
   return doc.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
 }
 
@@ -50,7 +50,7 @@ function frameOrigin(frame: HTMLIFrameElement): string | null {
  * The notebook follows the page's theme: told when it says it is ready (its theme plugin starts
  * after the frame's load event) and on every change. A new tab opens in the same theme.
  */
-function syncTheme(block: HTMLElement): void {
+export function syncTheme(block: HTMLElement): void {
   const doc = block.ownerDocument;
   const win = doc.defaultView;
   const frame = block.querySelector<HTMLIFrameElement>("iframe");
@@ -164,6 +164,13 @@ export function wireNotebookEmbed(block: HTMLElement): NotebookEmbedHandle | nul
     if (event.key === "Escape") close(false);
   });
   win.addEventListener("popstate", () => close(true));
+  const frame = block.querySelector<HTMLIFrameElement>("iframe");
+  win.addEventListener("message", (event: MessageEvent) => {
+    if (!frame || event.source !== frame.contentWindow || event.origin !== win.location.origin) {
+      return;
+    }
+    if ((event.data as { type?: unknown } | null)?.type === "freva-lab-escape") close(false);
+  });
 
   return { isOpen: () => open, open: openSheet, close: () => close(false) };
 }

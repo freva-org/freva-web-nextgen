@@ -2579,10 +2579,12 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
               `--config <portal.yaml> --out ${given}`,
           });
         } else {
-          const embedded = landings.some((landing) =>
-            landing.blocks.some((block) => block.type === "notebook"),
-          );
           const sameOrigin = portalPlayground.notebookSameOrigin === true;
+          const embedded = landings.some((landing) =>
+            landing.blocks.some(
+              (block) => block.type === "notebook" || (sameOrigin && Boolean(block.datasetTree)),
+            ),
+          );
           notebook = {
             realRoot,
             files,
@@ -2614,6 +2616,21 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
   };
   for (const landing of landings)
     for (const block of landing.blocks) withBase(block.datasetTree?.python);
+  const notebookTarget = "notebook" in linkCtxBase ? linkCtxBase.notebook : undefined;
+  if (notebookTarget) {
+    for (const landing of landings) {
+      for (const block of landing.blocks) {
+        const tree = block.datasetTree;
+        if (!tree) continue;
+        tree.notebook = {
+          href: `${notebookTarget.root}/notebook/${notebookTarget.lab ? "lab" : "tree"}/index.html`,
+          frame: notebookTarget.sameOrigin === true,
+          datasets: notebookLab?.dataPanel?.block === tree,
+          panel: Boolean(notebookLab?.dataPanel),
+        };
+      }
+    }
+  }
   for (const route of allRoutes) withBase(route.python);
   // The child runs on its own origin: the portal is named, not taken from where it runs.
   if (playground && usesPortalBase(playground.initialSource)) {

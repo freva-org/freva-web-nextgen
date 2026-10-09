@@ -406,6 +406,7 @@ export interface DatasetTreeBlockData {
    * on this tree opts in (`dataPanel.gridlook`), which also lets the portal frame GridLook.
    */
   gridlook?: boolean;
+  notebook?: { href: string; frame: boolean; datasets: boolean; panel: boolean };
   searchIndex?: {
     url: string;
     /** Artifact-relative path of the published file. */

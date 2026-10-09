@@ -501,3 +501,15 @@
     animation: none !important;
   }
 }
+[data-portal-dataset-tree] {
+  --dataset-tree-notebook-icon: var(--portal-jupyter-logo-light, none);
+  --dataset-tree-notebook-icon-width: 14px;
+}
+:root[data-theme="dark"] [data-portal-dataset-tree] {
+  --dataset-tree-notebook-icon: var(--portal-jupyter-logo-dark, none);
+}
+.portal-tree-notebook {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

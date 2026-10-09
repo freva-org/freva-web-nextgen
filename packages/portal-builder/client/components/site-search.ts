@@ -263,7 +263,14 @@ export function initSiteSearch(): void {
   });
   // A click on the backdrop - the dialog element itself, outside its box - closes it.
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
+    if (event.target !== dialog) return;
+    const box = dialog.getBoundingClientRect();
+    const inside =
+      event.clientX >= box.left &&
+      event.clientX <= box.right &&
+      event.clientY >= box.top &&
+      event.clientY <= box.bottom;
+    if (!inside) dialog.close();
   });
   closer?.addEventListener("click", () => dialog.close());
   opener.addEventListener("click", open);

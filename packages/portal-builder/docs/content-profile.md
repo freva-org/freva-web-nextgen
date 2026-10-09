@@ -265,7 +265,10 @@ or, in Material's spelling, a `cols-N` class:
 
 `2`, `3` and `4` are accepted. The hint is a **maximum**: the grid still drops to fewer columns
 when narrow, and to one on a phone. It becomes a class (`portal-cardgrid-max-2`), never a style
-attribute, and lets cards go down to 13rem so `columns=3` or `4` fits a docs column.
+attribute, and lets cards go down to 13rem so `columns=3` or `4` fits a docs column. A grid of
+one or two cards under a hint of `3` or `4` fills its row instead of leaving a gap: each card
+with a picture lies on its side, the picture beside the title and summary, so it is wider but
+not taller.
 
 Refused, as `PC1023`: a body that is not exactly one list, a title on `:::cards` or any attribute
 but `columns`, a column hint other than `2`, `3` or `4` (`columns=5`, `cols-5`, two `cols-`

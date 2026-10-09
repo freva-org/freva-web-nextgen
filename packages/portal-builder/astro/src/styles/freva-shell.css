@@ -1602,6 +1602,41 @@ a {
 .portal-prose .portal-cardgrid-card > :last-child:not(.portal-cardgrid-body) {
   margin-bottom: 16px;
 }
+.portal-prose
+  .portal-cardgrid:is(.portal-cardgrid-max-3, .portal-cardgrid-max-4):not(
+    :has(> .portal-cardgrid-card:nth-child(3))
+  ) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+}
+.portal-prose
+  .portal-cardgrid:is(.portal-cardgrid-max-3, .portal-cardgrid-max-4):not(
+    :has(> .portal-cardgrid-card:nth-child(3))
+  )
+  > .portal-cardgrid-card:has(> .portal-cardgrid-media) {
+  display: grid;
+  grid-template-columns: minmax(7rem, 40%) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-content: start;
+}
+.portal-prose
+  .portal-cardgrid:is(.portal-cardgrid-max-3, .portal-cardgrid-max-4):not(
+    :has(> .portal-cardgrid-card:nth-child(3))
+  )
+  > .portal-cardgrid-card
+  > .portal-cardgrid-media {
+  grid-row: 1 / 3;
+  align-self: stretch;
+  border-bottom: 0;
+  border-inline-end: 1px solid var(--line);
+}
+.portal-prose
+  .portal-cardgrid:is(.portal-cardgrid-max-3, .portal-cardgrid-max-4):not(
+    :has(> .portal-cardgrid-card:nth-child(3))
+  )
+  > .portal-cardgrid-card:has(> .portal-cardgrid-media)
+  > :not(.portal-cardgrid-media) {
+  grid-column: 2;
+}
 @media (prefers-reduced-motion: reduce) {
   .portal-prose .portal-cardgrid-card {
     transition: none;
@@ -3949,7 +3984,27 @@ details.portal-admonition > summary.portal-admonition-title:focus-visible {
 .portal-notebook-backdrop[hidden] {
   display: none;
 }
-.portal-notebook-block[data-expanded="true"] .portal-notebook-window {
+.portal-notebook-sheet {
+  position: relative;
+}
+.portal-notebook-sheet[data-closed] {
+  visibility: hidden;
+}
+.portal-jupyter-logo {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 16px;
+  object-fit: contain;
+}
+.portal-jupyter-logo[data-variant="dark"],
+:root[data-theme="dark"] .portal-jupyter-logo[data-variant="light"] {
+  display: none;
+}
+:root[data-theme="dark"] .portal-jupyter-logo[data-variant="dark"] {
+  display: inline-block;
+}
+.portal-notebook-block[data-expanded="true"] .portal-notebook-window,
+.portal-notebook-sheet .portal-notebook-window {
   position: fixed;
   z-index: 1001;
   top: calc(var(--portal-notebook-top, 0px) + clamp(8px, 1.4vh, 18px));

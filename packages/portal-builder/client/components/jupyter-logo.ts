@@ -1,0 +1,23 @@
+export const JUPYTER_LOGO =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACkAAAAwCAMAAAC7Z6OXAAAAkFBMVEVgYGCioqJlZWZfXl+ycTFpaWqQkJGgoKChoaGkaFrjayf/VVXTlWl/Pz+/PwD/mTMAAAD3eSb5ezN+fn78fQJUVFRNTU1NTU3zdiVNTU3/AAD1dyX/VQD0eCZMTExNTU31eCZNTU2dnZ31eCb//wA8PDz1eCZNTU3/qlX/gimnp6d4eHlQUFD/////qgBKSkrRxHRsAAAAMHRSTlPiEBhjBKTrpFIECQMGBAQFAPsLBAMIcs0wigFOA2owsK5N+tEBBI3pA//9/LQBAw8IjD/CAAADHklEQVR42oWVh3qrMAyFzUjS9i7hwYZAGIGUkPd/u3tsQ0PTpS8DzG9JluUDox9MeJ5rLtj32FWw11fmkviEbOXAOR9kakja7V9f9ztyDKlIiAWTXL5Nyf2WrgSXcPoYXeb44XFWFFkWc1wPz1ufgjy204mkM7CiClarCsDc5Il0tU+XMbYjhbBxH7y3HoPufe2aZOTTyyMXBGNQGOhqSOHuGPN+UdyMwUcbqxd6prd6unAfB5/b2HCS28qvYNUXWawtK/rGDq2oJv1nboZ6U5q78cyk3vzL04X8RdUYVNlsSs/nXEqZY6OkgZtg7Gmw5EDF2GR62MzdbGzu4zdrxphyTbYpD/q/doM+WDqkJKsmlZqEywLTv+wn5N5ncIroLzHN6Wctp5YkWorRWqZK8oduTtcqtRs/5mOtDEm3pP6kYunPFbJP7JWiMFId0c2OdApkVNMR0/ENk4Sx0twlScnOuA6nKRG4i2qQ55oiPIsSSlh9885dGJE6124Cn3VkXERnV93JI8gj6Vt1vpVRh+gYnMJwOurnb2RnSVTGJJMkBNKlaEoSz8Nz0VkSFLGQEngpzyXVUVSS9Xk064RPkAJkzaajJtlxh7+OoohczJlKxabkWC6k9kmlV5YlouNfFwkZKD2o6BZ6taLyhpjKO9/WapsVKaGwBvFho1g9lfSHVCcEVpuIG6odMmWLj8JT16l7z3Oa382+PXjLiZuu8/0iJt5+2R6SU1bglDO4jgN0/BcsOCoCnqb2dPRjj4Ehf+zSdkaDx9VY6IMEsvU5VEGrEOV8lm2qTYujXggUaKxwJu2Kcnvc+4w/HozMCBpv5aoMA2WrvkEOZZ7iDEMbFt0zJ3PVEI6s79Y0jdUvYxn5W7Xhq9dHa2LitCEd5zfW+AlY8cXjRr1RoaJ5dJgRvQmBJZ+enhw0xbLWJccKnLzvB6OrcA6Xy2XvXH+bwhR9VUEcje5tlQWdTIfL6XS6HEikw1Yj5vcKhOhir8nTSceHQHHuzz7nH7aWXck5bcivjeGlZKMjUfqeFFdnjxVdnvSL7FsSbxvncDj8EJvoP7RJlQyEpF13AAAAAElFTkSuQmCC";
+
+export const JUPYTER_LOGO_DARK =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACkAAAAwCAMAAAC7Z6OXAAAAkFBMVEXW1tbX19fZ2dnzqnHS0tLyq6vjayz/Y2OqVQAA//+/PwC/v7+qqv//mTPMzJkAAAD3eSb+/v75ezL39/f39/f39/f8fQL4+PjzdiX29vb/AAD1dyX/VQDHx8f0eCX39/f1eCb39/f1eCb1eCb/qlX//wDZ2dn/gin/qgDm5uZ/f3+8vLzq6uq/fz+qqqrm5ubfbFq1AAAAMHRSTlMYpdIFVgMJAgMBBDADBQUA+wMLc87xA7EwiwFOA/pqMa5N0Y0DAf3/AxMCCPwEBE1AdurqAAADHUlEQVR42n2Vh5bjIAxFcZKZ7SsLG1zj3lLn//9uH2DPOGWjcxIDvgghxLOgl8YkPj5OeBCJl+CRD5vzeSOYn5C97qSUnU5N50SeGgblkSOZ+DhjWurPKfmlx6vNeRjOG7rzqXP8yTgriiyLJdrd37VPpl3omUDSCVhR+YtVBeCtjfNgFhUklMKk31g2bv1bazF4+tq7UGe1oS2933O+P/rFnCtDMntKfXQUN6P/aGP1Ttsf5Eii8oCV/ec2NpJcPua9L2DVFllsLCvaxg0tqCHf3qQdam1qvkxmNvTmT57O5DeqRr/KJpt6OeVa6xwHpS3c+GNLnSM7KsYmM8N27upg8wv+s2aMKTdkn0q//ekO6MHSLiVdNak2JFwWmP7fekLsbQanWP09pil9Vps8B9FTjNKytaTXpfuET21Jk218Vq5l2QJlYArS9tK5PnmZ/AnZbhAymgd2l4RBhjVFAZlfkCRhWKLFlCRlqNAOoigxvbAGqWoKQYYJJao+BArOiFXNSciiDq2LUJX8RUYgIzJdVlyGTIGhogBezfvrQrIjEZgNJkmITJxhlCSBfT/7BMUqoAReSlVSjWgXn3a38MmoZJC1iiJDqihRJjchIsWcqDROo9KR1idyV4oSq+NpEhXWbBOKJAVBjRYbn4E6LOdmdwQGa7rUro9M1HC+pTc2ToKE+WoCdHPNkBlnvSiDpOnmqMXd8eckbdW9bYuYZL+uHl6DWlJW0HeQGtcNFe/YBwNHhS/T1N2Odmwx0OX3VdpPKPC4GgtzkUD23yVUwagQ5XLSfWrMiKMpWyjQWOFOuh3l7rq3mby/GJkVNNnrRRk6yhZ9gxzqPMUdhjbMumdv5qIhElF/WdM0Tr+sZXRZq41cvN5bE5OkFXk9bbHHJ2AlZ4+OtHlGhorm3mFGlK9ODrbb7a5IxbzXOcYKnO5XZ8xH4Q3DgI/O1iamaKsK4mh1L7+pBnxzhv1+P3jMabfSCJpuFQiafNrsrQk6Gn2T8jJdpHw4WpBiv5D86sso6DqvvhEvQZBHFpthP+x3mPOaxJonz/N+0fH1B/wfGJmQBbE4MzEAAAAASUVORK5CYII=";
+
+export function jupyterLogo(doc: Document, className = ""): HTMLElement[] {
+  return (
+    [
+      ["light", JUPYTER_LOGO],
+      ["dark", JUPYTER_LOGO_DARK],
+    ] as const
+  ).map(([variant, src]) => {
+    const img = doc.createElement("img");
+    img.className = `portal-jupyter-logo ${className}`.trim();
+    img.dataset.variant = variant;
+    img.src = src;
+    img.alt = "";
+    img.width = 14;
+    img.height = 16;
+    return img;
+  });
+}
