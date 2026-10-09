@@ -68,3 +68,13 @@ export function widenLeftAreaWhenReady(shell: unknown, forMs = 15_000): void {
   }
   setTimeout(() => observer.disconnect(), forMs);
 }
+
+export function otherPanelRequested(href: string): boolean {
+  try {
+    const params = new URL(href).searchParams;
+    const panel = params.get("panel");
+    return params.has("dataset") || (panel !== null && panel !== "climateclaw");
+  } catch {
+    return false;
+  }
+}

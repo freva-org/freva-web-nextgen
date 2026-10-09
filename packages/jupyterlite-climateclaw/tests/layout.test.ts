@@ -1,7 +1,7 @@
 // ClimateClaw's side bar: about a third of the window, never narrower than the user left it.
 import { describe, expect, it } from "vitest";
 
-import { widerLeft } from "../src/layout.js";
+import { otherPanelRequested, widerLeft } from "../src/layout.js";
 
 describe("the side bar's width", () => {
   it("widens a narrow side bar to about a third of the window", () => {
@@ -64,5 +64,15 @@ describe("widening once the page can be measured", () => {
     } finally {
       [g.ResizeObserver, g.requestAnimationFrame, g.cancelAnimationFrame] = saved;
     }
+  });
+});
+
+describe("a side-bar panel the page asked for", () => {
+  it("takes the side bar from ClimateClaw's own tab", () => {
+    const lab = "https://p.example/notebook/lab/index.html";
+    expect(otherPanelRequested(`${lab}?panel=data`)).toBe(true);
+    expect(otherPanelRequested(`${lab}?panel=climateclaw`)).toBe(false);
+    expect(otherPanelRequested(`${lab}?dataset=s3%3A%2F%2Fa%2Fx.zarr%2F`)).toBe(true);
+    expect(otherPanelRequested(lab)).toBe(false);
   });
 });

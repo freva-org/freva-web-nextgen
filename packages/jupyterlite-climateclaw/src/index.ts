@@ -60,7 +60,7 @@ import {
 import { ClimateClawCore, IClimateClaw, UnconfiguredAuth } from "./core.js";
 import { AI_CHAT_SETTINGS, ChatController, errorText, type AIChat } from "./chats.js";
 import { ChatsPanel, PANEL_ID, type MainChat } from "./chat-panel.js";
-import { widenLeftAreaWhenReady } from "./layout.js";
+import { otherPanelRequested, widenLeftAreaWhenReady } from "./layout.js";
 import { addComposer, ComposerCommandIds } from "./composer.js";
 import { cellsAttachment, ContextFollower, InputRegistry, type CellRef } from "./context.js";
 import { CONVERSATIONS_ID, ConversationsPanel } from "./conversations.js";
@@ -1000,17 +1000,20 @@ const panelPlugin: JupyterFrontEndPlugin<void> = {
         name: (chat) => chat.model.name,
       });
     }
+    const ownSideBar = !otherPanelRequested(window.location.href);
     void app.restored.then(async () => {
       // ClimateClaw's tab first, whichever side-bar tab the last session ended on, and wide
       // enough for a conversation.
-      app.shell.activateById(PANEL_ID);
-      requestAnimationFrame(() => widenLeftAreaWhenReady(labShell));
+      if (ownSideBar) {
+        app.shell.activateById(PANEL_ID);
+        requestAnimationFrame(() => widenLeftAreaWhenReady(labShell));
+      }
       await panel
         .restoreLast()
         .catch((error: unknown) =>
           console.warn("ClimateClaw: the last chat was not restored", errorText(error)),
         );
-      app.shell.activateById(PANEL_ID);
+      if (ownSideBar) app.shell.activateById(PANEL_ID);
     });
   },
 };
