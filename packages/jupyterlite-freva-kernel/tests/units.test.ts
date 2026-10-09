@@ -291,3 +291,31 @@ describe("portal theme", () => {
     }
   });
 });
+
+describe("Escape in a framed notebook", () => {
+  it("reaches the framing page only when nothing in the notebook used it", async () => {
+    const { relayUnhandledEscape } = await import("../src/theme-sync.js");
+    const listeners: ((event: { key: string; defaultPrevented: boolean }) => void)[] = [];
+    const sent: [unknown, string][] = [];
+    const framed = {
+      parent: { postMessage: (data: unknown, origin: string) => sent.push([data, origin]) },
+      location: { origin: "https://p.example" },
+      addEventListener: (type: string, listener: (typeof listeners)[number]) => {
+        if (type === "keydown") listeners.push(listener);
+      },
+    } as unknown as Window;
+    relayUnhandledEscape(framed);
+    expect(listeners).toHaveLength(1);
+    listeners[0]!({ key: "Escape", defaultPrevented: true });
+    listeners[0]!({ key: "Enter", defaultPrevented: false });
+    expect(sent).toEqual([]);
+    listeners[0]!({ key: "Escape", defaultPrevented: false });
+    expect(sent).toEqual([[{ type: "freva-lab-escape" }, "https://p.example"]]);
+    const top = { addEventListener: () => listeners.push(() => undefined) } as unknown as Window & {
+      parent: Window;
+    };
+    top.parent = top;
+    relayUnhandledEscape(top);
+    expect(listeners).toHaveLength(1);
+  });
+});
