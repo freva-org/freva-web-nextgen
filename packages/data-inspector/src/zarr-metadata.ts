@@ -10,7 +10,9 @@
  * are plain functions, usable from any framework or none.
  */
 
+import type { Codec } from "./internal/chunk-codecs";
 import { normalizeUrl, resolveAuthHeaders, type GetAuthHeaders } from "./internal/http";
+import { readTimeCoordinates, type ChunkSource, type DecodedValues } from "./time-values";
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -23,6 +25,8 @@ export interface ZarrVariable {
   attrs: Record<string, unknown>;
   /** Internal heuristic flag: a 1-D coordinate that looks like a time axis. */
   _isTimeCoord?: boolean;
+  _chunks?: ChunkSource;
+  _values?: DecodedValues;
 }
 
 /** A flat Zarr dataset (one group's worth of arrays). */
@@ -106,6 +110,7 @@ interface ExtractedArray {
   dtype: string;
   dims: string[];
   attrs: Record<string, unknown>;
+  source?: ChunkSource;
 }
 
 /** Remove xarray's internal `_ARRAY_DIMENSIONS` key from a v2 attrs object. */
@@ -119,13 +124,13 @@ function stripArrayDims(attrs: Record<string, unknown>): Record<string, unknown>
 function assembleDataset<T>(
   arrays: Record<string, T>,
   attrs: Record<string, unknown>,
-  extract: (info: T) => ExtractedArray,
+  extract: (info: T, name: string) => ExtractedArray,
 ): ZarrDataset {
   const dims: Record<string, number> = {};
   const allVars: Record<string, ZarrVariable> = {};
 
   for (const [name, info] of Object.entries(arrays)) {
-    const { shape, chunks, dtype, dims: dimNames, attrs: userAttrs } = extract(info);
+    const { shape, chunks, dtype, dims: dimNames, attrs: userAttrs, source } = extract(info, name);
     dimNames.forEach((d, i) => {
       if (!(d in dims)) dims[d] = shape[i] ?? 0;
     });
@@ -141,6 +146,7 @@ function assembleDataset<T>(
       dims: dimNames,
       attrs: userAttrs,
       _isTimeCoord: isTime,
+      ...(source ? { _chunks: source } : {}),
     };
   }
 
@@ -176,6 +182,9 @@ interface ZArrayV2 {
   shape?: number[];
   chunks?: number[];
   dtype?: string;
+  compressor?: Codec | null;
+  filters?: Codec[] | null;
+  fill_value?: unknown;
 }
 interface ArrayInfoV2 {
   zarray?: ZArrayV2;
@@ -208,14 +217,27 @@ function buildDatasetV2(meta: Record<string, unknown>, prefix: string): ZarrData
     if (!arrays[name].zarray) delete arrays[name];
   }
 
-  return assembleDataset(arrays, attrs, (info) => {
+  return assembleDataset(arrays, attrs, (info, name) => {
     const zattrs = info.zattrs ?? {};
+    const raw = info.zarray?.dtype ?? "|u1";
+    const codecs = [
+      ...(info.zarray?.filters ?? []),
+      ...(info.zarray?.compressor ? [info.zarray.compressor] : []),
+    ];
     return {
       shape: info.zarray?.shape ?? [],
       chunks: info.zarray?.chunks ?? info.zarray?.shape ?? [],
-      dtype: parseDtypeStr(info.zarray?.dtype ?? "|u1"),
+      dtype: parseDtypeStr(raw),
       dims: (zattrs._ARRAY_DIMENSIONS as string[]) ?? [],
       attrs: stripArrayDims(zattrs),
+      source: {
+        path: `${prefix}${name}`,
+        chunkPrefix: "",
+        dtype: raw,
+        littleEndian: !raw.startsWith(">"),
+        codecs,
+        fill: info.zarray?.fill_value ?? null,
+      },
     };
   });
 }
@@ -263,8 +285,31 @@ interface ZNodeV3 {
   attributes?: Record<string, unknown>;
   shape?: number[];
   chunk_grid?: { configuration?: { chunk_shape?: number[] } };
+  chunk_key_encoding?: { name?: string; configuration?: { separator?: string } };
+  codecs?: Array<{ name?: string; configuration?: Record<string, unknown> }>;
   data_type?: string;
   dimension_names?: string[];
+}
+
+function sourceV3(v: ZNodeV3, path: string): ChunkSource | undefined {
+  const encoding = v.chunk_key_encoding;
+  const separator = encoding?.configuration?.separator ?? "/";
+  const chunkPrefix = encoding?.name === "v2" ? "" : `c${separator}`;
+  let littleEndian = true;
+  const codecs: Codec[] = [];
+  let arrayCodecs = true;
+  for (const codec of v.codecs ?? []) {
+    const name = codec.name ?? "";
+    if (arrayCodecs && name === "transpose") continue;
+    if (arrayCodecs && name === "bytes") {
+      littleEndian = codec.configuration?.endian !== "big";
+      arrayCodecs = false;
+      continue;
+    }
+    if (arrayCodecs) return undefined;
+    codecs.push({ ...(codec.configuration ?? {}), id: name });
+  }
+  return { path, chunkPrefix, dtype: v.data_type ?? "", littleEndian, codecs };
 }
 
 function buildDatasetV3(meta: Record<string, ZNodeV3>, prefix: string): ZarrDataset {
@@ -285,9 +330,11 @@ function buildDatasetV3(meta: Record<string, ZNodeV3>, prefix: string): ZarrData
     }
   }
 
-  return assembleDataset(arrays, attrs, (info) => {
+  return assembleDataset(arrays, attrs, (info, name) => {
     const v = info.zarray;
+    const source = sourceV3(v, prefix ? `${prefix}/${name}` : name);
     return {
+      ...(source ? { source } : {}),
       shape: v.shape ?? [],
       chunks: v.chunk_grid?.configuration?.chunk_shape ?? v.shape ?? [],
       // v3 dtypes are already human-readable.
@@ -557,7 +604,7 @@ function buildDataRepr(dv: ZarrVariable): string {
           ${row("Bytes", fmtBytes(arrayBytes), chunkBytes !== null ? fmtBytes(chunkBytes) : "\u2014")}
           ${row("Shape", "(" + shape.join(", ") + ")", chunks ? "(" + chunks.join(", ") + ")" : "\u2014")}
           ${nChunks !== null ? row("Chunks", nChunks.toLocaleString() + " chunks") : ""}
-          ${row("dtype", esc(dtype))}
+          ${row("dtype", esc(dv._values?.dtype ?? dtype))}
           ${row("dims", "(" + dv.dims.join(", ") + ")")}
         </tbody>
       </table>
@@ -573,14 +620,14 @@ function summarizeVariable(name: string, dv: ZarrVariable, isIndex: boolean): st
   return `
     <div class='xr-var-name'><span${isIndex ? " class='xr-has-index'" : ""}>${esc(name)}</span></div>
     <div class='xr-var-dims'>(${dv.dims.map(esc).join(", ")})</div>
-    <div class='xr-var-dtype'>${esc(dv.dtype)}</div>
-    <div class='xr-var-preview xr-preview'>${esc(previewVar(dv))}</div>
+    <div class='xr-var-dtype'>${esc(dv._values?.dtype ?? dv.dtype)}</div>
+    <div class='xr-var-preview xr-preview'>${esc(dv._values?.preview ?? previewVar(dv))}</div>
     <input id='${aId}' class='xr-var-attrs-in' type='checkbox'${hasAttrs ? "" : " disabled"}>
     <label for='${aId}' title='Show/Hide attributes'>${icon("icon-file-text2")}</label>
     <input id='${dId}' class='xr-var-data-in' type='checkbox'>
     <label for='${dId}' title='Show/Hide data repr'>${icon("icon-database")}</label>
     <div class='xr-var-attrs'>${summarizeAttrs(dv.attrs)}</div>
-    <div class='xr-var-data'>${buildDataRepr(dv)}</div>
+    <div class='xr-var-data'>${dv._values ? `<pre>${esc(dv._values.repr)}</pre>` : ""}${buildDataRepr(dv)}</div>
   `;
 }
 
@@ -851,6 +898,10 @@ export async function loadZarrMetadataHtml(
 ): Promise<string> {
   if (options.injectCss !== false) injectXarrayCss({ mainColor: options.mainColor });
   const ds = await openDatasetMeta(url, {
+    getAuthHeaders: options.getAuthHeaders,
+    signal: options.signal,
+  });
+  await readTimeCoordinates(url, ds, {
     getAuthHeaders: options.getAuthHeaders,
     signal: options.signal,
   });
