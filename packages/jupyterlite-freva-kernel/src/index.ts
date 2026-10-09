@@ -23,7 +23,7 @@ import {
 import { FrevaKernel } from "./kernel.js";
 import { filesPlugin } from "./files.js";
 import { settingsPlugin } from "./settings.js";
-import { framedScrollPlugin, themePlugin } from "./theme.js";
+import { frameEscapePlugin, framedScrollPlugin, themePlugin } from "./theme.js";
 
 export { FrevaKernel, STATE_LOST } from "./kernel.js";
 export { readSettings, kernelName, SETTINGS_KEY } from "./config.js";
@@ -152,5 +152,6 @@ const plugins: JupyterFrontEndPlugin<unknown>[] = [
   filesPlugin,
   themePlugin,
   framedScrollPlugin,
+  frameEscapePlugin,
 ];
 export default plugins;

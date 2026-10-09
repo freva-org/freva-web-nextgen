@@ -10,6 +10,7 @@ import {
   DARK_THEME,
   LIGHT_THEME,
   followTheme,
+  relayUnhandledEscape,
   themeFromMessage,
   themeFromUrl,
   type PortalTheme,
@@ -56,4 +57,11 @@ export const framedScrollPlugin: JupyterFrontEndPlugin<void> = {
   activate: () => {
     if (window.parent !== window) containScrolling();
   },
+};
+
+export const frameEscapePlugin: JupyterFrontEndPlugin<void> = {
+  id: "@freva-org/jupyterlite-freva-kernel:frame-escape",
+  description: "Escape, where the notebook has no use for it, closes the page's notebook sheet.",
+  autoStart: true,
+  activate: () => relayUnhandledEscape(window),
 };

@@ -33,7 +33,16 @@ import {
   openIcon,
 } from "./icons.js";
 import { inspectorWidget } from "./inspector.js";
+import {
+  DATA_PANEL_READY_MESSAGE,
+  datasetFromMessage,
+  datasetRequest,
+  panelFromMessage,
+  panelRequest,
+  withoutDatasetRequest,
+} from "./open-request.js";
 import { FileCreator, isNotFound } from "./new-file.js";
+import { widenLeftAreaWhenReady } from "./layout.js";
 import { ExampleGallery, type NotebookSummary } from "./gallery.js";
 import {
   findCopy as findCopyOf,
@@ -593,7 +602,45 @@ const plugin: JupyterFrontEndPlugin<void> = {
       }
     }
 
-    if (settings.startNotebook) {
+    const openRequested = async (id: string) => {
+      const node = await panel.find(id);
+      if (!isData(node)) {
+        Notification.warning("That dataset is not in this notebook's data panel.", {
+          autoClose: 8000,
+        });
+        return;
+      }
+      await showPanel();
+      panel.select(node);
+      await commands.execute(CommandIds.openInNotebook, { nodeId: node.id });
+    };
+    const showPanel = () =>
+      app.restored.then(() => {
+        app.shell.activateById(panel.id);
+        requestAnimationFrame(() => widenLeftAreaWhenReady(app.shell));
+      });
+    const requested = datasetRequest(window.location.href);
+    const panelRequested = panelRequest(window.location.href);
+    if (requested) {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        withoutDatasetRequest(window.location.href),
+      );
+    }
+    if (requested) void openRequested(requested);
+    else if (panelRequested) void showPanel();
+    if (window.parent !== window) {
+      window.addEventListener("message", (event: MessageEvent) => {
+        if (event.source !== window.parent || event.origin !== window.location.origin) return;
+        const id = datasetFromMessage(event.data);
+        if (id) void openRequested(id);
+        else if (panelFromMessage(event.data)) void showPanel();
+      });
+      window.parent.postMessage({ type: DATA_PANEL_READY_MESSAGE }, window.location.origin);
+    }
+
+    if (settings.startNotebook && !requested) {
       const seed = settings.startNotebook;
       void app.restored
         .then(() =>

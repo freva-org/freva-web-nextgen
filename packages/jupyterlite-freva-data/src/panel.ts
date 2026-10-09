@@ -16,6 +16,7 @@ import { Signal } from "@lumino/signaling";
 import { Menu, Panel, Widget } from "@lumino/widgets";
 
 import { codeCells, displayName, type ExampleIndex, type Snippet } from "./actions.js";
+import { findPath } from "./open-request.js";
 import type { PanelData } from "./panel-data.js";
 
 export const JUPYTER_CELL_MIME = "application/vnd.jupyter.cells";
@@ -232,6 +233,12 @@ export class DataPanel extends Panel {
   private readonly eligible = new Map<string, Snippet[]>();
   private index: ExampleIndex | null = null;
   private ready: Promise<void> = Promise.resolve();
+  private source: DatasetTreeSource | null = null;
+  private searchIndexLoaded: Promise<void> = Promise.resolve();
+  private markLoaded: () => void = () => undefined;
+  private readonly loaded = new Promise<void>((done) => {
+    this.markLoaded = done;
+  });
 
   constructor(private readonly options: DataPanelOptions) {
     super();
@@ -337,6 +344,7 @@ export class DataPanel extends Panel {
     this.index = index;
     this.ready = (async () => {
       const source = recordingSource(await makeSource(data), this.nodes);
+      this.source = source;
       this.handle = mountDatasetTree(this.treeHost, {
         source,
         initialExpandedIds: data.expand,
@@ -349,7 +357,7 @@ export class DataPanel extends Panel {
         ...(data.searchResultLimit ? { searchResultLimit: data.searchResultLimit } : {}),
       });
       if (searchIndexUrl) {
-        loadSearchIndex(searchIndexUrl).then(
+        this.searchIndexLoaded = loadSearchIndex(searchIndexUrl).then(
           (parsed) => {
             // A result that was never browsed to is still a node the actions can work on.
             const entries = (parsed as { entries?: readonly DatasetTreeNode[] }).entries ?? [];
@@ -363,10 +371,28 @@ export class DataPanel extends Panel {
         );
       }
     })();
-    return this.ready.catch((error: unknown) => this.fail(error));
+    return this.ready.catch((error: unknown) => this.fail(error)).finally(() => this.markLoaded());
+  }
+
+  async find(id: string): Promise<DatasetTreeNode | null> {
+    await this.loaded;
+    if (!this.source) return null;
+    let path: DatasetTreeNode[] | null = null;
+    try {
+      path = await findPath(this.source, id);
+    } catch {
+      path = null;
+    }
+    if (path) {
+      await this.handle?.reveal(path.map((node) => node.id)).catch(() => false);
+      return path[path.length - 1] ?? null;
+    }
+    await this.searchIndexLoaded.catch(() => undefined);
+    return this.nodes.get(id) ?? null;
   }
 
   fail(error: unknown): void {
+    this.markLoaded();
     const note = document.createElement("p");
     note.className = "jp-FrevaData-error";
     note.textContent = `The data panel could not start: ${error instanceof Error ? error.message : String(error)}`;
