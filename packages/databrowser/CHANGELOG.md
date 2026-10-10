@@ -1,5 +1,12 @@
 # @freva-org/databrowser
 
+## 2609.1.4
+
+### Patch Changes
+
+- Updated dependencies [a4c7c65]
+  - @freva-org/data-inspector@2610.1.0
+
 ## 2609.1.3
 
 ### Patch Changes

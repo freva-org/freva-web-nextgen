@@ -1,5 +1,11 @@
 # @freva-org/jupyterlite-freva-kernel
 
+## 2610.1.1
+
+### Patch Changes
+
+- c170253: Escape in a framed notebook, when it has no use for it, closes the page's notebook sheet.
+
 ## 2610.1.0
 
 ### Minor Changes
