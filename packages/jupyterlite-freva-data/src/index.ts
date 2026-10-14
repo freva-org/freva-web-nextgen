@@ -37,9 +37,12 @@ import {
   DATA_PANEL_READY_MESSAGE,
   datasetFromMessage,
   datasetRequest,
+  exampleFromMessage,
+  exampleRequest,
   panelFromMessage,
   panelRequest,
   withoutDatasetRequest,
+  withoutExampleRequest,
 } from "./open-request.js";
 import { FileCreator, isNotFound } from "./new-file.js";
 import { widenLeftAreaWhenReady } from "./layout.js";
@@ -619,7 +622,19 @@ const plugin: JupyterFrontEndPlugin<void> = {
         app.shell.activateById(panel.id);
         requestAnimationFrame(() => widenLeftAreaWhenReady(app.shell));
       });
+    const openExampleRequested = (path: string) =>
+      app.restored.then(async () => {
+        const seed = settings.seedNotebooks.find((n) => n.path === path);
+        if (!seed) {
+          Notification.warning("That example is not one of this notebook's examples.", {
+            autoClose: 8000,
+          });
+          return;
+        }
+        await commands.execute(CommandIds.openExample, { path, title: seed.title ?? path });
+      });
     const requested = datasetRequest(window.location.href);
+    const exampleRequested = exampleRequest(window.location.href);
     const panelRequested = panelRequest(window.location.href);
     if (requested) {
       window.history.replaceState(
@@ -628,19 +643,29 @@ const plugin: JupyterFrontEndPlugin<void> = {
         withoutDatasetRequest(window.location.href),
       );
     }
+    if (exampleRequested) {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        withoutExampleRequest(window.location.href),
+      );
+    }
     if (requested) void openRequested(requested);
     else if (panelRequested) void showPanel();
+    if (exampleRequested) void openExampleRequested(exampleRequested);
     if (window.parent !== window) {
       window.addEventListener("message", (event: MessageEvent) => {
         if (event.source !== window.parent || event.origin !== window.location.origin) return;
         const id = datasetFromMessage(event.data);
+        const example = exampleFromMessage(event.data);
         if (id) void openRequested(id);
+        else if (example) void openExampleRequested(example);
         else if (panelFromMessage(event.data)) void showPanel();
       });
       window.parent.postMessage({ type: DATA_PANEL_READY_MESSAGE }, window.location.origin);
     }
 
-    if (settings.startNotebook && !requested) {
+    if (settings.startNotebook && !requested && !exampleRequested) {
       const seed = settings.startNotebook;
       void app.restored
         .then(() =>
