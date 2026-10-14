@@ -1276,6 +1276,77 @@ a {
     flex: 1 1 100%;
   }
 }
+.portal-document-notebook {
+  float: right;
+  display: inline-flex;
+  align-items: stretch;
+  margin: 14px 0 8px 16px;
+  border-radius: 7px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+  border: 1px solid var(--line-2);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.portal-document-notebook-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px 6px 9px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.portal-document-notebook-target {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.portal-document-notebook:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.14);
+}
+.portal-document-notebook:hover .portal-document-notebook-target {
+  background: var(--accent-hi);
+  color: var(--accent-hi-ink);
+}
+.portal-document-notebook:focus-visible {
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-document-notebook {
+    transition: none;
+  }
+  .portal-document-notebook:hover {
+    transform: none;
+  }
+}
+@media (max-width: 560px) {
+  .portal-document-notebook {
+    float: none;
+    margin: 8px 0 0;
+  }
+}
+.portal-document-notebook-foot {
+  clear: both;
+  display: flex;
+  justify-content: center;
+  margin: 36px 0 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-2);
+}
+.portal-document-notebook-foot .portal-document-notebook {
+  float: none;
+  margin: 0;
+  font-size: 14px;
+}
 .portal-document-title {
   font-size: clamp(28px, 2.4vw, 40px);
   letter-spacing: -0.02em;

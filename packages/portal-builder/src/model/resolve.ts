@@ -86,6 +86,7 @@ import {
   type NotebookIdentity,
   type NotebookLabInputs,
 } from "./notebook.js";
+import { proseOpensNotebookSheet } from "./notebook-links.js";
 import { EMBED_PROTOCOL_VERSION } from "@freva-org/browser-python/embed";
 import { candidatesFrom, deriveSectionNavigation } from "./section-navigation.js";
 import { registrationFor } from "../components/registry.js";
@@ -1720,6 +1721,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
     const landing = landingDocs.get(id);
     if (landing) for (const example of found) examplePages.set(example.id, landing.path);
   }
+  const notebookSheetLinks: string[] = [];
   const linkCtxBase = {
     basePath: canonical.basePath,
     landings: new Map<string, ResolvedLanding>(),
@@ -1746,6 +1748,7 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
                 portalPlayground.notebookAssistant || portalPlayground.notebookDataPanel,
               ),
               sameOrigin: true,
+              sheetLinks: notebookSheetLinks,
             },
           }
         : {}),
@@ -2459,11 +2462,13 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
           }
         }
         const seeds: { name: string; text: string }[] = [];
+        const seedNames = new Map<number, string>();
         for (const [index, declared] of panel.seedNotebooks.entries()) {
           const file = contained(declared, `${base}/seedNotebooks/${index}`);
           if (!file) continue;
           const bytes = readFileSync(file.absolute);
           const name = `examples/${basename(file.relative)}`;
+          seedNames.set(index, name);
           if (seeds.some((seed) => seed.name === name)) {
             bag.error(
               "FP1237",
@@ -2515,9 +2520,14 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
         const searchIndex = block.searchIndex ? contents.get(block.searchIndex.file) : undefined;
         // One switch for GridLook: the notebook's panel and the portal's own tree both offer it.
         if (panel.gridlook) block.gridlook = true;
+        const pages = panel.examplePages.flatMap(({ index, page }) => {
+          const seed = seedNames.get(index);
+          return seed ? [{ page, seed, pointer: `${base}/seedNotebooks/${index}/page` }] : [];
+        });
         dataPanel = {
           settings: panel,
           block,
+          pages,
           ...(startSeed ? { startSeed } : {}),
           ...(searchIndex ? { searchIndex } : {}),
           ...(iconSvg ? { iconSvg } : {}),
@@ -2538,6 +2548,27 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
       ...(dataPanel ? { dataPanel } : {}),
     };
   }
+  const notebookTarget = "notebook" in linkCtxBase ? linkCtxBase.notebook : undefined;
+  const notebookHref = (target: { root: string; lab: boolean }): string =>
+    `${target.root}/notebook/${target.lab ? "lab" : "tree"}/index.html`;
+  const proseSheet = (): boolean => {
+    if (!notebookTarget?.sameOrigin) return false;
+    const sheet = notebookHref(notebookTarget);
+    for (const fragment of contentResult.fragments.values()) {
+      if (proseOpensNotebookSheet(fragment.html, sheet, canonical.origin)) return true;
+    }
+    return contentResult.pages.some((page) =>
+      proseOpensNotebookSheet(page.fragment.html, sheet, canonical.origin),
+    );
+  };
+  const notebookOnPage =
+    sameOriginNotebook &&
+    (notebookSheetLinks.length > 0 ||
+      (notebookLab?.dataPanel?.pages?.length ?? 0) > 0 ||
+      landings.some((landing) =>
+        landing.blocks.some((block) => block.type === "notebook" || Boolean(block.datasetTree)),
+      ) ||
+      proseSheet());
   if (portalPlayground?.notebook && notebookPlayground && !opts.skipNotebook) {
     const where = { file: configRel, pointer: "/pythonPlayground/notebook" };
     const given = opts.notebookDir ?? process.env.FREVA_PORTAL_NOTEBOOK;
@@ -2580,11 +2611,9 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
           });
         } else {
           const sameOrigin = portalPlayground.notebookSameOrigin === true;
-          const embedded = landings.some((landing) =>
-            landing.blocks.some(
-              (block) => block.type === "notebook" || (sameOrigin && Boolean(block.datasetTree)),
-            ),
-          );
+          const embedded =
+            notebookOnPage ||
+            landings.some((landing) => landing.blocks.some((block) => block.type === "notebook"));
           notebook = {
             realRoot,
             files,
@@ -2616,14 +2645,53 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
   };
   for (const landing of landings)
     for (const block of landing.blocks) withBase(block.datasetTree?.python);
-  const notebookTarget = "notebook" in linkCtxBase ? linkCtxBase.notebook : undefined;
+  const pagesWithNotebook = new Set<string>();
+  for (const { page, seed, pointer } of notebookLab?.dataPanel?.pages ?? []) {
+    if (!/^[A-Za-z0-9][\w ./-]*\.ipynb$/.test(seed) || seed.includes("..")) {
+      bag.error(
+        "FP1237",
+        `The example notebook ${seed.slice("examples/".length)} cannot be opened from a page: the notebook does not list it.`,
+        {
+          file: configRel,
+          pointer: pointer.replace(/\/page$/, ""),
+          hint: "Name it with ASCII letters, digits, spaces, '_', '-' and '.' only, starting with a letter or digit, such as `mean_std.ipynb`.",
+        },
+      );
+      continue;
+    }
+    const route = allRoutes.find((r) => r.kind === "content" && r.path === page);
+    if (!route || !notebookTarget) {
+      bag.error(
+        "FP1237",
+        `An example notebook names the page '${page}', which this portal does not have.`,
+        {
+          file: configRel,
+          pointer,
+          hint: "Name a documentation page by its address, such as `/docs/examples/first-map/`.",
+        },
+      );
+      continue;
+    }
+    if (pagesWithNotebook.has(page)) {
+      bag.error("FP1237", `Two example notebooks both name the page '${page}'.`, {
+        file: configRel,
+        pointer,
+      });
+      continue;
+    }
+    pagesWithNotebook.add(page);
+    route.notebook = {
+      href: `${notebookHref(notebookTarget)}?${new URLSearchParams({ example: seed })}`,
+      external: notebookTarget.sameOrigin !== true,
+    };
+  }
   if (notebookTarget) {
     for (const landing of landings) {
       for (const block of landing.blocks) {
         const tree = block.datasetTree;
         if (!tree) continue;
         tree.notebook = {
-          href: `${notebookTarget.root}/notebook/${notebookTarget.lab ? "lab" : "tree"}/index.html`,
+          href: notebookHref(notebookTarget),
           frame: notebookTarget.sameOrigin === true,
           datasets: notebookLab?.dataPanel?.block === tree,
           panel: Boolean(notebookLab?.dataPanel),
@@ -2706,6 +2774,9 @@ export async function resolveModel(opts: ResolveOptions): Promise<ResolveResult>
               ? { callbackPath: notebookLab.authCallbackPath, emitCallback: !authComponent }
               : { emitCallback: false }),
             metaPolicy: portalPlayground?.notebookMetaPolicy === true,
+            ...(notebookTarget?.sameOrigin && notebookOnPage
+              ? { href: notebookHref(notebookTarget) }
+              : {}),
           },
         }
       : {}),

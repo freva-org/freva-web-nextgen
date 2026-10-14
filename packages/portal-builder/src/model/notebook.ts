@@ -95,6 +95,7 @@ export interface NotebookLabInputs {
     /** The sanitised icon. */
     iconSvg?: string;
     seeds: { name: string; text: string }[];
+    pages?: { page: string; seed: string; pointer: string }[];
     /** The seed (by its published name) the Lab opens at start, if any. */
     startSeed?: string;
   };

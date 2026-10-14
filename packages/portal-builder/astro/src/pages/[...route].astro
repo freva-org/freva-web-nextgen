@@ -17,6 +17,7 @@ import SectionNavList from "../components/SectionNavList.astro";
 import GridLanding from "../components/GridLanding.astro";
 import SlotContent from "../components/parts/SlotContent.astro";
 import type { ResolvedRoute } from "../../../src/model/types.js";
+import { JUPYTER_LOGO, JUPYTER_LOGO_DARK } from "../../../client/components/jupyter-logo.js";
 
 export function getStaticPaths() {
   return model.routes
@@ -251,12 +252,46 @@ const currentPath = `${model.site.basePath.replace(/\/$/, "")}${route.path}`;
           </div>
         )}
         <article class="portal-document" data-part={part("document")}>
+          {route.notebook && (
+            <a
+              class="portal-document-notebook"
+              href={route.notebook.href}
+              target={route.notebook.external ? "_blank" : undefined}
+              rel={route.notebook.external ? "noopener noreferrer" : undefined}
+              data-portal-document-notebook
+            >
+              <span class="portal-document-notebook-launch">
+                <img class="portal-jupyter-logo" data-variant="light" src={JUPYTER_LOGO} alt="" width="14" height="16" />
+                <img class="portal-jupyter-logo" data-variant="dark" src={JUPYTER_LOGO_DARK} alt="" width="14" height="16" />
+                Open in
+              </span>
+              <span class="portal-document-notebook-target">Notebook</span>
+            </a>
+          )}
           {!ownHeading && <h1 class="portal-document-title">{route.title}</h1>}
           <div
             class={ownHeading ? "portal-prose portal-prose-leads" : "portal-prose"}
             set:html={route.content.html}
             data-part={part("prose")}
           />{proseAside && <aside class="portal-prose-aside" data-part="prose-aside"><SlotContent segments={proseAside} model={model} currentPath={currentPath} /></aside>}
+          {route.notebook && (
+            <div class="portal-document-notebook-foot">
+              <a
+                class="portal-document-notebook"
+                href={route.notebook.href}
+                target={route.notebook.external ? "_blank" : undefined}
+                rel={route.notebook.external ? "noopener noreferrer" : undefined}
+                data-portal-document-notebook-foot
+              >
+                <span class="portal-document-notebook-launch">
+                  <img class="portal-jupyter-logo" data-variant="light" src={JUPYTER_LOGO} alt="" width="14" height="16" />
+                  <img class="portal-jupyter-logo" data-variant="dark" src={JUPYTER_LOGO_DARK} alt="" width="14" height="16" />
+                  Open in
+                </span>
+                <span class="portal-document-notebook-target">Notebook</span>
+              </a>
+            </div>
+          )}
           {route.pager && (
             <nav class="portal-pager" aria-label="Previous and next page">
               {route.pager.previous && (

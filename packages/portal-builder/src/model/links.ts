@@ -29,11 +29,17 @@ export interface LinkContext {
   /** Registered example id -> the site path of the page that offers it (run-example actions). */
   examples?: Map<string, string>;
   /**
-   * The notebook, when the portal deploys one: its origin, `root` (the origin plus the
-   * deployment's base path, where the notebook's site sits; for a same-origin notebook the base
-   * path alone, without a trailing slash) and whether it has a Lab interface.
+   * The notebook, when the portal deploys one: its origin, `root` (where its site sits: the origin
+   * plus base path, or the base path alone without a trailing slash when same-origin), whether it
+   * has a Lab, and `sheetLinks`, which collects the pointers of links that open it in the sheet.
    */
-  notebook?: { origin: string; root: string; lab: boolean; sameOrigin?: boolean };
+  notebook?: {
+    origin: string;
+    root: string;
+    lab: boolean;
+    sameOrigin?: boolean;
+    sheetLinks?: string[];
+  };
 }
 
 export interface LinkResolution {
@@ -133,11 +139,13 @@ export function resolveLink(raw: RawLink, ctx: LinkContext): LinkResolution {
       });
       return { diagnostics };
     }
+    const inSheet = notebook.sameOrigin === true && (raw.notebook === "lab" || !notebook.lab);
+    if (inSheet) notebook.sheetLinks?.push(ctx.pointer);
     return {
       link: {
         label: raw.label,
         href: `${notebook.root}/notebook/${raw.notebook === "lab" ? "lab" : "tree"}/index.html`,
-        external: true,
+        external: !inSheet,
         ...(raw.description ? { description: raw.description } : {}),
       },
       diagnostics,

@@ -187,6 +187,15 @@ function buildSite(name, { canonical, runtimeIndexUrl, login, meta, consoleOrigi
   probeWheel(join(src, "wheels"));
   put("fragments/run.md", "```python try-in-python\nprint('landing', 6 * 7)\n```\n");
   put(
+    "notebooks/probe-example.ipynb",
+    JSON.stringify({
+      cells: [{ cell_type: "markdown", metadata: {}, source: ["# Probe example notebook\n"] }],
+      metadata: {},
+      nbformat: 4,
+      nbformat_minor: 5,
+    }),
+  );
+  put(
     "landings/home.yaml",
     "schemaVersion: 1\ntitle: Same origin\nblocks:\n  - type: hero\n    heading: Docs\n" +
       "  - type: notebook\n    heading: Your notebook\n" +
@@ -237,6 +246,12 @@ rendering:
       mount: /python-wheels/
       files:
         include: ["*.whl", "wheels.json"]
+navigation:
+  header:
+    - label: Docs
+      href: /docs/
+    - label: Notebook
+      notebook: lab
 landings:
   home:
     path: /
@@ -276,6 +291,9 @@ ${meta ? "    metaPolicy: true\n" : ""}    assistant:
         defaultModel: gpt-test
     dataPanel:
       tree: home-2
+      seedNotebooks:
+        - path: ./notebooks/probe-example.ipynb
+          page: /docs/
   terminal:
     style: freva-client-terminal
     osControls: linux
@@ -1043,6 +1061,50 @@ try {
           assert.ok(await tree.isVisible(), "Escape closed the maximized tree with the notebook");
           await page.keyboard.press("Escape");
           await tree.waitFor({ state: "hidden", timeout: 5_000 });
+        },
+      );
+
+      await check(
+        `${label}: a page's Open in notebook and the header's Notebook open the notebook on the page`,
+        async () => {
+          const docs = await context.newPage();
+          const tabs = context.pages().length;
+          await docs.goto(`${base}docs/`, { waitUntil: "domcontentloaded" });
+          const button = docs.locator("[data-portal-document-notebook]");
+          await button.waitFor({ timeout: 30_000 });
+          assert.equal(
+            new URL(await button.getAttribute("href"), base).searchParams.get("example"),
+            "examples/probe-example.ipynb",
+          );
+          await button.click();
+          const sheet = docs.locator("[data-portal-notebook-sheet] .portal-notebook-window");
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          assert.equal(docs.url(), `${base}docs/`);
+          const frame = await (await sheet.locator("iframe").elementHandle()).contentFrame();
+          await frame.waitForFunction(
+            () =>
+              [...document.querySelectorAll(".jp-NotebookPanel:not(.lm-mod-hidden) .jp-Cell")].some(
+                (cell) => cell.textContent?.includes("Probe example notebook"),
+              ),
+            null,
+            { timeout: 120_000, polling: 500 },
+          );
+          assert.equal(new URL(frame.url()).searchParams.get("example"), null);
+          const popup = context.waitForEvent("page", { timeout: 10_000 });
+          await docs.locator("[data-portal-notebook-sheet] [data-portal-notebook-open]").click();
+          const tab = await popup;
+          const opened = new URL(tab.url());
+          assert.equal(opened.pathname, `${new URL(base).pathname}notebook/lab/index.html`);
+          assert.equal(opened.searchParams.get("example"), "examples/probe-example.ipynb");
+          await tab.close();
+          await docs.locator("[data-portal-notebook-close]").click();
+          await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+          await docs.locator(".portal-nav-item", { hasText: "Notebook" }).first().click();
+          await sheet.waitFor({ state: "visible", timeout: 10_000 });
+          assert.equal(await docs.locator("[data-portal-notebook-sheet]").count(), 1);
+          assert.equal(docs.url(), `${base}docs/`);
+          assert.equal(context.pages().length, tabs, "a notebook link opened a new tab");
+          await docs.close();
         },
       );
 

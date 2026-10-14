@@ -394,17 +394,44 @@
                   "maxItems": 32,
                   "uniqueItems": true,
                   "items": {
-                    "allOf": [
+                    "oneOf": [
                       {
-                        "$ref": "#/$defs/localPath"
+                        "allOf": [
+                          {
+                            "$ref": "#/$defs/localPath"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "\\.ipynb$"
+                          }
+                        ]
                       },
                       {
-                        "type": "string",
-                        "pattern": "\\.ipynb$"
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["path", "page"],
+                        "properties": {
+                          "path": {
+                            "allOf": [
+                              {
+                                "$ref": "#/$defs/localPath"
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "\\.ipynb$"
+                              }
+                            ]
+                          },
+                          "page": {
+                            "type": "string",
+                            "pattern": "^/",
+                            "description": "A documentation page of this portal, by its address (`/docs/examples/first-map/`): the page shows 'Open in notebook', which opens this notebook as the visitor's own copy."
+                          }
+                        }
                       }
                     ]
                   },
-                  "description": "Example notebooks for the 'Example notebooks' card: published read-only under `examples/`; opening one copies it into the visitor's files."
+                  "description": "Example notebooks for the 'Example notebooks' card: published read-only under `examples/`; opening one copies it into the visitor's files. Written as `{ path, page }`, the notebook is also offered on that page."
                 },
                 "startNotebook": {
                   "allOf": [
@@ -1718,6 +1745,11 @@
         "description": {
           "$ref": "#/$defs/text"
         },
+        "notebook": {
+          "type": "string",
+          "enum": ["lab", "files"],
+          "description": "The portal's notebook, as for a link: `lab` its JupyterLab interface, `files` its file list. A same-origin notebook opens in the sheet over the page."
+        },
         "links": {
           "type": "array",
           "minItems": 1,
@@ -1728,6 +1760,15 @@
         }
       },
       "oneOf": [
+        {
+          "required": ["notebook"],
+          "properties": {
+            "notebook": {
+              "type": "string",
+              "enum": ["lab", "files"]
+            }
+          }
+        },
         {
           "required": ["landing"],
           "properties": {

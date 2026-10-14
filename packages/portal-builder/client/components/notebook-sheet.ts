@@ -1,4 +1,4 @@
-import { footerInset, headerInset, pageTheme, syncTheme } from "./notebook-embed.js";
+import { headerInset, pageTheme, syncTheme } from "./notebook-embed.js";
 import { mountLayer } from "../layers.js";
 import { jupyterLogo } from "./jupyter-logo.js";
 import { notebookUrl } from "./notebook-url.js";
@@ -10,7 +10,13 @@ export interface NotebookTarget {
   panel?: boolean;
 }
 
+export interface NotebookRequest {
+  dataset?: string;
+  example?: string;
+}
+
 export const OPEN_DATASET_MESSAGE = "freva-data:open-dataset";
+export const OPEN_EXAMPLE_MESSAGE = "freva-data:open-example";
 export const SHOW_PANEL_MESSAGE = "freva-data:show-panel";
 export const FRAME_ESCAPE_MESSAGE = "freva-lab-escape";
 const SANDBOX =
@@ -23,7 +29,7 @@ interface Sheet {
   ready: boolean;
   pending: object[];
   show(): void;
-  point(target: NotebookTarget, dataset?: string): void;
+  point(target: NotebookTarget, request: NotebookRequest): void;
 }
 
 const sheets = new WeakMap<Document, Sheet>();
@@ -63,7 +69,7 @@ function action(doc: Document, tag: "a" | "button", text: string, path: string):
   return element;
 }
 
-function createSheet(doc: Document, target: NotebookTarget, dataset?: string): Sheet {
+function createSheet(doc: Document, target: NotebookTarget, request: NotebookRequest): Sheet {
   const win = doc.defaultView!;
   const root = doc.createElement("div");
   root.className = "portal-notebook-sheet";
@@ -97,14 +103,15 @@ function createSheet(doc: Document, target: NotebookTarget, dataset?: string): S
     "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
   ) as HTMLAnchorElement;
   open.dataset.portalNotebookOpen = "";
-  const point = (next: NotebookTarget, nextDataset?: string): void => {
+  const point = (next: NotebookTarget, nextRequest: NotebookRequest): void => {
     open.href = notebookUrl(next.href, doc.baseURI, {
       theme: pageTheme(doc),
-      dataset: nextDataset,
+      dataset: nextRequest.dataset,
+      example: nextRequest.example,
       ...(next.panel ? { panel: "data" as const } : {}),
     });
   };
-  point(target, dataset);
+  point(target, request);
   open.target = "_blank";
   open.rel = "noopener noreferrer";
   const close = action(doc, "button", "Close", "M6 6l12 12M18 6L6 18") as HTMLButtonElement;
@@ -119,7 +126,8 @@ function createSheet(doc: Document, target: NotebookTarget, dataset?: string): S
   frame.setAttribute("sandbox", SANDBOX);
   frame.setAttribute("allow", "clipboard-read; clipboard-write; microphone");
   frame.src = notebookUrl(target.href, doc.baseURI, {
-    dataset,
+    dataset: request.dataset,
+    example: request.example,
     ...(target.panel ? { panel: "data" as const } : {}),
   });
   frameWindow.append(bar, frame);
@@ -161,10 +169,7 @@ function createSheet(doc: Document, target: NotebookTarget, dataset?: string): S
   };
   const fit = (): void => {
     frameWindow.style.setProperty("--portal-notebook-top", `${headerInset(doc)}px`);
-    frameWindow.style.setProperty(
-      "--portal-notebook-bottom",
-      `${footerInset(doc, win.innerHeight)}px`,
-    );
+    frameWindow.style.setProperty("--portal-notebook-bottom", "0px");
   };
   const hide = (): void => {
     if (root.dataset.closed !== undefined) return;
@@ -232,17 +237,21 @@ function send(sheet: Sheet, message: object, origin: string): void {
 
 export function openNotebook(
   target: NotebookTarget,
-  dataset?: string,
+  requested?: string | NotebookRequest,
   doc: Document = document,
 ): void {
   const win = doc.defaultView;
   if (!win) return;
+  const request: NotebookRequest =
+    typeof requested === "string" ? { dataset: requested } : { ...requested };
+  const { dataset, example } = request;
   const framed = target.frame && new URL(target.href, doc.baseURI).origin === win.location.origin;
   if (!framed) {
     win.open(
       notebookUrl(target.href, doc.baseURI, {
         theme: pageTheme(doc),
         dataset,
+        example,
         ...(target.panel ? { panel: "data" as const } : {}),
       }),
       "_blank",
@@ -254,16 +263,18 @@ export function openNotebook(
   if (existing && existing.href === target.href) {
     const message = dataset
       ? { type: OPEN_DATASET_MESSAGE, dataset }
-      : target.panel
-        ? { type: SHOW_PANEL_MESSAGE }
-        : null;
+      : example
+        ? { type: OPEN_EXAMPLE_MESSAGE, path: example }
+        : target.panel
+          ? { type: SHOW_PANEL_MESSAGE }
+          : null;
     if (message && existing.ready) send(existing, message, win.location.origin);
     else if (message) existing.pending.push(message);
-    existing.point(target, dataset);
+    existing.point(target, request);
     existing.show();
     return;
   }
-  const sheet = createSheet(doc, target, dataset);
+  const sheet = createSheet(doc, target, request);
   sheets.set(doc, sheet);
   sheet.show();
 }

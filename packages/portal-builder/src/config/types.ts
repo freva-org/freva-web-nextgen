@@ -369,7 +369,7 @@ export interface RawNotebookDataPanel {
     | "ask-climateclaw"
     | "copy-url"
     | "copy-code";
-  seedNotebooks?: string[];
+  seedNotebooks?: Array<string | { path: string; page: string }>;
   /**
    * A notebook opened when the Lab starts (the visitor's own copy, made once), in place of the
    * Launcher: published like a seed notebook, its saved outputs shown as they are.
