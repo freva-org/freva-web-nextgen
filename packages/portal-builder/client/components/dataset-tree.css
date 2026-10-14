@@ -48,6 +48,7 @@
 }
 
 .portal-dataset-tree .dataset-tree {
+  font-size: 0.9rem;
   /*
    * The micro-text - a file size, a metric - uses `--dataset-tree-faint`, which defaults to 72 % of
    * the muted colour over the surface. Against this portal's `--muted` that computes to #97978f on

@@ -1,5 +1,11 @@
 # @freva-org/dataset-tree
 
+## 2610.1.0
+
+### Minor Changes
+
+- 50de27b: An **Open in notebook** action (`onOpenNotebook`), and `handle.reveal(path)`.
+
 ## 2610.0.1
 
 ### Patch Changes

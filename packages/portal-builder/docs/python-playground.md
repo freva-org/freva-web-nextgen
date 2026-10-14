@@ -486,10 +486,18 @@ pythonPlayground:
       title: Example data # optional; default "<site title> data"
       icon: ./icons/data.svg # optional, checked like the portal's other SVGs
       defaultAction: open-in-notebook # the primary action: its button, and Ctrl/Cmd+Enter
-      seedNotebooks: [./notebooks/era5.ipynb]
+      seedNotebooks:
+        - ./notebooks/era5.ipynb
+        - path: ./notebooks/first-map.ipynb # also offered on that page
+          page: /docs/examples/first-map/
       startNotebook: ./notebooks/start.ipynb # optional; opened when the Lab starts
       gridlook: true # optional; GridLook's 3D globe for public stores (default false)
 ```
+
+Written as `{ path, page }`, a seed notebook is also offered on that page: _Open in notebook_
+beside its title opens the visitor's own copy, as the _Example notebooks_ card does. The page must
+be one of the portal's documentation pages, with one notebook at most, and the file name may use
+only ASCII letters, digits, spaces, `_`, `-` and `.` (`FP1237`).
 
 `startNotebook` opens when the Lab starts, in place of the Launcher, as the visitor's own copy
 (made once from the published seed, so later visits open their version). Its saved outputs show
@@ -515,8 +523,12 @@ landing, a card or the navigation to the Lab with the `notebook` target:
       notebook: lab # {playgroundOrigin}/notebook/lab/; `files` opens the file list
 ```
 
-It opens in a new tab, and is an error (`FP1201`) without the notebook or, for `lab`, without
-`assistant` or `dataPanel`.
+A notebook on its own origin opens in a new tab; a same-origin one opens in the sheet over the
+page, as the dataset tree's _Notebook_ button and a page's _Open in notebook_ do. A modified click
+still opens a tab, and so does `files` when the notebook has a Lab, since the sheet holds the Lab.
+A link in a page's text to the same address opens in the sheet too, unless it carries a parameter
+the sheet does not take (such as JupyterLite's `path`, or a `panel` other than `data`). The link is
+an error (`FP1201`) without the notebook or, for `lab`, without `assistant` or `dataPanel`.
 
 #### The notebook in a landing
 

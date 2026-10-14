@@ -364,6 +364,11 @@ export function hostPolicy(inputs: ManifestInputs): object {
     for (const origin of framed) set.add(origin);
     componentDirectives.set("frame-src", set);
   }
+  if (model.sameOriginNotebook?.href) {
+    const set = componentDirectives.get("frame-src") ?? new Set<string>();
+    set.add("'self'");
+    componentDirectives.set("frame-src", set);
+  }
 
   // A prose figure's video is a published asset on this origin: `media-src 'self'`, nothing more.
   if (model.landings.some((landing) => landing.blocks.some((block) => block.figure?.video))) {

@@ -1,5 +1,25 @@
 # @freva-org/portal-builder
 
+## 2612.0.0
+
+### Minor Changes
+
+- 6d08060: A **Notebook** button on every dataset tree; a same-origin notebook opens in a sheet, one or two cards filling its row.
+
+### Patch Changes
+
+- Updated dependencies [a4c7c65]
+- Updated dependencies [50de27b]
+- Updated dependencies [053da9c]
+- Updated dependencies [c170253]
+- Updated dependencies [701566e]
+  - @freva-org/data-inspector@2610.1.0
+  - @freva-org/dataset-tree@2610.1.0
+  - @freva-org/jupyterlite-freva-data@2610.1.0
+  - @freva-org/jupyterlite-freva-kernel@2610.1.1
+  - @freva-org/jupyterlite-climateclaw@2610.0.1
+  - @freva-org/databrowser@2609.1.4
+
 ## 2611.0.0
 
 ### Minor Changes

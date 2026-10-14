@@ -131,6 +131,7 @@ describe("a same-origin notebook", () => {
       callbackPath: "/auth/callback/",
       emitCallback: false,
       metaPolicy: false,
+      href: "/notebook/lab/index.html",
     });
   });
 
@@ -204,6 +205,53 @@ describe("a same-origin notebook", () => {
         /does not match the notebook inventory/.test(d.message),
       ),
     ).toBe(true);
+  }, 300_000);
+
+  it("is framed by the portal when a link opens it in a sheet, and not without one", async () => {
+    const treeless = (): string => {
+      const root = site();
+      const landing = join(root, "landings", "home.yaml");
+      writeFileSync(landing, readFileSync(landing, "utf8").split("  - type: dataset-tree")[0]!);
+      return root;
+    };
+    const bare = await resolve(treeless());
+    expect(bare.diagnostics.errors).toEqual([]);
+    expect(bare.model!.sameOriginNotebook?.href).toBeUndefined();
+    const prose = async (link: string) => {
+      const root = treeless();
+      const page = join(root, "content", "page-1.md");
+      writeFileSync(page, `${readFileSync(page, "utf8")}\n[The notebook](${link})\n`);
+      const resolved = await resolve(root);
+      expect(resolved.diagnostics.errors).toEqual([]);
+      return resolved.model!.sameOriginNotebook?.href;
+    };
+    expect(await prose("https://portal.example.org/notebook/tree/index.html")).toBe(
+      "/notebook/tree/index.html",
+    );
+    expect(await prose("https://portal.example.org/notebook/tree/index.html?path=a.ipynb")).toBe(
+      undefined,
+    );
+    expect(await prose("https://other.example.org/notebook/tree/index.html")).toBe(undefined);
+    const root = treeless();
+    const config = join(root, "portal.yaml");
+    writeFileSync(
+      config,
+      readFileSync(config, "utf8").replace(
+        "      label: Data\n",
+        "      label: Data\n    - label: Notebook\n      notebook: files\n",
+      ),
+    );
+    const linked = await resolve(root);
+    expect(linked.diagnostics.errors).toEqual([]);
+    expect(linked.model!.sameOriginNotebook?.href).toBe("/notebook/tree/index.html");
+    const plan = await planFor(root);
+    const out = join(tempRoot("portal-same-nb-link-"), "site");
+    const result = await buildFixture(root, out, { notebookDir: fakeSite(plan) });
+    expect(result.diagnostics.errors).toEqual([]);
+    const policy = hostPolicyOf(out);
+    const own = policy.csp.paths?.find((p) => p.match.prefix === "/notebook/");
+    expect(own?.directives["frame-ancestors"]).toBe("'self'");
+    expect(policy.csp.portal["frame-src"]).toContain("'self'");
   }, 300_000);
 
   it("without the portal's sign-in, emits the relay page at auth/callback/ under its own policy", async () => {

@@ -47,6 +47,7 @@ export interface RuntimeProjection {
   backdrop?: { kind: "contour" | "cosmos" };
   /** Present only when a landing frames the notebook: the entry then imports its Maximize. */
   notebook?: true;
+  notebookLinks?: { href: string };
   /** Present only when a prose figure has a video: the entry then imports its player. */
   figureVideo?: true;
   /**
@@ -129,6 +130,9 @@ export function projectRuntime(model: ResolvedPortalModel): RuntimeProjection {
   }
   if (model.landings.some((landing) => landing.blocks.some((block) => block.notebook))) {
     projection.notebook = true;
+  }
+  if (model.sameOriginNotebook?.href) {
+    projection.notebookLinks = { href: model.sameOriginNotebook.href };
   }
   if (model.theme.backdrop) {
     projection.backdrop = { kind: model.theme.backdrop };
@@ -331,9 +335,11 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
       lines.push(`import { mountRunnableCode } from ${CLIENT("components/code-run.ts")};`);
     }
   }
-  // One branch per backdrop kind, each naming its own module literally. The guard is on the
-  // KIND and not merely on "a backdrop exists": a generic guard would import the contour
-  // module for a cosmos build, exactly the sort of leak the literal-import rule exists to stop.
+  // One branch per backdrop kind, each importing its module literally: a guard on "a backdrop
+  // exists" would import the contour module for a cosmos build (the literal-import rule).
+  if (projection.notebookLinks) {
+    lines.push(`import { initNotebookLinks } from ${CLIENT("components/notebook-links.ts")};`);
+  }
   if (projection.backdrop?.kind === "contour") {
     lines.push(`import { mountContourBackdrop } from ${CLIENT("components/contour.ts")};`);
   }
@@ -460,6 +466,7 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
       "  }",
     );
   }
+  if (projection.notebookLinks) lines.push("  initNotebookLinks(RUNTIME.notebookLinks.href);");
   if (projection.backdrop?.kind === "contour") lines.push("  mountContourBackdrop();");
   // The Cosmos island is small; the scene kernel behind it is not, so the island fetches that
   // itself, only once it has found a Cosmos canvas on the page.

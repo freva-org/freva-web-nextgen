@@ -509,6 +509,7 @@ export interface NotebookDataPanelSettings {
   tree: string;
   defaultAction: string;
   seedNotebooks: string[];
+  examplePages: Array<{ index: number; page: string }>;
   /** Source-root-relative path as written: opened when the Lab starts (see the raw type). */
   startNotebook?: string;
   /** GridLook's globe in Inspect and "View on globe"; frames https://gridlook.pages.dev. */
@@ -895,6 +896,7 @@ export interface ResolvedRoute {
   /** portal-template-v1 slots rendered for this route, by slot name. */
   slots?: Partial<Record<string, Segment[]>>;
   pager?: { previous?: PagerLink; next?: PagerLink };
+  notebook?: { href: string; external: boolean };
   /** landingSectionShell, rendered once per layout section of this landing. */
   sectionShells?: Record<string, Segment[]>;
 }
@@ -1061,11 +1063,17 @@ export interface ResolvedPortalModel {
    */
   playground?: PlaygroundArtifactData;
   /**
-   * A same-origin notebook (`notebook.deployment: same-origin`): published in this artifact at
+   * A same-origin notebook (`notebook.deployment: same-origin`), published in this artifact at
    * `notebook/`. `callbackPath` (site-relative) when it signs in; `emitCallback` when no portal
-   * sign-in route is there to relay its popup, so the build emits a relay page at that path.
+   * sign-in route relays its popup, so the build emits a relay page there; `href` when something
+   * on a page opens it in the sheet.
    */
-  sameOriginNotebook?: { callbackPath?: string; emitCallback: boolean; metaPolicy: boolean };
+  sameOriginNotebook?: {
+    callbackPath?: string;
+    emitCallback: boolean;
+    metaPolicy: boolean;
+    href?: string;
+  };
   theme: ResolvedTheme;
   chrome: ResolvedChrome;
   services: ResolvedService[];

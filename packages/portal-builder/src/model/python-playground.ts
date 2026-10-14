@@ -517,7 +517,9 @@ function resolveNotebookDataPanel(
     ...(stanza.icon ? { icon: stanza.icon } : {}),
     tree: stanza.tree,
     defaultAction: stanza.defaultAction ?? "open-in-notebook",
-    seedNotebooks: [...(stanza.seedNotebooks ?? [])],
+    seedNotebooks: (stanza.seedNotebooks ?? []).map((seed) =>
+      typeof seed === "string" ? seed : seed.path,
+    ),
     ...(stanza.startNotebook ? { startNotebook: stanza.startNotebook } : {}),
     gridlook: stanza.gridlook === true,
     launcher: {
@@ -537,7 +539,10 @@ function resolveNotebookDataPanel(
       },
     );
   }
-  return { ...resolved, fingerprint: fingerprintOf(resolved) };
+  const examplePages = (stanza.seedNotebooks ?? []).flatMap((seed, index) =>
+    typeof seed === "string" ? [] : [{ index, page: seed.page }],
+  );
+  return { ...resolved, examplePages, fingerprint: fingerprintOf(resolved) };
 }
 
 /**
