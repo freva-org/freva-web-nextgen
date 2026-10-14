@@ -3,12 +3,16 @@ import type { DatasetTreeNode, DatasetTreeSource } from "@freva-org/dataset-tree
 
 import {
   OPEN_DATASET_MESSAGE,
+  OPEN_EXAMPLE_MESSAGE,
   datasetFromMessage,
   datasetRequest,
+  exampleFromMessage,
+  exampleRequest,
   findPath,
   panelFromMessage,
   panelRequest,
   withoutDatasetRequest,
+  withoutExampleRequest,
 } from "../src/open-request.js";
 
 const LAB = "https://portal.example/showroom/notebook/lab/index.html";
@@ -56,6 +60,30 @@ describe("a request to open a dataset", () => {
     expect(datasetFromMessage({ type: "other", dataset: "s3://eerie/" })).toBeNull();
     expect(datasetFromMessage({ type: OPEN_DATASET_MESSAGE, dataset: 3 })).toBeNull();
     expect(datasetFromMessage(null)).toBeNull();
+  });
+});
+
+describe("a request to open an example notebook", () => {
+  it("is read from ?example= and removed from the address, other parameters kept", () => {
+    const href = `${LAB}?theme=dark&example=${encodeURIComponent("examples/01_map.ipynb")}`;
+    expect(exampleRequest(href)).toBe("examples/01_map.ipynb");
+    expect(withoutExampleRequest(href)).toBe(`${LAB}?theme=dark`);
+    expect(exampleRequest(LAB)).toBeNull();
+    expect(exampleRequest(`${LAB}?example=`)).toBeNull();
+    expect(exampleRequest(`${LAB}?example=../secret.ipynb`)).toBeNull();
+    expect(exampleRequest(`${LAB}?example=examples/a/b.ipynb`)).toBeNull();
+    expect(exampleRequest(`${LAB}?example=examples/notes.txt`)).toBeNull();
+  });
+
+  it("is read from the framing page's message, and nothing else", () => {
+    expect(exampleFromMessage({ type: OPEN_EXAMPLE_MESSAGE, path: "examples/01_map.ipynb" })).toBe(
+      "examples/01_map.ipynb",
+    );
+    expect(
+      exampleFromMessage({ type: OPEN_DATASET_MESSAGE, path: "examples/01_map.ipynb" }),
+    ).toBeNull();
+    expect(exampleFromMessage({ type: OPEN_EXAMPLE_MESSAGE, path: "/etc/passwd" })).toBeNull();
+    expect(exampleFromMessage(null)).toBeNull();
   });
 });
 
