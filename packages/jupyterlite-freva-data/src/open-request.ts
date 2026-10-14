@@ -1,10 +1,12 @@
 import type { DatasetTreeNode, DatasetTreeSource } from "@freva-org/dataset-tree";
 
 export const OPEN_DATASET_MESSAGE = "freva-data:open-dataset";
+export const OPEN_EXAMPLE_MESSAGE = "freva-data:open-example";
 export const DATA_PANEL_READY_MESSAGE = "freva-data-ready";
 export const SHOW_PANEL_MESSAGE = "freva-data:show-panel";
 export const PANEL_PARAM = "panel";
 export const DATASET_PARAM = "dataset";
+export const EXAMPLE_PARAM = "example";
 const MAX_ID_LENGTH = 2048;
 const MAX_REQUESTS = 64;
 const MAX_NODES = 20_000;
@@ -19,6 +21,30 @@ export function datasetRequest(href: string): string | null {
   } catch {
     return null;
   }
+}
+
+const validExample = (value: unknown): value is string =>
+  validId(value) && /^examples\/[^/]+\.ipynb$/.test(value);
+
+export function exampleRequest(href: string): string | null {
+  try {
+    const value = new URL(href).searchParams.get(EXAMPLE_PARAM);
+    return validExample(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function withoutExampleRequest(href: string): string {
+  const url = new URL(href);
+  url.searchParams.delete(EXAMPLE_PARAM);
+  return url.href;
+}
+
+export function exampleFromMessage(data: unknown): string | null {
+  const message = data as { type?: unknown; path?: unknown } | null;
+  if (!message || message.type !== OPEN_EXAMPLE_MESSAGE) return null;
+  return validExample(message.path) ? message.path : null;
 }
 
 export function panelRequest(href: string): boolean {
