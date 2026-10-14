@@ -1,5 +1,13 @@
 # @freva-org/portal-builder
 
+## 2612.0.1
+
+### Patch Changes
+
+- 3744167: A documentation page can offer its example notebook (`seedNotebooks` entry `{ path, page }`): _Open in notebook_ beside the title and again at the page end
+- Updated dependencies [21ee06c]
+  - @freva-org/jupyterlite-freva-data@2610.1.1
+
 ## 2612.0.0
 
 ### Minor Changes

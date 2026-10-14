@@ -1,5 +1,11 @@
 # @freva-org/jupyterlite-freva-data
 
+## 2610.1.1
+
+### Patch Changes
+
+- 21ee06c: The data panel opens an example as the visitor's own copy from `?example=` or a `freva-data:open-example` message
+
 ## 2610.1.0
 
 ### Minor Changes
