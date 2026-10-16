@@ -30,6 +30,11 @@
       "types": "./lib/auth-relay.d.ts",
       "import": "./lib/auth-relay.js"
     },
+    "./site": {
+      "types": "./lib/site.d.ts",
+      "import": "./lib/site.js",
+      "default": "./lib/site.js"
+    },
     "./stream": {
       "types": "./lib/stream.d.ts",
       "import": "./lib/stream.js"
