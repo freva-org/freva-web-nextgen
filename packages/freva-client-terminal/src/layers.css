@@ -1,0 +1,27 @@
+/* @freva-org/freva-client-terminal/layers.css - the overlay layer the Python window, the notebook
+   sheet and a maximized tree are mounted into. */
+
+/* Overlay layer. */
+
+/*
+ * Where a hosted application's global surfaces go. The application region is contained
+ * (`contain: layout` on `.portal-main`), which keeps an application's own fixed dialogs from
+ * running under the header and footer, but a window meant to float over the whole page needs one
+ * layer outside it. The layer is viewport-sized and catches no pointer events; only what is
+ * mounted inside it does.
+ *
+ * z-index 70: above the header's 50 and the footer's 40, below the skip link's 100. Anything that
+ * has to be above everything (the File Inspector) is a modal `<dialog>` in the top layer.
+ */
+.portal-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+.portal-overlay-root:empty {
+  display: none;
+}
+.portal-overlay-root > * {
+  pointer-events: auto;
+}
