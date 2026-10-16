@@ -206,6 +206,16 @@ syntax colours) are set on the root, so a host can retheme without forking the s
 `src/styles.css` and run `npm run gen:styles -w @freva-org/freva-client-terminal`; never edit the
 generated `src/styles.ts` by hand - a test pins the two together.
 
+## Layers (`/layers`)
+
+`@freva-org/freva-client-terminal/layers` decides what is on top of what when several floating
+surfaces share a page - the terminal window, a notebook sheet, a maximized dataset tree, a host's
+own dialogs. A surface asks for a band (`sheet` < `floating` < `dialog` < `toast` <
+`always-on-top`) and gets a z-index inside it; `raise()` brings it to the front of its own band.
+Surfaces are mounted into `#portal-overlay-root`, which `layers.css` makes a fixed,
+pointer-transparent, full-viewport box. There must be one layer manager per page, which is why it
+lives here and every other package imports it.
+
 ## License
 
 BSD-3-Clause
