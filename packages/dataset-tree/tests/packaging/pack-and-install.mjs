@@ -69,6 +69,8 @@ try {
         "dist/s3.d.ts",
         "dist/search-index.js",
         "dist/search-index.d.ts",
+        "dist/recipes.js",
+        "dist/recipes.d.ts",
         "dist/styles.css",
         "schema/dataset-tree-catalog-v1.schema.json",
         "schema/dataset-tree-search-index-v1.schema.json",
@@ -135,7 +137,7 @@ try {
         // export conditions carry `import` and not `require`. A CJS resolver failing here is the
         // package working as intended, and testing with one would test the wrong thing.
         "const out = {};",
-        'for (const specifier of ["@freva-org/dataset-tree", "@freva-org/dataset-tree/snapshot", "@freva-org/dataset-tree/s3", "@freva-org/dataset-tree/search-index", "@freva-org/dataset-tree/styles.css", "@freva-org/dataset-tree/dataset-tree-catalog-v1.schema.json", "@freva-org/dataset-tree/dataset-tree-search-index-v1.schema.json"]) {',
+        'for (const specifier of ["@freva-org/dataset-tree", "@freva-org/dataset-tree/snapshot", "@freva-org/dataset-tree/s3", "@freva-org/dataset-tree/search-index", "@freva-org/dataset-tree/recipes", "@freva-org/dataset-tree/styles.css", "@freva-org/dataset-tree/dataset-tree-catalog-v1.schema.json", "@freva-org/dataset-tree/dataset-tree-search-index-v1.schema.json"]) {',
         "  out[specifier] = import.meta.resolve(specifier);",
         "}",
         "console.log(JSON.stringify(out));",
@@ -154,6 +156,7 @@ try {
       ),
     );
     assert.ok(resolved["@freva-org/dataset-tree/search-index"].endsWith("dist/search-index.js"));
+    assert.ok(resolved["@freva-org/dataset-tree/recipes"].endsWith("dist/recipes.js"));
     assert.ok(
       resolved["@freva-org/dataset-tree/dataset-tree-search-index-v1.schema.json"].endsWith(
         "dataset-tree-search-index-v1.schema.json",

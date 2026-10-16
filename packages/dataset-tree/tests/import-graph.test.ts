@@ -70,10 +70,13 @@ test("the export map is exactly the documented surface, with no wildcard", () =>
     "./dataset-tree-catalog-v1.schema.json",
     "./dataset-tree-search-index-v1.schema.json",
     "./package.json",
+    "./recipes",
     "./s3",
     "./search-index",
     "./snapshot",
     "./styles.css",
+    "./ui",
+    "./ui.css",
   ]);
   assert.deepEqual(PACKAGE.exports["."], {
     types: "./dist/index.d.ts",
@@ -91,7 +94,13 @@ test("the export map is exactly the documented surface, with no wildcard", () =>
     types: "./dist/search-index.d.ts",
     import: "./dist/search-index.js",
   });
+  assert.deepEqual(PACKAGE.exports["./recipes"], {
+    types: "./dist/recipes.d.ts",
+    import: "./dist/recipes.js",
+  });
   assert.equal(PACKAGE.exports["./styles.css"], "./dist/styles.css");
+  assert.deepEqual(PACKAGE.exports["./ui"], { types: "./dist/ui.d.ts", import: "./dist/ui.js" });
+  assert.equal(PACKAGE.exports["./ui.css"], "./dist/ui.css");
   assert.equal(
     PACKAGE.exports["./dataset-tree-search-index-v1.schema.json"],
     "./schema/dataset-tree-search-index-v1.schema.json",
@@ -187,10 +196,24 @@ test("the search-index entry reaches its validator and nothing else", { skip }, 
 });
 
 test("no entry imports anything from outside the package", { skip }, () => {
-  for (const entry of ["index.js", "snapshot.js", "s3.js", "search-index.js"]) {
+  for (const entry of [
+    "index.js",
+    "snapshot.js",
+    "s3.js",
+    "search-index.js",
+    "recipes.js",
+    "ui.js",
+  ]) {
     const graph = walk(join(DIST, entry));
     assert.deepEqual(graph.bare, [], `${entry} gained external imports: ${graph.bare.join(", ")}`);
   }
+});
+
+test("the recipes entry is pure: no tree, no S3 client, no parsers", { skip }, () => {
+  // A JupyterLite extension and a documentation site import it beside their own UI: the store
+  // validation and template filling must not drag the component or an object-store client along.
+  const graph = walk(join(DIST, "recipes.js"));
+  assert.deepEqual(graph.files, ["recipes.js"]);
 });
 
 test("each entry still reaches what it is supposed to", { skip }, () => {

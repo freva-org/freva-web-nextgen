@@ -31,7 +31,16 @@
       "types": "./dist/search-index.d.ts",
       "import": "./dist/search-index.js"
     },
+    "./recipes": {
+      "types": "./dist/recipes.d.ts",
+      "import": "./dist/recipes.js"
+    },
+    "./ui": {
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
+    },
     "./styles.css": "./dist/styles.css",
+    "./ui.css": "./dist/ui.css",
     "./dataset-tree-catalog-v1.schema.json": "./schema/dataset-tree-catalog-v1.schema.json",
     "./dataset-tree-search-index-v1.schema.json": "./schema/dataset-tree-search-index-v1.schema.json",
     "./package.json": "./package.json"
