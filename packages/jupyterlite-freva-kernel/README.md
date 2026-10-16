@@ -60,6 +60,11 @@ One kernel per setup: `freva-python` for the first, `freva-python-<id>` for the 
 starts Python when its first cell runs, so an open notebook holds no interpreter.
 `portalBaseUrl` (optional; a URL, absolute or relative to the page) is defined, unseen, as
 `PORTAL_BASE_URL` in every interpreter at each start, before the starter.
+`siteWheels` (optional; `[{ "url": "../../python/wheels/x-1.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
+"sha256": "…" }]`, URLs relative to the page) are wheels the site pins itself, installed in every
+interpreter after its add-ons: each is fetched, checked against its SHA-256 and installed from those
+bytes with `deps=False` (`siteWheels` in `@freva-org/browser-python`), so a site can supply a
+WebAssembly build the runtime lacks without starter code or `PORTAL_BASE_URL`.
 `maxLiveInterpreters` (at most 2) caps running interpreters: when another notebook needs one, the
 least recently used idle kernel stops its interpreter and its next cell says so. Its files in
 `/workspace` are kept first (in memory, up to 1024 files and 256 MiB) and put back before anything

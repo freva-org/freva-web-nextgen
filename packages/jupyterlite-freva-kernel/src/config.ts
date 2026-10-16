@@ -30,6 +30,12 @@ export interface KernelSettings {
    * the page for a notebook on the portal's origin, so it follows where the page is served.
    */
   portalBaseUrl?: string;
+  /**
+   * Wheels the site pins and serves itself (`{ url, sha256 }`; a URL relative to the page),
+   * installed in every interpreter after its add-ons. See `@freva-org/browser-python`'s
+   * `siteWheels`: fetched, verified against the digest, then installed with `deps=False`.
+   */
+  siteWheels?: readonly { url: string; sha256: string }[];
   /** Live interpreters this page may hold. The playground's ceiling, never above 2. */
   maxLiveInterpreters: number;
   /** How long an interrupted cell may take to stop before a restart is offered. */
@@ -112,6 +118,16 @@ export function readSettings(raw: unknown): KernelSettings {
   }
   const portalBase = url(r.portalBaseUrl);
   if (portalBase) settings.portalBaseUrl = portalBase;
+  const wheels: { url: string; sha256: string }[] = [];
+  for (const entry of Array.isArray(r.siteWheels) ? r.siteWheels.slice(0, 32) : []) {
+    const e = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    const href = url(e.url);
+    const sha256 = typeof e.sha256 === "string" ? e.sha256.trim().toLowerCase() : "";
+    if (href && /\.whl$/.test(new URL(href).pathname) && /^[0-9a-f]{64}$/.test(sha256)) {
+      wheels.push({ url: href, sha256 });
+    }
+  }
+  if (wheels.length > 0) settings.siteWheels = wheels;
   return settings;
 }
 
