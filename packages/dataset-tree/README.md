@@ -39,15 +39,18 @@ independent components.
 
 ## Entry points
 
-| Import                                                             | Contains                                            | Why it is separate                                                 |
-| ------------------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------ |
-| `@freva-org/dataset-tree`                                          | The component and the shared types                  | No adapter, so no network client and no catalog validator          |
-| `@freva-org/dataset-tree/snapshot`                                 | `parseDatasetTreeCatalogV1`, `createSnapshotSource` | Build-time catalogs, with no object-store code                     |
-| `@freva-org/dataset-tree/s3`                                       | `createS3Source` and its errors                     | Live listing is an explicit choice, with CSP and CORS consequences |
-| `@freva-org/dataset-tree/search-index`                             | `parseDatasetTreeSearchIndexV1`                     | Only a consumer that validates an index carries the validator      |
-| `@freva-org/dataset-tree/styles.css`                               | The stylesheet                                      | Import it once per page                                            |
-| `@freva-org/dataset-tree/dataset-tree-catalog-v1.schema.json`      | The catalog schema                                  | For build tooling and editors                                      |
-| `@freva-org/dataset-tree/dataset-tree-search-index-v1.schema.json` | The search-index schema                             | For build tooling and editors                                      |
+| Import                                                             | Contains                                            | Why it is separate                                                                                                 |
+| ------------------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `@freva-org/dataset-tree`                                          | The component and the shared types                  | No adapter, so no network client and no catalog validator                                                          |
+| `@freva-org/dataset-tree/snapshot`                                 | `parseDatasetTreeCatalogV1`, `createSnapshotSource` | Build-time catalogs, with no object-store code                                                                     |
+| `@freva-org/dataset-tree/s3`                                       | `createS3Source` and its errors                     | Live listing is an explicit choice, with CSP and CORS consequences                                                 |
+| `@freva-org/dataset-tree/search-index`                             | `parseDatasetTreeSearchIndexV1`                     | Only a consumer that validates an index carries the validator                                                      |
+| `@freva-org/dataset-tree/recipes`                                  | `TREE_RECIPES`, `bindStore`, `renderRecipe`, ...    | Pure functions shared by every host of a live tree; no DOM                                                         |
+| `@freva-org/dataset-tree/styles.css`                               | The stylesheet                                      | Import it once per page                                                                                            |
+| `@freva-org/dataset-tree/ui`                                       | `createTreeMaximize(panel, { mountLayer })`         | The page around a tree: a full-screen sheet that moves the block, not a remount; the host passes its layer manager |
+| `@freva-org/dataset-tree/ui.css`                                   | The block around a tree                             | Heading, summary, the maximize and notebook controls, the sheet; reads the host's design tokens                    |
+| `@freva-org/dataset-tree/dataset-tree-catalog-v1.schema.json`      | The catalog schema                                  | For build tooling and editors                                                                                      |
+| `@freva-org/dataset-tree/dataset-tree-search-index-v1.schema.json` | The search-index schema                             | For build tooling and editors                                                                                      |
 
 The core and snapshot entries cannot reach the S3 adapter, directly or transitively, and the core
 entry cannot reach either validator. That is checked against the built output by `npm run closure`
@@ -358,6 +361,44 @@ ships no crawler and runs nothing on install, build or page load); whether a dat
 a search UI - `onInspect` is the seam and what it opens is yours; and whether the same catalog has to
 produce byte-identical output on two builds. Declared order is preserved and no identifier is derived
 from position, so reproducibility should hold - assert it rather than assume it.
+
+### Access recipes for live stores
+
+A live tree has no build-time catalogue to attach code to, so a store is offered through recipes:
+templates with one `{{STORE}}` hole, filled with a store identifier validated against the configured
+endpoint and declared roots. `@freva-org/dataset-tree/recipes` is that rule set, shared by every host
+(a portal page, the JupyterLite data panel, a documentation site):
+
+```ts
+import { createHash } from "node:crypto"; // build side: register the template's digest
+import {
+  TREE_RECIPES,
+  recipeAccessExamples,
+  resolveRecipeRun,
+  runnableRecipes,
+} from "@freva-org/dataset-tree/recipes";
+
+const store = { endpoint: "https://objects.example.org", style: "path", roots };
+const digests = { http: sha256(TREE_RECIPES[0].template) }; // computed when the site is built
+const runnable = runnableRecipes(["xarray", "zarr", "fsspec"]); // what the interpreter has
+
+mountDatasetTree(host, {
+  source: createS3Source({ ...store, roots }),
+  accessExamples: (node) => recipeAccessExamples(node, { store, digests, runnable }),
+  python: {
+    onTry(event) {
+      const run = resolveRecipeRun(event, { store, digests, runnable }); // null when anything is off
+      if (run) myInterpreter.run(run.source);
+    },
+  },
+});
+```
+
+`bindStore` refuses (returns `null`) rather than escapes: an identifier outside the declared roots,
+with a quote, backslash or control character, or with `..`, gets no recipe. The endpoint is always
+the configured one. `pythonStringBody` escapes what is substituted, so a value can never end the
+string literal it lands in. A run control appears only for a recipe that has a registered digest
+and is runnable on the host's interpreter. The template bytes are a contract: hosts hash them.
 
 ---
 

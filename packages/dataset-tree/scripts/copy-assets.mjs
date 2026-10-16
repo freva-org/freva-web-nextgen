@@ -11,10 +11,11 @@ import { fileURLToPath } from "node:url";
 import process from "node:process";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const from = join(root, "src", "styles.css");
-const to = join(root, "dist", "styles.css");
-
 mkdirSync(join(root, "dist"), { recursive: true });
-copyFileSync(from, to);
-// stderr, not stdout: this runs inside `prepack`, and `npm pack --json` parses stdout.
-process.stderr.write(`dist/styles.css written, ${statSync(to).size} bytes\n`);
+// The component's stylesheet, and the one for the block a host renders around it (`./ui.css`).
+for (const name of ["styles.css", "ui.css"]) {
+  const to = join(root, "dist", name);
+  copyFileSync(join(root, "src", name), to);
+  // stderr, not stdout: this runs inside `prepack`, and `npm pack --json` parses stdout.
+  process.stderr.write(`dist/${name} written, ${statSync(to).size} bytes\n`);
+}
