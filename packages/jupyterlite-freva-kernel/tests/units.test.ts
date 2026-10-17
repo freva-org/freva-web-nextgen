@@ -71,6 +71,31 @@ describe("readSettings", () => {
     expect(href).toMatch(/^[\x21-\x7e]+$/);
   });
 
+  it("reads the site's own wheels against the page, keeping only pinned wheel URLs", () => {
+    vi.stubGlobal("location", new URL("https://p.example/site/notebook/lab/index.html"));
+    try {
+      const sha = "A".repeat(64);
+      const s = readSettings({
+        siteWheels: [
+          { url: "../../python/wheels/healpix_geo-1-cp314-cp314-x.whl", sha256: sha },
+          { url: "https://other.example/a.zip", sha256: sha },
+          { url: "javascript:x.whl", sha256: sha },
+          { url: "../../b-1-py3-none-any.whl", sha256: "nope" },
+          "string",
+        ],
+      });
+      expect(s.siteWheels).toEqual([
+        {
+          url: "https://p.example/site/python/wheels/healpix_geo-1-cp314-cp314-x.whl",
+          sha256: "a".repeat(64),
+        },
+      ]);
+      expect(readSettings({}).siteWheels).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("names the first setup freva-python and the others by id", () => {
     const setup = {
       id: "minimal",

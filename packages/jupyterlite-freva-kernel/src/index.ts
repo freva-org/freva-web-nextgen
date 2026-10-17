@@ -109,6 +109,7 @@ const kernelPlugin: JupyterFrontEndPlugin<void> = {
                   : {}),
                 ...(settings.wheelhouseUrl ? { wheelhouseURL: settings.wheelhouseUrl } : {}),
                 ...(settings.addonBaseUrl ? { addonBaseURL: settings.addonBaseUrl } : {}),
+                ...(settings.siteWheels ? { siteWheels: settings.siteWheels } : {}),
                 ...(settings.workspaceMaxFiles
                   ? { workspaceMaxFiles: settings.workspaceMaxFiles }
                   : {}),
