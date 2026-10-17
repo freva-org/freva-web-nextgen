@@ -1,5 +1,11 @@
 # @freva-org/jupyterlite-freva-kernel
 
+## 2610.2.0
+
+### Minor Changes
+
+- 6d9a1ea: A `siteWheels` setting: wheels the site pins and serves itself, installed in every interpreter after its add-ons and verified against their SHA-256 first.
+
 ## 2610.1.1
 
 ### Patch Changes

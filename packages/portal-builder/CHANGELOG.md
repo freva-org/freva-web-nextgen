@@ -1,5 +1,20 @@
 # @freva-org/portal-builder
 
+## 2613.0.0
+
+### Patch Changes
+
+- Updated dependencies [0b4e35c]
+- Updated dependencies [72c8c0c]
+- Updated dependencies [712afd6]
+- Updated dependencies [6d9a1ea]
+  - @freva-org/dataset-tree@2610.2.0
+  - @freva-org/freva-client-terminal@2609.0.2
+  - @freva-org/jupyterlite-climateclaw@2610.1.0
+  - @freva-org/jupyterlite-freva-kernel@2610.2.0
+  - @freva-org/jupyterlite-freva-data@2610.1.2
+  - @freva-org/databrowser@2609.1.5
+
 ## 2612.0.1
 
 ### Patch Changes

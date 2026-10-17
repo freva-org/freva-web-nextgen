@@ -1,5 +1,12 @@
 # @freva-org/jupyterlite-freva-data
 
+## 2610.1.2
+
+### Patch Changes
+
+- Updated dependencies [0b4e35c]
+  - @freva-org/dataset-tree@2610.2.0
+
 ## 2610.1.1
 
 ### Patch Changes
