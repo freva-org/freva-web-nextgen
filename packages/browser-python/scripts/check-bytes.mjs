@@ -18,36 +18,26 @@ const PKG = fileURLToPath(new URL("..", import.meta.url));
 const DIST = join(PKG, "dist");
 
 /**
- * The ceiling on the emitted engine files, gzipped: `dist/` minus the optional console and embed
- * entry points.
+ * The ceiling on the emitted engine files, gzipped: `dist/` minus the optional entry points
+ * (`/console`, `/embed`, `/display`, `/session`, `/ui`).
  *
- * 83 KiB against a measurement of about 78.7 KiB - roughly 4.3 KiB of headroom, close enough
- * that the next few have to be argued for, in another paragraph here. `npm run build`
- * emits declarations and JavaScript in separate passes, so `.d.ts` keeps every word of
- * documentation and the `.js` a browser downloads carries none of it. Before that split, comments
- * alone added about 54 KiB gzip to the engine. The budget follows a measurement down as well as up,
- * because a ceiling far above the floor is a fail-open gate wearing a number.
+ * 85 KiB against a measurement of about 84 KiB. The budget follows the measurement down as well as
+ * up: a ceiling far above it is a fail-open gate. `npm run build` emits declarations and JavaScript
+ * in separate passes, so the `.js` a browser downloads carries no comments.
  *
- * The former documented 64.2 KiB measurement did not include the final browser-native remote-data
- * implementation. Its Python helpers are deliberately source embedded in the worker (rather than
- * fetched as fragile sidecar files): `browser_http.py` and `browser_s3.py` account for roughly
- * 17.7 KiB of the generated module after gzip. That is application code, not a bundled Pyodide
- * runtime.
- *
- * The curated add-ons currently take another 5,595 gzipped bytes in four implementation/data
- * files (the emitted type-only module is not counted in this explanation):
+ * About 17.7 KiB is the remote-data helpers `browser_http.py` and `browser_s3.py`, embedded in the
+ * worker rather than fetched as sidecar files. Site wheels (`worker/site-wheels.js` and the
+ * engine's validation) take about 1.7 KiB. The curated add-ons take 5,595 bytes:
  *
  *     addon-capabilities.js              179 B gz   the main-thread optionality check
  *     worker/addon-pins.generated.js   2,293 B gz   the pinned artefacts and their digests
  *     worker/addons.js                 2,582 B gz   fetch, verify, install, stage, activate
  *     addons.js                          541 B gz   the catalogue a build tool validates against
  *
- * The pin table is worth defending, because the obvious saving is to stop shipping it and that
- * saving is the feature: a digest a running interpreter checks an artefact against has to travel
- * with the CODE, or whoever can replace a wheel can replace the digest. The rest is the
- * installer, and a good part of its bytes are its messages, deliberately.
+ * The pin table stays in the bundle: a digest the interpreter checks an artefact against has to
+ * travel with the code, or whoever can replace a wheel can replace the digest.
  */
-const BUDGET_BYTES = 83 * 1024;
+const BUDGET_BYTES = 85 * 1024;
 
 /** Extensions that must never appear in the tarball. Each one is a runtime asset. */
 const FORBIDDEN = new Set([".wasm", ".whl", ".zip", ".so", ".a", ".bc"]);
@@ -73,6 +63,9 @@ const EMBED_PREFIX = "embed";
 const DISPLAY_PREFIX = "display";
 // `/session`: choices, slots, checkpoints and sleep. Imported only by a host offering sessions.
 const SESSION_PREFIX = "session";
+// `/ui`: the playground window around the console and the code figures, for a host page. Optional
+// like `/console`, and loaded behind it: a host that embeds only the engine never imports it.
+const UI_PREFIX = "ui/";
 const files = walk(DIST).filter((f) => f.endsWith(".js"));
 if (files.length === 0) {
   console.error("dist/ has no JavaScript - run `npm run build` first.");
@@ -92,6 +85,8 @@ let displayRaw = 0;
 let displayGz = 0;
 let sessionRaw = 0;
 let sessionGz = 0;
+let uiRaw = 0;
+let uiGz = 0;
 const rows = [];
 for (const file of files.sort()) {
   const name = file.slice(DIST.length + 1);
@@ -106,6 +101,9 @@ for (const file of files.sort()) {
   } else if (name.startsWith(SESSION_PREFIX)) {
     sessionRaw += bytes.length;
     sessionGz += gz;
+  } else if (name.startsWith(UI_PREFIX)) {
+    uiRaw += bytes.length;
+    uiGz += gz;
   } else if (name.startsWith(EMBED_PREFIX)) {
     // MEASURED SEPARATELY rather than quietly folded in. `/embed` is the two-origin portal
     // bridge, which a host that embeds nothing never imports, just as one wanting no REPL never
@@ -137,6 +135,9 @@ console.log(
 );
 console.log(
   `  ${"SESSION (optional sessions and sleep)".padEnd(40)} ${pad(sessionRaw, 8)} B  ${pad(sessionGz, 7)} B gz`,
+);
+console.log(
+  `  ${"UI (optional playground window, code figures)".padEnd(40)} ${pad(uiRaw, 8)} B  ${pad(uiGz, 7)} B gz`,
 );
 console.log(
   "\n  The console additionally loads jQuery, jQuery Terminal and Prism at run time; those are\n" +

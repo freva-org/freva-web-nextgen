@@ -1,0 +1,423 @@
+/* @freva-org/browser-python/ui/code.css - code figures: the header with the language, Editable,
+   Copy and Try in Python; Reset; line numbers; the snippet editor. Reads the host's design tokens
+   (--ink, --surface, --line, --accent, --syn-*, ...), which the README lists. */
+
+/*
+ * Copy, in the block's top-right corner: quiet until the block is hovered or the button focused,
+ * so always visible to a keyboard, which cannot find a control that only appears on hover.
+ */
+.portal-code-figure {
+  position: relative;
+  margin: 1.4em 0;
+}
+/* The figure owns the spacing; the header carries the language and the control. */
+.portal-code-figure > .portal-code-block {
+  margin: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.portal-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 10px 0 16px;
+  background: color-mix(in srgb, var(--ink) 6%, var(--chip));
+  border-radius: var(--r-6) var(--r-6) 0 0;
+  border-bottom: 1px solid var(--line);
+}
+.portal-code-lang {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.portal-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.portal-code-figure:hover .portal-code-copy,
+.portal-code-figure:focus-within .portal-code-copy,
+.portal-code-copy:focus-visible,
+.portal-code-copy[data-state] {
+  opacity: 1;
+}
+.portal-code-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.portal-code-copy:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+.portal-code-copy[data-state="copied"] {
+  opacity: 1;
+  color: var(--syn-added);
+  border-color: var(--syn-added);
+}
+.portal-code-copy[data-state="failed"] {
+  opacity: 1;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.portal-code-copy-icon {
+  width: 13px;
+  height: 13px;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 13px 13px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='9' y='9' width='11' height='11' rx='2'/%3E%3Cpath d='M5 15V5a2 2 0 012-2h10'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='9' y='9' width='11' height='11' rx='2'/%3E%3Cpath d='M5 15V5a2 2 0 012-2h10'/%3E%3C/svg%3E");
+}
+.portal-code-copy[data-state="copied"] .portal-code-copy-icon {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-code-copy {
+    transition: none;
+  }
+}
+/* A touch device has no hover, so the control is simply always there. */
+@media (hover: none) {
+  .portal-code-copy {
+    opacity: 1;
+  }
+}
+
+/*
+ * Copy and Try in Python as one group, not two loose buttons: beside a title and a language a bare
+ * second control would read as a third label. The group exists only on a runnable block.
+ */
+.portal-code-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.portal-code-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  /* The accent, because this is the action with a consequence: it starts an interpreter. */
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.portal-code-figure:hover .portal-code-run,
+.portal-code-figure:focus-within .portal-code-run,
+.portal-code-run:focus-visible {
+  opacity: 1;
+}
+.portal-code-run:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.portal-code-run:hover {
+  border-color: var(--accent);
+}
+.portal-code-run-icon {
+  width: 13px;
+  height: 13px;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 13px 13px;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M7 4l12 8-12 8z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M7 4l12 8-12 8z'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-code-run {
+    transition: none;
+  }
+}
+@media (hover: none) {
+  .portal-code-run {
+    opacity: 1;
+  }
+}
+
+/*
+ * On a runnable block the bar always shows: a control that appears only under the pointer is one a
+ * visitor must already know about. Copy shows with it; a plain block keeps its hover-only Copy.
+ * `pythonPlayground.controls: hover` restores the reveal on a device that can hover.
+ */
+.portal-code-actions .portal-code-copy,
+.portal-code-actions .portal-code-run {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .portal-code-figure[data-portal-controls="hover"]
+    .portal-code-actions
+    :is(.portal-code-copy, .portal-code-run) {
+    opacity: 0;
+  }
+  .portal-code-figure[data-portal-controls="hover"]:is(:hover, :focus-within)
+    .portal-code-actions
+    :is(.portal-code-copy, .portal-code-run),
+  .portal-code-figure[data-portal-controls="hover"]
+    .portal-code-actions
+    :is(.portal-code-copy, .portal-code-run):is(:focus-visible, [data-state]) {
+    opacity: 1;
+  }
+}
+
+/*
+ * What a press did, on the button itself: running while the example is queued or executing, then
+ * done when the program ran to the end, or error when it raised or could not run at all (refused,
+ * or no interpreter). The label says it in words; the colour only repeats it.
+ */
+.portal-code-run[data-state="running"] {
+  cursor: progress;
+}
+.portal-code-run[data-state="done"] {
+  color: var(--ink-2);
+}
+.portal-code-run[data-state="error"] {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Reset, beside Try in Python: only on an editable snippet, and only once it has been edited. */
+.portal-code-reset {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-8);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.portal-code-reset:hover {
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+.portal-code-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * An editable snippet: `code-run.ts` adds a line-number gutter, an "Editable" tag and a text
+ * cursor; the loaded editor puts a textarea with transparent glyphs over a highlighted copy in one
+ * grid cell. The textarea draws caret and selection from its metrics over the layer's glyphs, so
+ * any difference (size, line height, padding, ligature) drifts the caret. Every child gets the same
+ * size here, and layer and textarea are reset property by property at a specificity no prose `code`
+ * rule reaches. Nothing is sized by script.
+ */
+.portal-code-figure[data-portal-editable] > .portal-code-block {
+  display: flex;
+  align-items: flex-start;
+  /* The gutter carries the left inset, so text scrolling under it is hidden, not beside it. */
+  padding-left: 0;
+}
+.portal-code-figure[data-portal-editable] > .portal-code-block {
+  cursor: text;
+}
+.portal-code-figure[data-portal-editable] > .portal-code-block > * {
+  /* What `pre > code` gets in prose: the gutter and the editor match the read-only code. */
+  font-size: 0.9em;
+  line-height: inherit;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+}
+/* Line numbers: muted, never selected or copied, and pinned while long lines scroll. */
+.portal-code-figure[data-portal-editable] > .portal-code-block > .portal-code-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  padding: 0 10px 0 16px;
+  border-right: 1px solid var(--line);
+  /* The block's own colour, so scrolled text passes under it. */
+  background: var(--chip);
+  /* Secondary text, not `--muted`: on a white page's code background muted is 4.44:1. */
+  color: var(--ink-2);
+  text-align: right;
+  white-space: pre;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.portal-code-figure[data-portal-editable] > .portal-code-block > code {
+  flex: 1 0 auto;
+  padding: 0 0 0 12px;
+}
+.portal-code-figure[data-portal-editable] > .portal-code-block > .portal-code-editor-grid {
+  display: grid;
+  flex: 1 0 auto;
+  min-width: 0;
+  padding: 0;
+}
+.portal-code-figure[data-portal-editable] .portal-code-editor-grid > :is(span, textarea) {
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-variant-ligatures: none;
+  font-feature-settings: normal;
+  font-kerning: none;
+  line-height: inherit;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-indent: 0;
+  text-transform: none;
+  tab-size: 4;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.portal-code-figure[data-portal-editable] .portal-code-editor-view {
+  display: block;
+  pointer-events: none;
+}
+/* Both the line blocks and the textarea start 12px after the gutter, so they stay in register. */
+.portal-code-figure[data-portal-editable] .portal-code-editor-grid > textarea,
+.portal-code-editor-view > .portal-code-line {
+  padding-left: 12px;
+}
+.portal-code-editor-view > .portal-code-line {
+  display: block;
+}
+/* The caret's line, while the editor has the focus. */
+.portal-code-editor-view > .portal-code-line.is-current {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.portal-code-editor-input {
+  display: block;
+  overflow: hidden;
+  resize: none;
+  color: transparent;
+  caret-color: var(--ink);
+  outline: none;
+}
+.portal-code-editor-input::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: transparent;
+}
+.portal-code-figure:has(.portal-code-editor-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The editor's own highlighting: the shell's syntax roles, which every theme already sets. */
+.portal-code-editor .tok-comment {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+.portal-code-editor .tok-keyword {
+  color: var(--syn-keyword);
+}
+.portal-code-editor .tok-string {
+  color: var(--syn-string);
+}
+.portal-code-editor .tok-number {
+  color: var(--syn-number);
+}
+.portal-code-editor .tok-name {
+  color: var(--syn-name);
+}
+.portal-code-editor .tok-punct {
+  color: var(--syn-punct);
+}
+
+/*
+ * The header of an editable snippet: an "Editable" tag beside the language, and an "Edited" marker
+ * beside the title (beside the tag without one) while the code differs from the author's.
+ */
+.portal-code-figure[data-portal-editable] .portal-code-title {
+  flex: 0 1 auto;
+}
+.portal-code-figure[data-portal-editable]
+  .portal-code-lang:not(.portal-code-lang-secondary)
+  ~ .portal-code-actions {
+  margin-left: auto;
+}
+.portal-code-editable,
+.portal-code-edited {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.portal-code-edited[hidden] {
+  display: none;
+}
+.portal-code-editable-icon {
+  width: 11px;
+  height: 11px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16z'/%3E%3Cpath d='M13 7l4 4'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16z'/%3E%3Cpath d='M13 7l4 4'/%3E%3C/svg%3E")
+    center / 11px 11px no-repeat;
+}
+.portal-code-edited::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* A phone keeps the icon and the dot; the words stay for a screen reader. */
+@media (max-width: 480px) {
+  :is(.portal-code-editable, .portal-code-edited) > [class$="-label"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

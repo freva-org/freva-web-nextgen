@@ -1,0 +1,267 @@
+/* @freva-org/browser-python/ui/notebook.css - the notebook from the host page: the Open in
+   Notebook control, the notebook embedded in a page, and the notebook sheet. Reads the host's
+   design tokens (--ink, --surface, --line, --accent, ...). */
+
+/* Open in Notebook, beside a document's title. */
+.portal-document-notebook {
+  float: right;
+  display: inline-flex;
+  align-items: stretch;
+  margin: 14px 0 8px 16px;
+  border-radius: 7px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+  border: 1px solid var(--line-2);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.portal-document-notebook-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px 6px 9px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.portal-document-notebook-target {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.portal-document-notebook:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.14);
+}
+.portal-document-notebook:hover .portal-document-notebook-target {
+  background: var(--accent-hi);
+  color: var(--accent-hi-ink);
+}
+.portal-document-notebook:focus-visible {
+  outline: 2px solid var(--accent-text, var(--accent));
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-document-notebook {
+    transition: none;
+  }
+  .portal-document-notebook:hover {
+    transform: none;
+  }
+}
+@media (max-width: 560px) {
+  .portal-document-notebook {
+    float: none;
+    margin: 8px 0 0;
+  }
+}
+.portal-document-notebook-foot {
+  clear: both;
+  display: flex;
+  justify-content: center;
+  margin: 36px 0 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-2);
+}
+.portal-document-notebook-foot .portal-document-notebook {
+  float: none;
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Notebook block: the portal's notebook framed in the page. */
+
+.portal-notebook-block {
+  margin-bottom: clamp(28px, 3.4vw, 56px);
+}
+.portal-notebook-head > .portal-block-heading {
+  margin-top: 0;
+}
+.portal-notebook-summary {
+  color: var(--ink-2, var(--muted));
+  margin: 0 0 14px;
+  max-width: 68ch;
+}
+/* Keeps the block's place in the page while its window is maximized, so nothing below moves. */
+.portal-notebook-stage {
+  height: clamp(520px, 78vh, 920px);
+}
+.portal-notebook-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line-2, var(--line));
+  border-radius: var(--r-12, 12px);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.portal-notebook-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 2.4rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2, var(--surface));
+}
+.portal-notebook-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+/* Jupyter's three orbits, as three dots in its colours. */
+.portal-notebook-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.portal-notebook-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.portal-notebook-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+/* The dataset browser's control: icon at rest, its name on hover and focus. */
+.portal-notebook-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-height: 1.62rem;
+  padding: 0.22rem 0.42rem;
+  border: 1px solid var(--line-2, var(--line));
+  border-radius: var(--r-6, 0.35rem);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    gap 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+.portal-notebook-action[hidden] {
+  display: none;
+}
+.portal-notebook-action-text {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-width 0.18s ease,
+    opacity 0.14s ease;
+}
+.portal-notebook-action:hover,
+.portal-notebook-action:focus-visible {
+  gap: 6px;
+  border-color: var(--accent);
+  color: var(--accent-text, var(--accent));
+}
+.portal-notebook-action:hover > .portal-notebook-action-text,
+.portal-notebook-action:focus-visible > .portal-notebook-action-text {
+  max-width: 14rem;
+  opacity: 1;
+}
+.portal-notebook-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: none) {
+  .portal-notebook-action {
+    gap: 6px;
+  }
+  .portal-notebook-action-text {
+    max-width: 14rem;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-notebook-action,
+  .portal-notebook-action-text {
+    transition: none;
+  }
+}
+.portal-notebook-icon {
+  flex: 0 0 auto;
+}
+.portal-notebook-icon[data-icon="shrink"],
+.portal-notebook-block[data-expanded="true"] .portal-notebook-icon[data-icon="grow"] {
+  display: none;
+}
+.portal-notebook-block[data-expanded="true"] .portal-notebook-icon[data-icon="shrink"] {
+  display: inline;
+}
+.portal-notebook-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+/*
+ * Maximized: the window pinned between the header and the footer (and the footer's badge), over a
+ * dim on the page's content. In place, never moved: a moved iframe loads again. It stays inside
+ * the landing's stacking context, so the header, the footer and the overlay root (a Python window,
+ * the badge) keep painting above it - which is why it is fitted between them.
+ */
+.portal-notebook-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: color-mix(in srgb, #05070c 62%, transparent);
+}
+.portal-notebook-backdrop[hidden] {
+  display: none;
+}
+.portal-notebook-sheet {
+  position: relative;
+}
+.portal-notebook-sheet[data-closed] {
+  visibility: hidden;
+}
+.portal-jupyter-logo {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 16px;
+  object-fit: contain;
+}
+.portal-jupyter-logo[data-variant="dark"],
+:root[data-theme="dark"] .portal-jupyter-logo[data-variant="light"] {
+  display: none;
+}
+:root[data-theme="dark"] .portal-jupyter-logo[data-variant="dark"] {
+  display: inline-block;
+}
+.portal-notebook-block[data-expanded="true"] .portal-notebook-window,
+.portal-notebook-sheet .portal-notebook-window {
+  position: fixed;
+  z-index: 1001;
+  top: calc(var(--portal-notebook-top, 0px) + clamp(8px, 1.4vh, 18px));
+  right: clamp(10px, 2.4vw, 44px);
+  bottom: calc(var(--portal-notebook-bottom, 0px) + clamp(10px, 1.8vh, 26px));
+  left: clamp(10px, 2.4vw, 44px);
+  height: auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+:root[data-notebook-expanded="true"] body {
+  overflow: hidden;
+}

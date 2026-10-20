@@ -165,6 +165,7 @@ class BrowserPythonEngine implements BrowserPython {
     addonBaseURL?: string;
     packageBaseURL?: string;
     wheelhouseURL?: string;
+    siteWheels?: { url: string; sha256: string }[];
     startupSource?: string;
     persistCredentials?: boolean;
     workerFactory: () => Worker;
@@ -202,6 +203,9 @@ class BrowserPythonEngine implements BrowserPython {
     }
     if (options.persistCredentials !== undefined) {
       this.#options.persistCredentials = options.persistCredentials;
+    }
+    if (options.siteWheels !== undefined && options.siteWheels.length > 0) {
+      this.#options.siteWheels = validateSiteWheels(options.siteWheels);
     }
     if (options.workspaceMaxFiles !== undefined) {
       // Validated HERE, at construction, not only in the worker. The worker reports a bad value
@@ -1150,6 +1154,7 @@ class BrowserPythonEngine implements BrowserPython {
       ...(this.#options.addonBaseURL !== undefined
         ? { addonBaseURL: this.#options.addonBaseURL }
         : {}),
+      ...(this.#options.siteWheels !== undefined ? { siteWheels: this.#options.siteWheels } : {}),
       ...(this.#options.persistCredentials !== undefined
         ? { persistCredentials: this.#options.persistCredentials }
         : {}),
@@ -1652,6 +1657,34 @@ function absoluteURL(value: string, options: { trailingSlash?: boolean } = {}): 
   }
   if (options.trailingSlash && !resolved.endsWith("/")) resolved = `${resolved}/`;
   return resolved;
+}
+
+/**
+ * Check site wheels at construction, where a host's mistake is cheap to report: a digest that is
+ * not a SHA-256, or a URL that is not http(s) or does not end in a wheel file. URLs resolve
+ * against the page here, before they cross into the worker.
+ */
+function validateSiteWheels(
+  wheels: readonly { url: string; sha256: string }[],
+): { url: string; sha256: string }[] {
+  return wheels.map((wheel, index) => {
+    const sha256 = String(wheel?.sha256 ?? "")
+      .trim()
+      .toLowerCase();
+    let url: URL | null = null;
+    try {
+      url = new URL(absoluteURL(String(wheel?.url ?? "")));
+    } catch {
+      // reported below
+    }
+    if (!/^[0-9a-f]{64}$/.test(sha256) || !/^https?:$/.test(url?.protocol ?? "")) {
+      throw new TypeError(`siteWheels[${index}] needs an http(s) url and a hex sha256.`);
+    }
+    if (!/\.whl$/.test(url!.pathname)) {
+      throw new TypeError(`siteWheels[${index}].url must end in a wheel file name.`);
+    }
+    return { url: url!.href, sha256 };
+  });
 }
 
 /**

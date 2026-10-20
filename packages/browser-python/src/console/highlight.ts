@@ -12,7 +12,7 @@
  * adapter holds, and nothing produced here is ever read back as input.
  */
 
-import Prism from "prismjs/components/prism-core.js";
+import Prism from "../prism.js";
 import "prismjs/components/prism-clike.js";
 import "prismjs/components/prism-python.js";
 
