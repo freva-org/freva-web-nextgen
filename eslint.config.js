@@ -77,7 +77,7 @@ export default tseslint.config(
     rules: { "@typescript-eslint/no-require-imports": "off", "no-console": "off" },
   },
   {
-    files: ["packages/portal-builder/client/components/cosmos/scene.js"],
+    files: ["packages/cosmos-backdrop/src/cosmos/scene.js"],
     languageOptions: { globals: { ...globals.browser } },
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
@@ -86,7 +86,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/portal-builder/client/components/cosmos/art/*.mjs"],
+    files: ["packages/cosmos-backdrop/src/cosmos/art/*.mjs"],
     languageOptions: { globals: { ...globals.browser } },
     rules: { "no-empty": "off", "no-console": "off" },
   },

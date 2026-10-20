@@ -75,6 +75,7 @@ going through the release PR.
 ```
 packages/
   browser-python/            # @freva-org/browser-python
+  cosmos-backdrop/           # @freva-org/cosmos-backdrop
   data-inspector/            # @freva-org/data-inspector
   databrowser/               # @freva-org/databrowser
   dataset-tree/              # @freva-org/dataset-tree

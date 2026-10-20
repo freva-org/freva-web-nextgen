@@ -1,0 +1,41 @@
+{
+  "generatedFrom": "client/components/cosmos/art/sky-art.mjs",
+  "geometry": {
+    "width": 1440,
+    "spaceEnd": 1819.686,
+    "poleX": 1209.6,
+    "poleY": 345.74,
+    "sphereRadius": 1944.87,
+    "textureScale": 0.4628,
+    "textureSide": 1800,
+    "displayedSide": 3889.7,
+    "sunR": 180,
+    "moonR": 93.6
+  },
+  "files": [
+    {
+      "file": "sky-sphere.webp",
+      "intrinsic": "1800x1800",
+      "megapixels": 3.24,
+      "decodedMiB": 12.4,
+      "encodedKiB": 249.1,
+      "encoding": "image/webp q92"
+    },
+    {
+      "file": "moon.webp",
+      "intrinsic": "394x394",
+      "megapixels": 0.16,
+      "decodedMiB": 0.6,
+      "encodedKiB": 11.7,
+      "encoding": "image/webp q95"
+    },
+    {
+      "file": "sun.webp",
+      "intrinsic": "555x555",
+      "megapixels": 0.31,
+      "decodedMiB": 1.2,
+      "encodedKiB": 21.7,
+      "encoding": "image/webp q95"
+    }
+  ]
+}
