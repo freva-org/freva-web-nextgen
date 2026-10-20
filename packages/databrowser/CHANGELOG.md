@@ -1,6 +1,6 @@
 # @freva-org/databrowser
 
-## 2609.1.5
+## 2610.0.0
 
 ### Patch Changes
 

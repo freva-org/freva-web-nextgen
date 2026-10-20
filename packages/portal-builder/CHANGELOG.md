@@ -1,6 +1,6 @@
 # @freva-org/portal-builder
 
-## 2613.0.0
+## 2612.1.0
 
 ### Patch Changes
 

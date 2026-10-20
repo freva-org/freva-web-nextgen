@@ -1,6 +1,6 @@
 # @freva-org/freva-client-terminal
 
-## 2609.0.2
+## 2610.0.0
 
 ### Patch Changes
 
