@@ -12,7 +12,7 @@
 ### Patch Changes
 
 - Updated dependencies [72c8c0c]
-  - @freva-org/freva-client-terminal@2609.0.2
+  - @freva-org/freva-client-terminal@2610.0.0
 
 ## 2610.0.0
 

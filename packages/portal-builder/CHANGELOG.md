@@ -17,11 +17,11 @@
   - @freva-org/browser-python@2610.1.0
   - @freva-org/cosmos-backdrop@2610.1.0
   - @freva-org/dataset-tree@2610.2.0
-  - @freva-org/freva-client-terminal@2609.0.2
+  - @freva-org/freva-client-terminal@2610.0.0
   - @freva-org/jupyterlite-climateclaw@2610.1.0
   - @freva-org/jupyterlite-freva-data@2610.2.0
   - @freva-org/jupyterlite-freva-kernel@2610.2.0
-  - @freva-org/databrowser@2609.1.5
+  - @freva-org/databrowser@2610.0.0
 
 ## 2612.0.1
 
