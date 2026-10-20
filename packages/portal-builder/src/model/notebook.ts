@@ -11,6 +11,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import { canonicalJson, describeSetup, type SessionSetup } from "@freva-org/browser-python/session";
+import type * as ClimateClawSiteTypes from "@freva-org/jupyterlite-climateclaw/site";
+import type * as DataPanelSiteTypes from "@freva-org/jupyterlite-freva-data/site";
+import type { DataPanelAction } from "@freva-org/jupyterlite-freva-data/site";
 import type * as KernelCspModule from "@freva-org/jupyterlite-freva-kernel/csp";
 import type * as KernelPrepareModule from "@freva-org/jupyterlite-freva-kernel/prepare";
 import type { NotebookInventory } from "@freva-org/jupyterlite-freva-kernel/prepare";
@@ -21,7 +24,6 @@ import {
   usesPortalBase,
 } from "./python-playground.js";
 import { PROFILE_PACKAGES } from "./tree-recipes.js";
-import { TREE_RECIPES, runnableRecipes } from "./recipe-templates.js";
 import type {
   DatasetTreeBlockData,
   NotebookAssistantSettings,
@@ -159,23 +161,25 @@ export const LAB_DISABLED_EXTENSIONS: readonly string[] = [
   "@jupyterlite/application-extension:logo",
 ];
 
-/** With the assistant: what jupyterlite-ai brings that this site does not use. */
-export const AI_DISABLED_EXTENSIONS: readonly string[] = [
-  // The AI settings panel: the provider and model are the site's (settings overrides).
-  "@jupyternaut/persona:settings-panel",
-  // MCP servers need a Jupyter server; JupyterLite has none (it would fetch /jupyter-mcp-manager).
-  "jupyter-mcp-manager:manager",
-  // Diffs in the file editor, whose tracker is disabled above.
-  "jupyterlab-diff:unified-file-diff-plugin",
-  // jupyterlite-ai's chat panel: ClimateClaw shows chats in its own panel (with the chat tracker
-  // and the chat commands this plugin would otherwise provide), on jupyterlite-ai's chat models.
-  "@jupyterlite/ai:chat",
-  // "@jupyternaut-frontend" offered on "@": jupyterlite-ai's chats answer without a mention.
-  "@jupyternaut/persona:mention",
-];
+/**
+ * ClimateClaw's site helper, `@freva-org/jupyterlite-climateclaw/site`: the one implementation of
+ * the assistant's settings overrides, the jupyterlite-ai plugins a JupyterLite cannot use, its
+ * files and its callback page, shared with every other site that prepares the assistant. An
+ * optional peer, needed only when a portal configures `notebook.assistant`, so it is loaded when
+ * used.
+ */
+type ClimateClawSiteModule = typeof ClimateClawSiteTypes;
 
-function sha256hex(value: string | Buffer): string {
-  return createHash("sha256").update(value).digest("hex");
+function climateClawSiteModule(): ClimateClawSiteModule {
+  const require = createRequire(import.meta.url);
+  try {
+    return require(`${CLIMATECLAW_PACKAGE}/site`) as ClimateClawSiteModule;
+  } catch (cause) {
+    throw new Error(
+      `The notebook's assistant needs ${CLIMATECLAW_PACKAGE}, which is not installed: npm install ${CLIMATECLAW_PACKAGE}`,
+      { cause },
+    );
+  }
 }
 
 /**
@@ -210,7 +214,25 @@ function walkNodes(nodes: CatalogNodeLike[] | undefined, visit: (node: CatalogNo
   }
 }
 
-const PYTHON = new Set(["python", "python3", "py"]);
+/**
+ * The data panel's site helper, `@freva-org/jupyterlite-freva-data/site`: the one implementation of
+ * the panel's data file and settings, shared with every other site that prepares the panel. The
+ * package is an optional peer, needed only when a portal configures `dataPanel`, so it is loaded
+ * when used rather than imported at the top.
+ */
+type DataPanelSiteModule = typeof DataPanelSiteTypes;
+
+function dataPanelSiteModule(): DataPanelSiteModule {
+  const require = createRequire(import.meta.url);
+  try {
+    return require(`${DATA_PANEL_PACKAGE}/site`) as DataPanelSiteModule;
+  } catch (cause) {
+    throw new Error(
+      `The notebook's data panel needs ${DATA_PANEL_PACKAGE}, which is not installed: npm install ${DATA_PANEL_PACKAGE}`,
+      { cause },
+    );
+  }
+}
 
 /**
  * The panel's data file: the block's source and the examples and recipes this build registers.
@@ -222,54 +244,21 @@ export function panelData(
   profile: string,
   searchIndexPath: string | undefined,
 ): Record<string, unknown> {
-  const examples: { datasetId: string; exampleId: string; sha256: string }[] = [];
-  let catalog: unknown;
-  if (block.mode === "snapshot") {
-    catalog = JSON.parse(block.catalogScriptJson) as unknown;
-    walkNodes((catalog as { roots?: CatalogNodeLike[] }).roots, (node) => {
-      for (const example of node.examples ?? []) {
-        if (example.executable !== true || !PYTHON.has(example.language.trim().toLowerCase())) {
-          continue;
-        }
-        examples.push({
-          datasetId: node.id,
-          exampleId: example.id,
-          sha256: sha256hex(example.code),
-        });
-      }
-    });
-    examples.sort((a, b) =>
-      `${a.datasetId}\u0000${a.exampleId}` < `${b.datasetId}\u0000${b.exampleId}` ? -1 : 1,
-    );
-  }
-  const runnable = new Set(runnableRecipes(PROFILE_PACKAGES[profile] ?? []));
-  const recipes =
-    block.mode === "s3"
-      ? TREE_RECIPES.map((recipe) => ({
-          id: recipe.id,
-          label: recipe.label,
-          ...(recipe.description ? { description: recipe.description } : {}),
-          template: recipe.template,
-          parameter: recipe.parameter,
-          sha256: sha256hex(recipe.template),
-          runnable: runnable.has(recipe.id),
-        }))
-      : [];
-  return {
-    schemaVersion: 1,
+  const { buildPanelData } = dataPanelSiteModule();
+  return buildPanelData({
     instanceId: block.instanceId,
-    mode: block.mode,
-    ...(block.mode === "snapshot" ? { catalog } : {}),
-    ...(block.s3 ? { s3: block.s3 } : {}),
+    ...(block.mode === "snapshot"
+      ? { catalog: JSON.parse(block.catalogScriptJson) as unknown }
+      : {}),
+    ...(block.mode === "s3" && block.s3 ? { s3: block.s3 } : {}),
     ...(searchIndexPath ? { searchIndex: searchIndexPath } : {}),
     ...(block.searchResultLimit !== undefined
       ? { searchResultLimit: block.searchResultLimit }
       : {}),
     expand: block.expandedIds,
     statusLabel: block.statusLabel,
-    examples,
-    recipes,
-  };
+    packages: PROFILE_PACKAGES[profile] ?? [],
+  }) as unknown as Record<string, unknown>;
 }
 
 /** Origins the data panel reads from: the live gateway, or the catalogue's stores. */
@@ -291,19 +280,6 @@ export function dataPanelOrigins(block: DatasetTreeBlockData): string[] {
   return [...origins].sort();
 }
 
-function seedTitle(text: string, name: string): string {
-  try {
-    const nb = JSON.parse(text) as { cells?: { cell_type?: string; source?: string | string[] }[] };
-    const first = nb.cells?.find((c) => c.cell_type === "markdown");
-    const source = Array.isArray(first?.source) ? first.source.join("") : (first?.source ?? "");
-    const heading = /^#\s+(.+)$/m.exec(source)?.[1]?.trim();
-    if (heading) return heading.slice(0, 80);
-  } catch {
-    // The kernel package validates seeds; a title is a nicety.
-  }
-  return basename(name, ".ipynb");
-}
-
 /** The shared callback's path on the notebook's origin, base path included. */
 export function callbackPathOf(
   lab: Pick<NotebookLabInputs, "authCallbackPath" | "basePath">,
@@ -320,7 +296,6 @@ export function planLab(settings: PlaygroundSettings, lab: NotebookLabInputs): L
   const assistant = lab.assistant;
   if (assistant) {
     packages.push(CLIMATECLAW_PACKAGE);
-    disabled.push(...AI_DISABLED_EXTENSIONS);
     // The shared callback under the deployment's base path on the notebook's origin, never
     // under /notebook/: the same URL for every consumer on that origin.
     const shared = `${lab.playgroundOrigin.replace(/\/+$/, "")}${callbackPathOf(lab)}`;
@@ -329,54 +304,21 @@ export function planLab(settings: PlaygroundSettings, lab: NotebookLabInputs): L
       logout: shared,
       legacy: `${notebookBase(lab.playgroundOrigin, lab.basePath)}${LEGACY_CALLBACK_FILE}`,
     };
-    overrides["@jupyternaut/persona:settings-model"] = {
-      providers: [
-        {
-          id: "climateclaw",
-          name: "ClimateClaw",
-          provider: "climateclaw",
-          model: assistant.defaultModel,
-        },
-      ],
-      defaultProvider: "climateclaw",
-      useSameProviderForChatAndCompleter: false,
-      useSecretsManager: false,
-      toolsEnabled: false,
-    };
-    overrides["@jupyterlite/ai:chat"] = { chatBackupDirectory: "chats" };
-    // The (empty) backup directory exists in the site, so listing it does not ask the server.
-    files.push({
-      path: "api/contents/chats/all.json",
-      text: `${JSON.stringify({
-        content: [],
-        created: "2025-10-01T00:00:00.000Z",
-        format: "json",
-        hash: null,
-        hash_algorithm: null,
-        last_modified: "2025-10-01T00:00:00.000Z",
-        mimetype: null,
-        name: "chats",
-        path: "chats",
-        size: null,
-        type: "directory",
-        writable: true,
-      })}\n`,
-    });
-    overrides[`${CLIMATECLAW_PACKAGE}:plugin`] = {
+    const site = climateClawSiteModule().climateClawSite({
       host: assistant.host,
       authBaseUrl: assistant.authBaseUrl,
-      // Origin-relative: the notebook resolves it against its own origin, so no host name is in
-      // the site's settings.
       callbackPath: callbackPathOf(lab),
       ...(assistant.expectedIssuer ? { expectedIssuer: assistant.expectedIssuer } : {}),
       defaultModel: assistant.defaultModel,
-      runAndFixModel: assistant.runAndFixModel ?? assistant.defaultModel,
-      scopeNote: assistant.scopeNote ?? "",
+      ...(assistant.runAndFixModel ? { runAndFixModel: assistant.runAndFixModel } : {}),
+      ...(assistant.scopeNote ? { scopeNote: assistant.scopeNote } : {}),
       examples: assistant.examples,
       hideCodeByDefault: assistant.hideCodeByDefault,
-      // Where saved figures come from: the notebook's policy lets it show pictures from there.
       ...(assistant.previewOrigin ? { previewOrigin: assistant.previewOrigin } : {}),
-    };
+    });
+    disabled.push(...site.disabledExtensions);
+    Object.assign(overrides, site.overrides);
+    files.push(...site.files);
   }
   const panel = lab.dataPanel;
   if (panel) {
@@ -386,28 +328,37 @@ export function planLab(settings: PlaygroundSettings, lab: NotebookLabInputs): L
       searchIndexPath = basename(panel.block.searchIndex.file);
       files.push({ path: searchIndexPath, text: panel.searchIndex.toString("utf8") });
     }
-    const data = `${JSON.stringify(panelData(panel.block, settings.profile, searchIndexPath))}\n`;
-    const dataPath = `freva-data/panel.${sha256hex(data).slice(0, 12)}.json`;
-    files.push({ path: dataPath, text: data });
-    overrides[`${DATA_PANEL_PACKAGE}:plugin`] = {
+    const { dataPanelSite, buildPanelData } = dataPanelSiteModule();
+    const site = dataPanelSite({
+      data: buildPanelData({
+        instanceId: panel.block.instanceId,
+        ...(panel.block.mode === "snapshot"
+          ? { catalog: JSON.parse(panel.block.catalogScriptJson) as unknown }
+          : {}),
+        ...(panel.block.mode === "s3" && panel.block.s3 ? { s3: panel.block.s3 } : {}),
+        ...(searchIndexPath ? { searchIndex: searchIndexPath } : {}),
+        ...(panel.block.searchResultLimit !== undefined
+          ? { searchResultLimit: panel.block.searchResultLimit }
+          : {}),
+        expand: panel.block.expandedIds,
+        statusLabel: panel.block.statusLabel,
+        packages: PROFILE_PACKAGES[settings.profile] ?? [],
+      }),
       siteName: lab.siteTitle,
       title: panel.settings.title ?? `${lab.siteTitle} data`,
       iconSvg: panel.iconSvg ?? "",
-      dataUrl: dataPath,
-      dataSha256: sha256hex(data),
       kernelName: "freva-python",
-      defaultAction: panel.settings.defaultAction,
-      seedNotebooks: panel.seeds.map((seed) => ({
-        path: seed.name,
-        title: seedTitle(seed.text, seed.name),
-      })),
+      defaultAction: panel.settings.defaultAction as DataPanelAction,
+      seedNotebooks: panel.seeds,
       gridlook: panel.settings.gridlook,
       ...(panel.startSeed ? { startNotebook: panel.startSeed } : {}),
       launcher: {
         ...panel.settings.launcher,
         ask: panel.settings.launcher.ask && Boolean(assistant),
       },
-    };
+    });
+    files.push(...site.files);
+    Object.assign(overrides, site.overrides);
   }
   return {
     packages,
@@ -610,13 +561,13 @@ export function labSiteOptions(lab: LabPlan): {
     const pkg = extensionPackage(name);
     extensions.push(pkg.labextension);
     if (name === CLIMATECLAW_PACKAGE) {
-      requirements = join(pkg.root, "lite", "jupyterlite-ai-requirements.txt");
-      const page = readFileSync(join(pkg.root, "callback", "freva-login-callback.html"), "utf8");
-      const script = readFileSync(join(pkg.root, "callback", "freva-login-callback.js"), "utf8");
+      const { climateClawAssets, CALLBACK_PAGE, CALLBACK_SCRIPT } = climateClawSiteModule();
+      const assets = climateClawAssets();
+      requirements = assets.requirements;
       // The legacy page, answering logins started before the shared callback (it relays its own
       // URL to the tab that started them, unchanged).
-      files.push({ path: LEGACY_CALLBACK_FILE, text: page });
-      files.push({ path: "freva-login-callback.js", text: script });
+      files.push({ path: CALLBACK_PAGE, text: assets.callback.page });
+      files.push({ path: CALLBACK_SCRIPT, text: assets.callback.script });
     }
   }
   return {

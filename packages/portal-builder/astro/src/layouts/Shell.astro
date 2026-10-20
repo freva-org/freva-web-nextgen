@@ -11,6 +11,12 @@
  */
 import "../styles/freva-tokens.css";
 import "../styles/freva-shell.css";
+// Code figures, the notebook sheet and the overlay layer belong to the packages that draw them, so
+// every site embedding the same pieces styles them from one file. Imported straight after the
+// shell, so the shell's rules come first in the cascade.
+import "@freva-org/browser-python/ui/code.css";
+import "@freva-org/browser-python/ui/notebook.css";
+import "@freva-org/freva-client-terminal/layers.css";
 import "virtual:portal-theme.css";
 import "virtual:portal-code.css";
 import "virtual:portal-math.css";

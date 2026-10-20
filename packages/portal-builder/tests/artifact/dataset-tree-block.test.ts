@@ -9,6 +9,7 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   REPO_ROOT,
@@ -369,7 +370,8 @@ describe("what a portal that enables the block gets", () => {
     const plan = built.evidence.components.find((c) => c.id === "dataset-tree")!;
     expect(plan.enabled).toBe(true);
     expect(plan.modules).toContain("builder:client/components/dataset-tree.ts");
-    expect(plan.modules).toContain("builder:client/components/dataset-tree.css");
+    // The block's own stylesheet is the package's `./ui.css`.
+    expect(plan.modules.some((m) => m.endsWith("#dist/ui.css"))).toBe(true);
     expect(plan.modules.some((m) => m.endsWith("#dist/tree.js"))).toBe(true);
     expect(plan.modules.some((m) => m.endsWith("#dist/styles.css"))).toBe(true);
     expect(plan.modules.some((m) => m.endsWith("#dist/snapshot/parse.js"))).toBe(true);
@@ -513,8 +515,12 @@ describe("the block in the page", () => {
     expect(rest, "the control has no visible label at all").toBeTruthy();
     expect(toolbar).not.toContain((rest ?? "").toLowerCase());
 
-    // And the label it swaps to when maximized, which lives in the island.
-    const island = readFileSync(join(PKG, "client", "components", "dataset-tree.ts"), "utf8");
+    // And the label it swaps to when maximized, which lives in the maximize sheet - the
+    // package's own `/ui` entry, as installed.
+    const island = readFileSync(
+      fileURLToPath(import.meta.resolve("@freva-org/dataset-tree/ui")),
+      "utf8",
+    );
     const swapped = /const label = on \? "([^"]+)" : "([^"]+)"/.exec(island);
     expect(swapped, "the maximized label is not where this test looks for it").toBeTruthy();
     for (const label of [swapped?.[1] ?? "", swapped?.[2] ?? ""]) {
@@ -535,12 +541,12 @@ describe("the block in the page", () => {
   });
 
   it("wraps the tree in nothing: no second card around the component's own panel", () => {
-    // The rule this protects is about DECORATION, not layout. The component draws a complete
+    // The rule this protects is about decoration, not layout. The component draws a complete
     // bordered panel, and nesting it inside a second bordered panel gives two frames with two
     // radii and costs the tree the width it needs. The block does carry the page's own content
     // width and gutter - `max-width` and `padding`, which every other block carries and which
     // draw nothing. What must stay absent is the card: a border, a radius, a shadow.
-    const source = readFileSync(join(PKG, "client", "components", "dataset-tree.css"), "utf8");
+    const source = readFileSync(join(PKG, "..", "dataset-tree", "src", "ui.css"), "utf8");
     const css = source.replace(/\/\*[\s\S]*?\*\//g, "");
     const block = css.slice(
       css.indexOf(".portal-dataset-tree-block {"),
@@ -619,7 +625,7 @@ describe("reproducibility", () => {
 });
 
 describe("the Cosmos surface", () => {
-  const source = readFileSync(join(PKG, "client", "components", "dataset-tree.css"), "utf8");
+  const source = readFileSync(join(PKG, "..", "dataset-tree", "src", "ui.css"), "utf8");
   // Comments are stripped before anything is asserted about absence: the stylesheet's own prose
   // names the scene opacity it must not touch, and a search its explanation satisfies would pass
   // on a stylesheet that dimmed the scene in the next rule down.

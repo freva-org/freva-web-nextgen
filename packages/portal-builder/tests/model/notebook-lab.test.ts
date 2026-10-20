@@ -14,8 +14,8 @@ import {
 import { cleanupFixtures, tempRoot, write } from "../helpers/fixture.js";
 import { writeConsumerSite, RUNNABLE } from "../helpers/consumer.js";
 import { resolveModel } from "../../src/model/resolve.js";
+import { AI_DISABLED_EXTENSIONS } from "@freva-org/jupyterlite-climateclaw/site";
 import {
-  AI_DISABLED_EXTENSIONS,
   LAB_DISABLED_EXTENSIONS,
   checkNotebookSite,
   labSiteOptions,

@@ -157,8 +157,31 @@ export interface EvidenceResult {
   diagnostics: Diagnostic[];
 }
 
+/**
+ * `pkg:npm/<name>@<version>#<path>` without its version, so a root can name a module inside a
+ * package (`pkg:npm/%40freva-org/browser-python#dist/ui/python-bridge.js`) without pinning the
+ * version the build happens to install.
+ */
+function unversioned(moduleId: string): string {
+  return moduleId.replace(/^(pkg:npm\/(?:%40[^/]+\/)?[^@#/]+)@[^#]*#/, "$1#");
+}
+
+function underRoot(moduleId: string, root: string): boolean {
+  if (moduleId === root || moduleId.startsWith(root)) return true;
+  return root.includes("#") && unversioned(moduleId).startsWith(root);
+}
+
+/**
+ * Owned: under one of the plan's roots and not one of the modules it shares. A package can hold a
+ * module several features reach - the playground's registry inside `@freva-org/browser-python`,
+ * which a dataset tree imports without any interpreter - and a plan owning the package says so by
+ * listing that module as shared, rather than by every other plan having to enumerate the rest.
+ */
 function ownedBy(plan: ComponentEvidencePlan, moduleId: string): boolean {
-  return plan.ownedModuleRoots.some((root) => moduleId === root || moduleId.startsWith(root));
+  return (
+    plan.ownedModuleRoots.some((root) => underRoot(moduleId, root)) &&
+    !plan.allowedSharedModules.some((root) => underRoot(moduleId, root))
+  );
 }
 
 function copiedUnder(plan: ComponentEvidencePlan, file: string): boolean {

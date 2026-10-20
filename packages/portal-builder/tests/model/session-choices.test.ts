@@ -5,7 +5,7 @@
 
 import { validateSetup } from "@freva-org/browser-python/session";
 import { describe, expect, it } from "vitest";
-import { notebookSeedPath as clientSeedPath } from "../../client/notebook-paths.js";
+import { notebookSeedPath as clientSeedPath } from "@freva-org/browser-python/ui";
 import type { RawPythonPlaygroundBase } from "../../src/config/types.js";
 import { DiagnosticBag } from "../../src/diagnostics.js";
 import { notebookSeedPath, planNotebook } from "../../src/model/notebook.js";

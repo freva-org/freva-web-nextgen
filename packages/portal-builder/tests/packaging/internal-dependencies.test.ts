@@ -29,6 +29,7 @@ function version(pkg: string): string {
 /** Workspace directory name for each `@freva-org/*` dependency the builder declares. */
 const WORKSPACE = new Map([
   ["@freva-org/browser-python", "browser-python"],
+  ["@freva-org/cosmos-backdrop", "cosmos-backdrop"],
   ["@freva-org/data-inspector", "data-inspector"],
   ["@freva-org/databrowser", "databrowser"],
   ["@freva-org/dataset-tree", "dataset-tree"],

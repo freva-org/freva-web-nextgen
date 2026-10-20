@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO = resolve(PKG, "../..");
+const packageJson = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8"));
 
 function packResult(printed) {
   const starts = [];
@@ -111,58 +112,57 @@ try {
       // a portal that cannot mount its own footer badge or draw its own backdrop.
       "client/components/footer-badge.ts",
       "client/components/contour.ts",
-      // The Cosmos island, the scene builder and the builder's declared boundary.
-      "client/components/cosmos.ts",
-      "client/components/cosmos/scene.js",
-      "client/components/cosmos/scene.d.ts",
-      "client/components/cosmos/dom.ts",
       // The dataset-tree island and the portal-side stylesheet it imports. Without the second
       // the block builds and renders unstyled - a break a file list catches and a smoke test
       // does not.
       "client/components/dataset-tree.ts",
-      "client/components/dataset-tree.css",
       "client/components/dataset-tree-styles.ts",
-      // The overlay transaction the maximized sheet is: without it a consumer's build has a
-      // control that toggles an attribute and no sheet to show for it.
-      "client/components/tree-maximize.ts",
       // Both source loaders. A consumer whose landing declares `s3:` and whose package shipped only
       // the snapshot one gets a tree that builds and cannot list anything.
       "client/components/tree-sources.ts",
       "client/components/tree-source-snapshot.ts",
       "client/components/tree-source-s3.ts",
-      // The playground's two topologies and the separate-origin document's own entry. The two
-      // chunk loaders make "the framed parent contains no console" a property of the emitted
-      // graph, and a package missing either builds a portal that cannot decide which it is.
-      "client/components/python-chunks.ts",
-      "client/components/python-chunks-local.ts",
-      "client/components/python-chunks-framed.ts",
+      // The separate-origin playground document's own entry. The playground window, its two
+      // chunk loaders and the code figures are @freva-org/browser-python/ui's; the Cosmos scene
+      // is @freva-org/cosmos-backdrop's; the tree block's stylesheet and maximize sheet are
+      // @freva-org/dataset-tree/ui's - checked as installed dependencies below.
       "client/playground-origin.ts",
-      "client/components/python-ready.ts",
     ]) {
       assert.ok(names.includes(island), `${island} is missing`);
     }
   });
 
-  await check("the archive carries the Cosmos sky art, and no object bodies", () => {
-    const assets = names.filter((n) => n.startsWith("client/components/cosmos/scene/"));
-    const webp = assets.filter((n) => n.endsWith(".webp")).sort();
-    // No object bodies: the static scene draws no satellite, aircraft, vessel, sonde train or
-    // buoy, so those WebP files are not shipped. An archive carrying bytes nothing can ask for
-    // is an archive whose contents do not describe its behaviour. What remains is the sky's own
-    // exported artwork, which the renderer names directly.
-    assert.deepEqual(webp, [
-      "client/components/cosmos/scene/sky/moon.webp",
-      "client/components/cosmos/scene/sky/sky-sphere.webp",
-      "client/components/cosmos/scene/sky/sun.webp",
-    ]);
+  await check("the shared islands are dependencies, not copies in this archive", () => {
+    // One implementation of each: the archive must not carry its own copy of a module that moved
+    // to the package that draws it, and the dependencies that carry them must be declared.
+    for (const moved of [
+      "client/components/cosmos.ts",
+      "client/components/python-playground.ts",
+      "client/components/code-run.ts",
+      "client/components/notebook-sheet.ts",
+      "client/layers.ts",
+      "client/components/tree-maximize.ts",
+    ]) {
+      assert.ok(!names.includes(moved), `${moved} is still in the archive`);
+    }
     assert.ok(
-      assets.includes("client/components/cosmos/scene/sky/MANIFEST.json"),
-      "the sky art manifest is missing",
+      !names.some((n) => n.endsWith(".webp") && n.includes("cosmos")),
+      "Cosmos art is still in the archive",
     );
-    // And the manifest that documents them travels with them.
+    for (const dependency of [
+      "@freva-org/browser-python",
+      "@freva-org/cosmos-backdrop",
+      "@freva-org/dataset-tree",
+      "@freva-org/freva-client-terminal",
+    ]) {
+      assert.ok(packageJson.dependencies[dependency], `${dependency} is not a dependency`);
+    }
+    // The notebook package stays an optional peer: the notebook sheet is browser-python's
+    // (`/ui/notebook`), so a portal without a notebook installs no JupyterLab.
     assert.ok(
-      assets.includes("client/components/cosmos/scene/README.md"),
-      "the asset README is missing",
+      !packageJson.dependencies["@freva-org/jupyterlite-freva-data"] &&
+        packageJson.peerDependenciesMeta["@freva-org/jupyterlite-freva-data"]?.optional,
+      "@freva-org/jupyterlite-freva-data must be an optional peer, not a dependency",
     );
   });
 
@@ -227,6 +227,8 @@ try {
     "dataset-tree",
     // The interpreter behind the block's Python playground, on the same terms.
     "browser-python",
+    // The Cosmos backdrop, which has never been published at all.
+    "cosmos-backdrop",
   ];
 
   await check("every workspace package the builder installs is packed from this checkout", () => {

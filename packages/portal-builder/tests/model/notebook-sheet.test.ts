@@ -5,7 +5,7 @@ import { cleanupFixtures } from "../helpers/fixture.js";
 import { writeConsumerSite } from "../helpers/consumer.js";
 import { resolveModel } from "../../src/model/resolve.js";
 import { hostPolicy } from "../../src/artifact/manifests.js";
-import { notebookRequestFor, notebookUrl } from "../../client/components/notebook-url.js";
+import { notebookRequestFor, notebookUrl } from "@freva-org/browser-python/ui/notebook";
 import { projectRuntime, generateEntryModule } from "../../src/artifact/runtime-projection.js";
 
 afterAll(cleanupFixtures);

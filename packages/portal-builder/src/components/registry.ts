@@ -74,6 +74,10 @@ export const COMPONENT_REGISTRY: Record<ComponentKind, ComponentRegistration> = 
       // first Inspect rather than fetching it from a CDN. Owned by neither this plan nor the
       // dataset tree's - see the note in `src/model/dataset-tree.ts`.
       "pkg:npm/%40freva-org/data-inspector",
+      // The terminal package's layer manager is shared by every floating surface - the Python
+      // window, the notebook sheet, a maximized tree - and owned by none; carved out of the
+      // package root above.
+      "pkg:npm/%40freva-org/freva-client-terminal#dist/layers.",
     ],
     allowedThemeTokens: ["colorAccent", "colorSurface", "colorText", "colorBorder"],
     // The component injects its own stylesheet as a `<style>` element, a deliberate part of

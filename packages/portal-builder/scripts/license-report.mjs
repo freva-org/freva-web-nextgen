@@ -48,6 +48,14 @@ const DISTRIBUTED_ROOTS = {
   "@freva-org/ts-oidc-auth-client": "imported by the auth island",
   "@freva-org/freva-badge": "its dist/ is copied into every artifact as _badge/",
   katex: "its stylesheet, and the fonts inlined in it, are published with the artifact",
+  "@freva-org/cosmos-backdrop": "imported by the Cosmos backdrop island, with its sky art",
+};
+
+const reasonOf = (root) => (typeof root === "string" ? root : root?.reason);
+/** The dependencies the closure follows from a root: all of them, or only the ones named. */
+const followed = (name) => {
+  const root = DISTRIBUTED_ROOTS[name];
+  return typeof root === "object" && root ? new Set(root.follow) : null;
 };
 
 /**
@@ -70,9 +78,18 @@ function distributedClosure(lock) {
 
   const seen = new Map();
   const queue = [];
+  /** Lockfile paths whose dependencies are followed only partially, and which ones. */
+  const partial = new Map();
   for (const name of Object.keys(DISTRIBUTED_ROOTS)) {
     const path = resolveFrom("packages/portal-builder", name) ?? resolveFrom("", name);
-    if (path) queue.push(path);
+    if (!path) continue;
+    queue.push(path);
+    const only = followed(name);
+    if (only) {
+      partial.set(path, only);
+      const entry = packages[path];
+      if (entry?.link && entry.resolved) partial.set(entry.resolved, only);
+    }
   }
   while (queue.length > 0) {
     const path = queue.shift();
@@ -82,10 +99,12 @@ function distributedClosure(lock) {
     seen.set(path, entry);
     // Follow a workspace link to its directory so the closure sees the package, not the symlink.
     const real = entry.link && entry.resolved ? entry.resolved : path;
+    const only = partial.get(path) ?? partial.get(real);
     for (const name of Object.keys({
       ...(packages[real]?.dependencies ?? entry.dependencies ?? {}),
       ...(packages[real]?.peerDependencies ?? entry.peerDependencies ?? {}),
     })) {
+      if (only && !only.has(name)) continue;
       const next = resolveFrom(real, name);
       if (next && !seen.has(next)) queue.push(next);
     }
@@ -142,7 +161,7 @@ const components = [];
 const emitted = new Set();
 for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
   const entry = readPackage(name);
-  const reason = DISTRIBUTED_ROOTS[name];
+  const reason = reasonOf(DISTRIBUTED_ROOTS[name]);
   const version = entry?.json.version ?? "unresolved";
   emitted.add(`${name}@${version}`);
   // A direct dependency can be distributed WITHOUT being a named root: another root pulls it

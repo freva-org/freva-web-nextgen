@@ -23,8 +23,10 @@ import { THEME_PRESETS, resolveThemeCss, themeNames } from "../../src/themes/reg
 afterAll(cleanupFixtures);
 
 const PKG = join(REPO_ROOT, "packages", "portal-builder");
-const SCENE_DIR = join(PKG, "client", "components", "cosmos", "scene");
-const SCENE = join(PKG, "client", "components", "cosmos", "scene.js");
+/** The island, renderer and art are `@freva-org/cosmos-backdrop`'s; this build publishes them. */
+const COSMOS = join(REPO_ROOT, "packages", "cosmos-backdrop", "src");
+const SCENE_DIR = join(COSMOS, "cosmos", "scene");
+const SCENE = join(COSMOS, "cosmos", "scene.js");
 
 /**
  * The renderer's EXECUTABLE text, with comments removed. Every assertion about what the scene does
@@ -41,7 +43,7 @@ function sceneCode(): string {
 
 /** The island's executable text, on the same terms and for the same reason. */
 function islandCode(): string {
-  return stripComments(readFileSync(join(PKG, "client", "components", "cosmos.ts"), "utf8"));
+  return stripComments(readFileSync(join(COSMOS, "index.ts"), "utf8"));
 }
 
 /** The files the renderer actually asks for, read from the renderer itself. */
@@ -364,7 +366,7 @@ describe("containment", () => {
 
   it("imports the cosmos island literally, and only for a cosmos backdrop", () => {
     const projection = readFileSync(join(PKG, "src", "artifact", "runtime-projection.ts"), "utf8");
-    expect(projection).toContain('CLIENT("components/cosmos.ts")');
+    expect(projection).toContain('PKG("@freva-org/cosmos-backdrop")');
     // Emitted only when the resolved backdrop is cosmos; every other preset gets no import at all.
     expect(projection).toContain('projection.backdrop?.kind === "cosmos"');
   });
@@ -456,8 +458,8 @@ describe("the scene never moves", () => {
     // One import, and it is the static scene.
     const imports = [...island.matchAll(/import\("([^"]+)"\)/g)].map((m) => m[1]);
     expect(imports).toEqual(["./cosmos/scene.js"]);
-    expect(existsSync(join(PKG, "client", "components", "cosmos", "candidate.js"))).toBe(false);
-    expect(existsSync(join(PKG, "client", "components", "cosmos", "candidate.d.ts"))).toBe(false);
+    expect(existsSync(join(COSMOS, "cosmos", "candidate.js"))).toBe(false);
+    expect(existsSync(join(COSMOS, "cosmos", "candidate.d.ts"))).toBe(false);
   });
 
   it("promotes no layer it was not asked to, and asks for none", () => {

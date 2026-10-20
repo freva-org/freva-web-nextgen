@@ -13,75 +13,29 @@
  * recipe imports, since a button that prints `ModuleNotFoundError` is worse than no button.
  * `requires` keeps the two apart.
  *
- * The bytes live once, in `schema/tree-recipes.json`: the build hashes the templates and the page
- * renders them, and two copies of a string whose digest is a security boundary is not a
+ * The bytes live once, in `@freva-org/dataset-tree/recipes`: the build hashes the templates and the
+ * page renders them, and two copies of a string whose digest is a security boundary is not a
  * duplication anyone should keep in step. This module is the build's reader; the page's is
- * `client/components/tree-recipes.ts`, and `dataset-tree.ts`'s evidence plan owns both.
+ * `client/components/tree-recipes.ts`.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { SCHEMA_DIR } from "../util/package.js";
+import {
+  TREE_RECIPES as SHARED_RECIPES,
+  runnableRecipes as sharedRunnableRecipes,
+  type TreeRecipe,
+} from "@freva-org/dataset-tree/recipes";
 
-/** One way to open a store, and what it needs to run. */
-export interface TreeRecipe {
-  /** Tab label. */
-  id: string;
-  label: string;
-  /**
-   * Prose above the snippet, when the snippet does not already say it. Absent from the HTTP
-   * recipe on purpose: "open the store directly over HTTPS" above `xr.open_dataset("https://...")`
-   * is the code in English, costing a line in a panel already nested inside a details row.
-   */
-  description?: string;
-  /**
-   * The source, with `{{STORE}}` where the validated store value goes. The placeholder sits
-   * inside a Python string literal in every recipe, and the value reaching it is restricted to a
-   * character set with no double quote, backslash or control character, and is inserted literally
-   * and escaped as the literal's body, so the substitution cannot end the literal it lands in.
-   * See `bindStore` and `renderRecipe`.
-   */
-  template: string;
-  /** Which form of the store's address the hole takes. */
-  parameter: "https-url" | "s3-path";
-  /** Pyodide packages the snippet imports. Empty means it runs on a bare interpreter. */
-  requires: readonly string[];
-}
+export type { TreeRecipe };
 
 /**
- * The one way to open a Zarr store on an S3-compatible gateway, anonymously.
- *
- * The recipes are read from `schema/tree-recipes.json`, not written here, for packaging reasons:
- * the build hashes each template and decides which are runnable, while
- * `client/components/tree-recipes.ts` renders one into a panel, and those two sit on opposite
- * sides of a published boundary - everything under `src/` reaches a consumer only as compiled
- * `dist/`, while `client/` ships as TypeScript for the consumer's own bundler. A module in one
- * imported from the other is either not shipped or not resolvable, so the data lives in a
- * published directory, both halves read the same bytes, and the digest is over those bytes.
- *
- * `xarray` over HTTPS is the only recipe shipped, because it is the one a browser can run - the
- * interpreter registers a filesystem for it. An `s3fs` route needs botocore and a credential
- * chain, is in no browser profile and could carry no run control; a deployment that wants one
- * adds it as its own example.
- *
- * `chunks={}` is deliberately absent from the HTTP recipe and the block ends in `print(ds)`; both
- * are recorded in `schema/tree-recipes.json` and explained in this package's docs. `chunks={}`
- * needs `dask`, which is not a Pyodide package, and a bare trailing expression prints nothing
- * under the file semantics a registered example runs with.
+ * The one way to open a Zarr store on an S3-compatible gateway, anonymously: the shared
+ * `TREE_RECIPES` of `@freva-org/dataset-tree/recipes` (see there for the template's shape). The
+ * build hashes those bytes, the page renders the same ones, and `schema/tree-recipes.json`
+ * publishes them for tools that read files; a test keeps it identical.
  */
-interface RecipeFile {
-  schemaVersion: number;
-  recipes: TreeRecipe[];
-}
-
-export const TREE_RECIPES: readonly TreeRecipe[] = (
-  JSON.parse(readFileSync(join(SCHEMA_DIR, "tree-recipes.json"), "utf8")) as RecipeFile
-).recipes;
+export const TREE_RECIPES: readonly TreeRecipe[] = SHARED_RECIPES;
 
 /** Which recipes a profile can actually execute. */
 export function runnableRecipes(profilePackages: readonly string[]): readonly string[] {
-  const have = new Set(profilePackages);
-  return TREE_RECIPES.filter((recipe) => recipe.requires.every((name) => have.has(name))).map(
-    (recipe) => recipe.id,
-  );
+  return sharedRunnableRecipes(profilePackages, TREE_RECIPES);
 }
