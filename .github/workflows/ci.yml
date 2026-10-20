@@ -200,7 +200,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build -w $PKG
+        run: npm run build -w @freva-org/freva-client-terminal -w $PKG
 
       - name: Runtime manifest id
         id: runtime
@@ -325,7 +325,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build -w $PKG
+        run: npm run build -w @freva-org/freva-client-terminal -w $PKG
 
       # Packs, installs elsewhere and imports from there; then the size budget, the
       # console layer's weight (no jQuery in the ROOT bundle) and the README figures.
