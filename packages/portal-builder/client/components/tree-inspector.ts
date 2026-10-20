@@ -24,7 +24,7 @@
  * that is not a store, so a failure says so instead of blaming the reader's sign-in.
  */
 
-import { mountLayer, type Layer } from "../layers.js";
+import { mountLayer, type Layer } from "@freva-org/freva-client-terminal/layers";
 
 /**
  * What the inspector needs to open a store: its address, and nothing else. Not its name - the

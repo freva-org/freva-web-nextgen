@@ -5,6 +5,7 @@
 // point: the bundler cannot drop what it cannot prove unused, so a disabled component would
 // still ship.
 
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { PACKAGE_ROOT } from "../util/package.js";
 import { NOTEBOOK_PATH, underBase } from "../model/notebook.js";
@@ -234,6 +235,15 @@ export function projectRuntime(model: ResolvedPortalModel): RuntimeProjection {
 const CLIENT = (file: string): string => JSON.stringify(join(PACKAGE_ROOT, "client", file));
 
 /**
+ * A shared island that belongs to the package that draws it - the playground and code figures to
+ * `@freva-org/browser-python/ui`, the notebook links to `@freva-org/browser-python/ui/notebook`, the
+ * Cosmos backdrop to its own package - named by absolute path like the builder's own, so the
+ * generated entry resolves the same file whatever directory the consumer builds from.
+ */
+const PKG = (specifier: string): string =>
+  JSON.stringify(fileURLToPath(import.meta.resolve(specifier)));
+
+/**
  * The generated island entry. Its shape is deliberately boring: literal imports,
  * one branch for the technical callback route, no dynamic component lookup.
  */
@@ -244,7 +254,7 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
     "// imported here cannot be in the bundle, which is how a disabled component is",
     "// proved absent rather than merely hidden.",
     `import { initShell } from ${CLIENT("shell.ts")};`,
-    `import { initCodeCopy } from ${CLIENT("code-copy.ts")};`,
+    `import { initCodeCopy } from ${PKG("@freva-org/browser-python/ui/copy")};`,
   ];
 
   if (projection.auth) {
@@ -317,7 +327,7 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
     lines.push(`import { loadInspector } from ${CLIENT("components/tree-inspector-loader.ts")};`);
   }
   if (projection.pythonPlayground) {
-    lines.push(`import { preparePythonPlayground } from ${CLIENT("components/python-ready.ts")};`);
+    lines.push(`import { preparePythonPlayground } from ${PKG("@freva-org/browser-python/ui")};`);
     // ONE of the two chunk loaders, chosen here because the topology is configuration. A
     // single module holding both `import()` calls behind an `if` is correct at run time and
     // worthless as evidence: naming `@freva-org/browser-python/console` anywhere in a module
@@ -327,24 +337,26 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
     // console" a checkable property of the artifact.
     lines.push(
       projection.pythonPlayground.framed
-        ? `import { loadFramedChunks } from ${CLIENT("components/python-chunks-framed.ts")};`
-        : `import { loadLocalChunks } from ${CLIENT("components/python-chunks-local.ts")};`,
+        ? `import { loadFramedChunks } from ${PKG("@freva-org/browser-python/ui/framed")};`
+        : `import { loadLocalChunks } from ${PKG("@freva-org/browser-python/ui/local")};`,
     );
     // Literal, and only when a page has one. See `RuntimeProjection.pythonPlayground.content`.
     if (projection.pythonPlayground.content) {
-      lines.push(`import { mountRunnableCode } from ${CLIENT("components/code-run.ts")};`);
+      lines.push(`import { mountRunnableCode } from ${PKG("@freva-org/browser-python/ui/code")};`);
     }
   }
   // One branch per backdrop kind, each importing its module literally: a guard on "a backdrop
   // exists" would import the contour module for a cosmos build (the literal-import rule).
   if (projection.notebookLinks) {
-    lines.push(`import { initNotebookLinks } from ${CLIENT("components/notebook-links.ts")};`);
+    lines.push(
+      `import { initNotebookLinks } from ${PKG("@freva-org/browser-python/ui/notebook")};`,
+    );
   }
   if (projection.backdrop?.kind === "contour") {
     lines.push(`import { mountContourBackdrop } from ${CLIENT("components/contour.ts")};`);
   }
   if (projection.backdrop?.kind === "cosmos") {
-    lines.push(`import { mountCosmosBackdrop } from ${CLIENT("components/cosmos.ts")};`);
+    lines.push(`import { mountCosmosBackdrop } from ${PKG("@freva-org/cosmos-backdrop")};`);
   }
 
   lines.push("", `const RUNTIME = ${JSON.stringify(projection, null, 2)};`, "");
@@ -462,7 +474,7 @@ export function generateEntryModule(model: ResolvedPortalModel): string {
   if (projection.notebook) {
     lines.push(
       '  if (document.querySelector("[data-portal-notebook]")) {',
-      `    void import(${CLIENT("components/notebook-embed.ts")}).then((m) => m.mountNotebookEmbeds());`,
+      `    void import(${PKG("@freva-org/browser-python/ui/notebook/embed")}).then((m) => m.mountNotebookEmbeds());`,
       "  }",
     );
   }

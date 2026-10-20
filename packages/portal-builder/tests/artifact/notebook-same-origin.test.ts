@@ -15,7 +15,7 @@ import { pageMetaPolicyProblem } from "@freva-org/jupyterlite-freva-kernel/prepa
 import { resolveModel } from "../../src/model/resolve.js";
 import { planNotebook, withMetaPolicy, type NotebookPlan } from "../../src/model/notebook.js";
 import { portalBaseUrl } from "../../src/model/python-playground.js";
-import { portalBaseSource } from "../../client/portal-base.js";
+import { portalBaseSource } from "@freva-org/browser-python/ui";
 import { verifyArtifact } from "../../src/verify/verify.js";
 import {
   authCallbackEntries,

@@ -26,8 +26,8 @@ import type {
 import type { ExampleRegistry } from "@freva-org/browser-python/embed";
 import type { SessionController, SessionSetup } from "@freva-org/browser-python/session";
 import type { PlaygroundArtifactData } from "../src/model/types.js";
-import { renderChooser } from "./components/session-chooser.js";
-import { portalBaseSource } from "./portal-base.js";
+import { renderChooser } from "@freva-org/browser-python/ui/chooser";
+import { portalBaseSource } from "@freva-org/browser-python/ui";
 
 /**
  * The child document's own layout, adopted at run time rather than linked: fill the frame, let the

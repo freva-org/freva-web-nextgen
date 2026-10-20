@@ -15,7 +15,7 @@
  */
 
 import { mountDatasetTree } from "@freva-org/dataset-tree";
-import "./dataset-tree.css";
+import "@freva-org/dataset-tree/ui.css";
 import type {
   DatasetAccessExample,
   DatasetTreeNode,
@@ -24,9 +24,14 @@ import type {
 } from "@freva-org/dataset-tree";
 import type { DatasetTreeCatalog, DatasetTreeCatalogNode } from "@freva-org/dataset-tree/snapshot";
 import { adoptTreeStyles } from "./dataset-tree-styles.js";
-import { createTreeMaximize } from "./tree-maximize.js";
-import { openNotebook, type NotebookTarget } from "./notebook-sheet.js";
-import { JUPYTER_LOGO, JUPYTER_LOGO_DARK, jupyterLogo } from "./jupyter-logo.js";
+import { settleBlockBar, wireMaximizeControls } from "@freva-org/dataset-tree/ui";
+import { mountLayer } from "@freva-org/freva-client-terminal/layers";
+import { openNotebook, type NotebookTarget } from "@freva-org/browser-python/ui/notebook/sheet";
+import {
+  JUPYTER_LOGO,
+  JUPYTER_LOGO_DARK,
+  jupyterLogo,
+} from "@freva-org/browser-python/ui/notebook";
 import type { TreeLoaders, TreeS3Config } from "./tree-sources.js";
 import type { InspectorLoader } from "./tree-inspector-loader.js";
 import { STORE_PLACEHOLDER, TREE_RECIPES, bindStore, renderRecipe } from "./tree-recipes.js";
@@ -35,7 +40,8 @@ import {
   tryPython,
   type ExampleSource,
   type PythonPlaygroundConfig,
-} from "../python-bridge.js";
+  type RegisteredPythonBlock,
+} from "@freva-org/browser-python/ui/bridge";
 
 /** What the renderer stamps on each host. Read once, never written. */
 interface HostData {
@@ -325,7 +331,7 @@ export function mountDatasetTreeBlocks(loaders: TreeLoaders = {}): Promise<void>
     host.dataset.portalDatasetTreeMounted = "yes";
     mounted.push(mountOne(host, loaders).catch((error: unknown) => reportFailure(host, error)));
   }
-  wireExpandControls();
+  wireMaximizeControls(document, { mountLayer });
   // A promise that SETTLES rather than one that succeeds. The caller is the generated entry, which
   // prepares the Python playground once every block has registered itself; a block that failed to
   // mount has still finished, and one broken block must not leave the launcher unbuilt for the rest
@@ -403,11 +409,12 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
   const accessExamples = catalog
     ? snapshotAccessExamples(catalog, python, host)
     : liveAccessExamples(readS3Config(host), python);
-  // A LIVE block registers its recipe TEMPLATES, once, as the sources this page may run. The tree
+  // A live block registers its recipe templates, once, as the sources this page may run. The tree
   // sends a name, a digest and the store's own node id; the runner looks the name up here, checks
   // the digest against the build's, and substitutes the store into the template it holds - so the
   // program that reaches the interpreter is the one the build hashed and the archive path is a
   // parameter, never source composed in the page.
+  let registered: RegisteredPythonBlock | null = null;
   if (!catalog && python) {
     const sources = new Map<string, ExampleSource>();
     for (const recipe of TREE_RECIPES) {
@@ -420,7 +427,10 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
     // The rule it enforces: a value that is not an `s3://` identifier under one of the declared
     // roots, in a character set with no quote, backslash or control character, produces no program.
     const store = python.store;
-    registerPythonBlock({
+    // The notebook can open one of this block's stores only when its data panel holds this tree
+    // (`datasets`); a page may carry several trees and the panel one. Said per bound run.
+    const panelHoldsThisTree = readNotebookTarget(host)?.datasets === true;
+    registered = registerPythonBlock({
       host,
       config: python,
       sources,
@@ -433,7 +443,13 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
         const recipeId = id.startsWith("recipe:") ? id.slice("recipe:".length) : id;
         const recipe = TREE_RECIPES.find((candidate) => candidate.id === recipeId);
         if (!recipe) return null;
-        return { title: example.title, source: renderRecipe(recipe, binding, store.endpoint) };
+        return {
+          title: example.title,
+          source: renderRecipe(recipe, binding, store.endpoint),
+          ...(panelHoldsThisTree && request.datasetId
+            ? { notebookDataset: request.datasetId }
+            : {}),
+        };
       },
     });
   }
@@ -488,12 +504,13 @@ async function mountOne(host: HTMLElement, loaders: TreeLoaders): Promise<void> 
       ? {
           python: {
             enabled: true,
-            // Reported through the bridge, which holds no playground of its own. This island must
-            // not name the coordinator even in a dynamic `import()`: that is still an edge in the
-            // module graph, and the bundler would emit the interpreter's chunk for every portal
-            // with a tree. The bridge keeps "has a tree" and "has an interpreter" separate claims.
-            // A refusal is already said in the window; the tree has no run state to show.
-            onTry: (event: TryPythonEvent) => void tryPython(event).catch(() => undefined),
+            // Reported through the bridge, which holds no playground of its own: naming the
+            // coordinator here, even in a dynamic `import()`, would make the bundler emit the
+            // interpreter's chunk for every portal with a tree. A refusal is already said in the
+            // window. This block's own report, so a recipe is bound by this tree's binder (its
+            // stores, its notebook) when another tree registered the same recipe ids.
+            onTry: (event: TryPythonEvent) =>
+              void (registered?.tryPython ?? tryPython)(event).catch(() => undefined),
           },
         }
       : {}),
@@ -536,118 +553,4 @@ function warnIndexOnce(url: string, error: unknown): void {
     `[portal] dataset-tree search index ${url} could not be used; search covers loaded branches only.`,
     error instanceof Error ? error.message : error,
   );
-}
-
-/**
- * What is left of the block's header row once its control has moved into the panel.
- *
- * A heading and a summary, or nothing at all - and when it is nothing, the row goes with it. The
- * bar carries a `min-height` so a control that grows on hover cannot reflow the line, and on an
- * empty div that is 34px of blank page above the panel. `hidden` rather than a class, so the row is
- * out of the accessibility tree as well as off the screen. The attribute is what the stylesheet
- * reads where there IS a heading: the row no longer holds a control, so it reserves no height.
- */
-function settleBlockBar(panel: HTMLElement | null | undefined): void {
-  const bar = panel?.querySelector<HTMLElement>(".portal-dataset-tree-bar");
-  if (!bar) return;
-  bar.dataset.portalTreeBar = "text";
-  const head = bar.querySelector<HTMLElement>(".portal-dataset-tree-head");
-  if (head && head.children.length === 0) bar.hidden = true;
-}
-
-/**
- * The maximize control: the block becomes the screen, and Escape brings it back.
- *
- * The tree is NOT re-mounted - `createTreeMaximize` relocates the block's own node into the
- * portal's overlay root - so every branch the visitor had opened, the node they had chosen and
- * the tree's scroll position survive. Re-mounting would throw all three away, which is what makes
- * a maximize control feel broken.
- *
- * THE LABEL NEVER SAYS "COLLAPSE": the tree's own toolbar has an `Expand all` / `Collapse` pair
- * for its branches, so a second `Collapse` beside it would be two controls with the same word,
- * one collapsing branches and one leaving full screen. It reads `Maximize` / `Exit full screen`.
- *
- * Three ways out, because a full-screen surface with one way out is a trap: the button, Escape
- * and the browser Back button. Back is wired through a history entry, so a visitor who maximized
- * the tree and reached for Back gets the page they were on - the one case where taking over
- * history is right, because a maximized workspace is a place rather than a menu.
- */
-function wireExpandControls(): void {
-  const buttons = document.querySelectorAll<HTMLButtonElement>("[data-portal-tree-expand]");
-  for (const button of buttons) {
-    const panel = button.closest<HTMLElement>("[data-portal-tree-panel]");
-    if (!panel || button.dataset.portalTreeWired === "yes") continue;
-    button.dataset.portalTreeWired = "yes";
-    const text = button.querySelector<HTMLElement>(".portal-tree-expand-text");
-
-    // WHERE THE CONTROL LIVES DEPENDS ON WHAT IT IS FOR. In the page it is one of the panel's
-    // controls, so it stands in the toolbar beside `Collapse all`. Full screen it is the way OUT
-    // of a surface that has taken over the screen, and the corner is where every full-screen
-    // viewer, video player and lightbox puts that. So it moves, and it moves BACK: `slot` is
-    // remembered as a parent plus a next sibling rather than as an index, because the toolbar's
-    // contents are the component's business, and `insertBefore(node, null)` appends, which is
-    // right when the control was last in the row.
-    let slot: { parent: Node; before: Node | null } | null = null;
-    const header = panel.querySelector<HTMLElement>(".portal-dataset-tree-bar");
-
-    const sheet = createTreeMaximize(panel, {
-      onChange: (on) => {
-        button.setAttribute("aria-expanded", String(on));
-        const label = on ? "Exit full screen" : "Maximize";
-        if (text) text.textContent = label;
-        // The accessible name follows the visible one; a glyph-only control whose name went stale
-        // is worse than one that never had a label.
-        button.setAttribute("aria-label", on ? label : "Maximize the dataset browser");
-
-        if (on && header) {
-          slot = { parent: button.parentNode!, before: button.nextSibling };
-          // The header row is hidden on a block that configured neither a heading nor a summary,
-          // where it would be an empty band above the panel. In the sheet it has a job again, so it
-          // comes back, and it goes away again on the way out.
-          if (header.hidden) {
-            header.hidden = false;
-            header.dataset.portalTreeBarRevealed = "yes";
-          }
-          header.append(button);
-        } else if (!on && slot) {
-          // MOVING A FOCUSED ELEMENT BLURS IT, so the focus is put back after the move.
-          // `createTreeMaximize` restores the focus to this control and THEN reports the change,
-          // which is right for a control that has not moved. This one has: taking it out of the
-          // sheet's header drops it from the document for an instant and the focus lands on
-          // `<body>`, leaving a visitor who pressed Escape at the top of the page.
-          const hadFocus = document.activeElement === button;
-          slot.parent.insertBefore(button, slot.before);
-          if (hadFocus) button.focus();
-          slot = null;
-          if (header?.dataset.portalTreeBarRevealed === "yes") {
-            header.hidden = true;
-            delete header.dataset.portalTreeBarRevealed;
-          }
-        }
-      },
-    });
-
-    const collapse = (fromPop: boolean): void => {
-      if (!sheet.isOpen()) return;
-      sheet.close();
-      // Only unwind history when we are not already being unwound BY it.
-      if (!fromPop && history.state?.portalTreeExpanded) history.back();
-    };
-
-    button.addEventListener("click", () => {
-      if (sheet.isOpen()) {
-        collapse(false);
-        return;
-      }
-      sheet.open();
-      history.pushState({ portalTreeExpanded: true }, "");
-    });
-
-    document.addEventListener("keydown", (event: KeyboardEvent) => {
-      if (event.key === "Escape") collapse(false);
-    });
-    // A click outside the sheet is handled by the BACKDROP, a real element under the sheet rather
-    // than a pseudo-element that can be seen and not clicked, so nothing here tests containment.
-    window.addEventListener("popstate", () => collapse(true));
-  }
 }

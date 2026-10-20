@@ -29,3 +29,14 @@ describe("renderRecipe", () => {
     expect(pythonStringBody(`a"b'c\\d\ne\u0000`)).toBe(`a\\"b\\'c\\\\d\\x0ae\\x00`);
   });
 });
+
+describe("the shared recipes", () => {
+  it("schema/tree-recipes.json publishes exactly the recipes the shared package ships", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { TREE_RECIPES } = await import("@freva-org/dataset-tree/recipes");
+    const file = JSON.parse(
+      readFileSync(new URL("../../schema/tree-recipes.json", import.meta.url), "utf8"),
+    ) as { recipes: unknown[] };
+    expect(JSON.parse(JSON.stringify(TREE_RECIPES))).toEqual(file.recipes);
+  });
+});

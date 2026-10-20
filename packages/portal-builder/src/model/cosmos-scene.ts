@@ -20,12 +20,19 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { join, posix } from "node:path";
+import { dirname, join, posix } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DiagnosticBag } from "../diagnostics.js";
-import { PACKAGE_ROOT, sha256 } from "../util/package.js";
+import { sha256 } from "../util/package.js";
 
-/** Where the bodies live in the package. Beside the renderer that names them. */
-const SOURCE_DIR = join(PACKAGE_ROOT, "client", "components", "cosmos", "scene");
+/**
+ * Where the art lives: `@freva-org/cosmos-backdrop`, beside the renderer that names it. Resolved
+ * through the package's own `./sky/*` export, so the files published are exactly the files the
+ * package ships.
+ */
+const SOURCE_DIR = dirname(
+  dirname(fileURLToPath(import.meta.resolve("@freva-org/cosmos-backdrop/sky/MANIFEST.json"))),
+);
 
 /** Where they land in the artifact. Underscored, like `_portal` and `_badge`. */
 const ROOT = "_cosmos";

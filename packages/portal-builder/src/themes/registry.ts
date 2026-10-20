@@ -3,6 +3,8 @@
 // enabled a feature" cannot happen by accident, and switching `preset: freva` to
 // `preset: waterpark` provably changes only styling.
 
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { compareCodePoints } from "../util/order.js";
 import { contrast, fromHsl, isHex, luminance, mix, toHsl } from "./color.js";
 import { derivePalette, type ColorMode, type ModeTokens, type PaletteFinding } from "./palette.js";
@@ -157,6 +159,16 @@ const CONTOUR_CSS = `
 }
 `;
 
+/**
+ * The Cosmos scene's own rules (the structure the backdrop island builds inside `.portal-cosmos`)
+ * are `@freva-org/cosmos-backdrop`'s, so every site that mounts the scene styles it from one file.
+ * The theme below keeps the shell and landing composition around it.
+ */
+const COSMOS_SCENE_CSS = readFileSync(
+  createRequire(import.meta.url).resolve("@freva-org/cosmos-backdrop/styles.css"),
+  "utf8",
+);
+
 const COSMOS_CSS = `
 /*
  * COSMOS: a cross-section of an observing system, drawn behind the landing page.
@@ -276,114 +288,7 @@ const COSMOS_CSS = `
 .portal-shell[data-backdrop="cosmos"] {
   position: relative;
 }
-.portal-cosmos {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-  opacity: var(--portal-cosmos-scene-opacity);
-}
-
-/*
- * THE SCENE'S OWN STRUCTURE. Everything below is static: it does not depend on the viewport,
- * the landing or the solved geometry, so it is a stylesheet the artifact serves rather than
- * rules the scene generates. That split is not tidiness: the portal's policy is
- * \`style-src 'self'\` with no \`'unsafe-inline'\`, and under it a \`<style>\` element created at
- * run time is refused, so the smaller the set of rules the scene has to construct, the less of
- * the drawing depends on that mechanism working. What the scene does generate - a few hundred
- * geometry-dependent keyframes - goes into a constructable stylesheet, which is CSSOM and not
- * subject to the directive at all.
- */
-.portal-cosmos * {
-  pointer-events: none;
-}
-/* The scene's sprites are drawn at a measured size; the shell's \`max-width: 100%\` is not for
-   them, and applying it would shrink every baked drawing to its layer's width. */
-.portal-cosmos img {
-  max-width: none;
-  max-height: none;
-}
-.portal-cosmos .lyr {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-}
-.portal-cosmos .clip {
-  overflow: hidden;
-}
-.portal-cosmos svg.lyr {
-  overflow: visible;
-}
-.portal-cosmos .obj {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-}
-/* \`.obj\` holds the iceberg's baked canvas. */
-.portal-cosmos .obj img,
-.portal-cosmos .obj canvas {
-  position: absolute;
-  display: block;
-}
-
-/*
- * ONE DRAWING. The scene is built for one sky and rebuilt when the reader changes it, so there
- * is nothing to cross-fade and nothing invisible to keep in step: no second set of images to
- * decode and hold, no second set of elements to style, no second set of composited layers. A
- * rebuild is the same single pass the page already makes on load.
- */
-
-/*
- * MOTION: THERE IS NONE. A retained element carries NO animation object at all, which is a
- * stronger statement than carrying one that is paused: there is no keyframe to install, nothing
- * for a compositor to tick, and no attribute whose absence could quietly start something.
- * Reduced motion therefore needs no rule - it asked for no motion and the scene has none, in
- * every theme, in every tab, at every scroll position.
- */
-
-/*
- * THE LABELS, and the caption that says what the drawing is. The fields are synthetic - built
- * from closed expressions in the renderer, not from a model run or a measurement - and a
- * contoured cross-section with instruments on it looks exactly like an analysis. The caption is
- * the drawing saying that it is not one, placed in the atmosphere band where the contours it is
- * about actually are.
- */
-.portal-cosmos .lbl,
-.portal-cosmos .cap {
-  position: absolute;
-  font:
-    400 7.2px "IBM Plex Mono",
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  color: rgba(196, 214, 230, 0.85);
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
-}
-.portal-cosmos .lbl {
-  transform: translate(-50%, 0);
-}
-.portal-cosmos .cap {
-  font-size: 8.5px;
-  text-align: right;
-  padding-right: 16px;
-  color: rgba(150, 168, 180, 0.75);
-}
-.portal-cosmos[data-sky="day"] .lbl {
-  color: rgba(50, 58, 66, 0.9);
-  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95);
-}
-.portal-cosmos[data-sky="day"] .cap {
-  color: rgba(110, 116, 120, 0.8);
-  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95);
-}
-
+${COSMOS_SCENE_CSS}
 /*
  * The quiet first frame. The scene kernel is a deferred chunk, so for a moment there is a canvas
  * with nothing in it; this is the sky it would have drawn, as a plain gradient, so the page

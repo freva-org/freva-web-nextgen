@@ -362,11 +362,12 @@ describe("the generated entry", () => {
   it("imports the playground module literally, or not at all", () => {
     const without = generateEntryModule(model(false));
     expect(without).toContain("dataset-tree.ts");
-    expect(without).not.toContain("python-ready.ts");
+    // The coordinator is `@freva-org/browser-python/ui`, named by its resolved path.
+    expect(without).not.toContain("browser-python/dist/ui/index.js");
     expect(without).not.toContain("preparePythonPlayground");
 
     const with_ = generateEntryModule(model(true));
-    expect(with_).toContain("python-ready.ts");
+    expect(with_).toContain("browser-python/dist/ui/index.js");
     // Chained on the mount's promise, not called beside it. `preparePythonPlayground` reads the
     // register the island fills and returns silently when empty, so calling it before every block
     // has mounted gives a Try control that renders and does nothing - and the mount is

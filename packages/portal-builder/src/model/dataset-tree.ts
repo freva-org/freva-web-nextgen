@@ -54,9 +54,9 @@ export const DATASET_TREE_EVIDENCE = {
   ownedModuleRoots: [
     "pkg:npm/%40freva-org/dataset-tree",
     "builder:client/components/dataset-tree.ts",
-    "builder:client/components/dataset-tree.css",
+    // The block's stylesheet and the maximize sheet are the package's own (`./ui`, `./ui.css`),
+    // covered by the package root above.
     "builder:client/components/dataset-tree-styles.ts",
-    "builder:client/components/tree-maximize.ts",
     "builder:client/components/tree-sources.ts",
     "builder:client/components/tree-source-snapshot.ts",
     "builder:client/components/tree-source-s3.ts",
@@ -97,14 +97,18 @@ export const DATASET_TREE_EVIDENCE = {
     // a tree and no Data Browser. So neither owns it, both allow it, and what this plan owns is
     // the tree's own loader - the thing genuinely absent from a portal with no tree.
     "pkg:npm/%40freva-org/data-inspector",
-    // The maximized sheet is a portal-owned overlay, so the tree reaches the layer manager too.
-    "builder:client/layers.ts",
-    // `python-bridge.ts` is shared, and owned by neither plan that reaches it. A documentation
-    // page with a runnable snippet registers through it in a portal with no tree, and an owned
-    // module of a disabled component is `FP1601`; it cannot belong to the playground either,
-    // because the tree island imports it in every build, playground or not. So it is shared like
-    // `shell.ts` and `layers.ts`: a registry that imports nothing and is a few hundred bytes.
-    "builder:client/python-bridge.ts",
+    // The maximized sheet is an overlay, so the tree reaches the layer manager too.
+    "pkg:npm/%40freva-org/freva-client-terminal#dist/layers.",
+    // The notebook sheet the tree's Notebook control opens (`@freva-org/browser-python/ui/notebook`).
+    // Reached by every tree that offers a notebook; owned by no plan.
+    "pkg:npm/%40freva-org/browser-python#dist/ui/notebook/",
+    "pkg:npm/%40freva-org/browser-python#dist/ui/notebook.css",
+    // The playground's registry (`@freva-org/browser-python/ui/bridge`) is shared, owned by neither
+    // plan that reaches it: a documentation page with a runnable snippet registers through it in a
+    // portal with no tree (an owned module of a disabled component is `FP1601`), and the tree
+    // island imports it in every build, playground or not. So it is shared like `shell.ts` and the
+    // layers: a registry that imports nothing and is a few hundred bytes.
+    "pkg:npm/%40freva-org/browser-python#dist/ui/python-bridge.js",
   ],
 };
 
@@ -123,21 +127,11 @@ export const PYTHON_PLAYGROUND_EVIDENCE = {
   // this plan can make. The claim it does make is that a portal which did not ask for a
   // playground contains no Python interpreter and none of the coordinator that would drive one.
   ownedModuleRoots: [
+    // The interpreter, the console, and the playground window around them with the runnable-code
+    // provider and the session chooser - all `@freva-org/browser-python`, its `/ui` entry points
+    // included. Only the registry inside it is shared (below).
     "pkg:npm/%40freva-org/browser-python",
-    "builder:client/components/python-playground.ts",
-    "builder:client/components/python-chunks.ts",
-    "builder:client/components/python-chunks-local.ts",
-    "builder:client/components/python-chunks-framed.ts",
     "builder:client/playground-origin.ts",
-    "builder:client/components/python-playground-styles.ts",
-    "builder:client/components/python-ready.ts",
-    // The per-session setup chooser and the notebook's seed paths, used by the window and the
-    // playground document only.
-    "builder:client/components/session-chooser.ts",
-    "builder:client/notebook-paths.ts",
-    // The runnable-code provider: emitted only for a portal that has a marked snippet, and owned
-    // here rather than by the renderer because what it is FOR is the playground.
-    "builder:client/components/code-run.ts",
   ],
   // The Python materials, when this build serves them itself. Owned here so the absence claim
   // covers the artifact's files as well as its module graph: a portal with no runnable Python
@@ -152,13 +146,20 @@ export const PYTHON_PLAYGROUND_EVIDENCE = {
   allowedSharedModules: [
     "builder:client/shell.ts",
     "builder:client/runtime.ts",
-    // Shared with the dataset tree, and owned by neither - see the tree's own note on it.
-    "builder:client/python-bridge.ts",
-    // The layer manager is shared infrastructure, not this feature's own: `client/layers.ts`
-    // decides what is on top of what for every portal-owned surface, and the maximized dataset
-    // browser is one of them. Owned here, a portal with a tree and no playground would fail its
-    // own absence check under `FP1601`.
-    "builder:client/layers.ts",
+    // Shared with the dataset tree, and owned by neither - see the tree's own note on it. Listed
+    // here it is also carved out of the package root above.
+    "pkg:npm/%40freva-org/browser-python#dist/ui/python-bridge.js",
+    // Code figures' Copy control and their stylesheet are on every portal page that has code,
+    // Python or not, so they are carved out of the package root too.
+    "pkg:npm/%40freva-org/browser-python#dist/ui/code-copy.js",
+    "pkg:npm/%40freva-org/browser-python#dist/ui/code.css",
+    // The notebook sheet and its links are in the package too, and are on every page that links
+    // to the notebook, Python or not - not this feature's, so carved out as well.
+    "pkg:npm/%40freva-org/browser-python#dist/ui/notebook/",
+    "pkg:npm/%40freva-org/browser-python#dist/ui/notebook.css",
+    // The layer manager is shared infrastructure, not this feature's own: it decides what is on
+    // top of what for every floating surface, and the maximized dataset browser is one of them.
+    "pkg:npm/%40freva-org/freva-client-terminal#dist/layers.",
     "builder:client/components/dataset-tree.ts",
   ],
 };

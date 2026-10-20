@@ -19,7 +19,8 @@ import { describe, expect, it } from "vitest";
 const read = (relative: string): string =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
-const PANEL = read("../../client/components/python-playground.ts");
+// The panel is `@freva-org/browser-python/ui`'s; its source is read from the workspace.
+const PANEL = read("../../../browser-python/src/ui/python-playground.ts");
 const GUIDE = read("../../docs/python-playground.md");
 
 /**
