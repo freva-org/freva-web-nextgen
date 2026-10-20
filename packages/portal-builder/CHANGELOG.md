@@ -1,5 +1,28 @@
 # @freva-org/portal-builder
 
+## 2613.0.0
+
+### Patch Changes
+
+- 56328d5: - Pages draw the Python window, code figures, notebook sheet, dataset-tree block and Cosmos backdrop from `@freva-org/browser-python`, `@freva-org/dataset-tree`, `@freva-org/freva-client-terminal` and `@freva-org/cosmos-backdrop`, and `prepare-notebook` uses the ClimateClaw and data-panel `/site` helpers.
+  - After a tree recipe ran on a store, "Open as notebook" opens the notebook on that store when its data panel holds that tree, and the file list otherwise.
+  - A closed notebook sheet never takes the keyboard.
+- Updated dependencies [fa3524b]
+- Updated dependencies [48c3a15]
+- Updated dependencies [0b4e35c]
+- Updated dependencies [72c8c0c]
+- Updated dependencies [712afd6]
+- Updated dependencies [89d1c72]
+- Updated dependencies [6d9a1ea]
+  - @freva-org/browser-python@2610.1.0
+  - @freva-org/cosmos-backdrop@2610.1.0
+  - @freva-org/dataset-tree@2610.2.0
+  - @freva-org/freva-client-terminal@2609.0.2
+  - @freva-org/jupyterlite-climateclaw@2610.1.0
+  - @freva-org/jupyterlite-freva-data@2610.2.0
+  - @freva-org/jupyterlite-freva-kernel@2610.2.0
+  - @freva-org/databrowser@2609.1.5
+
 ## 2612.0.1
 
 ### Patch Changes

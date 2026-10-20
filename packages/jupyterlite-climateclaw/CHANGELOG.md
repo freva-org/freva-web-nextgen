@@ -1,5 +1,11 @@
 # @freva-org/jupyterlite-climateclaw
 
+## 2610.1.0
+
+### Minor Changes
+
+- 712afd6: move `/site` from portal builder
+
 ## 2610.0.1
 
 ### Patch Changes

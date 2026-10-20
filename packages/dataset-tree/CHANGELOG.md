@@ -1,5 +1,12 @@
 # @freva-org/dataset-tree
 
+## 2610.2.0
+
+### Minor Changes
+
+- 0b4e35c: - `/recipes`: the live-tree access recipes, `TREE_RECIPES`, `bindStore`, `pythonStringBody`, `renderRecipe`, `recipeAccessExamples`, `resolveRecipeRun`, `runnableRecipes`
+  - `/ui` and `/ui.css`: the maximize sheet and the block around a tree, for any host page.
+
 ## 2610.1.0
 
 ### Minor Changes

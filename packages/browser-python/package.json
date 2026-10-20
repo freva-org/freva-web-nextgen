@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/browser-python",
-  "version": "2610.0.0",
+  "version": "2610.1.0",
   "description": "Framework-independent browser Python engine: Pyodide in a dedicated Web Worker, with an interactive REPL, a browser Fetch filesystem for remote Zarr, and inline Matplotlib output.",
   "type": "module",
   "repository": {
@@ -147,7 +147,7 @@
     "vitest": "^4.1.8"
   },
   "dependencies": {
-    "@freva-org/freva-client-terminal": "2609.0.1",
+    "@freva-org/freva-client-terminal": "2609.0.2",
     "dompurify": "3.4.16",
     "jquery": "3.7.1",
     "jquery.terminal": "2.47.0",
