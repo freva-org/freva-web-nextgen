@@ -94,7 +94,7 @@ Nothing is fetched until `start()`.
 | what                                           | on the wire                                               | when                                 |
 | ---------------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
 | this package, engine only                      | <!-- size:root-entry-gz --> 8.3 KiB gzipped               | with your bundle                     |
-| this package, with the console                 | <!-- size:console-entry-gz --> 131.5 KiB gzipped          | with your bundle, `/console` only    |
+| this package, with the console                 | <!-- size:console-entry-gz --> 131.7 KiB gzipped          | with your bundle, `/console` only    |
 | Pyodide runtime + stdlib                       | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
 | xarray, zarr, fsspec, numcodecs, cftime, numpy | 10.0 MB, 18 wheels                                        | first `start()`, `xarray-zarr` only  |
 | the derived Freva wheel + PyPI deps            | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
@@ -547,12 +547,12 @@ incomplete, state persists between lines, and top-level `await` works.
 |                       | `@freva-org/browser-python`             | `@freva-org/browser-python/console`          |
 | --------------------- | --------------------------------------- | -------------------------------------------- |
 | What you get          | engine, events, `push()`                | the above plus a rendered console            |
-| Bundled, gzipped      | <!-- size:root-entry-gz --> **8.3 KiB** | <!-- size:console-entry-gz --> **131.5 KiB** |
+| Bundled, gzipped      | <!-- size:root-entry-gz --> **8.3 KiB** | <!-- size:console-entry-gz --> **131.7 KiB** |
 | Touches `document`    | no                                      | yes, on `connectedCallback`                  |
 | Safe to import in SSR | yes                                     | `/console` yes, `/console/auto` no           |
 | jQuery in the bundle  | never (asserted by a test)              | yes, as a private instance                   |
 
-The console layer over the headless engine is <!-- size:console-layer-gz --> 123.2 KiB gzipped, of
+The console layer over the headless engine is <!-- size:console-layer-gz --> 123.4 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
 a target - 124 KiB for the layer, 8.5 KiB for the root entry - and fails if it finds a jQuery or
 worker-only add-on pin fingerprint in the root bundle.
