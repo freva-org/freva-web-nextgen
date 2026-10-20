@@ -218,6 +218,8 @@ const BUILD_ORDER = [
   // installed by portal-builder's `prepare-notebook` from their prebuilt extensions.
   "@freva-org/jupyterlite-climateclaw",
   "@freva-org/jupyterlite-freva-data",
+  // The landing backdrop, drawn by portal-builder's Cosmos theme and by the Waterpark site.
+  "@freva-org/cosmos-backdrop",
   "@freva-org/portal-builder",
 ];
 

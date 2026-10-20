@@ -1,0 +1,103 @@
+/* @freva-org/cosmos-backdrop/styles.css - the structure the backdrop island builds inside
+   `.portal-cosmos`. The host theme keeps the shell and landing composition. */
+
+.portal-cosmos {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--portal-cosmos-scene-opacity);
+}
+
+/*
+ * Everything here is static: it does not depend on the viewport, the landing or the solved
+ * geometry, so it is a stylesheet rather than rules the scene generates. Under a
+ * `style-src 'self'` policy a `<style>` element created at run time is refused, so the fewer rules
+ * the scene constructs, the less of the drawing depends on that. What it does generate - a few
+ * hundred geometry-dependent keyframes - goes into a constructable stylesheet, which the directive
+ * does not cover.
+ */
+.portal-cosmos * {
+  pointer-events: none;
+}
+/* The scene's sprites are drawn at a measured size; the shell's `max-width: 100%` is not for
+   them, and applying it would shrink every baked drawing to its layer's width. */
+.portal-cosmos img {
+  max-width: none;
+  max-height: none;
+}
+.portal-cosmos .lyr {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+}
+.portal-cosmos .clip {
+  overflow: hidden;
+}
+.portal-cosmos svg.lyr {
+  overflow: visible;
+}
+.portal-cosmos .obj {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+/* `.obj` holds the iceberg's baked canvas. */
+.portal-cosmos .obj img,
+.portal-cosmos .obj canvas {
+  position: absolute;
+  display: block;
+}
+
+/*
+ * One drawing: the scene is built for one sky and rebuilt when the reader changes it, so there is
+ * nothing to cross-fade - no second set of images, elements or composited layers. A rebuild is the
+ * same single pass the page makes on load.
+ */
+
+/*
+ * No motion: a retained element carries no animation object at all, so there is no keyframe to
+ * install, nothing for a compositor to tick, and reduced motion needs no rule.
+ */
+
+/*
+ * The labels, and the caption saying what the drawing is. The fields are synthetic (closed
+ * expressions in the renderer, not a model run or a measurement), and a contoured cross-section
+ * with instruments on it looks exactly like an analysis; the caption, in the atmosphere band where
+ * those contours are, says it is not one.
+ */
+.portal-cosmos .lbl,
+.portal-cosmos .cap {
+  position: absolute;
+  font:
+    400 7.2px "IBM Plex Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: rgba(196, 214, 230, 0.85);
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+}
+.portal-cosmos .lbl {
+  transform: translate(-50%, 0);
+}
+.portal-cosmos .cap {
+  font-size: 8.5px;
+  text-align: right;
+  padding-right: 16px;
+  color: rgba(150, 168, 180, 0.75);
+}
+.portal-cosmos[data-sky="day"] .lbl {
+  color: rgba(50, 58, 66, 0.9);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95);
+}
+.portal-cosmos[data-sky="day"] .cap {
+  color: rgba(110, 116, 120, 0.8);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95);
+}
