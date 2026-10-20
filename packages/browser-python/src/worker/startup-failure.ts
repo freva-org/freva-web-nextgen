@@ -17,11 +17,11 @@ import type { BrowserPythonAddon } from "../types.js";
 
 /**
  * Which kind of thing could not be obtained. Separated because the remedy differs, not the fetch:
- * `runtime` is Pyodide itself, `profile-package` a wheel from the runtime's own lock,
- * `wheelhouse` the Freva client, `addon` a curated capability. A caller deciding which
- * configuration key to name needs this.
+ * `runtime` is Pyodide itself, `profile-package` a wheel from the runtime's own lock, `wheelhouse`
+ * the Freva client, `addon` a curated capability, `site-wheel` a wheel the site pins. A caller
+ * deciding which configuration key to name needs this.
  */
-export type FailedResource = "runtime" | "profile-package" | "wheelhouse" | "addon";
+export type FailedResource = "runtime" | "profile-package" | "wheelhouse" | "addon" | "site-wheel";
 
 /** The public names for one resource class: what a portal writes, and what the API calls it. */
 interface ResourceNames {
@@ -53,6 +53,11 @@ const NAMES: Readonly<Record<FailedResource, ResourceNames>> = {
     portalKey: "pythonPlayground.addonBaseUrl",
     apiKey: "addonBaseURL",
     prepare: "freva-browser-python prepare-addons",
+  },
+  "site-wheel": {
+    portalKey: "the site's own wheel list",
+    apiKey: "siteWheels",
+    prepare: "the site's own preparation step, which records each wheel's SHA-256",
   },
 };
 
@@ -122,9 +127,11 @@ export function describeFailure(failure: StartupFailure): string {
       ? `The '${failure.addon}' add-on${failure.optional ? " (optional)" : ""}`
       : failure.resource === "wheelhouse"
         ? "The Freva client's wheels"
-        : failure.resource === "runtime"
-          ? "The Python runtime"
-          : "A package this profile needs";
+        : failure.resource === "site-wheel"
+          ? "A wheel this site pins"
+          : failure.resource === "runtime"
+            ? "The Python runtime"
+            : "A package this profile needs";
   const what = failure.artefact ? `${subject}: ${failure.artefact}` : subject;
 
   const lines: string[] = [];

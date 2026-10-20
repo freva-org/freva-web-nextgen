@@ -13,6 +13,7 @@ import { ArtifactWatcher } from "./artifacts.js";
 import { Workspace } from "./opfs-workspace.js";
 import { CellOutput, OutputBridge } from "./output.js";
 import { Repl } from "./repl.js";
+import { installSiteWheels } from "./site-wheels.js";
 import { fetchedBytes, wasmCapacityBytes } from "./resources.js";
 import { useSyncInstantiationWhileLoading } from "./wasm-instantiation.js";
 import {
@@ -238,6 +239,22 @@ async function handleInit(request: Extract<WorkerRequest, { kind: "init" }>): Pr
           })
         : { prepared: [], unavailable: [] };
 
+    // Site wheels, after the add-ons and before anything the REPL imports: a site's own pinned
+    // builds of libraries the runtime lacks. Fetched and verified first, installed from those
+    // bytes; a failure fails the start like a missing add-on.
+    let siteWheels: string[] = [];
+    if (request.siteWheels && request.siteWheels.length > 0) {
+      await loadProfilePackages(
+        runtime,
+        ["micropip"],
+        request.packageBaseURL ?? request.indexURL,
+        "installing the site's wheels needs micropip from the pinned runtime, but",
+      );
+      siteWheels = await installSiteWheels(runtime, request.siteWheels, (message) =>
+        output.status("loading", message),
+      );
+    }
+
     // The Freva client, before the REPL. Order matters and is asserted by a browser test: the
     // compatibility adapter replaces attributes `freva_client`'s own modules bind at IMPORT time,
     // so it has to run before anything imports freva_client, and the REPL is the first thing that
@@ -327,6 +344,7 @@ async function handleInit(request: Extract<WorkerRequest, { kind: "init" }>): Pr
       packages: repl.resolveVersions(PROFILE_REPORTED[request.profile]),
       addons: describeAddons(prepared, (names) => console_.resolveVersions(names)),
       unavailableAddons: unavailable,
+      ...(siteWheels.length > 0 ? { siteWheels } : {}),
       startupMs: Date.now() - started,
       workspace: workspaceStatus,
       credentialsPersisted,

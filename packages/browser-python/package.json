@@ -52,11 +52,55 @@
       "types": "./dist/worker/browser-python.worker.d.ts",
       "import": "./dist/worker/browser-python.worker.js"
     },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "import": "./dist/ui/index.js"
+    },
+    "./ui/bridge": {
+      "types": "./dist/ui/python-bridge.d.ts",
+      "import": "./dist/ui/python-bridge.js"
+    },
+    "./ui/local": {
+      "types": "./dist/ui/python-chunks-local.d.ts",
+      "import": "./dist/ui/python-chunks-local.js"
+    },
+    "./ui/framed": {
+      "types": "./dist/ui/python-chunks-framed.d.ts",
+      "import": "./dist/ui/python-chunks-framed.js"
+    },
+    "./ui/chooser": {
+      "types": "./dist/ui/session-chooser.d.ts",
+      "import": "./dist/ui/session-chooser.js"
+    },
+    "./ui/copy": {
+      "types": "./dist/ui/code-copy.d.ts",
+      "import": "./dist/ui/code-copy.js"
+    },
+    "./ui/code": {
+      "types": "./dist/ui/code-run.d.ts",
+      "import": "./dist/ui/code-run.js"
+    },
+    "./ui/code.css": "./dist/ui/code.css",
+    "./ui/code-figure.html": "./dist/ui/code-figure.html",
+    "./ui/notebook": {
+      "types": "./dist/ui/notebook/index.d.ts",
+      "import": "./dist/ui/notebook/index.js"
+    },
+    "./ui/notebook/sheet": {
+      "types": "./dist/ui/notebook/notebook-sheet.d.ts",
+      "import": "./dist/ui/notebook/notebook-sheet.js"
+    },
+    "./ui/notebook/embed": {
+      "types": "./dist/ui/notebook/notebook-embed.d.ts",
+      "import": "./dist/ui/notebook/notebook-embed.js"
+    },
+    "./ui/notebook.css": "./dist/ui/notebook.css",
     "./package.json": "./package.json"
   },
   "sideEffects": [
     "./dist/worker/browser-python.worker.js",
-    "./dist/console/auto.js"
+    "./dist/console/auto.js",
+    "./dist/**/*.css"
   ],
   "files": [
     "bin",
@@ -103,6 +147,7 @@
     "vitest": "^4.1.8"
   },
   "dependencies": {
+    "@freva-org/freva-client-terminal": "2609.0.1",
     "dompurify": "3.4.16",
     "jquery": "3.7.1",
     "jquery.terminal": "2.47.0",

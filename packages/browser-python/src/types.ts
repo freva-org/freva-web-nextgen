@@ -162,6 +162,14 @@ export interface UnavailableAddonInfo {
   retryMayHelp: boolean;
 }
 
+/** One wheel a site serves and pins itself. See `BrowserPythonOptions.siteWheels`. */
+export interface SiteWheel {
+  /** Where the wheel is served (relative URLs resolve against the page); must name a wheel file. */
+  url: string;
+  /** Lowercase hex SHA-256 of the wheel's bytes, recorded when the site pinned it. */
+  sha256: string;
+}
+
 export interface BrowserPythonOptions {
   profile?: BrowserPythonProfile;
   pyodide?: PyodideOptions;
@@ -225,6 +233,15 @@ export interface BrowserPythonOptions {
    */
   addonBaseURL?: string;
   /**
+   * Wheels the site serves itself, installed during `start()` after the add-ons and before the
+   * REPL: a package the pinned runtime does not carry, such as a WebAssembly build a site's
+   * examples need. Each `{ url, sha256 }` URL resolves against the page; the wheel is fetched once
+   * and installed from those bytes with `deps=False` only if its SHA-256 matches. A missing or
+   * altered wheel fails `start()`. Unlike `wheelhouseURL` and `addons`, which this package pins, a
+   * site wheel is pinned by the site, which owns its provenance and runtime compatibility.
+   */
+  siteWheels?: readonly SiteWheel[];
+  /**
    * Extra Pyodide packages to load during `start()`, on top of the profile's own set. Use
    * sparingly: every entry is bytes on a visitor's first run, and imports auto-load anyway.
    */
@@ -259,6 +276,8 @@ export interface BrowserPythonReadyInfo {
    * coastlines are unavailable" in its own chrome. A REQUIRED add-on never appears here.
    */
   unavailableAddons: readonly UnavailableAddonInfo[];
+  /** The site wheels that were installed, by file name, in configuration order. */
+  siteWheels?: readonly string[];
   /** Wall-clock milliseconds from the `init` message to readiness, for a status line. */
   startupMs: number;
   /**

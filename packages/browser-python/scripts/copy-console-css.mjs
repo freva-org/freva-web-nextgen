@@ -16,4 +16,11 @@ writeFileSync(to, [src("console", "styles.css"), src("console", "notice-card.css
 const displayTo = join(HERE, "..", "dist", "display", "display.css");
 mkdirSync(dirname(displayTo), { recursive: true });
 writeFileSync(displayTo, display);
-console.log("console styles.css and display.css copied to dist/");
+// The code figures' stylesheet (`./ui/code.css`), for a host page rather than a shadow root.
+const codeTo = join(HERE, "..", "dist", "ui", "code.css");
+mkdirSync(dirname(codeTo), { recursive: true });
+writeFileSync(codeTo, src("ui", "code.css"));
+writeFileSync(join(HERE, "..", "dist", "ui", "notebook.css"), src("ui", "notebook.css"));
+// The code figures' markup contract, for the generators that test against it.
+writeFileSync(join(HERE, "..", "dist", "ui", "code-figure.html"), src("ui", "code-figure.html"));
+console.log("console styles.css, display.css, ui/code.css and ui/notebook.css copied to dist/");

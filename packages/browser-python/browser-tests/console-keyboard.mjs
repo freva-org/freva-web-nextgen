@@ -476,6 +476,58 @@ const result = await inBrowser(
         await two.close();
       }
 
+      // Leaving the console by keyboard. Tab completes at the prompt, so Escape (nothing open)
+      // releases the keyboard and the next Tab moves on; a host control focused from outside keeps
+      // focus instead of the terminal pulling it back.
+      await page.goto(server.url);
+      await page.waitForFunction(() => window.__ready === true, null, { timeout: 20000 });
+      await page.evaluate(() => window.__el.start());
+      await page.waitForFunction(() => window.__c.mock.state === "ready", null, { timeout: 15000 });
+      await page.evaluate(() => {
+        const after = document.createElement("button");
+        after.id = "after";
+        after.textContent = "after";
+        document.body.append(after);
+      });
+      await type("pri");
+      await press("Escape", "Tab");
+      // Where focus is now: outside the element, or on one of its own controls - not the prompt.
+      const left = await page.evaluate(() => {
+        const inner = window.__el.shadowRoot.activeElement;
+        if (document.activeElement !== window.__el) return document.activeElement?.id || "body";
+        return inner?.closest(".cmd") ? "prompt" : (inner?.getAttribute("part") ?? inner?.tagName);
+      });
+      const insideAfterLeaving = (await look()).command;
+      checks.push({
+        name: "Escape then Tab leaves the console, and the typed line is kept",
+        pass: left !== "prompt" && insideAfterLeaving.includes("pri"),
+        detail: `focus on ${left}, command ${JSON.stringify(insideAfterLeaving)}`,
+      });
+      // A person goes back with the mouse: a real click on the prompt.
+      await page.locator("#c .terminal").click();
+      await page.waitForTimeout(150);
+      await page.evaluate(() => document.getElementById("after").focus());
+      await page.waitForTimeout(150);
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(100);
+      const kept = await page.evaluate(() => document.activeElement?.id);
+      const pushed = await page.evaluate(() => [...window.__c.mock.pushes]);
+      checks.push({
+        name: "a host control focused from the prompt keeps focus, and Enter does not submit",
+        pass: kept === "after" && !pushed.some((p) => p.includes("pri")),
+        detail: `focus on ${kept}, pushes ${JSON.stringify(pushed)}`,
+      });
+      await page.locator("#c .terminal").click();
+      await page.waitForTimeout(150);
+      await page.keyboard.press("End");
+      await page.keyboard.type("nt(1)", { delay: 2 });
+      await press("Enter");
+      checks.push({
+        name: "focusing the prompt again takes the keyboard back",
+        pass: (await page.evaluate(() => [...window.__c.mock.pushes])).includes("print(1)"),
+        detail: JSON.stringify(await page.evaluate(() => [...window.__c.mock.pushes])),
+      });
+
       return checks;
     } finally {
       await server.close();

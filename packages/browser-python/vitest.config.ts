@@ -54,6 +54,25 @@ export default defineConfig({
         // jQuery Terminal in a shadow root: browser-tests/console-keyboard.mjs, -pointer,
         // -paste-and-caret, -mobile.
         "src/console/adapters/**",
+        // The page-side UI that moved here from portal-builder, which never measured it: the
+        // entry points re-export only, and the rest is DOM-only, covered against a built portal by
+        // portal-builder's browser-tests - code-snippets.mjs and runnable-content.mjs (code copy,
+        // editor, run, chunks), python-playground.mjs, python-sessions.mjs and python-deployment.mjs
+        // (the Python window, its styles and the session chooser), notebook-same-origin.mjs (the
+        // notebook embed and its links).
+        "src/ui/index.ts",
+        "src/ui/notebook/index.ts",
+        "src/ui/code-copy.ts",
+        "src/ui/code-editor.ts",
+        "src/ui/code-run.ts",
+        "src/ui/python-chunks.ts",
+        "src/ui/python-chunks-local.ts",
+        "src/ui/python-chunks-framed.ts",
+        "src/ui/python-playground.ts",
+        "src/ui/python-playground-styles.ts",
+        "src/ui/session-chooser.ts",
+        "src/ui/notebook/notebook-embed.ts",
+        "src/ui/notebook/notebook-links.ts",
         /*
          * NOTHING FROM `src/embed` IS EXCLUDED ANY MORE.
          *

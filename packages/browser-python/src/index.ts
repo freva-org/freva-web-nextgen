@@ -56,6 +56,7 @@ export type {
   BrowserPythonProfile,
   BrowserPythonReadyInfo,
   BrowserPythonState,
+  SiteWheel,
   BundleEvent,
   BundleMetadata,
   BundleMime,

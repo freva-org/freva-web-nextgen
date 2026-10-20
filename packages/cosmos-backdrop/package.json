@@ -1,0 +1,43 @@
+{
+  "name": "@freva-org/cosmos-backdrop",
+  "version": "2610.0.0",
+  "description": "The Cosmos backdrop: a still cross-section of an observing system, from orbit to the ocean floor, drawn behind a landing page and redrawn for the page's theme. Framework-free; the scene loads only on a page that has a .portal-cosmos element.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freva-org/freva-web-nextgen.git",
+    "directory": "packages/cosmos-backdrop"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./sky/*": "./dist/cosmos/scene/sky/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "export-art": "node scripts/export-cosmos-art.mjs"
+  },
+  "license": "BSD-3-Clause",
+  "dependencies": {},
+  "devDependencies": {
+    "playwright": "^1.56.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -13,7 +13,9 @@ import {
   type DatasetTreeNode,
 } from "@freva-org/dataset-tree";
 
-import type { PanelData, Recipe, S3Config } from "./panel-data.js";
+import { bindStore, renderRecipe } from "@freva-org/dataset-tree/recipes";
+
+import type { PanelData } from "./panel-data.js";
 
 export interface Snippet {
   label: string;
@@ -26,72 +28,16 @@ export async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Live-archive recipes: the same rules as portal-builder's client/components/tree-recipes.ts.
+// Live-archive recipes: the shared rules from `@freva-org/dataset-tree/recipes`, the same code the
+// portal's page and every other host of a live tree run.
 
-const SAFE_SEGMENT = /^[A-Za-z0-9._~!$&'()*+,;=:@/-]*$/;
-export const STORE_PLACEHOLDER = "{{STORE}}";
-
-export interface StoreBinding {
-  s3Path: string;
-  httpsUrl: string;
-}
-
-export function bindStore(
-  s3Path: unknown,
-  config: Pick<S3Config, "endpoint" | "style" | "roots">,
-): StoreBinding | null {
-  if (typeof s3Path !== "string" || !s3Path.startsWith("s3://")) return null;
-  const rest = s3Path.slice("s3://".length);
-  const slash = rest.indexOf("/");
-  const bucket = slash === -1 ? rest : rest.slice(0, slash);
-  const key = slash === -1 ? "" : rest.slice(slash + 1);
-  if (!bucket) return null;
-  const root = config.roots.find((r) => r.bucket === bucket && key.startsWith(r.prefix ?? ""));
-  if (!root || !SAFE_SEGMENT.test(bucket) || !SAFE_SEGMENT.test(key) || key.includes("..")) {
-    return null;
-  }
-  let base: URL;
-  try {
-    base = new URL(config.endpoint);
-  } catch {
-    return null;
-  }
-  if (base.protocol !== "https:" && base.protocol !== "http:") return null;
-  if (config.style === "virtual-host") {
-    base.hostname = `${bucket}.${base.hostname}`;
-    base.pathname = `${base.pathname.replace(/\/$/, "")}/${key}`;
-  } else {
-    base.pathname = `${base.pathname.replace(/\/$/, "")}/${bucket}/${key}`;
-  }
-  return { s3Path, httpsUrl: base.toString() };
-}
-
-/**
- * A value as the body of a Python string literal, which is where every hole sits: inserted
- * literally (a replacement callback, so `$&` and the like stay text), quotes, backslashes and
- * control characters escaped.
- */
-export function pythonStringBody(value: string): string {
-  let out = "";
-  for (const c of value) {
-    const code = c.charCodeAt(0);
-    if (c === "\\" || c === '"' || c === "'") out += `\\${c}`;
-    else if (code < 0x20 || code === 0x7f) out += `\\x${code.toString(16).padStart(2, "0")}`;
-    else out += c;
-  }
-  return out;
-}
-
-export function renderRecipe(recipe: Recipe, binding: StoreBinding, endpoint: string): string {
-  const value =
-    recipe.parameter === "https-url"
-      ? binding.httpsUrl
-      : `/${binding.s3Path.slice("s3://".length)}`;
-  // One pass, so neither value is read for the other's hole.
-  return recipe.template.replace(/\{\{(STORE|ENDPOINT)\}\}/g, (_, hole: string) =>
-    pythonStringBody(hole === "STORE" ? value : endpoint),
-  );
-}
+export {
+  STORE_PLACEHOLDER,
+  bindStore,
+  pythonStringBody,
+  renderRecipe,
+  type StoreBinding,
+} from "@freva-org/dataset-tree/recipes";
 
 // examples per node
 

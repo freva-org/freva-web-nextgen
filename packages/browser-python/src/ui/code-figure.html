@@ -1,0 +1,24 @@
+<!--
+  @freva-org/browser-python/ui/code-figure.html - the markup contract of the code figures.
+
+  The one place the shape `@freva-org/browser-python/ui/code` and `/ui/copy` read is written down
+  as markup: a page's configuration element, and one runnable, editable figure. Every generator of
+  these figures - portal-builder's pages, Waterpark's MkDocs hook - is tested against this file,
+  and this package's own test mounts it, so a change to the shape fails on both sides at once.
+
+  Inside <code> a generator may put any highlighting markup (spans); the text content must be the
+  source exactly. Attributes and classes named here are the contract; others are free.
+  `data-portal-editable` is the generator's choice (an editable figure), so it is optional; so is a
+  `<span class="portal-code-title">` before the language, for a named block.
+-->
+<div class="portal-python-config" hidden data-portal-python-playground='{"profile":"minimal","autostart":"never","maxSessions":1,"addons":[],"optionalAddons":[],"connectOrigins":[],"persistCredentials":false,"network":"origins","packagePolicy":{"kind":"curated","anyHttpsOrigin":false,"packageIndex":false,"origins":[],"sources":{"runtime":"self"}},"terminal":{"osControls":"auto","alwaysOnTop":false,"rememberAppearance":false},"examples":[{"id":"page#1","sha256":"957e13c0732e48fd5496f935894dc93a9da7dcd5eb8ffea52646fdf178cda1d1","title":"page · block 1"}]}'></div>
+<div class="portal-code-figure" data-portal-code="python" data-portal-editable>
+  <div class="portal-code-head">
+    <span class="portal-code-lang">Python</span>
+    <div class="portal-code-actions">
+      <button type="button" class="portal-code-copy" data-portal-copy="print(&quot;hello&quot;)" aria-label="Copy code" hidden><span class="portal-code-copy-icon" aria-hidden="true"></span><span class="portal-code-copy-label">Copy</span></button>
+      <button type="button" class="portal-code-run" data-portal-run data-portal-example="page#1" data-portal-digest="957e13c0732e48fd5496f935894dc93a9da7dcd5eb8ffea52646fdf178cda1d1" aria-label="Try this code in Python" hidden><span class="portal-code-run-icon" aria-hidden="true"></span><span class="portal-code-run-label">Try in Python</span></button>
+    </div>
+  </div>
+  <pre class="portal-code-block" data-portal-language="python"><code class="portal-code" data-portal-language="python">print("hello")</code></pre>
+</div>
