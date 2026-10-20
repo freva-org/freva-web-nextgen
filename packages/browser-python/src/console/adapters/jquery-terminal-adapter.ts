@@ -350,22 +350,19 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
 
     // Focus moving outside the console (a host's button, a link) releases the keyboard; otherwise
     // the library takes focus back ~10ms later and keeps acting on every key. Decided once focus
-    // settles, since the library's own `focus(true)` moves it about while enabling; focus moving
-    // within the console is left alone.
+    // settles, by where it ends up - not by the event's `relatedTarget`, which is null when focus
+    // goes to the page itself and not reported alike by every engine - since the library's own
+    // `focus(true)` moves it about while enabling; focus moving within the console is left alone.
     mount.addEventListener(
       "focusout",
-      (event) => {
-        const next = event.relatedTarget;
-        if (!(next instanceof Node)) return;
+      () => {
         const root = mount.getRootNode();
-        const inside = (node: Node | null): boolean =>
-          node !== null &&
-          (mount.contains(node) ||
-            (root instanceof ShadowRoot && (root.contains(node) || node === root.host)));
-        if (inside(next)) return;
         setTimeout(() => {
           const active = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
-          if (!inside(active)) this.release();
+          const inside =
+            active !== null &&
+            (mount.contains(active) || (root instanceof ShadowRoot && root.contains(active)));
+          if (!inside) this.release();
         }, 0);
       },
       true,

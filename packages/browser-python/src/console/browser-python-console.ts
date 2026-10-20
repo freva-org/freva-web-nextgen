@@ -165,6 +165,11 @@ function isProfile(value: string | null): value is BrowserPythonProfile {
 const ElementBase: typeof HTMLElement =
   typeof HTMLElement === "undefined" ? (class {} as unknown as typeof HTMLElement) : HTMLElement;
 
+/** What Tab can land on, for leaving the console by keyboard. */
+const TABBABLE =
+  'a[href], area[href], button, input:not([type="hidden"]), select, textarea, iframe, ' +
+  '[tabindex], [contenteditable=""], [contenteditable="true"]';
+
 /**
  * A suggestion as ONE line, because that is what ghost text can be. History keeps a pasted block
  * as a single entry so `↑` recalls the program rather than its last line, and drawn literally a
@@ -282,6 +287,29 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
       if (from instanceof Node && from !== this && !this.contains(from))
         this.#keyboardReleased = false;
     });
+  }
+
+  /**
+   * Tab after Escape: focus moves to the next (Shift: the previous) focusable element of the page
+   * outside this console, or off the page's controls when there is none. The adapter then releases
+   * the terminal, because focus has left it (see its `focusout` handler).
+   */
+  #leaveByKeyboard(backwards: boolean): void {
+    const outside = [...this.ownerDocument.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+      (el) =>
+        el !== this &&
+        !this.contains(el) &&
+        el.tabIndex >= 0 &&
+        !el.hasAttribute("disabled") &&
+        el.getClientRects().length > 0,
+    );
+    const follows = (el: HTMLElement) =>
+      (this.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    const target = backwards
+      ? outside.filter((el) => !follows(el)).pop()
+      : outside.find((el) => follows(el));
+    if (target) target.focus();
+    else (this.#root.activeElement as HTMLElement | null)?.blur();
   }
 
   // ------ properties
@@ -1436,9 +1464,10 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
     const ctrl = event.ctrlKey || event.metaKey;
 
     // Escape closes the TRANSIENT surfaces first, and only those. It must not reach the host page
-    // while a menu is open. With nothing open it releases the keyboard: Tab completes at the
-    // prompt, so without this a keyboard user could never leave the console. The next Tab moves
-    // focus on; any other key takes the prompt back.
+    // while a menu is open. With nothing open it marks the keyboard released: Tab completes at the
+    // prompt, so without this a keyboard user could never leave the console. The next Tab (or
+    // Shift+Tab) moves focus on, done here rather than left to the browser's default, which the
+    // library may still be handling the key for; any other key just goes on at the prompt.
     if (event.key === "Escape") {
       if (controller.searching) {
         controller.cancelSearch();
@@ -1449,16 +1478,17 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
         return true;
       }
       if (this.#adapter?.release) {
-        this.#adapter.release();
         this.#keyboardReleased = true;
         return true;
       }
       return false;
     }
-    if (this.#keyboardReleased) {
+    if (this.#keyboardReleased && !["Shift", "Control", "Alt", "Meta"].includes(event.key)) {
       this.#keyboardReleased = false;
-      if (event.key === "Tab") return false;
-      if (!["Shift", "Control", "Alt", "Meta"].includes(event.key)) this.#adapter?.focus();
+      if (event.key === "Tab" && !ctrl && !event.altKey) {
+        this.#leaveByKeyboard(event.shiftKey);
+        return true;
+      }
     }
 
     if (controller.searching) {
