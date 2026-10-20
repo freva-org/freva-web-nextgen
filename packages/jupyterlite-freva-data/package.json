@@ -30,6 +30,11 @@
       "types": "./lib/panel-data.d.ts",
       "import": "./lib/panel-data.js"
     },
+    "./site": {
+      "types": "./lib/site.d.ts",
+      "import": "./lib/site.js",
+      "default": "./lib/site.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
