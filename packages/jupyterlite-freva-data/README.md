@@ -98,6 +98,13 @@ search index's path - the registered examples (`datasetId`, `exampleId`, `sha256
 (`template`, `sha256`, `runnable`). `@freva-org/portal-builder prepare-notebook` writes it from a
 portal's dataset-tree block.
 
+## The notebook from the host page
+
+The panel answers messages from the page that frames the notebook (`freva-data:open-dataset`,
+`freva-data:open-example`, `freva-data:show-panel`). That page's half - the notebook sheet, the
+link interception and the Jupyter mark - is `@freva-org/browser-python/ui/notebook`, which
+depends on nothing from JupyterLab, so a site showing the sheet does not install JupyterLab.
+
 ## Development
 
 ```bash
