@@ -1,5 +1,17 @@
 # @freva-org/jupyterlite-freva-data
 
+## 2610.2.0
+
+### Minor Changes
+
+- 89d1c72: - `buildPanelData()` and `dataPanelSite()` give the panel's data file and settings for any site preparing a notebook with `@freva-org/jupyterlite-freva-kernel/prepare`.
+  - The panel's live-tree recipes come from `@freva-org/dataset-tree/recipes`
+
+### Patch Changes
+
+- Updated dependencies [0b4e35c]
+  - @freva-org/dataset-tree@2610.2.0
+
 ## 2610.1.1
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/cosmos-backdrop",
-  "version": "2610.0.0",
+  "version": "2610.1.0",
   "description": "The Cosmos backdrop: a still cross-section of an observing system, from orbit to the ocean floor, drawn behind a landing page and redrawn for the page's theme. Framework-free; the scene loads only on a page that has a .portal-cosmos element.",
   "type": "module",
   "repository": {

@@ -44,10 +44,26 @@ try {
     join(scratch, "package.json"),
     JSON.stringify({ name: "consumer", type: "module", private: true }),
   );
-  execFileSync("npm", ["install", "--no-audit", "--no-fund", "--no-package-lock", tarball], {
-    cwd: scratch,
-    stdio: "pipe",
-  });
+  // This repository's own dependencies are packed from the workspace beside it, not fetched: on a
+  // release PR they carry versions the registry has not got yet, and they ship together.
+  const own = Object.keys(
+    JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).dependencies ?? {},
+  )
+    .filter((dep) => dep.startsWith("@freva-org/"))
+    .map((dep) => {
+      const [packed] = JSON.parse(
+        execFileSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", scratch], {
+          cwd: join(PKG, "..", dep.split("/")[1]),
+          encoding: "utf8",
+        }),
+      );
+      return join(scratch, packed.filename);
+    });
+  execFileSync(
+    "npm",
+    ["install", "--no-audit", "--no-fund", "--no-package-lock", tarball, ...own],
+    { cwd: scratch, stdio: "pipe" },
+  );
 
   const installed = join(scratch, "node_modules", ...NAME.split("/"));
   check("it installs", existsSync(installed), installed.slice(scratch.length + 1));

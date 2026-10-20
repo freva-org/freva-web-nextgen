@@ -96,9 +96,31 @@ try {
     join(scratch, "package.json"),
     JSON.stringify({ name: "consumer", type: "module", private: true }),
   );
+  // This repository's own dependencies are packed from the workspace beside it, not fetched: on a
+  // release PR they carry versions the registry has not got yet, and they ship together.
+  const own = Object.keys(
+    JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).dependencies ?? {},
+  )
+    .filter((dep) => dep.startsWith("@freva-org/"))
+    .map((dep) => {
+      const [packed] = JSON.parse(
+        execFileSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", scratch], {
+          cwd: join(PKG, "..", dep.split("/")[1]),
+          encoding: "utf8",
+        }),
+      );
+      return join(scratch, packed.filename);
+    });
   execFileSync(
     "npm",
-    ["install", "--no-audit", "--no-fund", "--no-package-lock", join(scratch, meta.filename)],
+    [
+      "install",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      join(scratch, meta.filename),
+      ...own,
+    ],
     { cwd: scratch, stdio: "pipe" },
   );
   // The static assets, produced by the INSTALLED package's own CLI. The npm package publishes
