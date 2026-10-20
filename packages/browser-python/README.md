@@ -23,17 +23,29 @@ CDN or from your own origin. Nothing typed at the prompt reaches your infrastruc
 
 ## Entry points
 
-| Specifier                                  | Contents                                                       |
-| ------------------------------------------ | -------------------------------------------------------------- |
-| `@freva-org/browser-python`                | the headless engine. No DOM, no CSS, no custom element.        |
-| `@freva-org/browser-python/console`        | `BrowserPythonConsole`, `defineBrowserPythonConsole()`, types. |
-| `@freva-org/browser-python/console/auto`   | the above, plus `<freva-python-console>`. Browser only.        |
-| `@freva-org/browser-python/console.css`    | the stylesheet, for hosts that prefer a `<link>`.              |
-| `@freva-org/browser-python/embed`          | the two-origin playground bridge and host.                     |
-| `@freva-org/browser-python/embed/examples` | the registered-example manifest helpers.                       |
-| `@freva-org/browser-python/display`        | the rich-output sanitiser and renderers (HTML, SVG, PNG).      |
-| `@freva-org/browser-python/display.css`    | the static styles for pandas and xarray HTML output.           |
-| `@freva-org/browser-python/session`        | setup choices, live slots, telemetry and manual sleep.         |
+| Specifier                                     | Contents                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `@freva-org/browser-python`                   | the headless engine. No DOM, no CSS, no custom element.                               |
+| `@freva-org/browser-python/console`           | `BrowserPythonConsole`, `defineBrowserPythonConsole()`, types.                        |
+| `@freva-org/browser-python/console/auto`      | the above, plus `<freva-python-console>`. Browser only.                               |
+| `@freva-org/browser-python/console.css`       | the stylesheet, for hosts that prefer a `<link>`.                                     |
+| `@freva-org/browser-python/embed`             | the two-origin playground bridge and host.                                            |
+| `@freva-org/browser-python/embed/examples`    | the registered-example manifest helpers.                                              |
+| `@freva-org/browser-python/display`           | the rich-output sanitiser and renderers (HTML, SVG, PNG).                             |
+| `@freva-org/browser-python/display.css`       | the static styles for pandas and xarray HTML output.                                  |
+| `@freva-org/browser-python/session`           | setup choices, live slots, telemetry and manual sleep.                                |
+| `@freva-org/browser-python/ui`                | Try in Python for a page: the playground window ([below](#the-playground-on-a-page)). |
+| `@freva-org/browser-python/ui/bridge`         | the example registry and `tryPython`, alone (for a dataset tree).                     |
+| `@freva-org/browser-python/ui/local`          | the window's loader for an interpreter in this page.                                  |
+| `@freva-org/browser-python/ui/framed`         | the loader for an interpreter on a separate origin.                                   |
+| `@freva-org/browser-python/ui/chooser`        | the per-session setup chooser.                                                        |
+| `@freva-org/browser-python/ui/code`           | code figures: Try in Python, Editable, Reset, the editor.                             |
+| `@freva-org/browser-python/ui/copy`           | the Copy control on every code figure.                                                |
+| `@freva-org/browser-python/ui/code.css`       | the code figures' stylesheet.                                                         |
+| `@freva-org/browser-python/ui/notebook`       | links into a JupyterLite notebook open it in the notebook sheet; the Jupyter mark.    |
+| `@freva-org/browser-python/ui/notebook/sheet` | `openNotebook(target, request?)`: the notebook sheet itself.                          |
+| `@freva-org/browser-python/ui/notebook/embed` | the notebook framed in a page section.                                                |
+| `@freva-org/browser-python/ui/notebook.css`   | the sheet, the embed and the "Open in Notebook" control.                              |
 
 `/console` is side-effect free and safe to import during a server render; `/console/auto` is not.
 
@@ -81,8 +93,8 @@ Nothing is fetched until `start()`.
 
 | what                                           | on the wire                                               | when                                 |
 | ---------------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
-| this package, engine only                      | <!-- size:root-entry-gz --> 8.1 KiB gzipped               | with your bundle                     |
-| this package, with the console                 | <!-- size:console-entry-gz --> 131.0 KiB gzipped          | with your bundle, `/console` only    |
+| this package, engine only                      | <!-- size:root-entry-gz --> 8.3 KiB gzipped               | with your bundle                     |
+| this package, with the console                 | <!-- size:console-entry-gz --> 131.5 KiB gzipped          | with your bundle, `/console` only    |
 | Pyodide runtime + stdlib                       | 12.8 MB (6.0 MB gzipped)                                  | first `start()`                      |
 | xarray, zarr, fsspec, numcodecs, cftime, numpy | 10.0 MB, 18 wheels                                        | first `start()`, `xarray-zarr` only  |
 | the derived Freva wheel + PyPI deps            | 38 KiB gzipped for the wheel, plus what micropip resolves | first `start()`, `freva-client` only |
@@ -92,8 +104,8 @@ Nothing is fetched until `start()`.
 The emitted headless-engine files - everything in `dist/` except the console and optional embed
 bridge - are
 
-<!-- size:engine-dist-gz --> 82.2 KiB gzipped against a budget of
-<!-- size:engine-budget-gz --> 83.0 KiB. None of the runtime is in your bundle: it is a dynamic
+<!-- size:engine-dist-gz --> 83.9 KiB gzipped against a budget of
+<!-- size:engine-budget-gz --> 85.0 KiB. None of the runtime is in your bundle: it is a dynamic
 
 import by URL, and `npm run check:bytes` fails the build if that stops being true, or if the
 published tarball ever contains a `.wasm`, `.whl` or stdlib zip. `scripts/check-docs-sizes.mjs`
@@ -331,6 +343,33 @@ rather than reporting ready over an interpreter that lacks it.
 `dask` means Dask core and `dask.array` on one synchronous scheduler: bounded laziness, not
 parallelism. No `dask.distributed`, no threads, no spilling, no rewriting a remote store.
 
+## Site wheels
+
+A library the pinned runtime does not carry - a WebAssembly build a site's examples need - is a
+**site wheel**: pinned by the site, served by the site, and checked here like everything else.
+
+```ts
+createBrowserPython({
+  profile: "xarray-zarr",
+  siteWheels: [
+    {
+      url: "/python/wheels/healpix_geo-2026.5.1-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
+      sha256: "<the digest the site recorded when it pinned the wheel>",
+    },
+  ],
+});
+```
+
+Every wheel is fetched and its SHA-256 compared with the recorded one before any is installed, then
+installed from those bytes (`emfs:`, not a second download) with `deps=False`, after the add-ons and
+before the REPL. A missing or altered wheel fails `start()` with the URL and both digests;
+`ready.siteWheels` lists what was installed. The console takes the same list as its `siteWheels`
+property, and the JupyterLite kernel as its `siteWheels` setting.
+
+The three sources stay distinct on purpose: the Freva **wheelhouse** and the curated **add-ons** are
+pinned by this package; a site wheel is pinned by the site, which owns its provenance and its
+compatibility with the runtime's ABI.
+
 ## Files Python writes
 
 `/workspace` is the working directory, backed by the origin private filesystem rather than by the
@@ -508,12 +547,12 @@ incomplete, state persists between lines, and top-level `await` works.
 |                       | `@freva-org/browser-python`             | `@freva-org/browser-python/console`          |
 | --------------------- | --------------------------------------- | -------------------------------------------- |
 | What you get          | engine, events, `push()`                | the above plus a rendered console            |
-| Bundled, gzipped      | <!-- size:root-entry-gz --> **8.1 KiB** | <!-- size:console-entry-gz --> **131.0 KiB** |
+| Bundled, gzipped      | <!-- size:root-entry-gz --> **8.3 KiB** | <!-- size:console-entry-gz --> **131.5 KiB** |
 | Touches `document`    | no                                      | yes, on `connectedCallback`                  |
 | Safe to import in SSR | yes                                     | `/console` yes, `/console/auto` no           |
 | jQuery in the bundle  | never (asserted by a test)              | yes, as a private instance                   |
 
-The console layer over the headless engine is <!-- size:console-layer-gz --> 122.9 KiB gzipped, of
+The console layer over the headless engine is <!-- size:console-layer-gz --> 123.2 KiB gzipped, of
 which jQuery Terminal and jQuery are 91.7 KiB. `measure-console.mjs` enforces a ceiling rather than
 a target - 124 KiB for the layer, 8.5 KiB for the root entry - and fails if it finds a jQuery or
 worker-only add-on pin fingerprint in the root bundle.
@@ -558,7 +597,8 @@ nor history, runs again after every `restart()`, and **rejects `start()`** with
 | `Tab`               | Python completion; at a whitespace-only prefix, indents instead                             |
 | `Tab` / `Shift+Tab` | cycle the completion menu when it is open                                                   |
 | `Enter` (menu open) | insert the selected completion. It does not run the line                                    |
-| `Escape`            | close the completion menu, or leave history search                                          |
+| `Escape`            | close the completion menu, or leave history search; with neither open, release the keyboard |
+| `Escape`, `Tab`     | leave the console (Tab alone completes); focusing the prompt again takes the keyboard back  |
 | `↑` / `↓`           | in a multi-line block, the line above / below; otherwise history, filtered by what is typed |
 | `Ctrl+P` / `Ctrl+N` | history, even inside a multi-line block                                                     |
 | `→` / `Ctrl+E`      | accept the greyed-out history suggestion at end of line                                     |
@@ -703,6 +743,93 @@ length, and resets nothing. It resolves once the example has run, with `{ raised
 program ended with an uncaught exception, whose traceback is in the transcript. `comment` adds one
 status line above the echoed source, which the copied transcript records as `# …`; it is not run,
 so traceback line numbers are the source's own.
+
+## The playground on a page
+
+`/ui` is the page around the console: the terminal window ("Python") that a **Try in Python**
+press opens, with one interpreter per page, the window's menu (restart, packages, keys, "Open as
+notebook"), and the code figures whose buttons feed it. It is what the Freva portals and the
+Waterpark site use, and it depends on `@freva-org/freva-client-terminal` for the window chrome and
+its layer manager. Nothing heavy loads with it: the window, the console, jQuery, Prism and the
+interpreter arrive with the first press.
+
+```ts
+import { preparePythonPlayground } from "@freva-org/browser-python/ui";
+import { loadLocalChunks } from "@freva-org/browser-python/ui/local";
+import { mountRunnableCode } from "@freva-org/browser-python/ui/code";
+import { initCodeCopy } from "@freva-org/browser-python/ui/copy";
+
+initCodeCopy();
+await mountRunnableCode(); // verifies and registers the page's runnable figures
+preparePythonPlayground(loadLocalChunks);
+```
+
+What the page provides:
+
+- `<div id="portal-overlay-root" class="portal-overlay-root"></div>` - where the window is
+  mounted (`@freva-org/freva-client-terminal/layers.css` styles it).
+- One element carrying the configuration, `data-portal-python-playground='{…}'`, a
+  `PythonPlaygroundConfig`: `profile`, `addons`, `optionalAddons`, `runtimeIndexUrl`,
+  `addonBaseUrl`, `workerUrl` (for a bundler that does not emit the worker beside the console),
+  `siteWheels`, `packagePolicy` (what the Packages panel says), `terminal`, `notebook`… and
+  `examples`: `{ id, sha256, title }` for every runnable snippet on the page.
+- Code figures in this shape; `mountRunnableCode` enables a run button only when its id is
+  registered, the digest on the button is the registered one, and the copy text hashes to it:
+
+  ```html
+  <div class="portal-code-figure" data-portal-code="python" data-portal-editable>
+    <div class="portal-code-head">
+      <span class="portal-code-lang">Python</span>
+      <div class="portal-code-actions">
+        <button type="button" class="portal-code-copy" data-portal-copy="…source…" hidden>…</button>
+        <button
+          type="button"
+          class="portal-code-run"
+          data-portal-run
+          data-portal-example="page#1"
+          data-portal-digest="…sha256…"
+          hidden
+        >
+          <span class="portal-code-run-icon" aria-hidden="true"></span>
+          <span class="portal-code-run-label">Try in Python</span>
+        </button>
+      </div>
+    </div>
+    <pre class="portal-code-block"><code class="portal-code">…</code></pre>
+  </div>
+  ```
+
+  `data-portal-editable` makes the snippet editable (the Prism editor loads on the first click):
+  an unedited snippet runs as a registered example, by name and digest; an edited one runs as
+  visitor input, labelled as edited, and **Reset** restores the published text.
+
+- A dataset tree registers its own examples with `registerPythonBlock` from `/ui/bridge` and calls
+  `tryPython` - so a page with a tree and no runnable figure still gets one window.
+
+`code.css` reads the host's design tokens (`--ink`, `--ink-2`, `--muted`, `--surface`,
+`--surface-2`, `--line`, `--line-2`, `--accent`, `--accent-ink`, `--accent-text`, `--chip`,
+`--syn-*` for the editor's highlighting); the static highlighting of the code itself is the host's.
+
+## The notebook sheet
+
+`/ui/notebook` opens a separately deployed JupyterLite notebook over the page instead of in a new
+tab: `initNotebookLinks(href)` turns any same-origin link to it into the sheet, and loads the sheet
+only on the first such click. Closing the sheet hides it - opening it again finds the same
+notebook and session, and a new example or dataset is sent to the running notebook rather than
+reloading it. "Open in a new tab" is in its bar; Escape and the backdrop close it, focus returns to
+the control that opened it, the page behind is inert while it is open, and a closed sheet never
+keeps the keyboard. It mounts through `@freva-org/freva-client-terminal/layers`, below a Python
+window and above a maximized tree, and sits below the page's header (`.portal-header`, or a
+top-level `<header>`). Nothing in it imports JupyterLab: the notebook runs in its own frame.
+
+```js
+import { initNotebookLinks } from "@freva-org/browser-python/ui/notebook";
+initNotebookLinks("notebook/lab/index.html"); // relative to the page
+// <a href="notebook/lab/index.html?example=examples/01_first_map.ipynb">Open in Notebook</a>
+```
+
+The notebook side - the data panel answering `freva-data:open-dataset`, `freva-data:open-example`
+and `freva-data:show-panel` - is `@freva-org/jupyterlite-freva-data`.
 
 ## Security
 

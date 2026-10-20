@@ -17,6 +17,7 @@ import type {
   BrowserPython,
   BrowserPythonProfile,
   BrowserPythonReadyInfo,
+  SiteWheel,
   OutputEvent,
 } from "../types.js";
 import {
@@ -241,6 +242,9 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
    */
   #readyInfo: BrowserPythonReadyInfo | null = null;
   #addonBaseURL: string | undefined;
+  #siteWheels: readonly SiteWheel[] | undefined;
+  /** Escape released the keyboard: the next Tab leaves the console. */
+  #keyboardReleased = false;
   #indexURL: string | undefined;
   #workerURL: string | undefined;
   #persistCredentials: boolean | undefined;
@@ -267,6 +271,17 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
   constructor() {
     super();
     this.#root = this.attachShadow({ mode: "open" });
+    // Escape's release lasts until the visitor comes back to the prompt: a click on the console, or
+    // focus re-entering it from outside, takes the keyboard back, so the next Tab completes again.
+    // Focus moving within the console (the library moves it about) is not a return.
+    this.addEventListener("pointerdown", () => {
+      this.#keyboardReleased = false;
+    });
+    this.addEventListener("focusin", (event) => {
+      const from = event.relatedTarget;
+      if (from instanceof Node && from !== this && !this.contains(from))
+        this.#keyboardReleased = false;
+    });
   }
 
   // ------ properties
@@ -408,6 +423,19 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
   /** What the running interpreter reported at start, or `null` when none is running. */
   get readyInfo(): BrowserPythonReadyInfo | null {
     return this.#readyInfo;
+  }
+
+  /**
+   * Wheels the site pins and serves itself (`{ url, sha256 }`), installed after the add-ons. Like
+   * the other engine options it takes effect when the element creates its engine (at `start()` or
+   * `restart()`); an injected `engine` brings its own. See `BrowserPythonOptions.siteWheels`.
+   */
+  get siteWheels(): readonly SiteWheel[] | undefined {
+    return this.#siteWheels;
+  }
+
+  set siteWheels(value: readonly SiteWheel[] | undefined) {
+    this.#siteWheels = value ? [...value] : undefined;
   }
 
   set addonBaseURL(value: string | undefined) {
@@ -1408,7 +1436,9 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
     const ctrl = event.ctrlKey || event.metaKey;
 
     // Escape closes the TRANSIENT surfaces first, and only those. It must not reach the host page
-    // while a menu is open, and must not do anything at all once they are closed.
+    // while a menu is open. With nothing open it releases the keyboard: Tab completes at the
+    // prompt, so without this a keyboard user could never leave the console. The next Tab moves
+    // focus on; any other key takes the prompt back.
     if (event.key === "Escape") {
       if (controller.searching) {
         controller.cancelSearch();
@@ -1418,7 +1448,17 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
         controller.closeCompletion();
         return true;
       }
+      if (this.#adapter?.release) {
+        this.#adapter.release();
+        this.#keyboardReleased = true;
+        return true;
+      }
       return false;
+    }
+    if (this.#keyboardReleased) {
+      this.#keyboardReleased = false;
+      if (event.key === "Tab") return false;
+      if (!["Shift", "Control", "Alt", "Meta"].includes(event.key)) this.#adapter?.focus();
     }
 
     if (controller.searching) {
@@ -1707,6 +1747,7 @@ export class BrowserPythonConsole extends ElementBase implements BrowserPythonCo
       ...(this.#addons !== undefined ? { addons: this.#addons } : {}),
       ...(this.#optionalAddons !== undefined ? { optionalAddons: this.#optionalAddons } : {}),
       ...(this.#addonBaseURL !== undefined ? { addonBaseURL: this.#addonBaseURL } : {}),
+      ...(this.#siteWheels !== undefined ? { siteWheels: this.#siteWheels } : {}),
       ...(this.#persistCredentials !== undefined
         ? { persistCredentials: this.#persistCredentials }
         : {}),

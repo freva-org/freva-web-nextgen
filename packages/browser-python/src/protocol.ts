@@ -63,6 +63,8 @@ export interface InitRequest {
   optionalAddons?: readonly BrowserPythonAddon[];
   /** Where the add-ons' pinned artefacts are served from. Defaults beside the runtime. */
   addonBaseURL?: string;
+  /** Wheels the site pins itself, absolute URLs, installed after the add-ons. */
+  siteWheels?: readonly { url: string; sha256: string }[];
   /** How many files `/workspace` may hold at one time. See `WorkspaceStatus.maxFiles`. */
   workspaceMaxFiles?: number;
   /**

@@ -138,6 +138,12 @@ export interface ConsoleSurfaceAdapter {
    * output - the output the visitor was reading - with the oldest. */
   trim(limits: { keepEntries: number; keepCharacters: number }): number;
   focus(): void;
+  /**
+   * Stop taking keys until the prompt is focused again, so focus can leave the console: what
+   * Escape does when nothing transient is open, and what happens when focus moves to the host
+   * page. Optional: a surface that never holds the keyboard needs no release.
+   */
+  release?(): void;
   /** One execution is over: every output batch is in, the prompt is current, input is live
    * again. Separate from `setBusy(false)`, which is about whether the terminal accepts a
    * keystroke; this is about whether the reader can SEE the place they would type into. A surface

@@ -348,6 +348,29 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
       true,
     );
 
+    // Focus moving outside the console (a host's button, a link) releases the keyboard; otherwise
+    // the library takes focus back ~10ms later and keeps acting on every key. Decided once focus
+    // settles, since the library's own `focus(true)` moves it about while enabling; focus moving
+    // within the console is left alone.
+    mount.addEventListener(
+      "focusout",
+      (event) => {
+        const next = event.relatedTarget;
+        if (!(next instanceof Node)) return;
+        const root = mount.getRootNode();
+        const inside = (node: Node | null): boolean =>
+          node !== null &&
+          (mount.contains(node) ||
+            (root instanceof ShadowRoot && (root.contains(node) || node === root.host)));
+        if (inside(next)) return;
+        setTimeout(() => {
+          const active = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
+          if (!inside(active)) this.release();
+        }, 0);
+      },
+      true,
+    );
+
     // Paste and cut do not raise keypress, and both change the buffer.
     for (const type of ["paste", "cut", "input"] as const) {
       mount.addEventListener(type, () => requestAnimationFrame(() => this.#emitChange()));
@@ -798,6 +821,14 @@ export class JQueryTerminalAdapter implements ConsoleSurfaceAdapter {
     }
     if (removed > 0) this.#revokeAll();
     return removed;
+  }
+
+  release(): void {
+    // Disabled, the library stops pulling focus back to its textarea and its document-level key
+    // handlers stop acting, so Tab moves on and a host control receives its own Enter. Focusing
+    // the prompt again (a click, Shift+Tab back, a host's `focus()`) switches it on - see the
+    // `focusin` handler in `mount`.
+    this.#terminal?.disable(true);
   }
 
   focus(): void {

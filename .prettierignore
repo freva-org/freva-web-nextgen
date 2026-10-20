@@ -59,3 +59,6 @@ examples/full-portal/content/showcase.md
 # destroy the only cheap way to diff it against the source it came from, which is what makes
 # the port auditable. ESLint has a matching override for the same file.
 packages/portal-builder/client/components/cosmos/scene.js
+# The code figures' markup contract: written to be read as markup, one element per line, and
+# compared by structure in three test suites. Rewrapping it would only make it harder to read.
+packages/browser-python/src/ui/code-figure.html
