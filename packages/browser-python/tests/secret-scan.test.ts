@@ -12,9 +12,9 @@ const MARKER = "MERGE_ONLY_MARKER_7f3a";
 
 function scanScript(): string {
   const workflow = readFileSync(CI, "utf8");
-  const job = workflow.slice(workflow.indexOf("\n  secrets:\n"));
-  const end = job.indexOf("\n  workflow-lint:\n");
-  return end >= 0 ? job.slice(0, end) : job;
+  const step = workflow.slice(workflow.indexOf("- name: Scan the new commits"));
+  const end = step.indexOf("- name:", 1);
+  return end >= 0 ? step.slice(0, end) : step;
 }
 
 function workflowOptions(): { merges: string; opts: string[] } {

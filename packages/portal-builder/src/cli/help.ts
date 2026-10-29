@@ -12,6 +12,7 @@ Usage:
   freva-portal-builder verify     --dir <artifact>
   freva-portal-builder archive    --dir <artifact> [--out <file>] [--compress]
   freva-portal-builder host-check --dir <artifact> --url https://portal.example.org/
+                                  [--allow-missing-csp]
   freva-portal-builder smoke      --stage <dir> --config <staged-relative> --out <dir>
                                   [--copy <src>=<dest>]... [--result <file>] [--keep]
   freva-portal-builder migrate    --from <ui-manifest.json> --out <dir>

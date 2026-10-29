@@ -39,7 +39,7 @@ npm run typecheck
 cd packages/<name-of-package> && npm run dev
 ```
 
-Node 22 (22.23.4 or later) or 24 is required.
+Node 22 or 24 is required (`packages/ts-oidc-auth-client` sets the floor).
 
 ## Contributing
 

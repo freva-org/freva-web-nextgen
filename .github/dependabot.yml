@@ -26,9 +26,11 @@ updates:
       day: monday
     cooldown:
       default-days: 7
+    # Majors arrive one PR each; only minor and patch updates are grouped.
     groups:
       actions:
         patterns: ["*"]
+        update-types: [minor, patch]
     labels: [dependencies]
 
   - package-ecosystem: pip

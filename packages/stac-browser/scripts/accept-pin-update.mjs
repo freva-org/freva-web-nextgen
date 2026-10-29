@@ -9,7 +9,15 @@
  * checkout with only the values pin.mjs may move, and the proposal must match them exactly.
  */
 import { execFileSync } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -50,6 +58,29 @@ const RECIPE_PATHS = Object.freeze({
   recordedWith: ["expected", "recordedWith"],
 });
 
+// One open, no symlink following, then check and read the same file descriptor.
+function readRegularFile(path, name, limit) {
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if (error.code === "ELOOP" || error.code === "EMLINK") {
+      throw new Error(`proposal entry ${name} is not a regular file`);
+    }
+    throw error;
+  }
+  try {
+    if (!fstatSync(fd).isFile()) throw new Error(`proposal entry ${name} is not a regular file`);
+    const bytes = readFileSync(fd);
+    if (bytes.length > limit) {
+      throw new Error(`proposal entry ${name} is ${bytes.length} bytes; the limit is ${limit}`);
+    }
+    return bytes.toString("utf-8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export function readProposal(dir) {
   const names = readdirSync(dir).sort();
   const expected = Object.keys(PROPOSAL_FILES).sort();
@@ -60,15 +91,7 @@ export function readProposal(dir) {
   }
   const files = {};
   for (const name of names) {
-    const path = join(dir, name);
-    const stat = lstatSync(path);
-    if (!stat.isFile()) throw new Error(`proposal entry ${name} is not a regular file`);
-    if (stat.size > PROPOSAL_FILES[name]) {
-      throw new Error(
-        `proposal entry ${name} is ${stat.size} bytes; the limit is ${PROPOSAL_FILES[name]}`,
-      );
-    }
-    files[name] = readFileSync(path, "utf-8");
+    files[name] = readRegularFile(join(dir, name), name, PROPOSAL_FILES[name]);
   }
   return files;
 }
@@ -94,6 +117,16 @@ function parse(name, text) {
   } catch (error) {
     throw new Error(`proposal ${name} is not JSON: ${error.message}`);
   }
+}
+
+// Upstream text goes into a bot PR: keep it from pinging people or closing issues here.
+export function neutraliseReferences(text) {
+  const zwsp = "\u200b";
+  return text
+    .replace(/(^|[^\w`/.])@([A-Za-z0-9][A-Za-z0-9-]*)/g, `$1@${zwsp}$2`)
+    .replace(/([\w.-]+\/[\w.-]+)#(\d+)/g, `$1#${zwsp}$2`)
+    .replace(/(^|[^\w&/])#(\d+)/g, `$1#${zwsp}$2`)
+    .replace(/\bGH-(\d+)/gi, `GH${zwsp}-$1`);
 }
 
 /** `resolveTag` is injected so tests need no network. */
@@ -141,7 +174,7 @@ export function rebuild({ proposal, base, commit, tag, resolveTag }) {
     contract,
     readme: setReadmePin(base.readme, commit),
     notice: setNoticePin(base.notice, commit, tag),
-    body: proposal["pr-body.md"],
+    body: neutraliseReferences(proposal["pr-body.md"]),
   };
 }
 

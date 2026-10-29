@@ -38,7 +38,8 @@ const ROOT_CEILING = 8.5 * 1024;
  * bundle carrying HTML or SVG arrives. About 14.5 KiB gz without the notice-card rules (the
  * console has its own copy); the ceiling stays close.
  */
-const RICH_OUTPUT_CEILING = 18 * 1024;
+// Raised from 18.0 for DOMPurify 3.4.17 (security fixes, +0.4 KiB gz).
+const RICH_OUTPUT_CEILING = 18.5 * 1024;
 
 /**
  * Bundle one entry as a consumer's bundler would: minified, ESM, code-split. What a page pays to

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import test from "node:test";
 import {
   compareReleases,
   CONTRACT_FILE,
+  neutraliseReferences,
   readProposal,
   rebuild,
 } from "../scripts/accept-pin-update.mjs";
@@ -69,8 +71,8 @@ test("a legitimate pin update is rebuilt exactly as pin.mjs would write it", () 
   const out = run(proposal);
   assert.equal(out.recipe, proposal["upstream.json"]);
   assert.equal(out.contract, proposal["adapter-contract.json"]);
-  assert.match(out.readme, new RegExp(COMMIT));
-  assert.match(out.notice, new RegExp(TAG.replace(/\./g, "\\.")));
+  assert.ok(out.readme.includes(COMMIT));
+  assert.ok(out.notice.includes(TAG));
   assert.equal(out.body, "Bumps the pin.\n");
 });
 
@@ -234,4 +236,35 @@ test("releases are ordered numerically, not as text", () => {
   assert.ok(compareReleases("v10.0.0", "v9.99.99") > 0);
   assert.equal(compareReleases("v5.1.0", "v5.1.0"), 0);
   assert.throws(() => compareReleases("v5.1", "v5.1.0"), /stable release tag/);
+});
+
+test("a named pipe in place of an expected file is refused without blocking", () => {
+  const rest = legitimate();
+  delete rest["pr-body.md"];
+  withDir(rest, (dir) => {
+    execFileSync("mkfifo", [join(dir, "pr-body.md")]);
+    assert.throws(() => readProposal(dir), /not a regular file/);
+  });
+});
+
+test("upstream text in the PR body cannot mention people or close issues", () => {
+  const out = neutraliseReferences(
+    "- @octocat fixes #12, see radiantearth/stac-browser#99 and GH-5\nmail a@b.example, `@code`",
+  );
+  assert.doesNotMatch(out, /(^|[^\w`/.])@[A-Za-z0-9]/);
+  assert.doesNotMatch(out, /(^|[^\w&/])#\d/);
+  assert.doesNotMatch(out, /stac-browser#\d/);
+  assert.doesNotMatch(out, /GH-\d/);
+  assert.match(out, /a@b\.example/);
+  assert.match(out, /`@code`/);
+  assert.equal(
+    out.replaceAll("\u200b", ""),
+    "- @octocat fixes #12, see radiantearth/stac-browser#99 and GH-5\nmail a@b.example, `@code`",
+  );
+});
+
+test("the rebuilt PR body is the neutralised one", () => {
+  const proposal = legitimate();
+  proposal["pr-body.md"] = "thanks @someone, closes #3\n";
+  assert.equal(run(proposal).body, "thanks @\u200bsomeone, closes #\u200b3\n");
 });

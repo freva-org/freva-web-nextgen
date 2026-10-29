@@ -110,6 +110,7 @@ export const CODES = {
   FP1603: "Artifact verification failed",
   FP1604: "Prepared component materials are missing",
   FP1606: "Embedded component stylesheet is not contained",
+  FP1607: "Deployed Content-Security-Policy missing or weakened",
   // Environment
   FP1701: "RST helper handshake mismatch",
   FP1702: "Build-time renderer unavailable",

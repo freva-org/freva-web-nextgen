@@ -414,7 +414,11 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
           requireFlag(args, "dir", "Point it at the artifact that was deployed."),
         );
         const url = requireFlag(args, "url", "The deployed site base URL.");
-        const bag = await hostCheck({ dir, url });
+        const bag = await hostCheck({
+          dir,
+          url,
+          allowMissingCsp: args.flags["allow-missing-csp"] === true,
+        });
         report(bag, args, io);
         return bag.errors.length > 0 ? 1 : 0;
       }

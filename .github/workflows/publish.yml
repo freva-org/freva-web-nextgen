@@ -55,14 +55,17 @@ jobs:
 
       - name: Pick token
         id: tok
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEFAULT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "${{ steps.app-token.outputs.token }}" ]; then
+          if [ -n "$APP_TOKEN" ]; then
             echo "Acting as freva-bot."
-            echo "token=${{ steps.app-token.outputs.token }}" >> "$GITHUB_OUTPUT"
+            echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::freva-bot unavailable; acting as github-actions[bot]." \
                  "The version PR it opens will not trigger CI."
-            echo "token=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_OUTPUT"
+            echo "token=$DEFAULT_TOKEN" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -147,13 +150,14 @@ jobs:
         if: steps.publish.outputs.tags != '' && steps.publish.outputs.tags != '[]'
         env:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
+          TAGS: ${{ steps.publish.outputs.tags }}
         run: |
           git config user.name "freva-bot"
           git config user.email "freva-bot@users.noreply.github.com"
           git remote set-url origin \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           existing=$(git ls-remote --tags origin | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u)
-          for tag in $(echo '${{ steps.publish.outputs.tags }}' | jq -r '.[]'); do
+          for tag in $(printf '%s' "$TAGS" | jq -r '.[]'); do
             if printf '%s\n' "$existing" | grep -qxF "$tag"; then
               echo "$tag is already tagged."
               continue

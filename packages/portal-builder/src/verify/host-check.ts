@@ -83,7 +83,9 @@ function normaliseSource(source: string): string {
   if (hashOrNonce) return `'${hashOrNonce[1]!.toLowerCase()}-${hashOrNonce[2]}'`;
   if (source.startsWith("'")) return source.toLowerCase();
   if (/^[a-z][a-z0-9+.-]*:$/i.test(source)) return source.toLowerCase();
-  return source;
+  // Scheme and host are case-insensitive; a path is not.
+  const host = /^([a-z][a-z0-9+.-]*:\/\/)?([^/]+)(.*)$/i.exec(source);
+  return host ? `${(host[1] ?? "").toLowerCase()}${host[2]!.toLowerCase()}${host[3]}` : source;
 }
 
 /** Directive name -> sources. `'none'` is the empty set. */
@@ -94,7 +96,9 @@ export function parseCsp(policy: string): Map<string, Set<string>> {
     if (!name) continue;
     const key = name.toLowerCase();
     if (directives.has(key)) continue;
-    directives.set(key, new Set(sources.map(normaliseSource).filter((s) => s !== "'none'")));
+    // 'report-sample' only adds a code sample to violation reports.
+    const ignored = new Set(["'none'", "'report-sample'"]);
+    directives.set(key, new Set(sources.map(normaliseSource).filter((s) => !ignored.has(s))));
   }
   return directives;
 }
@@ -199,6 +203,8 @@ export interface HostCheckOptions {
   fetchImpl?: typeof fetch;
   /** Follow no redirects: the redirect itself is the thing being checked. */
   timeoutMs?: number;
+  /** A host that cannot send headers (GitHub Pages): a missing CSP is a warning, not an error. */
+  allowMissingCsp?: boolean;
 }
 
 export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBag> {
@@ -244,6 +250,40 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
     }
   };
 
+  const checkCsp = (response: Response, url: string, fullPath: string): void => {
+    const expected = expectedCsp(policy.csp, fullPath);
+    if (!expected) return;
+    const enforced = response.headers.get("content-security-policy");
+    if (!enforced) {
+      const message = response.headers.get("content-security-policy-report-only")
+        ? `GET ${url} sends its Content-Security-Policy only as Content-Security-Policy-Report-Only, which enforces nothing.`
+        : `GET ${url} sends no Content-Security-Policy; host-policy.json records the policy the host must send.`;
+      if (options.allowMissingCsp) {
+        bag.warn(
+          "FP1607",
+          `${message} Accepted by --allow-missing-csp: this host serves it without one.`,
+        );
+      } else {
+        bag.error("FP1607", message);
+      }
+      return;
+    }
+    // Comma-joined policies all apply, so one that isn't weakened is enough.
+    const results = enforced.split(",").map((text) => compareCsp(expected, parseCsp(text)));
+    const best = results.find((result) => result.widened.length === 0);
+    if (!best) {
+      bag.error(
+        "FP1607",
+        `GET ${url} sends a weaker Content-Security-Policy than host-policy.json records: ${(results[0]?.widened ?? []).join("; ")}.`,
+      );
+    } else if (best.narrowed.length > 0) {
+      bag.warn(
+        "FP1607",
+        `GET ${url} sends a stricter Content-Security-Policy than host-policy.json records (${best.narrowed.join("; ")}); the portal may not work.`,
+      );
+    }
+  };
+
   // 1. The root document is served at the canonical URL.
   const root = await get(base, "follow");
   if (root) {
@@ -254,36 +294,23 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
     }
 
     // 1b. The artifact's Content-Security-Policy, enforced and not weakened.
-    const expected = expectedCsp(policy.csp, policy.mount.basePath);
-    if (expected) {
-      const enforced = root.headers.get("content-security-policy");
-      const reportOnly = root.headers.get("content-security-policy-report-only");
-      if (!enforced) {
-        bag.error(
-          "FP1603",
-          reportOnly
-            ? `GET ${base} sends its Content-Security-Policy only as Content-Security-Policy-Report-Only, which enforces nothing.`
-            : `GET ${base} sends no Content-Security-Policy; host-policy.json records the policy the host must send.`,
-        );
-      } else {
-        // Comma-joined policies all apply, so one that isn't weakened is enough.
-        const results = enforced
-          .split(",")
-          .map((policyText) => compareCsp(expected, parseCsp(policyText)));
-        const best = results.find((result) => result.widened.length === 0);
-        if (!best) {
-          bag.error(
-            "FP1603",
-            `GET ${base} sends a weaker Content-Security-Policy than host-policy.json records: ${(results[0]?.widened ?? []).join("; ")}.`,
-          );
-        } else if (best.narrowed.length > 0) {
-          bag.warn(
-            "FP1603",
-            `GET ${base} sends a stricter Content-Security-Policy than host-policy.json records (${best.narrowed.join("; ")}); the portal may not work.`,
-          );
-        }
-      }
-    }
+    checkCsp(root, base, policy.mount.basePath);
+  }
+
+  // 1c. Paths and subsites with a policy of their own: one file under each.
+  const basePrefix = policy.mount.basePath.replace(/\/$/, "");
+  const owned = [
+    ...(policy.csp?.paths ?? []).map((entry) => entry.match),
+    ...(policy.csp?.subsites ?? []).map((entry) => ({ prefix: entry.mount })),
+  ];
+  for (const match of owned) {
+    const file = manifest.files.find((f) => {
+      const full = `${basePrefix}/${f.path}`;
+      return "prefix" in match ? full.startsWith(match.prefix) : full === match.path;
+    });
+    if (!file) continue;
+    const response = await get(at(file.path), "follow");
+    if (response) checkCsp(response, at(file.path), `${basePrefix}/${file.path}`);
   }
 
   // 2. Directory URLs and deep links are real files, without an SPA fallback.

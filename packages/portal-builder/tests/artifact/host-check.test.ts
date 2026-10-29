@@ -3,7 +3,7 @@
 // that a conforming host answers them. It claims nothing about TLS, CDNs or access logs, which
 // only a deployed target and `host-check` can settle.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -144,6 +144,19 @@ describe("the deployed Content-Security-Policy", () => {
   it("is reported when the host sends none", async () => {
     const { errors } = await check((h) => h.delete("content-security-policy"));
     expect(errors.join("\n")).toMatch(/sends no Content-Security-Policy/);
+  }, 60_000);
+
+  it("is only a warning with allowMissingCsp, for a host that cannot send headers", async () => {
+    const bag = await hostCheck({
+      dir: out,
+      url: base,
+      allowMissingCsp: true,
+      fetchImpl: rootHeaders((h) => h.delete("content-security-policy")),
+    });
+    expect(bag.errors.map((d) => d.message).join("\n")).not.toMatch(/Content-Security-Policy/);
+    expect(bag.warnings.map((d) => d.message).join("\n")).toMatch(
+      /sends no Content-Security-Policy.*--allow-missing-csp/,
+    );
   }, 60_000);
 
   it("is reported when the host only reports it", async () => {
@@ -331,5 +344,114 @@ describe("comparing a served policy with the recorded one, under CSP semantics",
         narrowed: [],
       });
     }
+  });
+
+  it("ignores 'report-sample' and the case of scheme and host", () => {
+    expect(compare({ "script-src": "'self'" }, "script-src 'self' 'report-sample'")).toEqual({
+      widened: [],
+      narrowed: [],
+    });
+    expect(
+      compare(
+        { "connect-src": "https://api.example.org/v1" },
+        "connect-src HTTPS://API.Example.org/v1",
+      ),
+    ).toEqual({ widened: [], narrowed: [] });
+    expect(
+      compare(
+        { "connect-src": "https://api.example.org/v1" },
+        "connect-src https://api.example.org/V1",
+      ).widened,
+    ).toEqual(["'connect-src' also allows https://api.example.org/V1"]);
+  });
+});
+
+describe("a path with a policy of its own", () => {
+  /** A minimal artifact: a portal policy, and a stricter one under /notebook/. */
+  function artifact(): string {
+    const dir = join(tempRoot("portal-host-paths-"), "site");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "host-policy.json"),
+      JSON.stringify({
+        mount: { canonicalUrl: "https://portal.example/", basePath: "/" },
+        routing: {
+          directoryIndex: "index.html",
+          trailingSlashRedirect: "308",
+          preserveQueryOnRedirect: true,
+        },
+        errorPages: { notFound: "404.html" },
+        headers: [],
+        cache: { classes: {} },
+        csp: {
+          portal: { "default-src": "'none'", "script-src": "'self'" },
+          paths: [
+            {
+              match: { prefix: "/notebook/" },
+              directives: { "default-src": "'none'", "script-src": "'self' 'wasm-unsafe-eval'" },
+            },
+          ],
+        },
+      }),
+    );
+    writeFileSync(
+      join(dir, "portal-manifest.json"),
+      JSON.stringify({
+        routes: [],
+        files: [{ path: "notebook/index.html", cacheClass: "revalidate" }],
+      }),
+    );
+    return dir;
+  }
+  const host =
+    (notebookCsp: string | null): typeof fetch =>
+    async (input) => {
+      const url = String(input);
+      const csp = url.includes("/notebook/")
+        ? notebookCsp
+        : "default-src 'none'; script-src 'self'";
+      const headers = new Headers({ "content-type": "text/html", "cache-control": "no-cache" });
+      if (csp) headers.set("content-security-policy", csp);
+      return new Response("<!doctype html><title>t</title>", {
+        status: url.includes("missing") ? 404 : 200,
+        headers,
+      });
+    };
+  const cspErrors = async (notebookCsp: string | null) =>
+    (
+      await hostCheck({
+        dir: artifact(),
+        url: "https://portal.example/",
+        fetchImpl: host(notebookCsp),
+      })
+    ).errors
+      .map((d) => d.message)
+      .filter((m) => m.includes("Content-Security-Policy"));
+
+  it("is checked against that policy, not the portal's", async () => {
+    expect(await cspErrors("default-src 'none'; script-src 'self' 'wasm-unsafe-eval'")).toEqual([]);
+  });
+
+  it("is an error when the host sends it none or a weaker one", async () => {
+    expect((await cspErrors(null)).join("\n")).toMatch(
+      /notebook\/index\.html sends no Content-Security-Policy/,
+    );
+    expect(
+      (await cspErrors("default-src 'none'; script-src 'self' 'unsafe-eval'")).join("\n"),
+    ).toMatch(/notebook\/index\.html sends a weaker.*'unsafe-eval'/);
+  });
+
+  it("is only a warning when the host sends it the portal's stricter policy", async () => {
+    const bag = await hostCheck({
+      dir: artifact(),
+      url: "https://portal.example/",
+      fetchImpl: host("default-src 'none'; script-src 'self'"),
+    });
+    expect(
+      bag.errors.map((d) => d.message).filter((m) => m.includes("Content-Security-Policy")),
+    ).toEqual([]);
+    expect(bag.warnings.map((d) => d.message).join("\n")).toMatch(
+      /notebook\/index\.html sends a stricter/,
+    );
   });
 });
