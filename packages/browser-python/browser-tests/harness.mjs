@@ -25,6 +25,7 @@ import { SUITE_REQUIREMENTS } from "./suite-requirements.mjs";
 import { checkStamp } from "../scripts/build-stamp.mjs";
 import { withDeadline } from "./deadline.mjs";
 import { workspaceAbsenceConsistent } from "./workspace-reasons.mjs";
+import { ESBUILD } from "../scripts/esbuild-bin.mjs";
 
 /** How long any one teardown step - dispose, context close, browser close - may take. */
 export const TEARDOWN_MS = 15_000;
@@ -205,7 +206,7 @@ export function bundleConsole() {
     entry,
     'export { defineBrowserPythonConsole, BrowserPythonConsole } from "../dist/console/index.js";\n',
   );
-  const esbuild = join(PKG, "..", "..", "node_modules", ".bin", "esbuild");
+  const esbuild = ESBUILD;
   execFileSync(
     esbuild,
     [entry, "--bundle", "--format=esm", `--outfile=${out}`, "--log-level=error"],
@@ -226,7 +227,7 @@ export function bundleDisplay() {
   const out = join(TEST_BUNDLE, "display.js");
   mkdirSync(TEST_BUNDLE, { recursive: true });
   writeFileSync(entry, 'export * from "../dist/display/index.js";\n');
-  const esbuild = join(PKG, "..", "..", "node_modules", ".bin", "esbuild");
+  const esbuild = ESBUILD;
   execFileSync(
     esbuild,
     [entry, "--bundle", "--format=esm", `--outfile=${out}`, "--log-level=error"],

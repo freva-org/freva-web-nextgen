@@ -14,6 +14,7 @@ import {
 import { createServer } from "node:http";
 import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ESBUILD } from "./esbuild-bin.mjs";
 
 const PKG = fileURLToPath(new URL("..", import.meta.url));
 const ROOTS = {
@@ -47,7 +48,7 @@ function prepare() {
     join(out, "entry.js"),
     'export { defineBrowserPythonConsole, BrowserPythonConsole } from "../dist/console/index.js";\n',
   );
-  const esbuild = join(PKG, "..", "..", "node_modules", ".bin", "esbuild");
+  const esbuild = ESBUILD;
   if (!existsSync(esbuild)) {
     console.error("esbuild is missing. Run `npm ci` at the repository root.\n");
     process.exit(1);

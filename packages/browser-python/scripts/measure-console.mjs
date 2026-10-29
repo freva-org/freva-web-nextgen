@@ -10,9 +10,9 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ESBUILD } from "./esbuild-bin.mjs";
 
 const PKG = fileURLToPath(new URL("..", import.meta.url));
-const ESBUILD = join(PKG, "..", "..", "node_modules", ".bin", "esbuild");
 // Scratch INSIDE the package, not in /tmp. Node resolution walks up from the entry file, so an
 // entry in the system temp directory cannot find `jquery` at all and the measurement fails with a
 // resolution error rather than a number.
