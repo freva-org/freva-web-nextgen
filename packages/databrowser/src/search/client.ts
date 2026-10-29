@@ -14,6 +14,7 @@ import type { OverviewResult, SearchResult, UniqKey } from "../types.js";
 import { buildSearchUrl } from "./query.js";
 import { resolveAuthToken, type AuthTokenSupplier } from "../auth-token.js";
 import { SearchAborted, type SearchClient, type SearchRequest } from "./engine.js";
+import { trimTrailing } from "../trim.js";
 
 export class SearchHttpError extends Error {
   readonly status: number;
@@ -65,7 +66,7 @@ export interface RestSearchClient extends SearchClient {
 }
 
 export function createRestSearchClient(opts: RestSearchClientOptions): RestSearchClient {
-  const base = opts.apiBase.replace(/\/+$/, "");
+  const base = trimTrailing(opts.apiBase, "/");
   const doFetch = opts.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
 
   const request = async (url: string, signal?: AbortSignal): Promise<Response> => {

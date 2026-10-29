@@ -14,6 +14,7 @@
 
 import { savedFigures } from "./figures.js";
 import { RunCards } from "./run-card.js";
+import { trimTrailing } from "./trim.js";
 
 /** Splits a byte stream's text into JSON lines; a line may span chunks. */
 export class NdjsonDecoder {
@@ -116,7 +117,7 @@ export function isThreadId(value: unknown): value is string {
 export function fence(text: string, info = ""): string {
   const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
   const ticks = "`".repeat(longest + 1);
-  return `${ticks}${info}\n${text.replace(/\n+$/, "")}\n${ticks}`;
+  return `${ticks}${info}\n${trimTrailing(text, "\n")}\n${ticks}`;
 }
 
 function asText(value: unknown): string {
@@ -205,7 +206,7 @@ export function codeOutputMarkdown(
 ): string {
   const parts: string[] = [];
   const out = [output.stdout, output.result, ...output.display]
-    .map((s) => s.replace(/\n+$/, ""))
+    .map((s) => trimTrailing(s, "\n"))
     .filter(Boolean)
     .join("\n");
   if (out) parts.push(`**Output**\n\n${fence(out, "text")}`);
@@ -547,6 +548,6 @@ export function threadToTurns(
   }
   drain(mapper.flush());
   written();
-  for (const t of turns) t.text = t.text.replace(/^\s+|\s+$/g, "");
+  for (const t of turns) t.text = t.text.trim();
   return { threadId, turns: turns.filter((t) => t.text) };
 }

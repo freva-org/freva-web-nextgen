@@ -17,6 +17,7 @@ import type {
   UniqKey,
 } from "./types.js";
 import { describeMetadataValue } from "./describe.js";
+import { groupValues } from "./records.js";
 
 export const BUILTIN_FLAVOURS: FlavourName[] = ["freva", "cmip5", "cmip6", "cordex", "user"];
 
@@ -810,24 +811,27 @@ export function baseFilterKeys(state: QueryScope): Set<string> {
  *  shows; only the wire query carries it. */
 function wireFacetPairs(state: QueryScope): Array<[string, string]> {
   const gated = baseFilterKeys(state); // flavour-named BASE keys the scope owns
-  const merged: Record<string, string[]> = {};
+  const merged = new Map<string, string[]>();
+  const add = (key: string, values: string[]): void => {
+    const cur = merged.get(key) ?? [];
+    for (const v of values) if (!cur.includes(v)) cur.push(v);
+    merged.set(key, cur);
+  };
   for (const [k, vs] of Object.entries(state.baseFilters)) {
     const fk = translateFacetKey(state, k, "freva", state.flavour); // base keys are freva-canonical
     // Deduplicate: two freva-canonical base keys can translate onto the SAME flavour key, and a
     // user's URL selection may repeat a value the scope already sends. A repeated pair is harmless
     // to Solr but makes the wire query - and every command copied from it - misleading.
-    const cur = (merged[fk] ??= []);
-    for (const v of vs) if (!cur.includes(v)) cur.push(v);
+    add(fk, vs);
   }
   for (const [k, vs] of Object.entries(state.selected)) {
     // A gated BASE key is INESCAPABLE: neither `project=` nor `project_not_=` from the user may
     // widen or contradict it (`project_not_=waterpark` would empty a waterpark-scoped instance).
     if (gated.has(baseFacetKey(k).toLowerCase())) continue;
-    const cur = (merged[k] ??= []);
-    for (const v of vs) if (!cur.includes(v)) cur.push(v);
+    add(k, vs);
   }
   const pairs: Array<[string, string]> = [];
-  for (const key of Object.keys(merged)) for (const v of merged[key]) pairs.push([key, v]);
+  for (const [key, values] of merged) for (const v of values) pairs.push([key, v]);
   return pairs;
 }
 
@@ -859,7 +863,7 @@ export function parseUrlQuery(search: string): {
 } {
   const p = new URLSearchParams(search);
   let flavour: string | null = null;
-  const record: Record<string, string[]> = {};
+  const facetPairs: Array<[string, string]> = [];
   for (const [k, v] of p.entries()) {
     if (k === "flavour") {
       flavour = v;
@@ -868,9 +872,9 @@ export function parseUrlQuery(search: string): {
     // Never let a host/API transport parameter masquerade as a facet - these control the request or
     // the export cap and must only ever come from the component, never the address bar.
     if (URL_RESERVED_KEYS.has(k)) continue;
-    (record[k] ??= []).push(v);
+    facetPairs.push([k, v]);
   }
-  const { time, bbox, rest } = parseControlTokens(record);
+  const { time, bbox, rest } = parseControlTokens(groupValues(facetPairs));
   return { flavour, selected: rest, time, bbox };
 }
 /** Transport/safety parameters the component owns; they must never be imported from the URL. */
@@ -1021,17 +1025,16 @@ export function tokenize(text: string): string[] {
  * ignored here (they are flagged separately during highlighting). Negation is not parsed here.
  */
 export function parseFacetTokens(text: string): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
+  const pairs: Array<[string, string]> = [];
   for (const tok of tokenize(text)) {
     const eq = tok.indexOf("=");
     if (eq < 1) continue;
     const key = tok.slice(0, eq).toLowerCase();
     const value = tok.slice(eq + 1);
     if (!value) continue;
-    const arr = out[key] ?? (out[key] = []);
-    if (!arr.includes(value)) arr.push(value);
+    pairs.push([key, value]);
   }
-  return out;
+  return groupValues(pairs, true);
 }
 
 function pyValue(v: string): string {
@@ -1323,7 +1326,7 @@ function parseMode(v: string): SelectMode | null {
  * (flexible), which the terminal states in its hint rather than silently guessing.
  */
 export function parseControlTokens(parsed: Record<string, string[]>): ControlParse {
-  const rest: Record<string, string[]> = {};
+  const rest = new Map<string, string[]>();
   const errors: string[] = [];
   let time: TimeSelection | null = null;
   let bbox: BBoxSelection | null = null;
@@ -1333,8 +1336,8 @@ export function parseControlTokens(parsed: Record<string, string[]>): ControlPar
     return vs && vs.length ? vs[vs.length - 1] : null; // last one wins, like a shell flag
   };
 
-  for (const key of Object.keys(parsed)) {
-    if (!CONTROL_KEYS.has(key)) rest[key] = parsed[key];
+  for (const [key, values] of Object.entries(parsed)) {
+    if (!CONTROL_KEYS.has(key)) rest.set(key, values);
   }
 
   const bboxRaw = last("bbox");
@@ -1363,7 +1366,7 @@ export function parseControlTokens(parsed: Record<string, string[]>): ControlPar
     }
   }
 
-  return { time, bbox, rest, errors };
+  return { time, bbox, rest: Object.fromEntries(rest), errors };
 }
 
 /** The FULL editable token text the terminal owns: time/bbox controls first, then facets. */

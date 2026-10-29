@@ -174,7 +174,7 @@ function seedTitle(text: string, name: string): string {
     const nb = JSON.parse(text) as { cells?: { cell_type?: string; source?: string | string[] }[] };
     const first = nb.cells?.find((c) => c.cell_type === "markdown");
     const source = Array.isArray(first?.source) ? first.source.join("") : (first?.source ?? "");
-    const heading = /^#\s+(.+)$/m.exec(source)?.[1]?.trim();
+    const heading = /^#[ \t]+(\S.*)$/m.exec(source)?.[1]?.trim();
     if (heading) return heading.slice(0, 80);
   } catch {
     // The kernel's prepare step validates seeds; a title is a nicety.

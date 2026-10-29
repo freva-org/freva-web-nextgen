@@ -82,6 +82,7 @@ import {
   type FlavourMapping,
   type PickerState,
 } from "./types.js";
+import { trimTrailing } from "../trim.js";
 
 const DEFAULT_API_BASE = "/api/freva-nextgen/databrowser";
 const PAGE_SIZE = 100;
@@ -103,7 +104,7 @@ export function mountDataPicker(
   target: HTMLElement,
   config: DataPickerConfig = {},
 ): DataPickerHandle {
-  const apiBase = (config.apiBase ?? DEFAULT_API_BASE).replace(/\/+$/, "");
+  const apiBase = trimTrailing(config.apiBase ?? DEFAULT_API_BASE, "/");
   const uid = `fp${++instanceSeq}`;
   const features = {
     flavour: config.features?.flavour ?? false,

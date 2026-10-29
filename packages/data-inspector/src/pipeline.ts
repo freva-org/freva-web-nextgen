@@ -9,6 +9,7 @@
 
 import { loadZarrMetadataHtml, ZarrMetadataError } from "./zarr-metadata";
 import { resolveAuthHeaders, type GetAuthHeaders } from "./internal/http";
+import { trimTrailing } from "./trim";
 
 /** What the host passes to {@link attachInspector}. Everything is optional. */
 export interface AttachInspectorOptions {
@@ -148,7 +149,7 @@ export function attachInspector(
   el: InspectorElementLike,
   options: AttachInspectorOptions = {},
 ): InspectorController {
-  const portal = options.dataPortalBase ? options.dataPortalBase.replace(/\/+$/, "") : null;
+  const portal = options.dataPortalBase ? trimTrailing(options.dataPortalBase, "/") : null;
   const canConvert = portal !== null && options.dataLoader !== false;
   const isStore = options.isStore ?? looksLikeStore;
   const shareTtl = options.shareTtlSeconds ?? 3600;

@@ -1,3 +1,4 @@
+import { trimTrailing } from "./trim.js";
 // shell.ts - the shell/OS foundation for the terminal (pure + testable, no UI).
 //
 // Because the reproducible command targets the API explicitly (`--host <api>` / `host="<api>"`),
@@ -119,12 +120,12 @@ export function deriveHost(
   if (typeof override === "string" && override.trim()) return override.trim();
   const base = (apiBase ?? "").trim();
   if (!base) return null;
-  if (/^https?:\/\//i.test(base)) return base.replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(base)) return trimTrailing(base, "/");
   const org = origin ?? (typeof location !== "undefined" ? location.origin : "");
-  if (!org) return base.replace(/\/+$/, "") || null;
+  if (!org) return trimTrailing(base, "/") || null;
   try {
-    return new URL(base, org).href.replace(/\/+$/, "");
+    return trimTrailing(new URL(base, org).href, "/");
   } catch {
-    return base.replace(/\/+$/, "") || null;
+    return trimTrailing(base, "/") || null;
   }
 }

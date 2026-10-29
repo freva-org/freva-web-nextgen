@@ -190,7 +190,7 @@ export function numpyRepr(words: readonly string[], total: number, summarized: b
     const last = i === words.length - 1;
     const width = LINE_WIDTH - 1;
     if (line.length > indent.length && line.length + word.length > width) {
-      lines.push(line.replace(/\s+$/, ""));
+      lines.push(line.trimEnd());
       line = indent;
     }
     line += word;

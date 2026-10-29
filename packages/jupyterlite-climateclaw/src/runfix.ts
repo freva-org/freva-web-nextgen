@@ -5,6 +5,7 @@
 
 import { figureMarkdown, savedFigures, type SavedFigure } from "./figures.js";
 import { fence, type CodeOutput, type StreamEvent } from "./stream.js";
+import { trimTrailing } from "./trim.js";
 
 /** How many runs of the cell (the first, as given, included) ClimateClaw may make. */
 export const MAX_ATTEMPTS = 3;
@@ -209,18 +210,19 @@ export function runAndFixInput(source: string, note = "", modules: readonly stri
  */
 export function normalizeCode(code: string): string {
   let open: string | null = null;
-  return code
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => {
-      open = stringOpenAfter(line, open);
-      if (open !== null) return line;
-      const trimmed = line.replace(/\s+$/, "");
-      return trimmed !== line && trimmed.endsWith("\\") ? line : trimmed;
-    })
-    .join("\n")
-    .replace(/\n+$/, "")
-    .replace(/^\n+/, "");
+  return trimTrailing(
+    code
+      .replace(/\r\n?/g, "\n")
+      .split("\n")
+      .map((line) => {
+        open = stringOpenAfter(line, open);
+        if (open !== null) return line;
+        const trimmed = line.trimEnd();
+        return trimmed !== line && trimmed.endsWith("\\") ? line : trimmed;
+      })
+      .join("\n"),
+    "\n",
+  ).replace(/^\n+/, "");
 }
 
 /**

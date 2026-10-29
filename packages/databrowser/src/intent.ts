@@ -95,19 +95,15 @@ export function parseSearchIntentV1(
   const flavour =
     rawFlavour && FLAVOUR_SHAPE.test(rawFlavour) ? (rawFlavour as FlavourName) : undefined;
 
-  const facets: Record<string, string[]> = {};
-  for (const [key, value] of params.entries()) {
-    if (key === "flavour") continue;
-    (facets[key] ??= []).push(value);
-  }
-
+  const pairs = [...params.entries()].filter(([key]) => key !== "flavour");
   if (text && text.trim() !== "") {
     const mapped = textToFacetValue(text);
     if (mapped) {
       params.append(uniqKey, mapped);
-      (facets[uniqKey] ??= []).push(mapped);
+      pairs.push([uniqKey, mapped]);
     }
   }
+  const facets = groupValues(pairs);
 
   const intent: SearchIntentV1 = { v: SEARCH_INTENT_VERSION };
   if (text && text.trim() !== "") intent.q = text.trim();
@@ -126,4 +122,16 @@ export function applySearchIntentV1(
   intent: SearchIntentV1,
 ): DataBrowserConfig {
   return intent.flavour ? { ...config, flavour: intent.flavour } : { ...config };
+}
+
+/** Same as records.ts `groupValues`, kept local: this entry may import nothing but types. */
+function groupValues(pairs: Iterable<readonly [string, string]>): Record<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const [key, value] of pairs) {
+    if (key === "__proto__") continue;
+    const list = groups.get(key);
+    if (list) list.push(value);
+    else groups.set(key, [value]);
+  }
+  return Object.fromEntries(groups);
 }

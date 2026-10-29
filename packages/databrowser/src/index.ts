@@ -100,7 +100,7 @@ const RECOUNT_DEBOUNCE_MS = 300;
 
 /** The data-portal sits beside the databrowser API: `…/databrowser` -> `…/data-portal`. */
 function defaultDataPortalBase(apiBase: string): string {
-  const trimmed = apiBase.replace(/\/+$/, "");
+  const trimmed = trimTrailing(apiBase, "/");
   return /\/databrowser$/.test(trimmed)
     ? trimmed.replace(/\/databrowser$/, "/data-portal")
     : "/api/freva-nextgen/data-portal";
@@ -757,12 +757,15 @@ export function mountDataBrowser(
       link && (Object.keys(link.selected).length > 0 || link.time || link.bbox),
     );
     if (!urlHasQuery) {
+      const seeded = Object.entries(state.selected).flatMap(([key, values]) =>
+        values.map((value): [string, string] => [key, value]),
+      );
       for (const [key, values] of Object.entries(scopeSeed)) {
         const { baseKey, negated } = parseFacetKey(key);
         const inFlavour = keyForMode(translateKey(state, baseKey, "freva", state.flavour), negated);
-        const into = (state.selected[inFlavour] ??= []);
-        for (const value of values) if (!into.includes(value)) into.push(value);
+        for (const value of values) seeded.push([inFlavour, value]);
       }
+      state.selected = groupValues(seeded, true);
     }
   } else {
     state.baseFilters = scopeSeed; // the invisible always-applied scope
@@ -2281,4 +2284,6 @@ export {
   type ParsedIntent,
   type SearchIntentV1,
 } from "./intent-mount.js";
+import { trimTrailing } from "./trim.js";
+import { groupValues } from "./records.js";
 export default mountDataBrowser;

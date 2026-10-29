@@ -103,7 +103,7 @@ export function normalizeModuleId(id: string, ctx: NormalizeContext): string {
 
   const owner = owningPackage(clean);
   if (owner) {
-    return `pkg:npm/${owner.name.replace("@", "%40")}@${owner.version}#${toPosix(relative(owner.dir, clean))}`;
+    return `pkg:npm/${owner.name.replaceAll("@", "%40")}@${owner.version}#${toPosix(relative(owner.dir, clean))}`;
   }
 
   return `unattributed:${toPosix(clean).split("/").slice(-1)[0]}`;

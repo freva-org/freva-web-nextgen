@@ -10,7 +10,11 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    # Groups match in order. Vitest's packages pin each other's exact version, so they move as one,
+    # majors included.
     groups:
+      vitest:
+        patterns: ["vitest", "@vitest/*"]
       production:
         dependency-type: production
         update-types: [minor, patch]

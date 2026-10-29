@@ -5,6 +5,11 @@ paths-ignore:
   - "**/dist/**"
   - "**/coverage/**"
   - "packages/stac-browser/.upstream/**"
+  # Test code and examples never ship; findings there are noise.
+  - "**/tests/**"
+  - "**/browser-tests/**"
+  - "**/*.test.ts"
+  - "examples/**"
 
 queries:
   - uses: security-extended
