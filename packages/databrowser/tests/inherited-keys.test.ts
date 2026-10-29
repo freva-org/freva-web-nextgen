@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { parseSearchIntentV1 } from "../src/intent.js";
-import { ownList } from "../src/records.js";
+import { groupValues } from "../src/records.js";
 import { parseFacetTokens, parseUrlQuery } from "../src/state.js";
 
 const KEYS = ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"];
@@ -40,9 +40,24 @@ test("nothing reaches Object.prototype", () => {
   assert.equal(typeof Object.prototype.toString, "function");
 });
 
-test("ownList creates own lists and refuses __proto__", () => {
-  const record: Record<string, string[]> = {};
-  ownList(record, "toString")?.push("x");
-  assert.deepEqual(record.toString, ["x"]);
-  assert.equal(ownList(record, "__proto__"), null);
+test("groupValues makes own keys, keeps order, and drops __proto__", () => {
+  const grouped = groupValues([
+    ["toString", "x"],
+    ["__proto__", "polluted"],
+    ["toString", "y"],
+    ["toString", "x"],
+  ]);
+  assert.deepEqual(grouped, { toString: ["x", "y", "x"] });
+  assert.equal(Object.getPrototypeOf(grouped), Object.prototype);
+  assert.deepEqual(
+    groupValues(
+      [
+        ["k", "x"],
+        ["k", "x"],
+      ],
+      true,
+    ),
+    { k: ["x"] },
+  );
+  assert.equal(({} as Record<string, unknown>).polluted, undefined);
 });
