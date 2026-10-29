@@ -199,6 +199,16 @@ export class BranchStore {
 const CHIP =
   /[ \t]*(?:<span class="jp-ClimateClaw-ran[^"]*"[^>]*>(?:<span[^>]*>[^<]*<\/span>|[^<])*<\/span>|<(span|a) class="jp-ClimateClaw-outcome[^"]*"[^>]*>[^<]*<\/\1>)/g;
 
+/** `text` without any match of `pattern`, removed until none is left: a removal can join a new one. */
+function removeAll(text: string, pattern: RegExp): string {
+  let before: string;
+  do {
+    before = text;
+    text = text.replace(pattern, "");
+  } while (text !== before);
+  return text;
+}
+
 /** A message as the user would paste it: markdown, without ClimateClaw's markers and chips. */
 export function copyableText(body: string): string {
   // Code is copied as it is; outside it, comments (turn markers) and HTML (chips) go.
@@ -208,12 +218,11 @@ export function copyableText(body: string): string {
       .map((part, i) =>
         i % 2
           ? part
-          : part
-              .replace(/<!--[\s\S]*?-->/g, "")
+          : removeAll(
               // The chips (which cell, how it ran, a figure) belong to the chat, not the text.
-              .replace(CHIP, "")
-              .replace(/<\/?[a-z][^>]*>/gi, "")
-              .replace(/[ \t]+$/gm, ""),
+              removeAll(part, /<!--[\s\S]*?-->/g).replace(CHIP, ""),
+              /<\/?[a-z][^>]*>/gi,
+            ).replace(/[ \t]+$/gm, ""),
       )
       .join("")
       // The scope note at the top of a first reply is ClimateClaw's, not the answer.

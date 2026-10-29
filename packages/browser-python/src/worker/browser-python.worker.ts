@@ -411,6 +411,9 @@ function requireWorkspace(id: string): Workspace | null {
 }
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
+  // A dedicated worker hears only the page that created it, whose messages carry no origin. One
+  // that names a foreign origin did not come from that page.
+  if (event.origin && event.origin !== self.location.origin) return;
   const request = event.data;
   switch (request.kind) {
     case "init":

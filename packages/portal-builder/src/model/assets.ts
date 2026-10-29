@@ -5,7 +5,6 @@
  * refused in both: active same-origin content enters only via a declared `static-docs-v1` subsite.
  */
 
-import { readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import type { Diagnostic } from "../diagnostics.js";
 import { sha256 } from "../util/package.js";
@@ -14,6 +13,7 @@ import type { ContentProfile } from "../rendering/profile.js";
 import { sanitizeSvgFile } from "../rendering/svg.js";
 import type { CacheClass, InputRecord, ResolvedStaticFile } from "./types.js";
 import { compareCodePoints } from "../util/order.js";
+import { readRegularFile } from "../util/read-file.js";
 
 export interface MountedRoot {
   /** Absolute canonical path of the root. */
@@ -86,8 +86,10 @@ export function collectMountedFiles(
     for (const rel of filterMountedFiles(walked.files, root)) {
       const abs = join(root.absolute, rel);
       const sourceRel = `${root.relative}/${rel}`.replace(/^\/+/, "");
-      const size = statSync(abs).size;
-      if (size > opts.limits.maxAssetBytes) {
+      const read = readRegularFile(abs, opts.limits.maxAssetBytes);
+      if (!read) throw new Error(`'${sourceRel}' is not a regular file.`);
+      const { size } = read;
+      if (!read.bytes) {
         diagnostics.push({
           code: "FP1407",
           severity: "error",
@@ -98,7 +100,7 @@ export function collectMountedFiles(
       }
       const outFile = `${root.mount.replace(/^\//, "")}${rel}`;
       const url = `${opts.basePath.replace(/\/$/, "")}${root.mount}${rel}`;
-      let bytes = readFileSync(abs);
+      let bytes = read.bytes;
       const inputDigest = sha256(bytes);
       let mimeType: string;
       let cacheClass: CacheClass;

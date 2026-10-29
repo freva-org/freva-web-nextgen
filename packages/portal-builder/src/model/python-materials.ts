@@ -20,7 +20,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ADDON_PINS,
@@ -32,6 +32,7 @@ import {
 } from "@freva-org/browser-python/prepare";
 import type { PlaygroundSettings } from "./types.js";
 import { allowedAddons, allowedProfiles } from "./python-playground.js";
+import { readRegularFile } from "../util/read-file.js";
 
 /** The directory names a prepared materials tree uses, and the artifact serves them under. */
 export const WHEELHOUSE_DIR = "freva-wheels";
@@ -178,11 +179,12 @@ export function verifyPythonMaterials(dir: string, plan: PythonMaterialsPlan): s
 
   for (const file of plan.files) {
     const full = join(dir, ...file.path.split("/"));
-    if (!existsSync(full) || !statSync(full).isFile()) {
+    const bytes = readRegularFile(full)?.bytes;
+    if (!bytes) {
       problems.push(`${file.path} is missing.`);
       continue;
     }
-    const digest = createHash("sha256").update(readFileSync(full)).digest("hex");
+    const digest = createHash("sha256").update(bytes).digest("hex");
     if (digest !== file.sha256) {
       problems.push(
         `${file.path} is not the artefact this build pinned.\n` +

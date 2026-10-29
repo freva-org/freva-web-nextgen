@@ -7,7 +7,7 @@
 // per diagram would dominate the build.
 
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import type { Diagnostic } from "../diagnostics.js";
 import { CodeStyleSheet, type RunnableExample } from "./code.js";
@@ -27,6 +27,7 @@ import type { HeadingRef, RegisteredContentExample, RenderedFragment } from "../
 import { selectFiles, walkRoot } from "../sources/glob.js";
 import { sha256 } from "../util/package.js";
 import { compareCodePoints } from "../util/order.js";
+import { readRegularFile } from "../util/read-file.js";
 
 export interface ContentSourceSpec {
   root: MountedRoot;
@@ -259,8 +260,10 @@ export class ContentPipeline {
     absolute: string,
     extension: ".md" | ".rst",
   ): Promise<IrDocument | undefined> {
-    const size = statSync(absolute).size;
-    if (size > this.limits.maxSourceBytes) {
+    const read = readRegularFile(absolute, this.limits.maxSourceBytes);
+    if (!read) throw new Error(`'${source}' is not a regular file.`);
+    const { size, bytes } = read;
+    if (!bytes) {
       this.diagnostics.push({
         code: "PC1016",
         severity: "error",
@@ -269,7 +272,7 @@ export class ContentPipeline {
       });
       return undefined;
     }
-    const text = readFileSync(absolute, "utf8");
+    const text = bytes.toString("utf8");
     if (extension === ".rst") {
       this.rstUsed = true;
       const result = await this.rst.render(text, source);

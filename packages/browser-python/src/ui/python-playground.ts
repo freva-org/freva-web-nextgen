@@ -2190,6 +2190,9 @@ export function createPythonPlayground(
      */
     const frameUrl = (search?: URLSearchParams): string => {
       const url = new URL(`${cfg.playgroundOrigin as string}${playgroundBase}`);
+      if (url.protocol !== "https:" && url.protocol !== "http:") {
+        throw new Error(`playgroundOrigin must be an http(s) origin, not '${url.protocol}'.`);
+      }
       if (search) url.search = search.toString();
       if (choices) {
         const hash = new URLSearchParams({ scope: idBase });
@@ -2340,7 +2343,7 @@ export function createPythonPlayground(
       async start() {
         publish("Connecting to the playground\u2026");
         if (!frame.src) {
-          frame.src = choices ? frameUrl() : `${cfg.playgroundOrigin as string}${playgroundBase}`;
+          frame.src = frameUrl();
         }
         await waitForChild();
       },
@@ -2396,12 +2399,10 @@ export function createPythonPlayground(
         } catch {
           // fall through to replacing the document
         }
-        const url = new URL(`${cfg.playgroundOrigin as string}${playgroundBase}`);
-        url.searchParams.set("session", String(Date.now()));
         sessionId = null;
         transcript = null;
         files = [];
-        frame.src = choices ? frameUrl(url.searchParams) : url.toString();
+        frame.src = frameUrl(new URLSearchParams({ session: String(Date.now()) }));
         await waitForChild();
       },
       focus: () => frame.focus(),

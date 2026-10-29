@@ -8,7 +8,15 @@
 // leave the names in place. So every core asset is hashed against a digest recorded at
 // preparation time, and every package against the digest in the distribution's own lock file.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -143,9 +151,21 @@ export function verifyPreparedRuntime({
   releases = RELEASES,
 }) {
   const problems = [];
+  // A regular file's bytes, or null. One descriptor for the check and the read, so both see the
+  // same file; O_NONBLOCK so a FIFO is refused rather than waited on.
   const read = (name) => {
-    const path = join(dir, name);
-    return existsSync(path) && statSync(path).isFile() ? readFileSync(path) : null;
+    let fd;
+    try {
+      fd = openSync(join(dir, name), constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR", "EISDIR"].includes(error.code)) return null;
+      throw error;
+    }
+    try {
+      return fstatSync(fd).isFile() ? readFileSync(fd) : null;
+    } finally {
+      closeSync(fd);
+    }
   };
 
   // A PINNED release is described by the manifest this package ships, and by nothing in the
