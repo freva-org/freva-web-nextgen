@@ -1,0 +1,12 @@
+name: freva-web-nextgen CodeQL
+
+# Generated and vendored code is analysed where it comes from, not here: findings in a build
+# output or a fetched upstream tree cannot be fixed in this repository.
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/coverage/**"
+  - "packages/stac-browser/.upstream/**"
+
+queries:
+  - uses: security-extended

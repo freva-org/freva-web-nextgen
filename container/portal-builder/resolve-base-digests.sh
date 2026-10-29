@@ -19,8 +19,8 @@ docker="${DOCKER:-docker}"
 
 # The tags to resolve. Changing a tag here is a reviewed decision; changing the
 # digest is not a decision at all, it is whatever the registry answers.
-build_tag="${PORTAL_BUILDER_NODE_BUILD_TAG:-node:24.13.0-bookworm}"
-runtime_tag="${PORTAL_BUILDER_NODE_RUNTIME_TAG:-node:24.13.0-bookworm-slim}"
+build_tag="${PORTAL_BUILDER_NODE_BUILD_TAG:-node:24.22.1-bookworm}"
+runtime_tag="${PORTAL_BUILDER_NODE_RUNTIME_TAG:-node:24.22.1-bookworm-slim}"
 
 resolve() {
   local tag="$1" reference

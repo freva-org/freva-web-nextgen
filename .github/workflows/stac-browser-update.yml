@@ -12,9 +12,10 @@ on:
       - "packages/stac-browser/patches/**"
       - "packages/stac-browser/scripts/**"
 
+# Read-only by default. Only `open-pr` gets write access, and it never installs or builds
+# anything: every step that runs fetched upstream code happens in a job that can't push.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: stac-browser-${{ github.event_name == 'pull_request' && github.ref || 'reconcile' }}
@@ -26,9 +27,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/stac-browser/.nvmrc
           cache: npm
@@ -40,13 +43,22 @@ jobs:
       - name: Build STAC Browser at the pinned release
         run: npm run stac:prepare -- --out "$RUNNER_TEMP/materials"
 
-  reconcile:
+  # Resolves, pins and builds the new upstream release. Read-only and without stored git
+  # credentials, because `npm ci` and `stac:prepare` run code fetched from upstream.
+  prepare:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.resolve.outputs.changed }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      new: ${{ steps.resolve.outputs.new }}
+      green: ${{ steps.build.outputs.green }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/stac-browser/.nvmrc
           cache: npm
@@ -54,25 +66,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      # A PR opened with GITHUB_TOKEN triggers no workflows, so its checks never run and
-      # auto-merge never fires. The app token is what makes the green path land on its own.
-      - name: Create freva-bot app token
-        id: app-token
-        if: ${{ vars.FREVA_BOT_APP_ID != '' }}
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.FREVA_BOT_APP_ID }}
-          private-key: ${{ secrets.FREVA_BOT_PRIVATE_KEY }}
-
-      - name: Pick token
-        id: tok
-        run: |
-          if [ -n "${{ steps.app-token.outputs.token }}" ]; then
-            echo "token=${{ steps.app-token.outputs.token }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "token=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_OUTPUT"
-          fi
 
       # The recipe pins a stable release (tests/upstream-pin.test.mjs), so this follows
       # upstream's newest vX.Y.Z tag rather than main. Release candidates are skipped: `sort -V`
@@ -208,25 +201,97 @@ jobs:
           echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
           echo "count=${N:-?}" >> "$GITHUB_OUTPUT"
 
+      # The proposal is data for `open-pr`, never files it copies: that job checks its exact
+      # shape and rebuilds the pin update itself (packages/stac-browser/scripts/accept-pin-update.mjs).
+      # README.md and THIRD_PARTY_NOTICES.md are not handed over; their only change is the pin.
+      - name: Stage the pin update for the PR job
+        if: steps.resolve.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pin-proposal"
+          rm -rf "$OUT"
+          mkdir "$OUT"
+          cp packages/stac-browser/upstream.json packages/stac-browser/adapter-contract.json "$OUT/"
+          cp "$RUNNER_TEMP/pr-body.md" "$OUT/pr-body.md"
+
+      - name: Upload the pin update
+        if: steps.resolve.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: stac-browser-pin
+          path: ${{ runner.temp }}/pin-proposal
+          retention-days: 1
+
+  # Opens the PR. The only job with write access; it runs no npm and no upstream code.
+  open-pr:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # No cache and no install: accept-pin-update.mjs uses Node built-ins only.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: packages/stac-browser/.nvmrc
+
+      - name: Download the pin update
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: stac-browser-pin
+          path: ${{ runner.temp }}/pin-proposal
+
+      # Nothing from the proposal is copied. The script refuses any entry but the three expected
+      # regular files, rebuilds the four changed files from this checkout moving only the fields
+      # pin.mjs may move, refuses a proposal that changes anything else, and checks with upstream
+      # that the commit is the tag's. Its outputs, not the prepare job's, name the PR below.
+      - name: Rebuild the pin update from the proposal
+        id: proposal
+        env:
+          REPORTED_COMMIT: ${{ needs.prepare.outputs.new }}
+          REPORTED_TAG: ${{ needs.prepare.outputs.tag }}
+        run: >-
+          node packages/stac-browser/scripts/accept-pin-update.mjs "$RUNNER_TEMP/pin-proposal"
+          --commit "$REPORTED_COMMIT" --tag "$REPORTED_TAG"
+          --body-out "$RUNNER_TEMP/pr-body.md"
+
+      # A PR opened with GITHUB_TOKEN triggers no workflows, so its checks never run and
+      # auto-merge never fires. The app token is what makes the green path land on its own.
+      # It is created only here, scoped to what opening and merging the PR needs.
+      - name: Create freva-bot app token
+        id: app-token
+        if: ${{ vars.FREVA_BOT_APP_ID != '' }}
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.FREVA_BOT_APP_ID }}
+          private-key: ${{ secrets.FREVA_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Open / update green PR
         id: green-pr
-        if: steps.resolve.outputs.changed == 'true' && steps.build.outputs.green == 'true'
-        uses: peter-evans/create-pull-request@v6
+        if: needs.prepare.outputs.green == 'true'
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
         with:
-          token: ${{ steps.tok.outputs.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           add-paths: |
             packages/stac-browser/upstream.json
             packages/stac-browser/adapter-contract.json
             packages/stac-browser/THIRD_PARTY_NOTICES.md
             README.md
-          branch: bump-stac-browser/${{ steps.resolve.outputs.new }}
+          branch: bump-stac-browser/${{ steps.proposal.outputs.commit }}
           delete-branch: true
           base: main
-          commit-message: "stac-browser: bump pin to ${{ steps.resolve.outputs.tag }} (${{ steps.resolve.outputs.new }})"
+          commit-message: "stac-browser: bump pin to ${{ steps.proposal.outputs.tag }} (${{ steps.proposal.outputs.commit }})"
           committer: "freva-bot <freva-bot@users.noreply.github.com>"
           author: "freva-bot <freva-bot@users.noreply.github.com>"
-          title: "⬆️ Bump STAC Browser to ${{ steps.resolve.outputs.tag }} (${{ steps.body.outputs.short_new }})"
-          body-path: ${{ steps.body.outputs.path }}
+          title: "⬆️ Bump STAC Browser to ${{ steps.proposal.outputs.tag }} (${{ steps.proposal.outputs.short }})"
+          body-path: ${{ runner.temp }}/pr-body.md
           reviewers: "tropicrainforest"
           labels: |
             stac-browser
@@ -234,7 +299,7 @@ jobs:
       - name: Enable auto-merge on the green PR
         if: steps.green-pr.outputs.pull-request-number
         env:
-          GH_TOKEN: ${{ steps.tok.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: |
           gh pr merge --auto --squash \
             "${{ steps.green-pr.outputs.pull-request-number }}" || \
@@ -242,24 +307,24 @@ jobs:
 
       - name: Open / update red draft PR
         id: red-pr
-        if: steps.resolve.outputs.changed == 'true' && steps.build.outputs.green == 'false'
-        uses: peter-evans/create-pull-request@v6
+        if: needs.prepare.outputs.green != 'true'
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
         with:
-          token: ${{ steps.tok.outputs.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           add-paths: |
             packages/stac-browser/upstream.json
             packages/stac-browser/adapter-contract.json
             packages/stac-browser/THIRD_PARTY_NOTICES.md
             README.md
-          branch: stac-browser-candidate/${{ steps.resolve.outputs.new }}
+          branch: stac-browser-candidate/${{ steps.proposal.outputs.commit }}
           delete-branch: false
           base: main
           draft: true
-          commit-message: "stac-browser: candidate pin ${{ steps.resolve.outputs.tag }} (build red)"
+          commit-message: "stac-browser: candidate pin ${{ steps.proposal.outputs.tag }} (build red)"
           committer: "freva-bot <freva-bot@users.noreply.github.com>"
           author: "freva-bot <freva-bot@users.noreply.github.com>"
-          title: "🚨 STAC Browser Build failed: Can't bump to ${{ steps.resolve.outputs.tag }} (${{ steps.body.outputs.short_new }})"
-          body-path: ${{ steps.body.outputs.path }}
+          title: "🚨 STAC Browser Build failed: Can't bump to ${{ steps.proposal.outputs.tag }} (${{ steps.proposal.outputs.short }})"
+          body-path: ${{ runner.temp }}/pr-body.md
           reviewers: "tropicrainforest"
           labels: |
             stac-browser

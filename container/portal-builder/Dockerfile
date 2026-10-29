@@ -44,7 +44,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Exact package versions, so a rebuild of this Dockerfile installs what the
 # previous one did. `--no-install-recommends` keeps the set closed, and the
 # snapshot repository keeps the versions resolvable after the mirror rolls.
-ARG DEBIAN_SNAPSHOT=20260801T000000Z
+ARG DEBIAN_SNAPSHOT=20261029T000000Z
 RUN printf 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/%s bookworm main\n' "$DEBIAN_SNAPSHOT" \
       > /etc/apt/sources.list \
  && printf 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/%s bookworm-security main\n' "$DEBIAN_SNAPSHOT" \
@@ -119,7 +119,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
 
 # Same snapshot as the prepare stage, for the same reason: a live mirror makes
 # the runtime layer a function of the build date rather than of this file.
-ARG DEBIAN_SNAPSHOT=20260801T000000Z
+ARG DEBIAN_SNAPSHOT=20261029T000000Z
 RUN printf 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/%s bookworm main\n' "$DEBIAN_SNAPSHOT" \
       > /etc/apt/sources.list \
  && printf 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/%s bookworm-security main\n' "$DEBIAN_SNAPSHOT" \

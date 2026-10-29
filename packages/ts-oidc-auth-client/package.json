@@ -36,10 +36,10 @@
   },
   "license": "BSD-3-Clause",
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.1.8",
-    "happy-dom": "^20.10.2",
+    "@vitest/coverage-v8": "^4.1.12",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.6.0",
-    "vitest": "^4.1.8",
+    "vitest": "^4.1.12",
     "playwright": "^1.56.0"
   },
   "exports": {

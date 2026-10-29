@@ -21,7 +21,7 @@ export default defineConfig({
     // once on disk; a consumer loads one entry, so it is not paid at runtime.
     emptyOutDir: ENTRY === "index",
     lib: {
-      entry: resolve(__dirname, `src/${ENTRY}.ts`),
+      entry: resolve(import.meta.dirname, `src/${ENTRY}.ts`),
       formats: ["es", "cjs"],
       fileName: (format) => `${ENTRY}.${format === "es" ? "mjs" : "cjs"}`,
     },

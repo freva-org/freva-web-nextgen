@@ -1,7 +1,8 @@
 // Deployed-host conformance: the evidence `preview` is not. It asks the real deployment the
 // questions `host-policy.json` says a conforming host must answer - directory indexes, the
 // slash redirect with its query intact, a real 404, the download headers, the auth callback's
-// cache and referrer policy - and reports what it actually got. It is networked and never part
+// cache and referrer policy, the Content-Security-Policy, enforced and not weakened - and
+// reports what it actually got. It is networked and never part
 // of artifact generation.
 
 import { readFileSync } from "node:fs";
@@ -36,6 +37,188 @@ interface HostPolicyDocument {
   cache: { classes: Record<string, string> };
   authCallback?: { path: string; headers: Record<string, string> };
   redirects?: { from: string; to: string; status: number; preserveQuery: boolean }[];
+  csp?: {
+    portal?: Record<string, string>;
+    subsites?: { mount: string; directives: Record<string, string> }[];
+    paths?: { match: { prefix: string } | { path: string }; directives: Record<string, string> }[];
+  };
+}
+
+/**
+ * Directives that never widen what a page may load, so they are left out of the comparison:
+ * they report, upgrade or add restrictions of their own.
+ */
+const IGNORED_DIRECTIVES = new Set([
+  "report-uri",
+  "report-to",
+  "upgrade-insecure-requests",
+  "block-all-mixed-content",
+  "require-trusted-types-for",
+  "trusted-types",
+  "sandbox",
+]);
+
+/**
+ * CSP Level 3's fallback lists: a directive a policy does not name is governed by the first of
+ * these it does name. Directives listed with no fallback (`base-uri`, `form-action`,
+ * `frame-ancestors`) are unrestricted when absent, which is why dropping one is a widening.
+ */
+const FALLBACKS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
+  ["default-src", []],
+  ["script-src", ["default-src"]],
+  ["script-src-elem", ["script-src", "default-src"]],
+  ["script-src-attr", ["script-src", "default-src"]],
+  ["style-src", ["default-src"]],
+  ["style-src-elem", ["style-src", "default-src"]],
+  ["style-src-attr", ["style-src", "default-src"]],
+  ["img-src", ["default-src"]],
+  ["font-src", ["default-src"]],
+  ["media-src", ["default-src"]],
+  ["object-src", ["default-src"]],
+  ["connect-src", ["default-src"]],
+  ["manifest-src", ["default-src"]],
+  ["child-src", ["default-src"]],
+  ["frame-src", ["child-src", "default-src"]],
+  ["fenced-frame-src", ["frame-src", "child-src", "default-src"]],
+  ["worker-src", ["child-src", "script-src", "default-src"]],
+  ["base-uri", []],
+  ["form-action", []],
+  ["frame-ancestors", []],
+]);
+
+/**
+ * One source expression in a comparable spelling. Keywords and schemes are case-insensitive;
+ * the base64 part of a hash or nonce is not, so only its prefix is folded.
+ */
+function normaliseSource(source: string): string {
+  const hashOrNonce = /^'(sha256|sha384|sha512|nonce)-(.*)'$/i.exec(source);
+  if (hashOrNonce) return `'${hashOrNonce[1]!.toLowerCase()}-${hashOrNonce[2]}'`;
+  if (source.startsWith("'")) return source.toLowerCase();
+  if (/^[a-z][a-z0-9+.-]*:$/i.test(source)) return source.toLowerCase();
+  return source;
+}
+
+/**
+ * One policy, `name source source; name ...`, as directive name -> set of sources. `'none'` is
+ * the empty set: it matches nothing, so a list of only `'none'` blocks everything, and beside
+ * other sources it adds nothing.
+ */
+export function parseCsp(policy: string): Map<string, Set<string>> {
+  const directives = new Map<string, Set<string>>();
+  for (const part of policy.split(";")) {
+    const [name, ...sources] = part.trim().split(/\s+/).filter(Boolean);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    // The first occurrence of a directive is the one a browser enforces.
+    if (directives.has(key)) continue;
+    directives.set(key, new Set(sources.map(normaliseSource).filter((s) => s !== "'none'")));
+  }
+  return directives;
+}
+
+/** Directives where a hash or nonce turns `'unsafe-inline'` off (CSP3, "Does a source list allow all inline behavior"). */
+const INLINE_DIRECTIVES = new Set([
+  "default-src",
+  "script-src",
+  "script-src-elem",
+  "script-src-attr",
+  "style-src",
+  "style-src-elem",
+  "style-src-attr",
+]);
+
+/**
+ * Whether a source list really allows any inline code. `'unsafe-inline'` counts only while the
+ * list has no hash and no nonce, and, for scripts, no `'strict-dynamic'`: a browser ignores it
+ * otherwise. So removing the last hash can switch inline code ON, which is a widening even
+ * though the list got shorter.
+ */
+function allowsAnyInline(name: string, sources: Set<string>): boolean {
+  if (!INLINE_DIRECTIVES.has(name) || !sources.has("'unsafe-inline'")) return false;
+  for (const source of sources) {
+    if (/^'(sha256|sha384|sha512|nonce)-/.test(source)) return false;
+    if (source === "'strict-dynamic'" && !name.startsWith("style")) return false;
+  }
+  return true;
+}
+
+/** What a policy allows for one directive, after fallbacks: a set of sources, or anything. */
+function effective(policy: Map<string, Set<string>>, name: string): Set<string> | "anything" {
+  for (const candidate of [name, ...(FALLBACKS.get(name) ?? [])]) {
+    const sources = policy.get(candidate);
+    if (sources) return sources;
+  }
+  return "anything";
+}
+
+/**
+ * How a served policy compares with the artifact's, directive by directive, after fallbacks:
+ * what it widens, and what it narrows.
+ *
+ * Sources are compared as expressions: one the artifact does not list counts as wider, even
+ * where it might match fewer URLs (`https://host/path` beside `https://host`). Proving that
+ * needs URL matching, and a false alarm on a host's own extra source is the safe mistake.
+ */
+export function compareCsp(
+  expected: Record<string, string>,
+  served: Map<string, Set<string>>,
+): { widened: string[]; narrowed: string[] } {
+  const recorded = parseCsp(
+    Object.entries(expected)
+      .map(([name, value]) => `${name} ${value}`)
+      .join(";"),
+  );
+  const widened: string[] = [];
+  const narrowed: string[] = [];
+  // Every directive either policy names. One only the host names counts when it is a known
+  // directive: a browser ignores the rest, and so does this comparison.
+  const names = new Set([
+    ...recorded.keys(),
+    ...[...served.keys()].filter((name) => FALLBACKS.has(name)),
+  ]);
+  for (const name of names) {
+    if (IGNORED_DIRECTIVES.has(name)) continue;
+    const allowed = effective(recorded, name);
+    const sources = effective(served, name);
+    if (sources === "anything") {
+      if (allowed !== "anything") widened.push(`does not restrict '${name}'`);
+      continue;
+    }
+    if (allowed === "anything") {
+      narrowed.push(`restricts '${name}', which the artifact leaves open`);
+      continue;
+    }
+    const extra = [...sources].filter((source) => !allowed.has(source));
+    if (extra.length > 0) widened.push(`'${name}' also allows ${extra.join(" ")}`);
+    if (allowsAnyInline(name, sources) && !allowsAnyInline(name, allowed)) {
+      widened.push(
+        `'${name}' allows any inline code: no hash or nonce is left to disable its 'unsafe-inline'`,
+      );
+    }
+    const missing = [...allowed].filter((source) => !sources.has(source));
+    if (missing.length > 0) {
+      narrowed.push(
+        sources.size === 0 ? `'${name}' blocks everything` : `'${name}' omits ${missing.join(" ")}`,
+      );
+    }
+  }
+  return { widened, narrowed };
+}
+
+/** The policy a response at `fullPath` must carry: its path's own, else its subsite's, else the portal's. */
+function expectedCsp(
+  csp: HostPolicyDocument["csp"],
+  fullPath: string,
+): Record<string, string> | undefined {
+  const own = (csp?.paths ?? []).find((entry) =>
+    "prefix" in entry.match
+      ? fullPath.startsWith(entry.match.prefix)
+      : fullPath === entry.match.path,
+  );
+  if (own) return own.directives;
+  const subsite = (csp?.subsites ?? []).find((entry) => fullPath.startsWith(entry.mount));
+  if (subsite) return subsite.directives;
+  return csp?.portal;
 }
 
 interface PortalManifestLite {
@@ -101,6 +284,41 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
     const type = root.headers.get("content-type") ?? "";
     if (!type.includes("text/html")) {
       bag.error("FP1603", `GET ${base} returned content-type '${type}', expected HTML.`);
+    }
+
+    // 1b. It carries the artifact's Content-Security-Policy: enforced, and not weakened. The
+    // builder writes a restrictive policy, but only the host can send it; a deployment that
+    // drops, softens or merely reports it passes every other check here.
+    const expected = expectedCsp(policy.csp, policy.mount.basePath);
+    if (expected) {
+      const enforced = root.headers.get("content-security-policy");
+      const reportOnly = root.headers.get("content-security-policy-report-only");
+      if (!enforced) {
+        bag.error(
+          "FP1603",
+          reportOnly
+            ? `GET ${base} sends its Content-Security-Policy only as Content-Security-Policy-Report-Only, which enforces nothing.`
+            : `GET ${base} sends no Content-Security-Policy; host-policy.json records the policy the host must send.`,
+        );
+      } else {
+        // Several policies arrive comma-joined, and a browser enforces all of them, so the
+        // result is at least as strict as any one: one that is not weakened is enough.
+        const results = enforced
+          .split(",")
+          .map((policyText) => compareCsp(expected, parseCsp(policyText)));
+        const best = results.find((result) => result.widened.length === 0);
+        if (!best) {
+          bag.error(
+            "FP1603",
+            `GET ${base} sends a weaker Content-Security-Policy than host-policy.json records: ${(results[0]?.widened ?? []).join("; ")}.`,
+          );
+        } else if (best.narrowed.length > 0) {
+          bag.warn(
+            "FP1603",
+            `GET ${base} sends a stricter Content-Security-Policy than host-policy.json records (${best.narrowed.join("; ")}); the portal may not work.`,
+          );
+        }
+      }
     }
   }
 

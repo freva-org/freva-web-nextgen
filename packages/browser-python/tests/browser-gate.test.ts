@@ -11,6 +11,8 @@
  */
 import { execFileSync, execFileSync as run } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -602,7 +604,15 @@ describe("the gate's own result does not depend on dist/ or .runtime/", () => {
     try {
       const stdout = execFileSync(
         process.execPath,
-        [fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url)), "run", self],
+        // Resolve vitest the way Node does: npm workspaces may hoist it to the repo root.
+        [
+          join(
+            dirname(createRequire(import.meta.url).resolve("vitest/package.json")),
+            "vitest.mjs",
+          ),
+          "run",
+          self,
+        ],
         {
           cwd: fileURLToPath(new URL("..", import.meta.url)),
           env: { ...process.env, ...env, BROWSER_GATE_CHILD: "1" },

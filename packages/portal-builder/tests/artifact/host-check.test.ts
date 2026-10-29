@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cleanupFixtures, tempRoot } from "../helpers/fixture.js";
 import { buildFixture, writeMatrixSite } from "../helpers/site.js";
 import { createPreviewServer } from "../../src/verify/preview.js";
-import { hostCheck } from "../../src/verify/host-check.js";
+import { compareCsp, hostCheck, parseCsp } from "../../src/verify/host-check.js";
 
 let out: string;
 let server: Server;
@@ -103,4 +103,239 @@ describe("a conforming host", () => {
     const bag = await hostCheck({ dir: out, url: "https://elsewhere.example.org/" });
     expect(bag.warnings.some((d) => d.message.includes("canonical URL"))).toBe(true);
   }, 60_000);
+});
+
+describe("the deployed Content-Security-Policy", () => {
+  /** Real responses from the conforming preview, with the root document's headers changed. */
+  const rootHeaders =
+    (change: (headers: Headers) => void): typeof fetch =>
+    async (input, init) => {
+      const response = await fetch(input, init);
+      if (String(input) !== base) return response;
+      const headers = new Headers(response.headers);
+      change(headers);
+      return new Response(await response.arrayBuffer(), {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    };
+  const served = async (): Promise<string> =>
+    (await fetch(base)).headers.get("content-security-policy") ?? "";
+  const check = async (change: (headers: Headers) => void) => {
+    const bag = await hostCheck({ dir: out, url: base, fetchImpl: rootHeaders(change) });
+    return {
+      errors: bag.errors.map((d) => d.message).filter((m) => m.includes("Content-Security-Policy")),
+      warnings: bag.warnings
+        .map((d) => d.message)
+        .filter((m) => m.includes("Content-Security-Policy")),
+    };
+  };
+
+  it("is sent by a conforming host, exactly as recorded", async () => {
+    const policy = JSON.parse(readFileSync(join(out, "host-policy.json"), "utf8")) as {
+      csp: { portal: Record<string, string> };
+    };
+    expect(await served()).toContain(`default-src ${policy.csp.portal["default-src"]}`);
+    const { errors, warnings } = await check(() => {});
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+  }, 60_000);
+
+  it("is reported when the host sends none", async () => {
+    const { errors } = await check((h) => h.delete("content-security-policy"));
+    expect(errors.join("\n")).toMatch(/sends no Content-Security-Policy/);
+  }, 60_000);
+
+  it("is reported when the host only reports it", async () => {
+    const policy = await served();
+    const { errors } = await check((h) => {
+      h.delete("content-security-policy");
+      h.set("content-security-policy-report-only", policy);
+    });
+    expect(errors.join("\n")).toMatch(/only as Content-Security-Policy-Report-Only/);
+  }, 60_000);
+
+  it("is reported when a directive allows more than recorded", async () => {
+    const policy = await served();
+    const { errors } = await check((h) =>
+      h.set(
+        "content-security-policy",
+        policy.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'"),
+      ),
+    );
+    expect(errors.join("\n")).toMatch(/weaker.*'script-src' also allows 'unsafe-inline'/);
+  }, 60_000);
+
+  it("is reported when a directive with no fallback is dropped", async () => {
+    const policy = await served();
+    const { errors } = await check((h) =>
+      h.set(
+        "content-security-policy",
+        policy
+          .split(";")
+          .filter((part) => !part.trim().startsWith("frame-ancestors"))
+          .join(";"),
+      ),
+    );
+    expect(errors.join("\n")).toMatch(/does not restrict 'frame-ancestors'/);
+  }, 60_000);
+
+  it("is reported when the host adds a directive that widens a fallback", async () => {
+    const policy = await served();
+    const { errors } = await check((h) =>
+      h.set("content-security-policy", `${policy}; script-src-elem *`),
+    );
+    expect(errors.join("\n")).toMatch(/'script-src-elem' also allows \*/);
+  }, 60_000);
+
+  it("accepts reporting directives and a second, stricter policy beside it", async () => {
+    const policy = await served();
+    const { errors } = await check((h) =>
+      h.set("content-security-policy", `${policy}; report-uri /csp-report, default-src 'none'`),
+    );
+    expect(errors).toEqual([]);
+  }, 60_000);
+
+  it("only warns when the host is stricter than recorded", async () => {
+    const policy = await served();
+    const { errors, warnings } = await check((h) =>
+      h.set("content-security-policy", policy.replace(/img-src 'self' data:/, "img-src 'self'")),
+    );
+    expect(errors).toEqual([]);
+    expect(warnings.join("\n")).toMatch(/stricter.*'img-src' omits data:/);
+  }, 60_000);
+
+  it("only warns when the host blocks a directive outright with 'none'", async () => {
+    const policy = await served();
+    const { errors, warnings } = await check((h) =>
+      h.set("content-security-policy", policy.replace(/img-src [^;]*/, "img-src 'none'")),
+    );
+    expect(errors).toEqual([]);
+    expect(warnings.join("\n")).toMatch(/'img-src' blocks everything/);
+  }, 60_000);
+
+  it("accepts a directive the host adds that is no wider than its fallback", async () => {
+    const policy = await served();
+    const { errors, warnings } = await check((h) =>
+      h.set("content-security-policy", `${policy}; object-src 'none'`),
+    );
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+  }, 60_000);
+});
+
+describe("comparing a served policy with the recorded one, under CSP semantics", () => {
+  const compare = (expected: Record<string, string>, served: string) =>
+    compareCsp(expected, parseCsp(served));
+
+  it("treats 'none' as the empty list, alone or beside other sources", () => {
+    expect(compare({ "img-src": "'self' data:" }, "img-src 'none'")).toEqual({
+      widened: [],
+      narrowed: ["'img-src' blocks everything"],
+    });
+    expect(compare({ "img-src": "'self'" }, "img-src 'self' 'none'")).toEqual({
+      widened: [],
+      narrowed: [],
+    });
+  });
+
+  it("lets a stricter frame-ancestors through as a narrowing", () => {
+    expect(
+      compare({ "frame-ancestors": "'self' https://portal.example" }, "frame-ancestors 'none'"),
+    ).toEqual({
+      widened: [],
+      narrowed: ["'frame-ancestors' blocks everything"],
+    });
+  });
+
+  it("follows fallbacks both ways", () => {
+    // Added, but no wider than the default-src it would otherwise fall back to.
+    expect(
+      compare({ "default-src": "'none'" }, "default-src 'none'; object-src 'none'").widened,
+    ).toEqual([]);
+    // Dropped, but the fallback that then applies is stricter.
+    expect(compare({ "default-src": "'none'", "img-src": "'self'" }, "default-src 'none'")).toEqual(
+      {
+        widened: [],
+        narrowed: ["'img-src' blocks everything"],
+      },
+    );
+    // Added, and wider than the fallback.
+    expect(
+      compare(
+        { "default-src": "'none'", "script-src": "'self'" },
+        "default-src 'none'; script-src 'self'; script-src-elem 'self' https://cdn.example",
+      ).widened,
+    ).toEqual(["'script-src-elem' also allows https://cdn.example"]);
+  });
+
+  it("reports a dropped directive that has no fallback as unrestricted", () => {
+    expect(
+      compare({ "default-src": "'none'", "base-uri": "'none'" }, "default-src 'none'").widened,
+    ).toEqual(["does not restrict 'base-uri'"]);
+  });
+
+  it("folds the case of keywords and schemes, but not of hashes", () => {
+    expect(compare({ "img-src": "'self' data:" }, "img-src 'SELF' DATA:")).toEqual({
+      widened: [],
+      narrowed: [],
+    });
+    expect(compare({ "script-src": "'sha256-AbC='" }, "script-src 'SHA256-AbC='").widened).toEqual(
+      [],
+    );
+    expect(compare({ "script-src": "'sha256-AbC='" }, "script-src 'sha256-abc='").widened).toEqual([
+      "'script-src' also allows 'sha256-abc='",
+    ]);
+  });
+
+  it("ignores reporting directives and directives a browser does not know", () => {
+    expect(
+      compare({ "default-src": "'none'" }, "default-src 'none'; report-uri /r; made-up-src *"),
+    ).toEqual({
+      widened: [],
+      narrowed: [],
+    });
+  });
+
+  it("counts removing the last hash or nonce beside 'unsafe-inline' as a widening", () => {
+    // With the nonce, a browser ignores 'unsafe-inline'; without it, inline code runs.
+    const result = compare(
+      { "script-src": "'self' 'unsafe-inline' 'nonce-abc'" },
+      "script-src 'self' 'unsafe-inline'",
+    );
+    expect(result.widened).toEqual([
+      "'script-src' allows any inline code: no hash or nonce is left to disable its 'unsafe-inline'",
+    ]);
+    // The same through a fallback: style-src is not named, so default-src governs styles.
+    expect(
+      compare(
+        { "default-src": "'self' 'unsafe-inline' 'sha256-AbC='" },
+        "default-src 'self' 'unsafe-inline'",
+      ).widened,
+    ).toContain(
+      "'default-src' allows any inline code: no hash or nonce is left to disable its 'unsafe-inline'",
+    );
+  });
+
+  it("does not count removing one of several hashes as a widening", () => {
+    expect(
+      compare(
+        { "script-src": "'unsafe-inline' 'sha256-AbC=' 'sha256-DeF='" },
+        "script-src 'unsafe-inline' 'sha256-AbC='",
+      ),
+    ).toEqual({ widened: [], narrowed: ["'script-src' omits 'sha256-DeF='"] });
+  });
+
+  it("does not trip over directive names that are also object properties", () => {
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(() =>
+        compare({ "default-src": "'none'" }, `default-src 'none'; ${name} *`),
+      ).not.toThrow();
+      expect(compare({ "default-src": "'none'" }, `default-src 'none'; ${name} *`)).toEqual({
+        widened: [],
+        narrowed: [],
+      });
+    }
+  });
 });
