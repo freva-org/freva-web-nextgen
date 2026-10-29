@@ -87,7 +87,7 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "astro": "~7.3.8",
-    "katex": "^0.16.25",
+    "katex": "^0.18.2",
     "mdast-util-to-string": "^4.0.0",
     "mermaid": "^11.16.1",
     "parse5": "^8.0.1",
