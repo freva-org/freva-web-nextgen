@@ -38,6 +38,7 @@ export {
   renderRecipe,
   type StoreBinding,
 } from "@freva-org/dataset-tree/recipes";
+import { trimTrailing } from "./trim.js";
 
 // examples per node
 
@@ -162,7 +163,7 @@ function markdownEscape(text: string): string {
  * name prints nothing, so the example itself keeps its `print`.
  */
 export function notebookCode(code: string): string {
-  const lines = code.replace(/\n+$/, "").split("\n");
+  const lines = trimTrailing(code, "\n").split("\n");
   const last = /^print\(\s*([A-Za-z_]\w*)\s*\)\s*$/.exec(lines.at(-1) ?? "");
   if (last) lines[lines.length - 1] = last[1]!;
   return lines.join("\n");

@@ -8,6 +8,7 @@ import type { OverviewResult, ResolvedConfig, SearchResult, UniqKey } from "./ty
 import { STREAM_TOO_BIG_DETAIL } from "./types.js";
 import { resolveAuthToken } from "./auth-token.js";
 import { buildSearchUrl } from "./search/query.js";
+import { trimTrailing } from "./trim.js";
 
 const enc = encodeURIComponent;
 
@@ -83,8 +84,8 @@ export class Api {
 
   constructor(cfg: ResolvedConfig, dis: Disposables) {
     this.cfg = cfg;
-    this.base = cfg.apiBase.replace(/\/+$/, "");
-    this.portal = cfg.dataPortalBase.replace(/\/+$/, "");
+    this.base = trimTrailing(cfg.apiBase, "/");
+    this.portal = trimTrailing(cfg.dataPortalBase, "/");
     this.authOrigins = [originOf(this.base), originOf(this.portal)].filter(
       (o): o is string => o !== null,
     );

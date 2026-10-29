@@ -71,6 +71,7 @@ import type {
   StoredToken,
   TokenStorage,
 } from "./types.js";
+import { trimTrailing } from "./trim.js";
 
 /**
  * Unguessable transaction id. Fails closed: `Math.random()` is not a CSPRNG,
@@ -489,7 +490,7 @@ export class PyOidcAuthClient {
     });
     // Canonical ABSOLUTE base: a relative one would later be re-resolved
     // against the document base URL, which a `<base>` element controls.
-    this.base = (baseUrl ? baseUrl.href : config.authBaseUrl).replace(/\/+$/, "");
+    this.base = trimTrailing(baseUrl ? baseUrl.href : config.authBaseUrl, "/");
     this.redirectUri = redirect ? redirect.href : config.redirectUri;
     this.postLogoutRedirectUri = this.postLogoutRedirectUriCanonical;
     this.buffer = config.refreshBufferSeconds ?? 120;

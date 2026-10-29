@@ -17,6 +17,7 @@ import type {
   UniqKey,
 } from "./types.js";
 import { describeMetadataValue } from "./describe.js";
+import { ownList } from "./records.js";
 
 export const BUILTIN_FLAVOURS: FlavourName[] = ["freva", "cmip5", "cmip6", "cordex", "user"];
 
@@ -816,14 +817,16 @@ function wireFacetPairs(state: QueryScope): Array<[string, string]> {
     // Deduplicate: two freva-canonical base keys can translate onto the SAME flavour key, and a
     // user's URL selection may repeat a value the scope already sends. A repeated pair is harmless
     // to Solr but makes the wire query - and every command copied from it - misleading.
-    const cur = (merged[fk] ??= []);
+    const cur = ownList(merged, fk);
+    if (!cur) continue;
     for (const v of vs) if (!cur.includes(v)) cur.push(v);
   }
   for (const [k, vs] of Object.entries(state.selected)) {
     // A gated BASE key is INESCAPABLE: neither `project=` nor `project_not_=` from the user may
     // widen or contradict it (`project_not_=waterpark` would empty a waterpark-scoped instance).
     if (gated.has(baseFacetKey(k).toLowerCase())) continue;
-    const cur = (merged[k] ??= []);
+    const cur = ownList(merged, k);
+    if (!cur) continue;
     for (const v of vs) if (!cur.includes(v)) cur.push(v);
   }
   const pairs: Array<[string, string]> = [];
@@ -868,7 +871,7 @@ export function parseUrlQuery(search: string): {
     // Never let a host/API transport parameter masquerade as a facet - these control the request or
     // the export cap and must only ever come from the component, never the address bar.
     if (URL_RESERVED_KEYS.has(k)) continue;
-    (record[k] ??= []).push(v);
+    ownList(record, k)?.push(v);
   }
   const { time, bbox, rest } = parseControlTokens(record);
   return { flavour, selected: rest, time, bbox };
@@ -1028,7 +1031,8 @@ export function parseFacetTokens(text: string): Record<string, string[]> {
     const key = tok.slice(0, eq).toLowerCase();
     const value = tok.slice(eq + 1);
     if (!value) continue;
-    const arr = out[key] ?? (out[key] = []);
+    const arr = ownList(out, key);
+    if (!arr) continue;
     if (!arr.includes(value)) arr.push(value);
   }
   return out;

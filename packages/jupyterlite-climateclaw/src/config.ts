@@ -2,6 +2,7 @@
 // settings overrides). Every URL is derived from `host` unless given; nothing here is a secret.
 
 import { PageConfig } from "@jupyterlab/coreutils";
+import { trimTrailing } from "./trim.js";
 
 export const PLUGIN_ID = "@freva-org/jupyterlite-climateclaw:plugin";
 export const PROVIDER_ID = "climateclaw";
@@ -70,9 +71,10 @@ export function readConfig(
   defaultCallback: string,
 ): ClimateClawConfig {
   const host = originOf(str(raw.host));
-  const authBaseUrl = (
-    str(raw.authBaseUrl) || (host ? `${host}/api/freva-nextgen/auth/v2` : "")
-  ).replace(/\/+$/, "");
+  const authBaseUrl = trimTrailing(
+    str(raw.authBaseUrl) || (host ? `${host}/api/freva-nextgen/auth/v2` : ""),
+    "/",
+  );
   const apiPath = str(raw.apiPath) || "/api/chatbot";
   const apiBase = host ? `${host}/${apiPath.replace(/^\/+|\/+$/g, "")}` : "";
   let callbackUrl = "";

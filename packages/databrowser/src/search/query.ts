@@ -16,6 +16,7 @@
 
 import type { QueryScope, UniqKey } from "../types.js";
 import { facetQueryString, queryPairs } from "../state.js";
+import { trimTrailing } from "../trim.js";
 
 export type { QueryScope };
 
@@ -81,7 +82,7 @@ export function buildSearchUrl(
   query: string,
   opts: SearchUrlOptions = {},
 ): string {
-  const base = apiBase.replace(/\/+$/, "");
+  const base = trimTrailing(apiBase, "/");
   let url = `${base}/${endpoint}/${encodeURIComponent(flavour)}/${uniqKey}?translate=true`;
   if (opts.maxResults !== undefined) url += `&max-results=${opts.maxResults}`;
   if (opts.start) url += `&start=${opts.start}`;

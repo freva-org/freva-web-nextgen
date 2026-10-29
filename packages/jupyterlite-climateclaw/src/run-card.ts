@@ -13,6 +13,7 @@ import { figureMarkdown, type SavedFigure } from "./figures.js";
 import { cellPointer, chipText, outcomeChip } from "./notebook-sink.js";
 import { isModuleCheck } from "./runfix.js";
 import { fence, type CodeOutput } from "./stream.js";
+import { trimTrailing } from "./trim.js";
 
 /** Which notebook cell a run went to. */
 export interface RunPointer {
@@ -55,7 +56,7 @@ const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
 
 /** At most `MAX_LINES` lines (the last ones for a traceback), and what was left out. */
 function clip(text: string, keepEnd = false): string {
-  const clean = text.replace(ANSI, "").replace(/\n+$/, "");
+  const clean = trimTrailing(text.replace(ANSI, ""), "\n");
   const lines = clean.split("\n");
   let kept = keepEnd ? lines.slice(-MAX_LINES) : lines.slice(0, MAX_LINES);
   let joined = kept.join("\n");
@@ -103,7 +104,7 @@ export function runCard(run: Run, options: RunCardOptions): string {
   const parts: string[] = [];
   if (output) {
     const out = [output.stdout, output.result, ...output.display]
-      .map((s) => s.replace(/\n+$/, ""))
+      .map((s) => trimTrailing(s, "\n"))
       .filter(Boolean)
       .join("\n");
     if (out) parts.push(part("Output", [fence(clip(out), "text")]));
@@ -147,7 +148,7 @@ export function runCard(run: Run, options: RunCardOptions): string {
     ? `<details class="${CODE_CLASS}"${options.open ? " open" : ""}>` +
       `<summary class="jp-ClimateClaw-runHead">${head}` +
       `<span class="jp-ClimateClaw-runToggle" title="Show or hide this run's code">Code</span>` +
-      `</summary>\n\n${fence(run.code.replace(/\n+$/, ""), "python")}\n\n</details>`
+      `</summary>\n\n${fence(trimTrailing(run.code, "\n"), "python")}\n\n</details>`
     : `<div class="jp-ClimateClaw-runHead">${head}</div>`;
   return (
     `\n\n<div class="${RUN_CLASS}${failed ? " jp-mod-error" : ""}">${code}\n\n` +

@@ -29,7 +29,7 @@ export function packageInfo(): PackageJson {
 /** The canonical package URL used by every manifest reference to a framework file. */
 export function packagePurl(): string {
   const { name, version } = packageInfo();
-  return `pkg:npm/${name.replace("@", "%40")}@${version}`;
+  return `pkg:npm/${name.replaceAll("@", "%40")}@${version}`;
 }
 
 export function sha256(data: Buffer | string): string {

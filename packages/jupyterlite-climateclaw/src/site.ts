@@ -11,6 +11,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { trimTrailing } from "./trim.js";
 
 /** The settings id the extension reads (`overrides.json`). */
 export const CLIMATECLAW_PLUGIN = "@freva-org/jupyterlite-climateclaw:plugin";
@@ -76,7 +77,7 @@ export interface ClimateClawAssets {
 const packageFile = (path: string): string => fileURLToPath(new URL(`../${path}`, import.meta.url));
 
 export function climateClawSite(input: ClimateClawSiteInput): ClimateClawSite {
-  const host = input.host.replace(/\/+$/, "");
+  const host = trimTrailing(input.host, "/");
   return {
     overrides: {
       "@jupyternaut/persona:settings-model": {
@@ -96,7 +97,7 @@ export function climateClawSite(input: ClimateClawSiteInput): ClimateClawSite {
       "@jupyterlite/ai:chat": { chatBackupDirectory: "chats" },
       [CLIMATECLAW_PLUGIN]: {
         host,
-        authBaseUrl: (input.authBaseUrl ?? `${host}/api/freva-nextgen/auth/v2`).replace(/\/+$/, ""),
+        authBaseUrl: trimTrailing(input.authBaseUrl ?? `${host}/api/freva-nextgen/auth/v2`, "/"),
         // Origin-relative: the notebook resolves it against its own origin, so no host name is in
         // the site's settings.
         callbackPath: input.callbackPath,

@@ -98,14 +98,14 @@ export function parseSearchIntentV1(
   const facets: Record<string, string[]> = {};
   for (const [key, value] of params.entries()) {
     if (key === "flavour") continue;
-    (facets[key] ??= []).push(value);
+    ownList(facets, key)?.push(value);
   }
 
   if (text && text.trim() !== "") {
     const mapped = textToFacetValue(text);
     if (mapped) {
       params.append(uniqKey, mapped);
-      (facets[uniqKey] ??= []).push(mapped);
+      ownList(facets, uniqKey)?.push(mapped);
     }
   }
 
@@ -126,4 +126,11 @@ export function applySearchIntentV1(
   intent: SearchIntentV1,
 ): DataBrowserConfig {
   return intent.flavour ? { ...config, flavour: intent.flavour } : { ...config };
+}
+
+/** Same as records.ts `ownList`, kept local: this entry may import nothing but types. */
+function ownList(record: Record<string, string[]>, key: string): string[] | null {
+  if (key === "__proto__") return null;
+  if (!Object.prototype.hasOwnProperty.call(record, key)) record[key] = [];
+  return record[key] ?? null;
 }
