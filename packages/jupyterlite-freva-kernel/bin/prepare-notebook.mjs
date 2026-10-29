@@ -497,9 +497,9 @@ export function externalizeInline(siteDir) {
   for (const page of walk(siteDir).filter((p) => p.endsWith(".html"))) {
     let html = readFileSync(page, "utf8");
     const before = html;
-    html = html.replace(/<script([^>]*)>([\s\S]*?)<\/script>/g, (whole, attrs, body) => {
-      if (/application\/json/.test(attrs) || /\bsrc=/.test(attrs)) return whole;
-      const module = /type="module"/.test(attrs);
+    html = html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi, (whole, attrs, body) => {
+      if (/application\/json/i.test(attrs) || /\bsrc\s*=/i.test(attrs)) return whole;
+      const module = /type="module"/i.test(attrs);
       const name = `lite-boot-${sha256(body).slice(0, 12)}.${module ? "mjs" : "js"}`;
       writeFileSync(join(dirname(page), name), `${body.trim()}\n`);
       written.push(join(dirname(page), name));
@@ -593,13 +593,14 @@ export function auditSite(
   for (const page of files.filter((p) => p.endsWith(".html"))) {
     const html = readFileSync(page, "utf8");
     const rel = relative(siteDir, page);
-    for (const [, attrs] of html.matchAll(/<script([^>]*)>/g)) {
-      if (!/\bsrc=/.test(attrs) && !/application\/json/.test(attrs)) {
+    for (const [, attrs] of html.matchAll(/<script\b([^>]*)>/gi)) {
+      if (!/\bsrc\s*=/i.test(attrs) && !/application\/json/i.test(attrs)) {
         problems.push(`${rel}: inline <script> remains`);
       }
     }
-    if (/<style[\s>]/.test(html)) problems.push(`${rel}: <style> block remains`);
-    if (/\son[a-z]+\s*=/i.test(html.replace(/<script[\s\S]*?<\/script>/g, ""))) {
+    if (/<style[\s>]/i.test(html)) problems.push(`${rel}: <style> block remains`);
+    const outsideScripts = html.split(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/i).join(" ");
+    if (/\son[a-z]+\s*=/i.test(outsideScripts)) {
       problems.push(`${rel}: inline event handler`);
     }
     for (const [, url] of html.matchAll(/\b(?:src|href)="(https?:\/\/[^"]+)"/g)) {

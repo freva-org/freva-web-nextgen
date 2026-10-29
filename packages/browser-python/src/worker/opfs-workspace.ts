@@ -390,7 +390,7 @@ class SlotPool {
 
 export interface WorkspaceOptions {
   maxFiles?: number;
-  /** Injected by tests. Defaults to `crypto.randomUUID()`. */
+  /** Injected by tests. Defaults to 8 random bytes from `crypto.getRandomValues`. */
   sessionId?: string;
 }
 
@@ -1446,11 +1446,8 @@ function describe(error: unknown): string {
  * up. In the NAME rather than a marker file, which leaves no window open. */
 function randomSessionId(): string {
   const created = Date.now().toString(36);
-  const uuid = (globalThis.crypto as { randomUUID?: () => string } | undefined)?.randomUUID;
-  const unique =
-    typeof uuid === "function"
-      ? uuid.call(globalThis.crypto)
-      : Math.random().toString(36).slice(2, 10);
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  const unique = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   return `s-${created}-${unique}`;
 }
 

@@ -23,7 +23,7 @@ if (!existsSync(licensesPath)) {
 }
 const inventory = JSON.parse(readFileSync(licensesPath, "utf8"));
 
-const purl = (name, version) => `pkg:npm/${name.replace("@", "%40")}@${version}`;
+const purl = (name, version) => `pkg:npm/${name.replaceAll("@", "%40")}@${version}`;
 
 const components = [
   ...inventory.components.map((c) => ({

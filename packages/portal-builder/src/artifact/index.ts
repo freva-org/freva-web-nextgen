@@ -713,7 +713,7 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   };
 }
 
-const SCRIPT_BLOCK = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+const SCRIPT_BLOCK = /<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi;
 /**
  * `type` values a browser will actually execute. Everything else - `application/json`,
  * `application/ld+json`, `text/template` - is a data block: the browser never runs it, so
