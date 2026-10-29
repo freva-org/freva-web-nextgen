@@ -1,5 +1,28 @@
 # @freva-org/portal-builder
 
+## 2612.2.0
+
+### Minor Changes
+
+- cad8488: Security updates: `browser-python` depends on DOMPurify 3.4.17. `data-inspector` builds with Vite 8. `portal-builder`'s `host-check` now verifies the deployed Content-Security-Policy (`FP1607`); a host that cannot send headers, such as GitHub Pages, needs the new `--allow-missing-csp`.
+
+### Patch Changes
+
+- 3577e8a: Code scanning fixes. `databrowser` no longer breaks on a link or query whose facet key is an `Object.prototype` name (`__proto__`, `constructor`, `toString`, ...). Trailing slashes, newlines and spaces are trimmed in linear time instead of with backtracking regular expressions.
+- 02ab040: Script-tag matching closes on `</script ...>` in any case, as a browser does. Workspace session ids always come from `crypto.getRandomValues`.
+- a4570b3: File checks and the reads or writes they guard go through one descriptor or one exclusive create, so they see the same file. The playground frame only loads an http(s) origin, and the worker ignores messages from a foreign origin. A callback spends its login transaction once, before reading the response. Copied ClimateClaw replies strip tags and comments until none are left.
+- Updated dependencies [3577e8a]
+- Updated dependencies [02ab040]
+- Updated dependencies [a4570b3]
+- Updated dependencies [cad8488]
+  - @freva-org/databrowser@2610.0.1
+  - @freva-org/jupyterlite-climateclaw@2610.1.1
+  - @freva-org/data-inspector@2610.1.1
+  - @freva-org/ts-oidc-auth-client@2608.0.2
+  - @freva-org/jupyterlite-freva-data@2610.2.1
+  - @freva-org/browser-python@2610.1.1
+  - @freva-org/jupyterlite-freva-kernel@2610.2.1
+
 ## 2612.1.0
 
 ### Patch Changes

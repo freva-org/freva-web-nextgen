@@ -1,6 +1,6 @@
 {
   "name": "@freva-org/jupyterlite-climateclaw",
-  "version": "2610.1.0",
+  "version": "2610.1.1",
   "description": "ClimateClaw (Freva) for JupyterLite and JupyterLab: a provider for jupyterlite-ai, Freva login in a popup, chat toolbar items, slash commands and \"Run & fix at DKRZ\".",
   "keywords": [
     "jupyter",
@@ -69,7 +69,7 @@
     "prepack": "npm run build && npm run build:labextension"
   },
   "dependencies": {
-    "@freva-org/ts-oidc-auth-client": "2608.0.1",
+    "@freva-org/ts-oidc-auth-client": "2608.0.2",
     "@jupyter/chat": "^0.25.0",
     "@jupyterlab/application": "^4.4.0",
     "@jupyterlab/apputils": "^4.5.0",
