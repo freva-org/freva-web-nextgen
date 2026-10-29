@@ -99,7 +99,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
-    "shiki": "^3.14.0",
+    "shiki": "^4.5.0",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0",
     "yaml": "^2.8.1"
