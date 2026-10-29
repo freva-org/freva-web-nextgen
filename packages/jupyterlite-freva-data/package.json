@@ -65,7 +65,7 @@
     "@jupyterlab/apputils": "^4.5.0",
     "@jupyterlab/coreutils": "^6.4.0",
     "@jupyterlab/filebrowser": "^4.4.0",
-    "@jupyterlab/launcher": "^4.4.0",
+    "@jupyterlab/launcher": "^4.6.4",
     "@jupyterlab/notebook": "^4.4.0",
     "@jupyterlab/services": "^7.4.0",
     "@jupyterlab/settingregistry": "^4.4.0",
@@ -73,7 +73,7 @@
     "@lumino/coreutils": "^2.2.0",
     "@lumino/dragdrop": "^2.1.0",
     "@lumino/signaling": "^2.1.0",
-    "@lumino/widgets": "^2.6.0"
+    "@lumino/widgets": "^2.10.0"
   },
   "devDependencies": {
     "@jupyter/builder": "1.2.3",
