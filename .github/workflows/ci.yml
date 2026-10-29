@@ -226,7 +226,7 @@ jobs:
           echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the Pyodide distribution
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/browser-python/.runtime
           key: pyodide-${{ steps.runtime.outputs.id }}
@@ -240,7 +240,7 @@ jobs:
         run: node packages/browser-python/scripts/check-runtime.mjs
 
       - name: Cache the prepared add-ons
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/browser-python/.addons
           key: addons-${{ hashFiles('packages/browser-python/bin/freva-addons.json') }}
@@ -389,7 +389,7 @@ jobs:
           echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the Pyodide distribution
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/browser-python/.runtime
           key: pyodide-${{ steps.runtime.outputs.id }}
@@ -403,7 +403,7 @@ jobs:
           echo "id=$(node packages/browser-python/scripts/freva-wheelhouse-key.mjs)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the derived Freva wheel
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/browser-python/.freva-wheels
           key: freva-wheel-${{ steps.freva.outputs.id }}
@@ -425,7 +425,7 @@ jobs:
           echo "id=$(npm run --silent stac:cache-key)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the prepared STAC materials
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/stac-browser/materials
           key: stac-materials-${{ steps.stac.outputs.id }}
@@ -623,7 +623,7 @@ jobs:
       - name: Cache gitleaks
         id: gitleaks-cache
         if: matrix.id == 'gitleaks'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/go/bin/gitleaks
           key: gitleaks-v8.30.1-${{ runner.os }}-${{ runner.arch }}
