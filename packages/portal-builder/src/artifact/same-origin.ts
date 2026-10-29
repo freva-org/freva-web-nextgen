@@ -47,7 +47,7 @@ export function metaSafe(policy: string): string {
 /** The hashes of a document's inline, executable scripts (a body and no `src`). */
 export function inlineScriptHashes(html: string): string[] {
   const out = new Set<string>();
-  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)) {
     const attrs = m[1] ?? "";
     const body = m[2] ?? "";
     if (/\bsrc\s*=/i.test(attrs) || body.trim() === "") continue;
