@@ -426,20 +426,22 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
     const from = join(tempOut, "playground-origin", ...rel.split("/"), "index.html");
     callbackFile = `${rel}index.html`;
     const to = join(tempOut, ...callbackFile.split("/"));
-    if (existsSync(to)) {
+    const taken = () =>
       bag.error(
         "FP1208",
         `The notebook's sign-in callback '${sameOrigin.callbackPath}' is already a page of the portal.`,
         { pointer: "/pythonPlayground/notebook/assistant" },
       );
-    } else if (existsSync(from)) {
-      mkdirSync(dirname(to), { recursive: true });
+    if (existsSync(from)) {
       let html = readFileSync(from, "utf8");
       if (sameOrigin.metaPolicy) {
         const { prepare } = await loadKernelTools();
         html = prepare.setMetaPolicy(html, callbackPolicy(html).meta);
       }
-      writeFileSync(to, html, "utf8");
+      mkdirSync(dirname(to), { recursive: true });
+      if (!writeNew(to, html)) taken();
+    } else if (existsSync(to)) {
+      taken();
     }
     // Moved, not copied: nothing of the portal's stays on the playground origin's side.
     if (!model.playground) {
@@ -463,16 +465,14 @@ export async function buildSite(options: BuildOptions): Promise<BuildResult> {
   // `collect()`, so each page is listed, hashed and checksummed like every other file.
   for (const redirect of model.redirects) {
     const target = join(tempOut, ...redirect.file.split("/"));
-    if (existsSync(target)) {
+    mkdirSync(dirname(target), { recursive: true });
+    if (!writeNew(target, redirectPage(redirect, model.site.language, model.site.origin))) {
       bag.error(
         "FP1224",
         `The redirect from '${redirect.from}' would overwrite '${redirect.file}', which the build produced.`,
         { pointer: "/redirects" },
       );
-      continue;
     }
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, redirectPage(redirect, model.site.language, model.site.origin), "utf8");
   }
 
   graph.copiedFiles = [...copiedFiles].sort();
@@ -787,6 +787,17 @@ export function artifactRelative(root: string, file: string): string {
   return relative(root, file).split(sep).join("/");
 }
 
+/** Writes `text` to a new file at `path`; false, writing nothing, when something is there already. */
+function writeNew(path: string, text: string): boolean {
+  try {
+    writeFileSync(path, text, { encoding: "utf8", flag: "wx" });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+}
+
 /**
  * Put each status document at the file name a host will ask for. Astro writes `/404` and
  * `/500` straight to `404.html` and `500.html` - it knows those two are status pages - and
@@ -804,8 +815,13 @@ function linkSiteStylesheet(root: string, routes: readonly ResolvedRoute[], href
   const tag = `<link rel="stylesheet" href="${href}">`;
   for (const route of routes) {
     const file = join(root, ...route.file.split("/"));
-    if (!existsSync(file)) continue;
-    const html = readFileSync(file, "utf8");
+    let html: string;
+    try {
+      html = readFileSync(file, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
     const at = html.indexOf("</head>");
     if (at < 0) continue;
     writeFileSync(file, `${html.slice(0, at)}${tag}${html.slice(at)}`, "utf8");

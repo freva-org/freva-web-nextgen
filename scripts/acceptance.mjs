@@ -508,7 +508,7 @@ if (wanted("container")) {
     );
   } else {
     const tag = `freva-portal-builder:acceptance-${process.pid}`;
-    const build = capture("bash", [join(ROOT, "container", "portal-builder", "build.sh"), tag]);
+    const build = capture(join(ROOT, "container", "portal-builder", "build.sh"), [tag]);
 
     // The exact image that was built, by digest, so the consumer build below is
     // demonstrably the same bytes and the reference can be published.

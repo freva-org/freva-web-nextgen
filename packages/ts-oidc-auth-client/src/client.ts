@@ -1038,11 +1038,12 @@ export class PyOidcAuthClient {
     }
     this.assertIssuer(response.iss);
 
+    // A login transaction answers one callback, whatever it carries: spent before reading it.
+    const txn = this.consumeLoginTransaction();
     const error = response.error;
     if (error) {
       const description = response.errorDescription ?? "(no description)";
-      const errorTxn = this.consumeLoginTransaction();
-      if (this.requireLoginTransaction && !errorTxn) {
+      if (this.requireLoginTransaction && !txn) {
         throw new LoginTransactionError(
           "handleCallback: an error response arrived without a login " +
             "transaction started in this tab, so it cannot be attributed to a " +
@@ -1057,11 +1058,9 @@ export class PyOidcAuthClient {
     const code = response.code;
     const state = response.state;
     if (!code || !state) {
-      this.consumeLoginTransaction();
       throw new CallbackError("missing-code-or-state");
     }
 
-    const txn = this.consumeLoginTransaction();
     if (this.requireLoginTransaction) {
       if (!txn) {
         throw new LoginTransactionError(

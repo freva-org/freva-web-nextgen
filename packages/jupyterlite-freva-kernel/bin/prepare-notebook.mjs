@@ -56,6 +56,16 @@ export const SOURCE_DATE_EPOCH = 1_759_276_800; // 2025-10-01T00:00:00Z
 
 const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 
+/** Whether a cache directory's stamp records `key`: it is written last, once the cache is whole. */
+function stamped(stamp, key) {
+  try {
+    return readFileSync(stamp, "utf8").trim() === key;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 /**
  * This preparation's revision: the digest of this file. A site records it, and a site prepared by
  * another revision is prepared again (a reused one would miss what this revision does).
@@ -116,7 +126,7 @@ export function liteEnvironment({ executable = "python3", cacheDir, log = consol
   const env = join(root, `lite-${key}`);
   const bin = join(env, process.platform === "win32" ? "Scripts" : "bin");
   const stamp = join(env, ".complete");
-  if (!existsSync(stamp)) {
+  if (!stamped(stamp, key)) {
     python(executable);
     rmSync(env, { recursive: true, force: true });
     mkdirSync(root, { recursive: true });
@@ -176,7 +186,7 @@ export function pinnedWheels({ requirements, bin, cacheDir, log = console.log })
     cacheDir ?? process.env.FREVA_NOTEBOOK_CACHE ?? join(homedir(), ".cache", "freva-jupyterlite");
   const dir = join(root, `wheels-${key}`);
   const stamp = join(dir, ".complete");
-  if (!existsSync(stamp)) {
+  if (!stamped(stamp, key)) {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     log(`notebook: downloading ${pins.length} pinned extension wheels (${dir})`);

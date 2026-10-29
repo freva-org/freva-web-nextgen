@@ -138,6 +138,11 @@ describe("copy and time", () => {
     );
   });
 
+  it("strips comments and tags until none are left, even ones a removal joins", () => {
+    expect(copyableText("a<!<!-- x -->-- y -->b")).toBe("ab");
+    expect(copyableText("a<<b>script>b")).toBe("ab");
+  });
+
   it("leaves out the scope note of a first reply", () => {
     expect(copyableText(`${scopeNoteMarkdown("Use HEALPix.\nPrefer Zarr.")}The answer.`)).toBe(
       "The answer.",

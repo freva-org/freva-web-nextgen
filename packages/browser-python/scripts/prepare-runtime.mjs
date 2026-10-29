@@ -117,6 +117,16 @@ async function download(entry, base) {
   return null;
 }
 
+/** A file's bytes, or null when there is none. */
+function readIfPresent(path) {
+  try {
+    return readFileSync(path);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 async function fetchWheels(version) {
   if (WANTED.length === 0) {
     // Say what --minimal costs, at the moment it is chosen. It leaves a runtime that starts and
@@ -145,9 +155,10 @@ async function fetchWheels(version) {
   for (const name of needed) {
     const file = lock.packages[name].file_name;
     const target = join(OUT, file);
-    if (existsSync(target)) {
+    const present = readIfPresent(target);
+    if (present) {
       cached += 1;
-      digests[file] = digestOf(readFileSync(target));
+      digests[file] = digestOf(present);
       continue;
     }
     const got = await download(lock.packages[name], base);
