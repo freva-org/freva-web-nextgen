@@ -6,8 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-# CI only reads the repository; caches and artifact uploads need no token scopes.
-# Without this block every job inherits the repository default, which may be write-all.
 permissions:
   contents: read
 
@@ -22,8 +20,7 @@ jobs:
 
     strategy:
       matrix:
-        # 22.23.4 is the declared minimum (packages/portal-builder engines.node, set by Astro 7.4):
-        # test that exact version, not whatever "22" resolves to today.
+        # 22.23.4: portal-builder's engines.node minimum.
         node-version: ["22.23.4", 24]
 
     steps:
@@ -79,8 +76,6 @@ jobs:
           fetch-depth: 0
 
       - name: A version bump must come with a changeset
-        # Through the environment, not `${{ }}` in the script: a branch name is attacker-chosen
-        # text, and an expression is pasted into the shell before it runs.
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
@@ -515,11 +510,7 @@ jobs:
           name: portal-builder-supply-chain
           path: packages/portal-builder/reports/
 
-  # ---------------------------------------------------------------------------------------------
-  # Security gates. They are jobs of THIS workflow on purpose: publish.yml releases only a commit
-  # whose CI run succeeded (scripts/require-ci-success.mjs), so each blocking job below blocks a
-  # release too, with no second workflow for the release check to know about. The one job that
-  # only reports says so in its name.
+  # Security gates live in CI so the release gate (require-ci-success.mjs) covers them.
 
   npm-audit:
     name: security / npm audit (high and above)
@@ -531,13 +522,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-      # The lockfile is the whole tree that ships and builds; nothing needs installing to audit it.
       - name: Audit the workspace lockfile
         run: npm audit --package-lock-only --audit-level=high
 
-  # STAC Browser is built from upstream's own lockfile, verified by digest, so its tree cannot be
-  # fixed here (packages/stac-browser/UPSTREAM.md). This keeps its findings visible in every run
-  # without failing CI; a reviewed pin update is what clears them.
+  # Report-only: upstream's lockfile can't be changed here.
   stac-audit:
     name: security / STAC Browser lockfile audit (report-only)
     runs-on: ubuntu-latest
@@ -591,8 +579,6 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      # Compares the dependency graph of the PR with its base; fails on a newly added dependency
-      # with a high or critical advisory. Needs the repository's dependency graph switched on.
       - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
@@ -617,8 +603,6 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
-      # A finished analysis is not the same as no findings. What blocks a merge on findings is the
-      # "Require code scanning results" rule on main (Settings -> Rules), at High or higher.
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: "/language:${{ matrix.language }}"
@@ -631,17 +615,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      # Through the Go toolchain, which verifies the module against sum.golang.org. (The
-      # gitleaks action needs a licence key for organisation accounts; the CLI does not.)
+      # The gitleaks action needs a licence for organisations; the CLI doesn't.
       - name: Install gitleaks
         run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
-      # Only what this run adds: the PR's commits, or the commits of this push. History is
-      # covered by GitHub secret scanning, which scans the whole repository.
-      #
-      # gitleaks reads `git log -p`, which shows NO diff for a merge commit by default, so a
-      # secret typed while resolving a conflict would pass unseen. --diff-merges=first-parent
-      # shows each merge as what it changed on the branch it landed on.
-      # (packages/browser-python/tests/secret-scan.test.ts checks this against a real merge.)
+      # --diff-merges: plain `git log -p` omits what a merge resolution adds.
       - name: Scan the new commits
         env:
           EVENT: ${{ github.event_name }}
@@ -670,7 +647,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      # Offline audits only, so the result depends on this commit and not on the API.
       - name: Audit the workflows
         run: pipx run zizmor==1.31.1 --offline --no-progress --min-severity medium .github/workflows
 
@@ -681,9 +657,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      # build.sh refuses to build without recorded base-image digests, and writing them by hand is
-      # not allowed (container/portal-builder/README.md). Until the lock is committed this job
-      # says so and passes; once it is, the image is built and must scan clean.
+      # Skipped until base-images.lock is committed.
       - name: Are the base images pinned?
         id: lock
         run: |

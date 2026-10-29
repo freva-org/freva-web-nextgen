@@ -1,26 +1,12 @@
 #!/usr/bin/env node
 /**
- * Apply a STAC Browser pin update that an unprivileged job produced, in the privileged job that
- * opens the pull request.
+ * Accept a pin update proposed by the unprivileged job, in the job that opens the PR.
  *
  *   node packages/stac-browser/scripts/accept-pin-update.mjs <proposal dir> \
  *     --commit <sha> --tag <vX.Y.Z> --body-out <file>
  *
- * The proposal is written AFTER upstream code has run (`npm ci` and the build at the new release),
- * so nothing in it is trusted and nothing in it is copied. Instead:
- *
- *   1. the directory must hold exactly `upstream.json`, `adapter-contract.json` and `pr-body.md`,
- *      each a regular file under a size limit: no other entry, no directory, no link;
- *   2. the four files the pull request changes are REBUILT from this checkout with the same field
- *      edits `pin.mjs` makes, using only the values `pin.mjs` is allowed to move, each checked
- *      for its exact shape;
- *   3. the proposal's two JSON files must then equal the rebuilt ones exactly, so any other field
- *      that changed (repository, patches, build settings, licence digest, ...) is refused;
- *   4. the commit must be the one upstream's repository - as this checkout records it - names
- *      for the tag.
- *
- * README.md and THIRD_PARTY_NOTICES.md are not taken from the proposal at all: their only change
- * is the pin, which this script writes itself.
+ * The proposal is untrusted, so nothing is copied: the changed files are rebuilt from this
+ * checkout with only the values pin.mjs may move, and the proposal must match them exactly.
  */
 import { execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -33,21 +19,15 @@ import { PKG_ROOT, RECIPE_FILE } from "./recipe.mjs";
 
 export const CONTRACT_FILE = resolve(PKG_ROOT, "adapter-contract.json");
 
-/** The only entries a proposal may contain, with the largest size each may have. */
 export const PROPOSAL_FILES = Object.freeze({
   "upstream.json": 256 * 1024,
   "adapter-contract.json": 256 * 1024,
-  // GitHub's limit for a pull request body is 65536 characters.
   "pr-body.md": 60 * 1024,
 });
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 
-/**
- * Every recipe field a pin update may move, and the shape its value must have. This is the whole
- * list: `pin.mjs --commit/--tag` writes the first four, `pin.mjs --materials` the last four.
- * `patchedSourceDigest` is empty after a failed build, because `--materials` never ran.
- */
+/** The fields pin.mjs moves. `patchedSourceDigest` is empty after a failed build. */
 export const RECIPE_FIELDS = Object.freeze({
   commit: (v) => typeof v === "string" && /^[0-9a-f]{40}$/.test(v),
   tag: (v) => typeof v === "string" && /^v\d+\.\d+\.\d+$/.test(v),
@@ -60,7 +40,6 @@ export const RECIPE_FIELDS = Object.freeze({
     /^node \d+\.\d+\.\d+, npm \d+\.\d+\.\d+, [a-z0-9]+\/[a-z0-9_]+$/.test(v),
 });
 
-/** Where each field lives in `upstream.json`. */
 const RECIPE_PATHS = Object.freeze({
   commit: ["commit"],
   tag: ["tag"],
@@ -71,7 +50,6 @@ const RECIPE_PATHS = Object.freeze({
   recordedWith: ["expected", "recordedWith"],
 });
 
-/** Read a proposal directory, refusing anything but the expected regular files. */
 export function readProposal(dir) {
   const names = readdirSync(dir).sort();
   const expected = Object.keys(PROPOSAL_FILES).sort();
@@ -95,7 +73,6 @@ export function readProposal(dir) {
   return files;
 }
 
-/** Order two stable release tags, `vX.Y.Z`: negative, zero or positive, like a comparator. */
 export function compareReleases(a, b) {
   const parts = (tag) => {
     const match = /^v(\d+)\.(\d+)\.(\d+)$/.exec(tag);
@@ -119,19 +96,7 @@ function parse(name, text) {
   }
 }
 
-/**
- * Rebuild the pin update from trusted base texts and the proposal.
- *
- * @param {object} input
- * @param {Record<string, string>} input.proposal   what `readProposal` returned
- * @param {{recipe: string, contract: string, readme: string, notice: string}} input.base
- *        the four files as this checkout has them
- * @param {string} input.commit                     the commit the unprivileged job reported
- * @param {string} input.tag                        the tag the unprivileged job reported
- * @param {(repository: string, tag: string) => string} input.resolveTag
- *        what upstream names for the tag; injected so tests need no network
- * @returns {{recipe: string, contract: string, readme: string, notice: string, body: string}}
- */
+/** `resolveTag` is injected so tests need no network. */
 export function rebuild({ proposal, base, commit, tag, resolveTag }) {
   const proposed = parse("upstream.json", proposal["upstream.json"]);
   const proposedContract = parse("adapter-contract.json", proposal["adapter-contract.json"]);
@@ -147,8 +112,7 @@ export function rebuild({ proposal, base, commit, tag, resolveTag }) {
     throw new Error("upstream.json commit is not the commit the job reported");
   if (values.tag !== tag) throw new Error("upstream.json tag is not the tag the job reported");
 
-  // Forward only. A producer that can choose the release could otherwise propose an older,
-  // vulnerable one that upstream really does name; a downgrade is a person's decision.
+  // A downgrade is a person's decision.
   const current = JSON.parse(base.recipe).tag;
   if (compareReleases(tag, current) <= 0) {
     throw new Error(
@@ -156,12 +120,10 @@ export function rebuild({ proposal, base, commit, tag, resolveTag }) {
     );
   }
 
-  // Rebuild from this checkout, moving only the allowed fields, exactly as pin.mjs would.
   let recipe = base.recipe;
   for (const [field, value] of Object.entries(values)) recipe = setField(recipe, field, value);
   const contract = setField(setField(base.contract, "commit", commit), "tag", tag);
 
-  // Anything else that differs in the proposal is a change nobody is allowed to make here.
   if (!isDeepStrictEqual(JSON.parse(recipe), proposed)) {
     throw new Error("upstream.json changes fields a pin update may not move");
   }
@@ -169,7 +131,6 @@ export function rebuild({ proposal, base, commit, tag, resolveTag }) {
     throw new Error("adapter-contract.json changes fields a pin update may not move");
   }
 
-  // The repository comes from this checkout, never from the proposal.
   const repository = JSON.parse(base.recipe).repository;
   const named = resolveTag(repository, tag);
   if (named !== commit)
@@ -184,7 +145,6 @@ export function rebuild({ proposal, base, commit, tag, resolveTag }) {
   };
 }
 
-/** The commit a remote names for a tag, peeling an annotated tag. */
 export function lsRemoteTag(repository, tag) {
   const out = execFileSync(
     "git",

@@ -12,8 +12,6 @@ on:
       - "packages/stac-browser/patches/**"
       - "packages/stac-browser/scripts/**"
 
-# Read-only by default. Only `open-pr` gets write access, and it never installs or builds
-# anything: every step that runs fetched upstream code happens in a job that can't push.
 permissions:
   contents: read
 
@@ -43,8 +41,7 @@ jobs:
       - name: Build STAC Browser at the pinned release
         run: npm run stac:prepare -- --out "$RUNNER_TEMP/materials"
 
-  # Resolves, pins and builds the new upstream release. Read-only and without stored git
-  # credentials, because `npm ci` and `stac:prepare` run code fetched from upstream.
+  # Runs upstream code, so it can't write.
   prepare:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -201,9 +198,6 @@ jobs:
           echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
           echo "count=${N:-?}" >> "$GITHUB_OUTPUT"
 
-      # The proposal is data for `open-pr`, never files it copies: that job checks its exact
-      # shape and rebuilds the pin update itself (packages/stac-browser/scripts/accept-pin-update.mjs).
-      # README.md and THIRD_PARTY_NOTICES.md are not handed over; their only change is the pin.
       - name: Stage the pin update for the PR job
         if: steps.resolve.outputs.changed == 'true'
         run: |
@@ -222,7 +216,7 @@ jobs:
           path: ${{ runner.temp }}/pin-proposal
           retention-days: 1
 
-  # Opens the PR. The only job with write access; it runs no npm and no upstream code.
+  # Can write, so it runs no upstream code and copies nothing from `prepare`.
   open-pr:
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
@@ -235,7 +229,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # No cache and no install: accept-pin-update.mjs uses Node built-ins only.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/stac-browser/.nvmrc
@@ -246,10 +239,6 @@ jobs:
           name: stac-browser-pin
           path: ${{ runner.temp }}/pin-proposal
 
-      # Nothing from the proposal is copied. The script refuses any entry but the three expected
-      # regular files, rebuilds the four changed files from this checkout moving only the fields
-      # pin.mjs may move, refuses a proposal that changes anything else, and checks with upstream
-      # that the commit is the tag's. Its outputs, not the prepare job's, name the PR below.
       - name: Rebuild the pin update from the proposal
         id: proposal
         env:
@@ -262,7 +251,6 @@ jobs:
 
       # A PR opened with GITHUB_TOKEN triggers no workflows, so its checks never run and
       # auto-merge never fires. The app token is what makes the green path land on its own.
-      # It is created only here, scoped to what opening and merging the PR needs.
       - name: Create freva-bot app token
         id: app-token
         if: ${{ vars.FREVA_BOT_APP_ID != '' }}

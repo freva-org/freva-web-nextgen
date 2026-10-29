@@ -1,9 +1,4 @@
-/**
- * CI's secret scan reads what `gitleaks git --log-opts=<opts>` feeds it, which is
- * `git log -p -U0 <opts>` (gitleaks' sources/git.go). By default `git log -p` prints no diff for
- * a merge commit, so a secret typed while resolving a conflict exists in no scanned diff at all.
- * These check, against a real merge, that the options the workflow passes do include it.
- */
+// gitleaks scans `git log -p -U0 <log-opts>`, which omits merge diffs unless told otherwise.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +10,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const CI = join(ROOT, ".github/workflows/ci.yml");
 const MARKER = "MERGE_ONLY_MARKER_7f3a";
 
-/** The `secrets` job's scan script, as the workflow has it. */
 function scanScript(): string {
   const workflow = readFileSync(CI, "utf8");
   const job = workflow.slice(workflow.indexOf("\n  secrets:\n"));
@@ -23,7 +17,6 @@ function scanScript(): string {
   return end >= 0 ? job.slice(0, end) : job;
 }
 
-/** What the workflow sets MERGES to, and every `opts=` it builds. */
 function workflowOptions(): { merges: string; opts: string[] } {
   const script = scanScript();
   const merges = /MERGES="([^"]+)"/.exec(script)?.[1] ?? "";
@@ -49,7 +42,6 @@ const git = (...args: string[]) =>
     },
   });
 
-/** Exactly the command gitleaks runs for `--log-opts=<opts>`, with opts split on spaces. */
 const gitleaksInput = (opts: string) => git("log", "-p", "-U0", ...opts.split(" "));
 
 beforeAll(() => {
@@ -68,7 +60,6 @@ beforeAll(() => {
   writeFileSync(join(repo, "config.txt"), "value = main\n");
   git("commit", "-q", "-am", "main side");
 
-  // The conflict is resolved to a line that is in neither parent: it exists only in the merge.
   try {
     git("merge", "-q", "feature");
   } catch {
@@ -96,7 +87,6 @@ describe("the secret scan sees what a merge resolution adds", () => {
   it("finds the merge-only line with the workflow's options", () => {
     const { merges } = workflowOptions();
     expect(gitleaksInput(`${merges} ${base}..HEAD`)).toContain(MARKER);
-    // The manual full-history form too.
     expect(gitleaksInput(`${merges} --full-history --all`)).toContain(MARKER);
   });
 

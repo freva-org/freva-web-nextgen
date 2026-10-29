@@ -1,8 +1,3 @@
-/**
- * The privileged PR job takes nothing from the proposal but checked values. These check that a
- * legitimate pin update goes through unchanged, and that every other shape of proposal - an extra
- * entry, a link, a field pin.mjs never moves, a commit upstream does not name - is refused.
- */
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +23,6 @@ const COMMIT = "a".repeat(40);
 const TAG = "v9.9.9";
 const DIGEST = `sha256:${"b".repeat(64)}`;
 
-/** What a green `prepare` job hands over for COMMIT/TAG. */
 function legitimate() {
   let recipe = base.recipe;
   for (const [field, value] of Object.entries({
@@ -88,7 +82,6 @@ test("a failed build's proposal, with an empty patch result, is accepted", () =>
 
 test("the proposal's own bytes are never what gets written", () => {
   const proposal = legitimate();
-  // Same JSON value, different text: the output must still be the rebuilt text.
   proposal["upstream.json"] = JSON.stringify(JSON.parse(proposal["upstream.json"]));
   const out = run(proposal);
   assert.equal(out.recipe, legitimate()["upstream.json"]);
@@ -206,7 +199,6 @@ test("an oversized file is refused", () => {
   );
 });
 
-/** The legitimate proposal, moved to another release tag. */
 function forTag(tag) {
   const proposal = legitimate();
   proposal["upstream.json"] = setField(proposal["upstream.json"], "tag", tag);

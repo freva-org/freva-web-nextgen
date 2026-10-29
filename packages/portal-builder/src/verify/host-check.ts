@@ -1,8 +1,7 @@
 // Deployed-host conformance: the evidence `preview` is not. It asks the real deployment the
 // questions `host-policy.json` says a conforming host must answer - directory indexes, the
 // slash redirect with its query intact, a real 404, the download headers, the auth callback's
-// cache and referrer policy, the Content-Security-Policy, enforced and not weakened - and
-// reports what it actually got. It is networked and never part
+// cache and referrer policy - and reports what it actually got. It is networked and never part
 // of artifact generation.
 
 import { readFileSync } from "node:fs";
@@ -44,10 +43,7 @@ interface HostPolicyDocument {
   };
 }
 
-/**
- * Directives that never widen what a page may load, so they are left out of the comparison:
- * they report, upgrade or add restrictions of their own.
- */
+/** Directives that never widen what a page may load. */
 const IGNORED_DIRECTIVES = new Set([
   "report-uri",
   "report-to",
@@ -58,11 +54,7 @@ const IGNORED_DIRECTIVES = new Set([
   "sandbox",
 ]);
 
-/**
- * CSP Level 3's fallback lists: a directive a policy does not name is governed by the first of
- * these it does name. Directives listed with no fallback (`base-uri`, `form-action`,
- * `frame-ancestors`) are unrestricted when absent, which is why dropping one is a widening.
- */
+/** CSP3 fallbacks. Directives without one are unrestricted when absent. */
 const FALLBACKS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["default-src", []],
   ["script-src", ["default-src"]],
@@ -86,10 +78,6 @@ const FALLBACKS: ReadonlyMap<string, readonly string[]> = new Map<string, readon
   ["frame-ancestors", []],
 ]);
 
-/**
- * One source expression in a comparable spelling. Keywords and schemes are case-insensitive;
- * the base64 part of a hash or nonce is not, so only its prefix is folded.
- */
 function normaliseSource(source: string): string {
   const hashOrNonce = /^'(sha256|sha384|sha512|nonce)-(.*)'$/i.exec(source);
   if (hashOrNonce) return `'${hashOrNonce[1]!.toLowerCase()}-${hashOrNonce[2]}'`;
@@ -98,25 +86,19 @@ function normaliseSource(source: string): string {
   return source;
 }
 
-/**
- * One policy, `name source source; name ...`, as directive name -> set of sources. `'none'` is
- * the empty set: it matches nothing, so a list of only `'none'` blocks everything, and beside
- * other sources it adds nothing.
- */
+/** Directive name -> sources. `'none'` is the empty set. */
 export function parseCsp(policy: string): Map<string, Set<string>> {
   const directives = new Map<string, Set<string>>();
   for (const part of policy.split(";")) {
     const [name, ...sources] = part.trim().split(/\s+/).filter(Boolean);
     if (!name) continue;
     const key = name.toLowerCase();
-    // The first occurrence of a directive is the one a browser enforces.
     if (directives.has(key)) continue;
     directives.set(key, new Set(sources.map(normaliseSource).filter((s) => s !== "'none'")));
   }
   return directives;
 }
 
-/** Directives where a hash or nonce turns `'unsafe-inline'` off (CSP3, "Does a source list allow all inline behavior"). */
 const INLINE_DIRECTIVES = new Set([
   "default-src",
   "script-src",
@@ -127,12 +109,7 @@ const INLINE_DIRECTIVES = new Set([
   "style-src-attr",
 ]);
 
-/**
- * Whether a source list really allows any inline code. `'unsafe-inline'` counts only while the
- * list has no hash and no nonce, and, for scripts, no `'strict-dynamic'`: a browser ignores it
- * otherwise. So removing the last hash can switch inline code ON, which is a widening even
- * though the list got shorter.
- */
+/** `'unsafe-inline'` is ignored while a hash, nonce or (scripts) `'strict-dynamic'` is present. */
 function allowsAnyInline(name: string, sources: Set<string>): boolean {
   if (!INLINE_DIRECTIVES.has(name) || !sources.has("'unsafe-inline'")) return false;
   for (const source of sources) {
@@ -142,7 +119,6 @@ function allowsAnyInline(name: string, sources: Set<string>): boolean {
   return true;
 }
 
-/** What a policy allows for one directive, after fallbacks: a set of sources, or anything. */
 function effective(policy: Map<string, Set<string>>, name: string): Set<string> | "anything" {
   for (const candidate of [name, ...(FALLBACKS.get(name) ?? [])]) {
     const sources = policy.get(candidate);
@@ -151,14 +127,7 @@ function effective(policy: Map<string, Set<string>>, name: string): Set<string> 
   return "anything";
 }
 
-/**
- * How a served policy compares with the artifact's, directive by directive, after fallbacks:
- * what it widens, and what it narrows.
- *
- * Sources are compared as expressions: one the artifact does not list counts as wider, even
- * where it might match fewer URLs (`https://host/path` beside `https://host`). Proving that
- * needs URL matching, and a false alarm on a host's own extra source is the safe mistake.
- */
+/** Sources compare as expressions: an unlisted one counts as wider, even if it is narrower. */
 export function compareCsp(
   expected: Record<string, string>,
   served: Map<string, Set<string>>,
@@ -170,8 +139,6 @@ export function compareCsp(
   );
   const widened: string[] = [];
   const narrowed: string[] = [];
-  // Every directive either policy names. One only the host names counts when it is a known
-  // directive: a browser ignores the rest, and so does this comparison.
   const names = new Set([
     ...recorded.keys(),
     ...[...served.keys()].filter((name) => FALLBACKS.has(name)),
@@ -205,7 +172,7 @@ export function compareCsp(
   return { widened, narrowed };
 }
 
-/** The policy a response at `fullPath` must carry: its path's own, else its subsite's, else the portal's. */
+/** Same precedence as preview: path, then subsite, then portal. */
 function expectedCsp(
   csp: HostPolicyDocument["csp"],
   fullPath: string,
@@ -286,9 +253,7 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
       bag.error("FP1603", `GET ${base} returned content-type '${type}', expected HTML.`);
     }
 
-    // 1b. It carries the artifact's Content-Security-Policy: enforced, and not weakened. The
-    // builder writes a restrictive policy, but only the host can send it; a deployment that
-    // drops, softens or merely reports it passes every other check here.
+    // 1b. The artifact's Content-Security-Policy, enforced and not weakened.
     const expected = expectedCsp(policy.csp, policy.mount.basePath);
     if (expected) {
       const enforced = root.headers.get("content-security-policy");
@@ -301,8 +266,7 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
             : `GET ${base} sends no Content-Security-Policy; host-policy.json records the policy the host must send.`,
         );
       } else {
-        // Several policies arrive comma-joined, and a browser enforces all of them, so the
-        // result is at least as strict as any one: one that is not weakened is enough.
+        // Comma-joined policies all apply, so one that isn't weakened is enough.
         const results = enforced
           .split(",")
           .map((policyText) => compareCsp(expected, parseCsp(policyText)));

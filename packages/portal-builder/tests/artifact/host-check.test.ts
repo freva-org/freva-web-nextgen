@@ -106,7 +106,6 @@ describe("a conforming host", () => {
 });
 
 describe("the deployed Content-Security-Policy", () => {
-  /** Real responses from the conforming preview, with the root document's headers changed. */
   const rootHeaders =
     (change: (headers: Headers) => void): typeof fetch =>
     async (input, init) => {
@@ -250,18 +249,15 @@ describe("comparing a served policy with the recorded one, under CSP semantics",
   });
 
   it("follows fallbacks both ways", () => {
-    // Added, but no wider than the default-src it would otherwise fall back to.
     expect(
       compare({ "default-src": "'none'" }, "default-src 'none'; object-src 'none'").widened,
     ).toEqual([]);
-    // Dropped, but the fallback that then applies is stricter.
     expect(compare({ "default-src": "'none'", "img-src": "'self'" }, "default-src 'none'")).toEqual(
       {
         widened: [],
         narrowed: ["'img-src' blocks everything"],
       },
     );
-    // Added, and wider than the fallback.
     expect(
       compare(
         { "default-src": "'none'", "script-src": "'self'" },
@@ -299,7 +295,6 @@ describe("comparing a served policy with the recorded one, under CSP semantics",
   });
 
   it("counts removing the last hash or nonce beside 'unsafe-inline' as a widening", () => {
-    // With the nonce, a browser ignores 'unsafe-inline'; without it, inline code runs.
     const result = compare(
       { "script-src": "'self' 'unsafe-inline' 'nonce-abc'" },
       "script-src 'self' 'unsafe-inline'",
@@ -307,7 +302,6 @@ describe("comparing a served policy with the recorded one, under CSP semantics",
     expect(result.widened).toEqual([
       "'script-src' allows any inline code: no hash or nonce is left to disable its 'unsafe-inline'",
     ]);
-    // The same through a fallback: style-src is not named, so default-src governs styles.
     expect(
       compare(
         { "default-src": "'self' 'unsafe-inline' 'sha256-AbC='" },

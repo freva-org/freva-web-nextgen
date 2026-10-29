@@ -10,8 +10,7 @@ cd freva-web-nextgen
 npm install
 ```
 
-Node 22.23.4 or later on the 22 line, or Node 24 (see `packages/ts-oidc-auth-client/.nvmrc`; the
-22.23.4 floor comes from `packages/portal-builder`).
+Node 22 (22.23.4 or later) or 24 (see `packages/ts-oidc-auth-client/.nvmrc`).
 
 ## Development workflow
 

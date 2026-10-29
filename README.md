@@ -39,9 +39,7 @@ npm run typecheck
 cd packages/<name-of-package> && npm run dev
 ```
 
-Node 22.23.4 or later on the 22 line, or Node 24, is required. `packages/ts-oidc-auth-client`
-sets the major versions; `packages/portal-builder` sets the 22.23.4 floor (Astro requires it, and
-it is the first 22.x with the October 2026 security fixes).
+Node 22 (22.23.4 or later) or 24 is required.
 
 ## Contributing
 

@@ -1,22 +1,12 @@
 version: 2
 
-# Security updates (opened as soon as an advisory has a fix) are switched on in the repository
-# settings; this file adds weekly VERSION updates, grouped so they arrive as a few PRs, not dozens.
-#
-# Not covered here, on purpose:
-#   - container/portal-builder: its base images are tags in resolve-base-digests.sh turned into
-#     digests in base-images.lock, which Dependabot cannot parse. Move them with that script.
-#   - packages/stac-browser: built from upstream's own lockfile at the recipe's pin; the weekly
-#     stac-browser-update workflow moves the pin.
-#   - the JupyterLite requirement files: toolchain pins the notebook builds are checked against.
+# Not covered: container base images (resolve-base-digests.sh) and STAC Browser (its own workflow).
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
       day: monday
-    # Wait before proposing a release that has just been published: compromised releases are
-    # usually caught and pulled within days. Security updates are not delayed by this.
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5

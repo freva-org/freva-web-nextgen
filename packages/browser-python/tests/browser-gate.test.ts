@@ -604,7 +604,6 @@ describe("the gate's own result does not depend on dist/ or .runtime/", () => {
     try {
       const stdout = execFileSync(
         process.execPath,
-        // Resolve vitest the way Node does: npm workspaces may hoist it to the repo root.
         [
           join(
             dirname(createRequire(import.meta.url).resolve("vitest/package.json")),

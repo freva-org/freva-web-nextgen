@@ -1,10 +1,7 @@
 name: Release
 
 on:
-  # workflow_run is deliberate: this job must run only after CI passed on main. It never runs
-  # code from a fork: `branches: [main]` limits it to main, and require-ci-success.mjs checks
-  # that the run was a push to main for the exact commit checked out below.
-  workflow_run: # zizmor: ignore[dangerous-triggers]
+  workflow_run: # zizmor: ignore[dangerous-triggers] -- gated by require-ci-success.mjs
     workflows: [CI]
     types: [completed]
     branches: [main]
@@ -32,8 +29,6 @@ jobs:
     steps:
       # `main`, not the verified SHA: changesets pushes a version commit and opens a PR, and it
       # needs a branch to do that on. The check below is what keeps the two honest.
-      # No stored credentials: this job runs the whole test suite. Changesets commits through
-      # the API (commitMode: github-api) and the tag step sets its own token URL.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -55,7 +50,6 @@ jobs:
         with:
           app-id: ${{ vars.FREVA_BOT_APP_ID }}
           private-key: ${{ secrets.FREVA_BOT_PRIVATE_KEY }}
-          # Only what the version PR and the release tags need, not the whole installation.
           permission-contents: write
           permission-pull-requests: write
 
