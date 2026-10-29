@@ -79,7 +79,7 @@
     "@jupyter/builder": "1.2.3",
     "@jupyterlab/core-meta": "4.6.4",
     "jsdom": "^29.1.1",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.12"
   },
   "jupyterlab": {

@@ -64,6 +64,6 @@
     "ajv": "^8.20.0",
     "jsdom": "^29.1.1",
     "playwright": "^1.56.0",
-    "typescript": "^5.5.4"
+    "typescript": "^7.0.2"
   }
 }

@@ -144,7 +144,7 @@
     "jsdom": "^29.1.1",
     "playwright": "^1.56.0",
     "pyodide": "314.0.6",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.12"
   },
   "dependencies": {
