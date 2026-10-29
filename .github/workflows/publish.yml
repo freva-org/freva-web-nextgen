@@ -93,12 +93,12 @@ jobs:
       - name: Version
         id: changesets
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        # v2 takes the token as an input only: a GITHUB_TOKEN env that differs is refused.
         with:
+          github-token: ${{ steps.tok.outputs.token }}
           version-script: npx changeset version
           pr-title: "chore: version packages"
           commit-message: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ steps.tok.outputs.token }}
 
       # Only the publish path needs a build, and every other push to main stops at
       # the version PR. ts-oidc-auth-client's prepublishOnly runs its strict
