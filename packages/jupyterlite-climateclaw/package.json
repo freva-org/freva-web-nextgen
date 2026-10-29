@@ -91,7 +91,7 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "4.0.21",
+    "@ai-sdk/provider": "4.0.31",
     "@jupyter/builder": "1.2.3",
     "@jupyterlab/core-meta": "4.6.4",
     "@types/react": "^18.3.0",

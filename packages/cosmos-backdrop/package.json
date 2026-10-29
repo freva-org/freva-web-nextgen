@@ -37,7 +37,7 @@
   "license": "BSD-3-Clause",
   "dependencies": {},
   "devDependencies": {
-    "playwright": "^1.56.0",
+    "playwright": "^1.64.1",
     "typescript": "^5.6.0"
   }
 }
