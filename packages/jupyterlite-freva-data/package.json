@@ -80,7 +80,7 @@
     "@jupyterlab/core-meta": "4.6.4",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.8"
+    "vitest": "^5.0.5"
   },
   "jupyterlab": {
     "extension": "lib/index.js",
