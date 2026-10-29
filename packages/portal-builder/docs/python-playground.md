@@ -433,7 +433,7 @@ eval-free settings validator and sanitised outputs do not depend on headers.
 origin and its storage, including the stored Freva/ClimateClaw sign-in: any script there can read
 it, a notebook output or the console included, and the frame's sandbox does not separate a
 same-origin document. On `<account>.github.io` every Pages site of the account shares that origin,
-and GitHub Pages sends no Content-Security-Policy. A deployment that can give the notebook its own
+and GitHub Pages sends no Content-Security-Policy (`host-check` needs `--allow-missing-csp` there). A deployment that can give the notebook its own
 origin should: set `playgroundOrigin` and drop `deployment`.
 
 **Switching deployments.** Notebooks, files and settings are kept in the visitor's browser per

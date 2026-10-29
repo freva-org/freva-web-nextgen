@@ -1,7 +1,7 @@
 name: Release
 
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] -- gated by require-ci-success.mjs
     workflows: [CI]
     types: [completed]
     branches: [main]
@@ -29,8 +29,9 @@ jobs:
     steps:
       # `main`, not the verified SHA: changesets pushes a version commit and opens a PR, and it
       # needs a branch to do that on. The check below is what keeps the two honest.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           ref: main
           fetch-depth: 0
 
@@ -45,24 +46,29 @@ jobs:
         id: app-token
         if: ${{ vars.FREVA_BOT_APP_ID != '' }}
         continue-on-error: true
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.FREVA_BOT_APP_ID }}
           private-key: ${{ secrets.FREVA_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Pick token
         id: tok
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEFAULT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "${{ steps.app-token.outputs.token }}" ]; then
+          if [ -n "$APP_TOKEN" ]; then
             echo "Acting as freva-bot."
-            echo "token=${{ steps.app-token.outputs.token }}" >> "$GITHUB_OUTPUT"
+            echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::freva-bot unavailable; acting as github-actions[bot]." \
                  "The version PR it opens will not trigger CI."
-            echo "token=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_OUTPUT"
+            echo "token=$DEFAULT_TOKEN" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
@@ -86,7 +92,7 @@ jobs:
       # forward; CI's `changeset-required` job refuses a hand-bumped version.
       - name: Version
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: npx changeset version
           title: "chore: version packages"
@@ -102,7 +108,7 @@ jobs:
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: npm exec -- playwright install --with-deps chromium firefox webkit
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         if: steps.changesets.outputs.hasChangesets == 'false'
         with:
           python-version: "3.12"
@@ -144,13 +150,14 @@ jobs:
         if: steps.publish.outputs.tags != '' && steps.publish.outputs.tags != '[]'
         env:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
+          TAGS: ${{ steps.publish.outputs.tags }}
         run: |
           git config user.name "freva-bot"
           git config user.email "freva-bot@users.noreply.github.com"
           git remote set-url origin \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           existing=$(git ls-remote --tags origin | sed 's#.*refs/tags/##; s#\^{}$##' | sort -u)
-          for tag in $(echo '${{ steps.publish.outputs.tags }}' | jq -r '.[]'); do
+          for tag in $(printf '%s' "$TAGS" | jq -r '.[]'); do
             if printf '%s\n' "$existing" | grep -qxF "$tag"; then
               echo "$tag is already tagged."
               continue

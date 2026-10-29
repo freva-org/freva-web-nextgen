@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -20,9 +23,11 @@ jobs:
         node-version: [22, 24]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -51,10 +56,14 @@ jobs:
           echo "flags=$(npm query .workspace | jq -r '.[].name | select(. != "@freva-org/portal-builder") | "-w \(.)"' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
 
       - name: Test
-        run: npm test ${{ steps.ws.outputs.flags }} --if-present
+        env:
+          WORKSPACES: ${{ steps.ws.outputs.flags }}
+        run: npm test $WORKSPACES --if-present
 
       - name: Coverage
-        run: npm run test:coverage ${{ steps.ws.outputs.flags }} --if-present
+        env:
+          WORKSPACES: ${{ steps.ws.outputs.flags }}
+        run: npm run test:coverage $WORKSPACES --if-present
 
   # A hand-bumped version would be released by the next push to main without ever
   # going through the version PR. Skipped for the changesets bot's own branch.
@@ -64,13 +73,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: A version bump must come with a changeset
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          base="origin/${{ github.base_ref }}"
+          base="origin/${BASE_REF}"
           bumped=$(git diff "$base"...HEAD -- 'packages/*/package.json' \
                    | grep -E '^\+  "version":' || true)
           [ -n "$bumped" ] || { echo "No package version changed."; exit 0; }
@@ -98,9 +110,11 @@ jobs:
     # Run from the repo root and target the package with `-w`: a job-level
     # working-directory makes the install step's own directory ambiguous.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/ts-oidc-auth-client/.nvmrc
           cache: npm
@@ -145,9 +159,11 @@ jobs:
             engines: chromium
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/${{ matrix.dir }}/.nvmrc
           cache: npm
@@ -188,9 +204,11 @@ jobs:
       PKG: "@freva-org/browser-python"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/browser-python/.nvmrc
           cache: npm
@@ -208,7 +226,7 @@ jobs:
           echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the Pyodide distribution
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: packages/browser-python/.runtime
           key: pyodide-${{ steps.runtime.outputs.id }}
@@ -222,7 +240,7 @@ jobs:
         run: node packages/browser-python/scripts/check-runtime.mjs
 
       - name: Cache the prepared add-ons
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: packages/browser-python/.addons
           key: addons-${{ hashFiles('packages/browser-python/bin/freva-addons.json') }}
@@ -239,7 +257,7 @@ jobs:
 
       # The notebook kernel on the same engine, runtime and add-ons. Its site is a pinned,
       # hash-checked JupyterLite build, which needs a Python to run in.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -275,9 +293,11 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/browser-python/.nvmrc
           cache: npm
@@ -286,7 +306,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -313,9 +333,11 @@ jobs:
       PKG: "@freva-org/browser-python"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/browser-python/.nvmrc
           cache: npm
@@ -337,9 +359,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: packages/portal-builder/.nvmrc
           cache: npm
@@ -348,7 +372,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -365,7 +389,7 @@ jobs:
           echo "id=$(node packages/browser-python/scripts/runtime-manifest.mjs)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the Pyodide distribution
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: packages/browser-python/.runtime
           key: pyodide-${{ steps.runtime.outputs.id }}
@@ -379,7 +403,7 @@ jobs:
           echo "id=$(node packages/browser-python/scripts/freva-wheelhouse-key.mjs)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the derived Freva wheel
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: packages/browser-python/.freva-wheels
           key: freva-wheel-${{ steps.freva.outputs.id }}
@@ -401,7 +425,7 @@ jobs:
           echo "id=$(npm run --silent stac:cache-key)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the prepared STAC materials
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: packages/stac-browser/materials
           key: stac-materials-${{ steps.stac.outputs.id }}
@@ -484,7 +508,176 @@ jobs:
           npm run licenses
           npm run sbom
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: portal-builder-supply-chain
           path: packages/portal-builder/reports/
+
+  # Security checks live in CI so the release gate (require-ci-success.mjs) covers them.
+  security:
+    name: security (${{ matrix.check }})
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.report-only == true }}
+    permissions:
+      contents: read
+      actions: read
+      security-events: write # CodeQL uploads
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: npm-audit
+            check: npm audit
+          - id: stac-audit
+            check: STAC lockfile, report-only
+            report-only: true
+          - id: dependency-review
+            check: dependency review
+          - id: codeql
+            check: CodeQL javascript-typescript
+            language: javascript-typescript
+          - id: codeql
+            check: CodeQL python
+            language: python
+          - id: codeql
+            check: CodeQL actions
+            language: actions
+          - id: gitleaks
+            check: gitleaks
+          - id: zizmor
+            check: zizmor
+          - id: container
+            check: container image
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: ${{ matrix.id == 'gitleaks' && '0' || '1' }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.id == 'npm-audit' || matrix.id == 'stac-audit'
+        with:
+          node-version: 24
+
+      - name: Audit the workspace lockfile
+        if: matrix.id == 'npm-audit'
+        run: node scripts/audit-gate.mjs
+
+      - name: Fetch the pinned STAC Browser lockfile and verify its digest
+        if: matrix.id == 'stac-audit'
+        run: |
+          set -euo pipefail
+          PIN=packages/stac-browser/upstream.json
+          REPO=$(node -p "require('./$PIN').repository")
+          COMMIT=$(node -p "require('./$PIN').commit")
+          LOCK=$(node -p "require('./$PIN').lockfile")
+          WANT=$(node -p "require('./$PIN').lockfileDigest")
+          SRC="$RUNNER_TEMP/stac-src"
+          OUT="$RUNNER_TEMP/stac-audit"
+          git init -q "$SRC"
+          git -C "$SRC" remote add origin "$REPO"
+          git -C "$SRC" fetch -q --depth 1 origin "$COMMIT"
+          mkdir -p "$OUT"
+          git -C "$SRC" show "FETCH_HEAD:package.json" > "$OUT/package.json"
+          git -C "$SRC" show "FETCH_HEAD:$LOCK" > "$OUT/package-lock.json"
+          GOT="sha256:$(sha256sum "$OUT/package-lock.json" | cut -d' ' -f1)"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::upstream lockfile is $GOT, the recipe records $WANT"
+            exit 1
+          fi
+
+      - name: Audit the STAC Browser lockfile
+        if: matrix.id == 'stac-audit'
+        working-directory: ${{ runner.temp }}/stac-audit
+        run: |
+          status=0
+          npm audit --package-lock-only --audit-level=high > audit.txt 2>&1 || status=$?
+          {
+            echo "### STAC Browser lockfile audit (report-only)"
+            echo ""
+            echo '```'
+            tail -n 60 audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::STAC Browser's pinned lockfile has high or critical advisories; see the job summary."
+          fi
+
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        if: matrix.id == 'dependency-review' && github.event_name == 'pull_request'
+        with:
+          fail-on-severity: high
+
+      # Dependabot's runs get a read-only token, so the upload would fail and block the release.
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: matrix.id == 'codeql' && github.actor != 'dependabot[bot]'
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: matrix.id == 'codeql' && github.actor != 'dependabot[bot]'
+        with:
+          category: "/language:${{ matrix.language }}"
+
+      - name: Cache gitleaks
+        id: gitleaks-cache
+        if: matrix.id == 'gitleaks'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/go/bin/gitleaks
+          key: gitleaks-v8.30.1-${{ runner.os }}-${{ runner.arch }}
+      # The gitleaks action needs a licence for organisations; the CLI doesn't.
+      - name: Install gitleaks
+        if: matrix.id == 'gitleaks' && steps.gitleaks-cache.outputs.cache-hit != 'true'
+        run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+      # --diff-merges: plain `git log -p` omits what a merge resolution adds.
+      - name: Scan the new commits
+        if: matrix.id == 'gitleaks'
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          MERGES="--diff-merges=first-parent"
+          case "$EVENT" in
+            pull_request) opts="$MERGES $PR_BASE..HEAD" ;;
+            push)
+              if [ -n "$PUSH_BEFORE" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+                opts="$MERGES $PUSH_BEFORE..HEAD"
+              else
+                echo "::warning::the push's previous head is not in this clone (new branch or force-push); scanning the last commit only."
+                opts="$MERGES HEAD~1..HEAD"
+              fi
+              ;;
+            *) opts="$MERGES --full-history --all" ;; # workflow_dispatch: the whole history
+          esac
+          "$(go env GOPATH)/bin/gitleaks" git --no-banner --redact --log-opts="$opts" .
+
+      - name: Audit the workflows
+        if: matrix.id == 'zizmor'
+        run: pipx run zizmor==1.31.1 --offline --no-progress --min-severity medium .github/workflows
+
+      # Skipped until base-images.lock is committed.
+      - name: Are the base images pinned?
+        id: lock
+        if: matrix.id == 'container'
+        run: |
+          if [ -f container/portal-builder/base-images.lock ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::container/portal-builder/base-images.lock is not committed yet, so the canonical image cannot be built or scanned. Run container/portal-builder/resolve-base-digests.sh, review and commit the result."
+          fi
+      - name: Build the image
+        if: matrix.id == 'container' && steps.lock.outputs.present == 'true'
+        run: bash container/portal-builder/build.sh ci-scan
+      - name: Scan the image
+        if: matrix.id == 'container' && steps.lock.outputs.present == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/freva-org/portal-builder:ci-scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

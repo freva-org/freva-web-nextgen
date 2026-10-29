@@ -1,0 +1,10 @@
+name: freva-web-nextgen CodeQL
+
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/coverage/**"
+  - "packages/stac-browser/.upstream/**"
+
+queries:
+  - uses: security-extended

@@ -36,6 +36,160 @@ interface HostPolicyDocument {
   cache: { classes: Record<string, string> };
   authCallback?: { path: string; headers: Record<string, string> };
   redirects?: { from: string; to: string; status: number; preserveQuery: boolean }[];
+  csp?: {
+    portal?: Record<string, string>;
+    subsites?: { mount: string; directives: Record<string, string> }[];
+    paths?: { match: { prefix: string } | { path: string }; directives: Record<string, string> }[];
+  };
+}
+
+/** Directives that never widen what a page may load. */
+const IGNORED_DIRECTIVES = new Set([
+  "report-uri",
+  "report-to",
+  "upgrade-insecure-requests",
+  "block-all-mixed-content",
+  "require-trusted-types-for",
+  "trusted-types",
+  "sandbox",
+]);
+
+/** CSP3 fallbacks. Directives without one are unrestricted when absent. */
+const FALLBACKS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
+  ["default-src", []],
+  ["script-src", ["default-src"]],
+  ["script-src-elem", ["script-src", "default-src"]],
+  ["script-src-attr", ["script-src", "default-src"]],
+  ["style-src", ["default-src"]],
+  ["style-src-elem", ["style-src", "default-src"]],
+  ["style-src-attr", ["style-src", "default-src"]],
+  ["img-src", ["default-src"]],
+  ["font-src", ["default-src"]],
+  ["media-src", ["default-src"]],
+  ["object-src", ["default-src"]],
+  ["connect-src", ["default-src"]],
+  ["manifest-src", ["default-src"]],
+  ["child-src", ["default-src"]],
+  ["frame-src", ["child-src", "default-src"]],
+  ["fenced-frame-src", ["frame-src", "child-src", "default-src"]],
+  ["worker-src", ["child-src", "script-src", "default-src"]],
+  ["base-uri", []],
+  ["form-action", []],
+  ["frame-ancestors", []],
+]);
+
+function normaliseSource(source: string): string {
+  const hashOrNonce = /^'(sha256|sha384|sha512|nonce)-(.*)'$/i.exec(source);
+  if (hashOrNonce) return `'${hashOrNonce[1]!.toLowerCase()}-${hashOrNonce[2]}'`;
+  if (source.startsWith("'")) return source.toLowerCase();
+  if (/^[a-z][a-z0-9+.-]*:$/i.test(source)) return source.toLowerCase();
+  // Scheme and host are case-insensitive; a path is not.
+  const host = /^([a-z][a-z0-9+.-]*:\/\/)?([^/]+)(.*)$/i.exec(source);
+  return host ? `${(host[1] ?? "").toLowerCase()}${host[2]!.toLowerCase()}${host[3]}` : source;
+}
+
+/** Directive name -> sources. `'none'` is the empty set. */
+export function parseCsp(policy: string): Map<string, Set<string>> {
+  const directives = new Map<string, Set<string>>();
+  for (const part of policy.split(";")) {
+    const [name, ...sources] = part.trim().split(/\s+/).filter(Boolean);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (directives.has(key)) continue;
+    // 'report-sample' only adds a code sample to violation reports.
+    const ignored = new Set(["'none'", "'report-sample'"]);
+    directives.set(key, new Set(sources.map(normaliseSource).filter((s) => !ignored.has(s))));
+  }
+  return directives;
+}
+
+const INLINE_DIRECTIVES = new Set([
+  "default-src",
+  "script-src",
+  "script-src-elem",
+  "script-src-attr",
+  "style-src",
+  "style-src-elem",
+  "style-src-attr",
+]);
+
+/** `'unsafe-inline'` is ignored while a hash, nonce or (scripts) `'strict-dynamic'` is present. */
+function allowsAnyInline(name: string, sources: Set<string>): boolean {
+  if (!INLINE_DIRECTIVES.has(name) || !sources.has("'unsafe-inline'")) return false;
+  for (const source of sources) {
+    if (/^'(sha256|sha384|sha512|nonce)-/.test(source)) return false;
+    if (source === "'strict-dynamic'" && !name.startsWith("style")) return false;
+  }
+  return true;
+}
+
+function effective(policy: Map<string, Set<string>>, name: string): Set<string> | "anything" {
+  for (const candidate of [name, ...(FALLBACKS.get(name) ?? [])]) {
+    const sources = policy.get(candidate);
+    if (sources) return sources;
+  }
+  return "anything";
+}
+
+/** Sources compare as expressions: an unlisted one counts as wider, even if it is narrower. */
+export function compareCsp(
+  expected: Record<string, string>,
+  served: Map<string, Set<string>>,
+): { widened: string[]; narrowed: string[] } {
+  const recorded = parseCsp(
+    Object.entries(expected)
+      .map(([name, value]) => `${name} ${value}`)
+      .join(";"),
+  );
+  const widened: string[] = [];
+  const narrowed: string[] = [];
+  const names = new Set([
+    ...recorded.keys(),
+    ...[...served.keys()].filter((name) => FALLBACKS.has(name)),
+  ]);
+  for (const name of names) {
+    if (IGNORED_DIRECTIVES.has(name)) continue;
+    const allowed = effective(recorded, name);
+    const sources = effective(served, name);
+    if (sources === "anything") {
+      if (allowed !== "anything") widened.push(`does not restrict '${name}'`);
+      continue;
+    }
+    if (allowed === "anything") {
+      narrowed.push(`restricts '${name}', which the artifact leaves open`);
+      continue;
+    }
+    const extra = [...sources].filter((source) => !allowed.has(source));
+    if (extra.length > 0) widened.push(`'${name}' also allows ${extra.join(" ")}`);
+    if (allowsAnyInline(name, sources) && !allowsAnyInline(name, allowed)) {
+      widened.push(
+        `'${name}' allows any inline code: no hash or nonce is left to disable its 'unsafe-inline'`,
+      );
+    }
+    const missing = [...allowed].filter((source) => !sources.has(source));
+    if (missing.length > 0) {
+      narrowed.push(
+        sources.size === 0 ? `'${name}' blocks everything` : `'${name}' omits ${missing.join(" ")}`,
+      );
+    }
+  }
+  return { widened, narrowed };
+}
+
+/** Same precedence as preview: path, then subsite, then portal. */
+function expectedCsp(
+  csp: HostPolicyDocument["csp"],
+  fullPath: string,
+): Record<string, string> | undefined {
+  const own = (csp?.paths ?? []).find((entry) =>
+    "prefix" in entry.match
+      ? fullPath.startsWith(entry.match.prefix)
+      : fullPath === entry.match.path,
+  );
+  if (own) return own.directives;
+  const subsite = (csp?.subsites ?? []).find((entry) => fullPath.startsWith(entry.mount));
+  if (subsite) return subsite.directives;
+  return csp?.portal;
 }
 
 interface PortalManifestLite {
@@ -49,6 +203,8 @@ export interface HostCheckOptions {
   fetchImpl?: typeof fetch;
   /** Follow no redirects: the redirect itself is the thing being checked. */
   timeoutMs?: number;
+  /** A host that cannot send headers (GitHub Pages): a missing CSP is a warning, not an error. */
+  allowMissingCsp?: boolean;
 }
 
 export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBag> {
@@ -94,6 +250,40 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
     }
   };
 
+  const checkCsp = (response: Response, url: string, fullPath: string): void => {
+    const expected = expectedCsp(policy.csp, fullPath);
+    if (!expected) return;
+    const enforced = response.headers.get("content-security-policy");
+    if (!enforced) {
+      const message = response.headers.get("content-security-policy-report-only")
+        ? `GET ${url} sends its Content-Security-Policy only as Content-Security-Policy-Report-Only, which enforces nothing.`
+        : `GET ${url} sends no Content-Security-Policy; host-policy.json records the policy the host must send.`;
+      if (options.allowMissingCsp) {
+        bag.warn(
+          "FP1607",
+          `${message} Accepted by --allow-missing-csp: this host serves it without one.`,
+        );
+      } else {
+        bag.error("FP1607", message);
+      }
+      return;
+    }
+    // Comma-joined policies all apply, so one that isn't weakened is enough.
+    const results = enforced.split(",").map((text) => compareCsp(expected, parseCsp(text)));
+    const best = results.find((result) => result.widened.length === 0);
+    if (!best) {
+      bag.error(
+        "FP1607",
+        `GET ${url} sends a weaker Content-Security-Policy than host-policy.json records: ${(results[0]?.widened ?? []).join("; ")}.`,
+      );
+    } else if (best.narrowed.length > 0) {
+      bag.warn(
+        "FP1607",
+        `GET ${url} sends a stricter Content-Security-Policy than host-policy.json records (${best.narrowed.join("; ")}); the portal may not work.`,
+      );
+    }
+  };
+
   // 1. The root document is served at the canonical URL.
   const root = await get(base, "follow");
   if (root) {
@@ -102,6 +292,25 @@ export async function hostCheck(options: HostCheckOptions): Promise<DiagnosticBa
     if (!type.includes("text/html")) {
       bag.error("FP1603", `GET ${base} returned content-type '${type}', expected HTML.`);
     }
+
+    // 1b. The artifact's Content-Security-Policy, enforced and not weakened.
+    checkCsp(root, base, policy.mount.basePath);
+  }
+
+  // 1c. Paths and subsites with a policy of their own: one file under each.
+  const basePrefix = policy.mount.basePath.replace(/\/$/, "");
+  const owned = [
+    ...(policy.csp?.paths ?? []).map((entry) => entry.match),
+    ...(policy.csp?.subsites ?? []).map((entry) => ({ prefix: entry.mount })),
+  ];
+  for (const match of owned) {
+    const file = manifest.files.find((f) => {
+      const full = `${basePrefix}/${f.path}`;
+      return "prefix" in match ? full.startsWith(match.prefix) : full === match.path;
+    });
+    if (!file) continue;
+    const response = await get(at(file.path), "follow");
+    if (response) checkCsp(response, at(file.path), `${basePrefix}/${file.path}`);
   }
 
   // 2. Directory URLs and deep links are real files, without an SPA fallback.

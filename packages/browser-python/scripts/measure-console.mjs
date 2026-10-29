@@ -10,9 +10,9 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ESBUILD } from "./esbuild-bin.mjs";
 
 const PKG = fileURLToPath(new URL("..", import.meta.url));
-const ESBUILD = join(PKG, "..", "..", "node_modules", ".bin", "esbuild");
 // Scratch INSIDE the package, not in /tmp. Node resolution walks up from the entry file, so an
 // entry in the system temp directory cannot find `jquery` at all and the measurement fails with a
 // resolution error rather than a number.
@@ -38,7 +38,8 @@ const ROOT_CEILING = 8.5 * 1024;
  * bundle carrying HTML or SVG arrives. About 14.5 KiB gz without the notice-card rules (the
  * console has its own copy); the ceiling stays close.
  */
-const RICH_OUTPUT_CEILING = 18 * 1024;
+// Raised from 18.0 for DOMPurify 3.4.17 (security fixes, +0.4 KiB gz).
+const RICH_OUTPUT_CEILING = 18.5 * 1024;
 
 /**
  * Bundle one entry as a consumer's bundler would: minified, ESM, code-split. What a page pays to

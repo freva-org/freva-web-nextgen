@@ -1,0 +1,43 @@
+version: 2
+
+# Not covered: container base images (resolve-base-digests.sh) and STAC Browser (its own workflow).
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    # Majors arrive one PR each; only minor and patch updates are grouped.
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: pip
+    directory: /tools/portal-rst-renderer
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    labels: [dependencies]

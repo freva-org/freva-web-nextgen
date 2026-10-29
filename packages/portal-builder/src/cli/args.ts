@@ -45,6 +45,8 @@ const KNOWN_FLAGS = new Set([
   "cache-key",
   "upstream",
   "checkout-dir",
+  // `host-check`: a host that cannot send headers (GitHub Pages).
+  "allow-missing-csp",
 ]);
 
 /** Flags that may be given more than once, collected in order. */

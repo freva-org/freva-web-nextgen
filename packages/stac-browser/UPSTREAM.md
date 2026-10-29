@@ -258,7 +258,8 @@ licence evidence.
 
 `.github/workflows/stac-browser-update.yml`, every Friday and on demand - the same arrangement as
 `freva-web`'s `stacbrowser_update.yml`. It resolves upstream's newest stable release tag (release
-candidates are skipped), and when that is not the pinned commit it:
+candidates are skipped). It moves forward only to a release whose GitHub release is at least seven
+days old, and when that is not the pinned commit it:
 
 1. moves the pin with `scripts/pin.mjs` - `commit`, `tag` and `lockfileDigest` in `upstream.json`,
    `upstream` in `adapter-contract.json`, and the pinned-commit link in the root `README.md`;
@@ -267,6 +268,10 @@ candidates are skipped), and when that is not the pinned commit it:
 3. opens a pull request labelled `stac-browser` with the upstream commit list, and a warning when
    upstream changed a file a patch touches or the options documentation the adapter contract was
    reviewed against.
+
+Steps 1 and 2 run upstream code, so they run in a job that cannot write. A separate job opens the
+pull request: `scripts/accept-pin-update.mjs` rebuilds the changed files from the checkout and
+accepts only the fields `pin.mjs` moves, a newer tag, and a commit upstream names for it.
 
 A green build opens `⬆️ Bump STAC Browser to …` with auto-merge enabled; it lands once CI is green.
 A red one opens `🚨 STAC Browser Build failed: …` as a **draft** on `stac-browser-candidate/…`,

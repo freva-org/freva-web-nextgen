@@ -182,8 +182,14 @@ freva-portal-builder host-check --dir build/portal --url https://portal.example.
 
 It checks the root document, deep links, the slash redirect with its query, the
 real 404, download headers, the callback's cache and referrer policy, cache
-classes, and every declared redirect (status, target and query). It reports what
-the target actually did.
+classes, every declared redirect (status, target and query), and the
+Content-Security-Policy of the root and of every path with a policy of its own:
+missing, report-only or weakened is an error (`FP1607`), stricter is a warning.
+It reports what the target actually did.
+
+A host that cannot send headers at all, such as GitHub Pages, serves the portal
+without a Content-Security-Policy. `--allow-missing-csp` reports that as a
+warning instead of an error; a policy the host does send is still checked.
 
 One thing it cannot observe over HTTP is access-log redaction; confirm that in
 the host configuration. `preview` approximates routing and headers for local
