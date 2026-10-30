@@ -1,5 +1,12 @@
 # @freva-org/data-inspector
 
+## 2610.1.1
+
+### Patch Changes
+
+- 3577e8a: Code scanning fixes. `databrowser` no longer breaks on a link or query whose facet key is an `Object.prototype` name (`__proto__`, `constructor`, `toString`, ...). Trailing slashes, newlines and spaces are trimmed in linear time instead of with backtracking regular expressions.
+- cad8488: Security updates: `browser-python` depends on DOMPurify 3.4.17. `data-inspector` builds with Vite 8. `portal-builder`'s `host-check` now verifies the deployed Content-Security-Policy (`FP1607`); a host that cannot send headers, such as GitHub Pages, needs the new `--allow-missing-csp`.
+
 ## 2610.1.0
 
 ### Minor Changes

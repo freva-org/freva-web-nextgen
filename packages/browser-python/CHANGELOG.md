@@ -1,5 +1,13 @@
 # @freva-org/browser-python
 
+## 2610.1.1
+
+### Patch Changes
+
+- 02ab040: Script-tag matching closes on `</script ...>` in any case, as a browser does. Workspace session ids always come from `crypto.getRandomValues`.
+- a4570b3: File checks and the reads or writes they guard go through one descriptor or one exclusive create, so they see the same file. The playground frame only loads an http(s) origin, and the worker ignores messages from a foreign origin. A callback spends its login transaction once, before reading the response. Copied ClimateClaw replies strip tags and comments until none are left.
+- cad8488: Security updates: `browser-python` depends on DOMPurify 3.4.17. `data-inspector` builds with Vite 8. `portal-builder`'s `host-check` now verifies the deployed Content-Security-Policy (`FP1607`); a host that cannot send headers, such as GitHub Pages, needs the new `--allow-missing-csp`.
+
 ## 2610.1.0
 
 ### Minor Changes
