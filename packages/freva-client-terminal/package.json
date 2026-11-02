@@ -41,7 +41,7 @@
   "license": "BSD-3-Clause",
   "dependencies": {},
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.6.5",
     "jsdom": "^29.1.1",
     "typescript": "^5.5.4"
   }
