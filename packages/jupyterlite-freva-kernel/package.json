@@ -59,23 +59,23 @@
     "prepack": "npm run build && npm run build:labextension"
   },
   "dependencies": {
-    "@cfworker/json-schema": "4.1.1",
+    "@cfworker/json-schema": "4.1.4",
     "@freva-org/browser-python": "2610.1.1",
-    "@jupyterlab/application": "~4.6.4",
+    "@jupyterlab/application": "~4.6.5",
     "@jupyterlab/apputils": "~4.7.4",
     "@jupyterlab/coreutils": "~6.6.4",
-    "@jupyterlab/mainmenu": "~4.6.4",
-    "@jupyterlab/notebook": "~4.6.4",
+    "@jupyterlab/mainmenu": "~4.6.5",
+    "@jupyterlab/notebook": "~4.6.5",
     "@jupyterlab/rendermime-interfaces": "~3.14.4",
     "@jupyterlab/services": "~7.6.4",
     "@jupyterlab/settingregistry": "~4.6.4",
     "@jupyterlab/statedb": "~4.6.4",
-    "@jupyterlite/services": "~0.8.5",
+    "@jupyterlite/services": "~0.8.7",
     "@lumino/coreutils": "^2.2.2",
     "@lumino/signaling": "^2.1.5",
-    "@lumino/widgets": "~2.8.0",
+    "@lumino/widgets": "~2.10.0",
     "json5": "2.2.3",
-    "parse5": "^8.0.1"
+    "parse5": "^8.1.0"
   },
   "devDependencies": {
     "@jupyter/builder": "1.2.3",

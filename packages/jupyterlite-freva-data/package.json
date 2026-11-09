@@ -61,19 +61,19 @@
   "dependencies": {
     "@freva-org/data-inspector": "2610.1.1",
     "@freva-org/dataset-tree": "2610.2.0",
-    "@jupyterlab/application": "^4.4.0",
+    "@jupyterlab/application": "^4.6.5",
     "@jupyterlab/apputils": "^4.5.0",
     "@jupyterlab/coreutils": "^6.4.0",
     "@jupyterlab/filebrowser": "^4.4.0",
-    "@jupyterlab/launcher": "^4.4.0",
-    "@jupyterlab/notebook": "^4.4.0",
+    "@jupyterlab/launcher": "^4.6.5",
+    "@jupyterlab/notebook": "^4.6.5",
     "@jupyterlab/services": "^7.4.0",
     "@jupyterlab/settingregistry": "^4.4.0",
     "@jupyterlab/ui-components": "^4.4.0",
     "@lumino/coreutils": "^2.2.0",
     "@lumino/dragdrop": "^2.1.0",
     "@lumino/signaling": "^2.1.0",
-    "@lumino/widgets": "^2.6.0"
+    "@lumino/widgets": "^2.10.0"
   },
   "devDependencies": {
     "@jupyter/builder": "1.2.3",
