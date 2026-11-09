@@ -76,8 +76,8 @@
     "@lumino/widgets": "^2.6.0"
   },
   "devDependencies": {
-    "@jupyter/builder": "1.2.3",
-    "@jupyterlab/core-meta": "4.6.4",
+    "@jupyter/builder": "1.2.4",
+    "@jupyterlab/core-meta": "4.6.5",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"
