@@ -91,13 +91,13 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "4.0.21",
-    "@jupyter/builder": "1.2.3",
-    "@jupyterlab/core-meta": "4.6.4",
+    "@ai-sdk/provider": "4.0.35",
+    "@jupyter/builder": "1.2.4",
+    "@jupyterlab/core-meta": "4.6.5",
     "@types/react": "^18.3.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "jupyterlab": {
     "extension": "lib/index.js",
