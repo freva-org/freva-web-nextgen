@@ -88,13 +88,13 @@
     "@lumino/signaling": "^2.1.0",
     "@lumino/widgets": "^2.6.0",
     "jupyter-chat-components": "0.6.0",
-    "react": "^18.2.0"
+    "react": "^19.3.1"
   },
   "devDependencies": {
     "@ai-sdk/provider": "4.0.21",
     "@jupyter/builder": "1.2.3",
     "@jupyterlab/core-meta": "4.6.4",
-    "@types/react": "^18.3.0",
+    "@types/react": "^19.3.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"
