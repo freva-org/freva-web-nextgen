@@ -151,7 +151,7 @@
     "@freva-org/freva-client-terminal": "2610.0.0",
     "dompurify": "3.4.17",
     "jquery": "3.7.1",
-    "jquery.terminal": "2.47.0",
+    "jquery.terminal": "2.48.1",
     "prismjs": "1.30.0"
   },
   "bin": {
